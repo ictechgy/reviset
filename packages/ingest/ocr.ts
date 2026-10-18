@@ -11,7 +11,7 @@ const Candidate=z.object({text:z.string(),confidence:z.number().min(0).max(1)});
 const Result=z.object({version:z.string(),revision:z.number(),languages:z.array(z.string()),language_correction:z.literal(false),ocr_performed:z.boolean(),renderer:z.string(),verification:z.string(),viewport_width:z.number().positive(),viewport_height:z.number().positive(),rotation:z.number(),width:z.number().int().positive().max(4096),height:z.number().int().positive().max(4096),render_sha256:z.string().regex(/^[a-f0-9]{64}$/),structure_status:z.string().optional(),structure_engine:z.string().optional(),tables:z.array(z.object({cells:z.array(z.object({row:z.number().int().nonnegative(),column:z.number().int().nonnegative(),row_span:z.number().int().positive(),column_span:z.number().int().positive(),text:z.string(),bbox:Bbox})).max(20000)})).max(200).optional(),
   lines:z.array(Candidate.extend({bbox:Bbox,strike_candidate:z.boolean(),strike_bbox:Bbox,numeric_consensus:z.boolean(),numeric_readings:z.array(z.string()),tokens:z.array(z.object({text:z.string(),bbox:Bbox})),alternatives:z.array(Candidate).max(3)})).max(20000)});
 export type NativePageResult=z.infer<typeof Result>;
-export type OcrOptions={cacheRoot?:string;signal?:AbortSignal;sourceFile?:string;sourceHash?:string;nativeResult?:NativePageResult;onPage?:(current:number,total:number)=>void};
+export type OcrOptions={cacheRoot?:string;signal?:AbortSignal;sourceFile?:string;sourceHash?:string;reuseRasterOcr?:boolean;nativeResult?:NativePageResult;onPage?:(current:number,total:number)=>void};
 export async function ocrEnvironment():Promise<string>{const info=await visionInfo();return info?hash(info):'unavailable';}
 export async function recognizePdf(bytes:Uint8Array,page:number,options:OcrOptions={}):Promise<z.infer<typeof Result>>{
   const result=(await captureNativePages(bytes,[page],[page],options)).get(page);if(!result)throw new DocverError('OCR_FAILED','Native page observation failed');return result;
@@ -29,7 +29,7 @@ export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPage
     const source=options.sourceFile??join(folder!,'source.pdf');if(folder)await writeFile(source,bytes,{mode:0o600});
     const save=async(page:number,value:NativePageResult)=>{if(!cache)return;await mkdir(cache,{recursive:true});const key=keyFor(page),path=join(cache,key+'.json'),staging=join(cache,key+'-'+randomUUID()+'.tmp');await writeFile(staging,JSON.stringify({key,sha256:hash(value),value}),{flag:'wx'});await rename(staging,path);};
     // OCR is an image observation: identical native pixels reuse recognition across versions.
-    if(cache&&existsSync(join(cache,'raster'))&&missing.some(n=>wanted.has(n))){
+    if(cache&&options.reuseRasterOcr!==false&&existsSync(join(cache,'raster'))&&missing.some(n=>wanted.has(n))){
       const rendered=await captureNativePages(bytes,missing.filter(n=>wanted.has(n)),[],{...options,sourceFile:source,sourceHash,onPage:undefined});
       for(const [page,raster] of rendered){const key=hash([environment,raster.render_sha256]),path=join(cache,'raster',key+'.json');try{const saved=JSON.parse(await readFile(path,'utf8'));if(saved.key!==key||saved.sha256!==hash(saved.value))continue;const known=Result.parse(saved.value);if(!known.ocr_performed||known.render_sha256!==raster.render_sha256)continue;
         const value={...known,viewport_width:raster.viewport_width,viewport_height:raster.viewport_height,rotation:raster.rotation};results.set(page,value);await save(page,value);

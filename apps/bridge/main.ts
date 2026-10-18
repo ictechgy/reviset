@@ -31,18 +31,18 @@ try{
     case 'view':{
       const d=scope.parse(args),r=service.snapshot(d.project_id,d.report_id);
       const revisions=r.revisions.map(({pages,...v})=>({...v,pages:pages.map(p=>({page_id:p.page_id,asset_id:p.asset_id,page:p.page,width:p.width,height:p.height,text:textChunk(comparisonText(p),0,180),capabilities:p.capabilities,hidden:p.hidden,ocr:p.ocr,coverage_gaps:p.coverage_gaps.slice(0,3)}))}));
-      const all=r.revisions.flatMap(v=>v.pages),quality_counts={ocr_inferred_pages:all.filter(p=>p.elements.some(e=>e.method==='vision_ocr')).length,ocr_failed_pages:all.filter(p=>p.ocr&&['failed','unavailable'].includes(p.ocr.status)).length,unresolved_comparison_pages:all.filter(p=>!!unresolvedComparisonText(p)).length,pptx_without_render:all.filter(p=>!p.preview&&r.revisions.some(v=>v.assets.some(a=>a.asset_id===p.asset_id&&a.format==='pptx'))).length};
+      const all=r.revisions.flatMap(v=>v.pages),quality_counts={ocr_inferred_pages:all.filter(p=>p.elements.some(e=>e.method==='vision_ocr')).length,ocr_failed_pages:all.filter(p=>p.ocr&&['failed','unavailable'].includes(p.ocr.status)).length,unresolved_comparison_pages:all.filter(p=>!!unresolvedComparisonText(p)||!!p.ocr_unresolved_text).length,pptx_without_render:all.filter(p=>!p.preview&&r.revisions.some(v=>v.assets.some(a=>a.asset_id===p.asset_id&&a.format==='pptx'))).length};
       value={...r,revisions,quality_counts,changes:undefined,candidates:undefined,matches:undefined,coverage_gaps:r.coverage_gaps.slice(0,500),coverage_gap_count:r.coverage_gaps.length,change_counts:r.changes.reduce<Record<string,number>>((a,c)=>(a[c.kind]=(a[c.kind]??0)+1,a),{})};break;
     }
     case 'page':{
-      const d=scope.extend({page_id:key}).parse(args),{page,asset,reference}=service.pageData(d.project_id,d.report_id,d.page_id),assetPath=await verifiedSource(asset.asset_id);
+      const d=scope.extend({page_id:key}).parse(args),{page,asset,reference}=service.pageData(d.project_id,d.report_id,d.page_id);
       if(reference){
         const path=await verifiedSource(reference.asset_id);
         value={page,display_page:reference,source:{kind:'pdf',origin:'reference_pdf',path,renderer:'Imported reference PDF',warnings:[]},display_page_number:reference.page};
       }else if(page.preview){
         const previewPath=await verifiedSource(page.preview.asset_id);
         value={page,display_page:{...page,width:page.preview.width,height:page.preview.height,source_transform:page.preview.source_transform},source:{kind:'pdf',origin:'pptx_converted',path:previewPath,renderer:page.preview.renderer,warnings:page.preview.warnings}};
-      }else value={page,display_page:page,source:{kind:asset.format,path:assetPath,origin:'original'}};break;
+      }else value={page,display_page:page,source:{kind:asset.format,path:await verifiedSource(asset.asset_id),origin:'original'}};break;
     }
     case 'export':{const d=scope.extend({folder:z.string().min(1)}).parse(args);value=await service.export(d.project_id,d.report_id,resolve(d.folder));break;}
     case 'mcpConfig':{const {project_id}=z.object({project_id:key}).parse(args);service.project(project_id);value=JSON.stringify({mcpServers:{docver:{command:process.execPath,args:[join(dirname(fileURLToPath(import.meta.url)),'mcp.mjs'),'--store',root,'--project',project_id]}}},null,2);break;}

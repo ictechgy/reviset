@@ -1,4 +1,4 @@
-# 스키마와 AI 조회 계약 · 0.1.0
+# 스키마와 AI 조회 계약 · 0.2.0
 
 모델 원본은 `packages/schema/index.ts`, 도구 입력·출력은 `packages/query/index.ts`다. `npm run schemas`로 이 폴더의 draft-2020-12 JSON Schema를 재생성한다. `report.schema.json`은 전체 report, `manifest.schema.json`은 사용자 입력, `fixture_manifest.schema.json`은 합성 fixture의 seed/hash/정답 metadata다.
 
@@ -81,3 +81,5 @@ OOXML 표의 `ooxml_table/observed`와 PDF 격자에서 추정한 `pdf_grid_infe
 화면에서 인식한 `vision_table_inferred/inferred`의 행·열·병합 범위는 macOS26+의 표 구조 관측이다. OOXML 원본 셀과 PDF 선 격자 추정과 구별한다. 일반 OCR은 macOS14+ native helper이며 앞선 "OCR 미실행" 기록을 대체한다. `Page.preview`는 파생 PPTX PDF의 hash·페이지·renderer/font 환경·경고를 고정한다.
 
 관측 취소선은 여전히 화면에서 읽을 수 있으므로 `visible_text`에 포함하고 `text_struck_through`로 표시 변경을 표현한다. 숨김 OC paint나 글자 clipping 모드는 확정 가림으로 쓰지 않는다. 보이는 내용이 같더라도 억제된 원문층이 바뀌면 `raw_text_changed_in_suppressed_layer` 관측 공백을 기록한다.
+
+신규 report/change와 조회 envelope는 0.2.0을 생산한다. 기존 0.1.0 snapshot은 읽기/내보내기에서 원래 버전을 보존하며, range 재계산은 지원되는 archived engine에만 허용한다. 새 Change enum/provenance를 해석하는 소비자는 schema_version과 schema_hash를 함께 확인한다. text_scope=region의 값은 원문 관측일 수 있지만 region_pairing_assessment=inferred는 영역 대응 자체가 추정임을 명시한다.

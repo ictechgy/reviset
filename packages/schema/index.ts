@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 
-export const SCHEMA_VERSION = '0.1.0';
-export const ENGINE_VERSION = '0.2.0-native.ocr-render.2';
+export const SCHEMA_VERSION = '0.2.0';
+const StoredSchemaVersion=z.enum(['0.1.0','0.2.0']);
+export const ENGINE_VERSION = '0.2.0-native.ocr-render.3';
 export const MAX_INPUT_BYTES=512*1024*1024;
 export const MAX_PPTX_EXPANDED_BYTES=512*1024*1024;
 export const MAX_PPTX_PART_BYTES=64*1024*1024;
@@ -49,17 +50,17 @@ export const Match = z.object({ from_page_id: z.string(), to_page_id: z.string()
   status: z.enum(['inferred','human_confirmed','needs_review']), reasons: z.array(z.string()) });
 export const Decision = z.object({ from_page_id: z.string(), to_page_id: z.string(), action: z.enum(['link','unlink']), reason: z.string().min(1) });
 export type MappingDecision = z.infer<typeof Decision>;
-export const Change = z.object({ schema_version: z.literal(SCHEMA_VERSION), report_id: z.string(), change_id: z.string(), entity_id: z.string(),
+export const Change = z.object({ schema_version: StoredSchemaVersion, report_id: z.string(), change_id: z.string(), entity_id: z.string(),
   from_revision: z.string(), to_revision: z.string(), from_occurrence: z.string(), to_occurrence: z.string(),
   kind: z.enum(['page_added','page_deleted','page_moved','text_modified','text_struck_through','text_occluded','text_revealed','visual_region_changed','coverage_gap']),
-  before: z.string().nullable(), after: z.string().nullable(), appearance_assessment:z.enum(['observed','inferred']).optional(),text_assessment:z.enum(['observed','inferred']).optional(),text_scope:z.enum(['page','region']).optional(), evidence: z.array(Evidence),
+  before: z.string().nullable(), after: z.string().nullable(), appearance_assessment:z.enum(['observed','inferred']).optional(),text_assessment:z.enum(['observed','inferred']).optional(),text_scope:z.enum(['page','region']).optional(),region_pairing_assessment:z.literal('inferred').optional(), evidence: z.array(Evidence),
   lineage: z.object({ status: z.enum(['inferred','human_confirmed','needs_review']), score: z.number(), reasons: z.array(z.string()) }),
   coverage_gaps: z.array(Gap), evidence_uri: z.string() });
 export const Lineage = z.object({ entity_id: z.string(), page_ids: z.array(z.string()), status: z.enum(['inferred','needs_review','human_confirmed']) });
-export const Report = z.object({ schema_version: z.literal(SCHEMA_VERSION), engine_version: z.string(), report_id: z.string(), project_id: z.string(),
+export const Report = z.object({ schema_version: StoredSchemaVersion, engine_version: z.string(), report_id: z.string(), project_id: z.string(),
   timeline_revision_id: z.string(), mapping_revision_id: z.string(), schema_hash: z.string(), observation_environment: z.record(z.string(), z.string()),
   revisions: z.array(Revision), matches: z.array(Match), candidates: z.array(Match), mapping_decisions: z.array(Decision),
-  lineages: z.array(Lineage), changes: z.array(Change), coverage_gaps: z.array(Gap) });
+  lineages: z.array(Lineage), changes: z.array(Change), coverage_gaps: z.array(Gap) }).refine(r=>r.changes.every(c=>c.schema_version===r.schema_version),'Change schema version differs from report');
 export const SCHEMA_HASH=hash(z.toJSONSchema(Report));
 export type ReportData = z.infer<typeof Report>;
 export type PageData = z.infer<typeof Page>;

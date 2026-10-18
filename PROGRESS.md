@@ -1,6 +1,13 @@
+# 두 번째 재리뷰 수정 · 2026-10-19
+
+- c72d372도 REQUEST CHANGES/BLOCK이었다. full-page OCR many-to-one 대응, 같은 숫자 위치 교환의 observed 승격, 동일 textless PPTX 재가져오기의 거짓 add/delete를 추가 수정했다. 이전 판정을 현재 승인으로 사용하지 않는다.
+- 같은 source asset/page identity를 우선하며, 전체 OCR도 일대일 대응을 요구한다. 불확실한 image OCR은 삭제로 만들지 않고 읽을 수 있는 raw source 영역은 별도 비교한다. 영역 값의 출처와 영역 대응 추정을 분리한다.
+- Cross-format 렌더러 차이는 페이지 지문/충실도 공백으로 남기며 모든 페이지를 화면 변경으로 만들지 않는다. 원문/추정 enum 확장에 맞춰 새 schema0.2.0을 생산하고 old0.1 snapshot 읽기·내보내기를 보존한다.
+- c72d372 실제 앱600쪽 cold OCR은 약180초/최대RSS약865MB에서 숫자 변경1건을 찾았다. 최종 bundle은 재검증한다.
+
 # OCR/렌더 리뷰 수정 · 2026-10-19
 
-- 현재 엔진은 `0.2.0-native.ocr-render.2`이다. 검증 중 생성한 미출시 `.ocr-render.1` 보고서는 저장된 history/export를 읽을 수 있지만 range 재계산은 unknown-engine 오류로 보류한다. 0.1 출시 엔진은 보존된 kernel로 계속 재계산한다.
+- 현재 엔진은 `0.2.0-native.ocr-render.3`이다. 검증 중 생성한 미출시 `.ocr-render.1/.2` 보고서는 저장된 history/export를 읽을 수 있지만 range 재계산은 unknown-engine 오류로 보류한다. 0.1 출시 엔진은 보존된 kernel로 계속 재계산한다.
 - full-diff 독립 리뷰가 재현한 겹친 숫자 행 오연결, OCR 취소선 근거의 observed 승격, SVG의 외부 로컬 파일 읽기를 수정하고 재현 회귀 테스트를 추가했다. 이전50ef32f 판정은 REQUEST CHANGES/BLOCK이며 현재 수정본 승인으로 사용하지 않는다.
 - Claude/Agy의 새 코드 리뷰도 REQUEST CHANGES였다. 파생 PPTX 화면이 OOXML 변경을 누르지 않도록 source/derived 근거를 분리하고, 파일 read/exec 제한, 정확한 공간·숫자 토큰 경고, xref 범위 메타데이터 정규화, 실패 batch 보존, 환경 확인 실패 시 OCR 보류, cold-cache 중복 렌더 생략, streaming timeline hash와 source-buffer 수명 축소, 선형 page-index projection을 보완했다. Grok 코드 리뷰는 timeout으로 무효이며 승인으로 집계하지 않는다.
 -50ef32f 실제 앱 기준 스캔300쪽×2가 약197초/최대RSS약862MB로 통과했지만, 수정된 최종 번들은 다시 검증한다. 이는 해당 합성 자료/현재 장비 측정이며512MiB 입력 성능 보증이 아니다.

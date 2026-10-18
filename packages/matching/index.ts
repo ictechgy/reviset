@@ -9,8 +9,9 @@ function dice(x:Set<string>,y:Set<string>):number {
   return 2*intersection/(x.size+y.size);
 }
 export const matchingText=(p:PageData)=>p.comparison_basis==='raster_ocr'?p.elements.filter(e=>e.method==='vision_ocr').map(e=>e.text).join('\n'):p.text+(p.ocr?.mode==='supplement'?'\n'+p.ocr_text:'');
+const sameOriginalPage=(a:PageData,b:PageData)=>a.asset_id===b.asset_id&&a.page===b.page;
 const sameSourceRaster=(a:PageData,b:PageData)=>!a.preview&&!b.preview&&!!a.raster?.sha256&&a.raster.sha256===b.raster?.sha256;
-export function similarity(a:PageData,b:PageData):number{return sameSourceRaster(a,b)?1:dice(grams(matchingText(a)),grams(matchingText(b)));}
+export function similarity(a:PageData,b:PageData):number{return sameOriginalPage(a,b)||sameSourceRaster(a,b)?1:dice(grams(matchingText(a)),grams(matchingText(b)));}
 // Rectangular maximum-weight assignment with private dummy columns for unmatched rows.
 function assignment(weights:number[][]):number[] {
   if(!weights.length) return [];
@@ -45,16 +46,17 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
   const left=from.filter(p=>!links.some(d=>d.from_page_id===p.page_id));
   const right=to.filter(p=>!links.some(d=>d.to_page_id===p.page_id));
   const leftGrams=left.map(p=>grams(matchingText(p))),rightGrams=right.map(p=>grams(matchingText(p)));
-  const weights=left.map((a,i)=>right.map((b,j)=>blocked.has(a.page_id+'|'+b.page_id)?0:sameSourceRaster(a,b)?1:dice(leftGrams[i],rightGrams[j])));
+  const weights=left.map((a,i)=>right.map((b,j)=>blocked.has(a.page_id+'|'+b.page_id)?0:sameOriginalPage(a,b)||sameSourceRaster(a,b)?1:dice(leftGrams[i],rightGrams[j])));
   const candidates:MatchData[]=[],matches:MatchData[]=links.map(d=>({from_page_id:d.from_page_id,to_page_id:d.to_page_id,score:1,status:'human_confirmed',reasons:[d.reason]}));
   const topRow=weights.map(row=>row.map((score,j)=>({score,j})).sort((a,b)=>b.score-a.score||a.j-b.j));
   const topCol=right.map((_,j)=>weights.map((row,i)=>({score:row[j],i})).sort((a,b)=>b.score-a.score||a.i-b.i));
   function candidate(i:number,j:number):MatchData {
     const score=weights[i][j];
     const competingRow=topRow[i].find(v=>v.j!==j)?.score??0,competingCol=topCol[j].find(v=>v.i!==i)?.score??0;
+    const original=sameOriginalPage(left[i],right[j]),uniqueOriginal=original&&left.filter(p=>sameOriginalPage(p,right[j])).length===1&&right.filter(p=>sameOriginalPage(left[i],p)).length===1;
     const raster=left[i].raster?.sha256,exact=sameSourceRaster(left[i],right[j]),uniqueRaster=exact&&left.filter(p=>p.raster?.sha256===raster).length===1&&right.filter(p=>p.raster?.sha256===raster).length===1;
-    const ambiguous=!uniqueRaster&&(competingRow>=score-0.06||competingCol>=score-0.06);
-    return {from_page_id:left[i].page_id,to_page_id:right[j].page_id,score,status:ambiguous?'needs_review':'inferred',reasons:[exact?'exact_native_raster':'normalized_text_bigrams',...(ambiguous?['competing_duplicate_or_split_merge_candidate']:[]),...(topRow[i].filter(v=>v.score>=0.4).length>8||topCol[j].filter(v=>v.score>=0.4).length>8?['candidate_pool_limited_to_top_8_per_direction']:[])]};
+    const ambiguous=!uniqueOriginal&&!uniqueRaster&&(competingRow>=score-0.06||competingCol>=score-0.06);
+    return {from_page_id:left[i].page_id,to_page_id:right[j].page_id,score,status:ambiguous?'needs_review':'inferred',reasons:[original?'exact_source_page':exact?'exact_native_raster':'normalized_text_bigrams',...(ambiguous?['competing_duplicate_or_split_merge_candidate']:[]),...(topRow[i].filter(v=>v.score>=0.4).length>8||topCol[j].filter(v=>v.score>=0.4).length>8?['candidate_pool_limited_to_top_8_per_direction']:[])]};
   }
   // Retain both directions: absence from this bounded array must still mean no plausible edge.
   const retained=new Set<string>();

@@ -51,7 +51,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
         const path=resolve(baseDir,file);
         try {
           let observation=cache.get(path);
-          if(!observation){const loaded=await ingest(path,{ocr:options.ocr??'auto',cacheRoot:join(store.root,'cache'),signal,onPage:(current,total)=>onProgress?.({analysis_run_id:run,phase:'extract',current:index,total:manifest.revisions.length,label:entry.label+` · PDF ${current}/${total}`})});
+          if(!observation){const loaded=await ingest(path,{ocr:options.ocr??'auto',reuseRasterOcr:revisions.some(r=>r.pages.some(p=>p.ocr?.status==='available')),cacheRoot:join(store.root,'cache'),signal,onPage:(current,total)=>onProgress?.({analysis_run_id:run,phase:'extract',current:index,total:manifest.revisions.length,label:entry.label+` · PDF ${current}/${total}`})});
             if(loaded.asset.format==='pptx'&&options.pptxPreview!==false){
               try{const pdf=await preparePptxPreview(path,loaded.bytes,loaded.pages,join(store.root,'cache'),signal);if(pdf)store.putAsset('sha256:'+byteHash(pdf),pdf);}
               catch(e){if(signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;for(const p of loaded.pages){p.preview=undefined;p.raster=undefined;p.capabilities.preview='unavailable';p.coverage_gaps=p.coverage_gaps.filter(g=>g.feature!=='render_fidelity');p.coverage_gaps.push({feature:'preview',reason:e instanceof DocverError?e.code:'CONVERSION_FAILED'});}}

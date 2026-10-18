@@ -14,9 +14,10 @@ import { recognizePdf,captureNativePages } from '../../packages/ingest/ocr.js';
 import { convertPptx,validateRenderPackage,normalizeConvertedPdf,rendererSandbox } from '../../packages/render/index.js';
 import { preparePptxPreview,missingRenderedText } from '../../packages/render/pptx-preview.js';
 import { officeExecutable,visionExecutable,visionInfo,runTool } from '../../packages/runtime/tools.js';
-import { byteHash,id,normalize,comparisonText,SCHEMA_VERSION,SCHEMA_HASH,ENGINE_VERSION,type PageData,type RevisionData,type ReportData } from '../../packages/schema/index.js';
+import { byteHash,id,normalize,comparisonText,SCHEMA_VERSION,SCHEMA_HASH,Report,ENGINE_VERSION,type PageData,type RevisionData,type ReportData } from '../../packages/schema/index.js';
 import { matchPages } from '../../packages/matching/index.js';
 import { diffRevisions } from '../../packages/diff/index.js';
+import { exportReport } from '../../packages/export/index.js';
 import { DesktopService } from '../../packages/desktop/service.js';
 import { Store } from '../../packages/storage/index.js';
 import { QueryService,type QueryResult } from '../../packages/query/index.js';
@@ -134,9 +135,11 @@ test('OOXML entity decoding preserves literal character references and actual Un
 test('historical range queries retain their engine instead of silently adopting new regional inference',async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-legacy-range-')),store=new Store(folder);
   try{const make=(value:string)=>pdf(d=>{d.fontSize(24).text('Revenue '+value,50,70,{lineBreak:false});d.addContent('2 Tr');d.text('Uncertain body',50,180,{lineBreak:false});}),a=(await extractPdf(await make('100'),'sha256:legacy-a'))[0],b=(await extractPdf(await make('120'),'sha256:legacy-b'))[0];
-    let snapshot:ReportData={schema_version:SCHEMA_VERSION,engine_version:'0.1.0-native.1',report_id:'rpt_legacy',project_id:'prj_legacy',timeline_revision_id:'timeline_test',mapping_revision_id:'mapping_test',schema_hash:SCHEMA_HASH,observation_environment:{fixture:'historical-contract'},revisions:[rev(a,'v1'),rev(b,'v2')],matches:[{from_page_id:a.page_id,to_page_id:b.page_id,score:1,status:'inferred',reasons:['fixture']}],candidates:[],mapping_decisions:[],lineages:[{entity_id:'entity',page_ids:[a.page_id,b.page_id],status:'inferred'}],changes:[],coverage_gaps:[]};
+    let snapshot:ReportData={schema_version:'0.1.0',engine_version:'0.1.0-native.1',report_id:'rpt_legacy',project_id:'prj_legacy',timeline_revision_id:'timeline_test',mapping_revision_id:'mapping_test',schema_hash:SCHEMA_HASH,observation_environment:{fixture:'historical-contract'},revisions:[rev(a,'v1'),rev(b,'v2')],matches:[{from_page_id:a.page_id,to_page_id:b.page_id,score:1,status:'inferred',reasons:['fixture']}],candidates:[],mapping_decisions:[],lineages:[{entity_id:'entity',page_ids:[a.page_id,b.page_id],status:'inferred'}],changes:[],coverage_gaps:[]};
+    assert.ok(Report.safeParse(snapshot).success);const run=store.beginRun(snapshot.project_id,'Legacy');store.finishRun(run,snapshot);const frozen=store.db.prepare('SELECT body FROM reports WHERE id=?').get(snapshot.report_id)?.body,stored=new QueryService(store,new Set([snapshot.project_id]));
+    const info=stored.query('get_report',{project_id:snapshot.project_id,report_id:snapshot.report_id});assert.equal(info.schema_version,SCHEMA_VERSION);assert.equal(info.items[0].schema_version,'0.1.0');await exportReport(stored,snapshot.project_id,snapshot.report_id,join(folder,'legacy-export'));assert.equal(JSON.parse(await readFile(join(folder,'legacy-export/report.json'),'utf8')).schema_version,'0.1.0');assert.equal(JSON.parse(await readFile(join(folder,'legacy-export/manifest.json'),'utf8')).schema_version,'0.1.0');assert.equal(store.db.prepare('SELECT body FROM reports WHERE id=?').get(snapshot.report_id)?.body,frozen);
     const q=new QueryService(store,new Set(['prj_legacy']),()=>snapshot),args={project_id:'prj_legacy',report_id:'rpt_legacy',mode:'range_net',from:'v1',to:'v2'};
-    assert.equal(q.changeSet(args).filter(c=>c.kind==='text_modified').length,0);snapshot={...snapshot,engine_version:ENGINE_VERSION};assert.equal(q.changeSet(args).filter(c=>c.kind==='text_modified'&&c.text_scope==='region').length,1);
+    assert.ok(q.changeSet(args).every(c=>c.schema_version==='0.1.0'));assert.equal(q.changeSet(args).filter(c=>c.kind==='text_modified').length,0);snapshot={...snapshot,schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION};assert.equal(q.changeSet(args).filter(c=>c.kind==='text_modified'&&c.text_scope==='region').length,1);
     snapshot={...snapshot,engine_version:'unknown historical engine'};assert.throws(()=>q.changeSet(args),{code:'ENGINE_VERSION_UNAVAILABLE'});assert.deepEqual(q.changeSet({...args,mode:'history'}),[]);
   }finally{store.close();await rm(folder,{recursive:true,force:true});}
 });
@@ -246,11 +249,48 @@ test('native batch failure preserves completed pages and unverified environments
   const folder=await mkdtemp(join(tmpdir(),'docver-native-fault-'));try{
     const helper=join(folder,'fake-vision.mjs'),module=new URL('../../packages/ingest/ocr.ts',import.meta.url).href;
     const result={version:'fault-fixture',revision:3,languages:['ko-KR','en-US'],language_correction:false,ocr_performed:false,renderer:'fixture',verification:'fixture',viewport_width:960,viewport_height:540,rotation:0,width:960,height:540,render_sha256:'a'.repeat(64),lines:[]};
-    await writeFile(helper,`#!${process.execPath}\nif(process.argv.includes('--info')){console.log(JSON.stringify({version:'fixture',os:'fixture',font_inventory_sha256:'fixture'}));}else{let s='';for await(const d of process.stdin)s+=d;const q=JSON.parse(s);if(q.pages[0]>16)console.log('broken batch');else console.log(JSON.stringify({pages:q.pages.map(page=>({page,result:${JSON.stringify(result)}}))}));}`,{mode:0o755});
+    await writeFile(helper,`#!${process.execPath}\nif(process.argv.includes('--info')){console.log(JSON.stringify({version:'fixture',os:'fixture',revision:3,languages:['ko-KR','en-US'],language_correction:false,font_inventory_sha256:'a'.repeat(64),font_families:[]}));}else{let s='';for await(const d of process.stdin)s+=d;const q=JSON.parse(s);if(q.pages[0]>16)console.log('broken batch');else console.log(JSON.stringify({pages:q.pages.map(page=>({page,result:${JSON.stringify(result)}}))}));}`,{mode:0o755});
     const child=`import {captureNativePages} from ${JSON.stringify(module)};const r=await captureNativePages(new Uint8Array(),Array.from({length:20},(_,i)=>i+1),[]);console.log(JSON.stringify([...r.keys()]));`;
     const output=execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',child],{encoding:'utf8',env:{...process.env,DOCVER_VISION:helper},timeout:15000});assert.deepEqual(JSON.parse(output),Array.from({length:16},(_,i)=>i+1));
     await writeFile(helper,`#!${process.execPath}\nprocess.exit(7);`,{mode:0o755});
     const unavailable=`import {recognizePdf} from ${JSON.stringify(module)};try{await recognizePdf(new Uint8Array(),1);throw Error('OCR executed');}catch(e){if(e.code!=='OCR_UNAVAILABLE')throw e;console.log(e.code);}`;
     assert.equal(execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',unavailable],{encoding:'utf8',env:{...process.env,DOCVER_VISION:helper},timeout:15000}).trim(),'OCR_UNAVAILABLE');
   }finally{await rm(folder,{recursive:true,force:true});}
+});
+
+
+test('merged OCR boxes cannot reuse one observation to certify multiple numeric regions',()=>{
+  const make=(key:string,rows:[string,number,number][]):PageData=>({page_id:key,asset_id:key,page:1,width:960,height:540,coordinate_system:'normalized',source_transform:[],hidden:false,text:'',comparison_basis:'raster_ocr',ocr_text:rows.map(r=>r[0]).join('\n'),elements:rows.map(([text,y,h],i)=>({observation_id:key+i,kind:'text',text,normalized_text:text,bbox:[.1,y,.3,h],reading_order:i,availability:'available',method:'vision_ocr',source_ref:key+i,provenance:'inferred',visibility:'visible'})),notes:null,capabilities:{text:'available',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},coverage_gaps:[]});
+  const a=make('a',[['Revenue 100',.1,.08],['Revenue 120',.16,.08]]),b=make('b',[['Revenue 120',.1,.14]]);
+  for(const [left,right]of [[a,b],[b,a]]){const delta=changes(left,right);assert.equal(delta.filter(c=>c.kind==='text_modified').length,0);assert.ok(delta.some(c=>c.coverage_gaps.some(g=>g.reason==='ocr_region_missing_or_numeric_ambiguity_withheld')));}
+});
+
+
+test('scanned numeric position swaps stay inferred with affected-region evidence',native,async()=>{
+  const make=(swapped:boolean)=>pdf(d=>{const c=createCanvas(1920,1080),ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1920,1080);ctx.font='48px Arial';ctx.fillStyle='black';ctx.fillText('Contract review',120,140);ctx.fillText('Revenue '+(swapped?'120':'100'),120,300);ctx.fillText('Revenue '+(swapped?'100':'120'),120,500);d.image(c.toBuffer('image/png'),0,0,{width:960,height:540});});
+  const a=(await extractPdf(await make(false),'sha256:swap-a',{ocr:'auto'}))[0],b=(await extractPdf(await make(true),'sha256:swap-b',{ocr:'auto'}))[0],delta=changes(a,b).find(c=>c.kind==='text_modified');
+  assert.ok(delta);assert.equal(delta.text_assessment,'inferred');assert.ok(delta.coverage_gaps.some(g=>g.reason==='ocr_inferred_text_requires_source_review'));assert.ok(delta.evidence.every(e=>e.provenance==='inferred'&&e.method==='vision_ocr'));assert.deepEqual(delta.evidence.map(e=>e.quote),['Revenue 100','Revenue 120','Revenue 120','Revenue 100']);
+});
+
+test('immutable textless PPTX page identity survives re-import and unknown nontext correspondence is a gap',office,async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-nontext-')),service=new DesktopService(join(folder,'library'));try{
+    const Pptx=(pptxgen as any).default??pptxgen,p=new Pptx();p.layout='LAYOUT_WIDE';p.addSlide().addShape('rect',{x:1,y:1,w:2,h:2,fill:{color:'FF0000'},line:{color:'FF0000'}});const file=join(folder,'same.pptx');await writeFile(file,await p.write({outputType:'nodebuffer'}) as Buffer);
+    const project=await service.create('Same shape twice',[{label:'a',files:[file]},{label:'b',files:[file]}]),report=(await service.run(project.project_id)).report;
+    assert.equal(report.matches.length,1);assert.ok(report.matches[0].reasons.includes('exact_source_page'));assert.equal(report.changes.filter(c=>c.kind==='page_added'||c.kind==='page_deleted').length,0);
+    const a=report.revisions[0].pages[0],b={...report.revisions[1].pages[0],asset_id:'different-source',raster:undefined};const paired=matchPages([a],[b]);assert.equal(paired.matches.length,0);const delta=diffRevisions(rev(a,'v1'),rev(b,'v2'),[],[],()=> 'entity');assert.equal(delta.filter(c=>c.kind==='page_added'||c.kind==='page_deleted').length,0);assert.ok(delta.every(c=>c.coverage_gaps.some(g=>g.reason==='nontext_page_lineage_unresolved')));
+  }finally{service.close();await rm(folder,{recursive:true,force:true});}
+});
+
+test('uncertain image OCR cannot become a deletion while readable source text remains comparable',()=>{
+  const page=(key:string,title:string,uncertain=false):PageData=>({page_id:key,asset_id:key,page:1,width:960,height:540,coordinate_system:'normalized',source_transform:[],hidden:false,text:title,visible_text:title+(uncertain?'':'\nTotal 100'),ocr_text:uncertain?'':'Total 100',ocr_unresolved_text:uncertain?'Total 100':'',elements:[{observation_id:key+'raw',kind:'text',text:title,normalized_text:title,bbox:[.1,.1,.6,.08],reading_order:0,availability:'available',method:'pdf_text',source_ref:'header',provenance:'observed',visibility:'visible'},{observation_id:key+'ocr',kind:'text',text:'Total 100',normalized_text:'Total 100',bbox:[.1,.4,.3,.08],reading_order:1,availability:'available',method:'vision_ocr',source_ref:'image',provenance:'inferred',visibility:uncertain?'uncertain':'visible'}],notes:null,capabilities:{text:'available',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},coverage_gaps:[]});
+  const delta=changes(page('a','Contract review header Alpha'),page('b','Contract review header Beta',true)),text=delta.filter(c=>c.kind==='text_modified');assert.equal(text.length,1);assert.equal(text[0].text_scope,'region');assert.equal(text[0].text_assessment,'observed');assert.equal(text[0].before,'Contract review header Alpha');assert.equal(text[0].after,'Contract review header Beta');assert.ok(delta.some(c=>c.coverage_gaps.some(g=>g.reason==='ocr_region_missing_or_numeric_ambiguity_withheld')));
+});
+
+
+test('cross-format producer differences retain raster evidence without one visual-change event per page',office,async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-cross-render-')),service=new DesktopService(join(folder,'library'));try{
+    const Pptx=(pptxgen as any).default??pptxgen,p=new Pptx();p.layout='LAYOUT_WIDE';p.addSlide().addText('Revenue 100',{x:1,y:1,w:4,h:1,fontSize:24,fontFace:'Arial'});const source=join(folder,'source.pptx'),reference=join(folder,'reference.pdf');await writeFile(source,await p.write({outputType:'nodebuffer'}) as Buffer);await writeFile(reference,await pdf(d=>d.fontSize(24).text('Revenue 100',80,140,{lineBreak:false})));
+    const project=await service.create('Cross format',[{label:'pptx',files:[source]},{label:'pdf',files:[reference]}]),report=(await service.run(project.project_id)).report;
+    assert.equal(report.matches.length,1);assert.notEqual(report.revisions[0].pages[0].raster?.sha256,report.revisions[1].pages[0].raster?.sha256);assert.equal(report.changes.filter(c=>c.kind==='visual_region_changed').length,0);assert.ok(report.revisions[0].pages[0].coverage_gaps.some(g=>g.feature==='render_fidelity'));assert.equal(report.changes.filter(c=>c.kind==='text_modified').length,0);
+  }finally{service.close();await rm(folder,{recursive:true,force:true});}
 });

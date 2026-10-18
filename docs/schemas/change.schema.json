@@ -4,7 +4,10 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "0.1.0"
+      "enum": [
+        "0.1.0",
+        "0.2.0"
+      ]
     },
     "report_id": {
       "type": "string"
@@ -73,6 +76,10 @@
         "page",
         "region"
       ]
+    },
+    "region_pairing_assessment": {
+      "type": "string",
+      "const": "inferred"
     },
     "evidence": {
       "type": "array",

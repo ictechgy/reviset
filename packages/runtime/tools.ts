@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -35,9 +36,10 @@ export function visionExecutable():string|undefined {
 export function officeExecutable():string|undefined {
   return [process.env.DOCVER_SOFFICE,join(dirname(process.execPath),'LibreOffice.app/Contents/MacOS/soffice'),join(repository,'dist/tools/LibreOffice.app/Contents/MacOS/soffice'),'/Applications/LibreOffice.app/Contents/MacOS/soffice'].find(p=>p&&existsSync(p));
 }
+const HelperInfo=z.object({version:z.string().min(1),os:z.string().min(1),revision:z.literal(3),languages:z.array(z.string()).refine(l=>l.includes('ko-KR')&&l.includes('en-US')),language_correction:z.literal(false),font_inventory_sha256:z.string().regex(/^[a-f0-9]{64}$/),font_families:z.array(z.string())}).passthrough();
 let infoPromise:Promise<Record<string,any>|undefined>|undefined;
 export function visionInfo():Promise<Record<string,any>|undefined>{
-  if(!infoPromise){const pending=(async()=>{const executable=visionExecutable();if(!executable)return undefined;try{return {...JSON.parse(await runTool(executable,['--info'],{timeout:30_000})),binary_sha256:byteHash(await readFile(executable))};}catch(e){if(e instanceof DocverError&&e.code==='CANCELLED')throw e;return undefined;}})();infoPromise=pending;
+  if(!infoPromise){const pending=(async()=>{const executable=visionExecutable();if(!executable)return undefined;try{return {...HelperInfo.parse(JSON.parse(await runTool(executable,['--info'],{timeout:30_000}))),binary_sha256:byteHash(await readFile(executable))};}catch(e){if(e instanceof DocverError&&e.code==='CANCELLED')throw e;return undefined;}})();infoPromise=pending;
     pending.then(value=>{if(!value&&infoPromise===pending)infoPromise=undefined;},()=>{if(infoPromise===pending)infoPromise=undefined;});}
   return infoPromise;
 }

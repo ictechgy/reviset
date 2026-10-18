@@ -3,9 +3,11 @@ function regionElements(p:PageData):ElementData[]{return p.elements.filter(e=>p.
 function comparisonElements(p:PageData):ElementData[]{return regionElements(p).filter(e=>p.comparison_basis==='raster_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));}
 function regionOverlap(a:ElementData,b:ElementData):number{const x=a.bbox,y=b.bbox;return Math.max(0,Math.min(x[0]+x[2],y[0]+y[2])-Math.max(x[0],y[0]))*Math.max(0,Math.min(x[1]+x[3],y[1]+y[3])-Math.max(x[1],y[1]))/Math.max(0.000001,Math.max(x[2]*x[3],y[2]*y[3]));}
 function ocrRegionsPaired(a:PageData,b:PageData):boolean{
-  const left=comparisonElements(a),right=comparisonElements(b),numbers=(s:string)=>(s.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length;
+  const all=(p:PageData)=>regionElements(p).filter(e=>e.method==='vision_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));
+  const left=all(a),right=all(b),numbers=(s:string)=>(s.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length;
   const overlap=(a:ElementData,b:ElementData)=>{const x=a.bbox,y=b.bbox;return Math.max(0,Math.min(x[0]+x[2],y[0]+y[2])-Math.max(x[0],y[0]))*Math.max(0,Math.min(x[1]+x[3],y[1]+y[3])-Math.max(x[1],y[1]))/Math.max(0.000001,Math.min(x[2]*x[3],y[2]*y[3]));};
-  const paired=(from:ElementData[],to:ElementData[])=>from.filter(e=>e.method==='vision_ocr').every(e=>to.some(f=>overlap(e,f)>0.4&&numbers(e.text)===numbers(f.text)));
+  const compatible=(e:ElementData,f:ElementData)=>(e.method!=='vision_ocr'||e.visibility==='visible')&&(f.method!=='vision_ocr'||f.visibility==='visible')&&overlap(e,f)>0.4&&numbers(e.text)===numbers(f.text);
+  const paired=(from:ElementData[],to:ElementData[])=>from.filter(e=>e.method==='vision_ocr').every(e=>{const neighbors=to.filter(f=>compatible(e,f));return neighbors.length===1&&from.filter(old=>compatible(old,neighbors[0])).length===1;});
   return paired(left,right)&&paired(right,left);
 }
 export function evidence(revision:RevisionData,page:PageData,focusText=false,focusElement?:ElementData):ChangeData['evidence'][number] {
@@ -43,20 +45,19 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     const regionsPaired=ocrRegionsPaired(a,b);
     if(textDiffers&&!regionsPaired)add('coverage_gap',a,b,m,'ocr_region_missing_or_numeric_ambiguity_withheld');
     if(!sameRaster&&regionsPaired&&!unresolvedComparisonText(a)&&!unresolvedComparisonText(b)&&a.capabilities.text==='available'&&b.capabilities.text==='available'&&textDiffers) {
-      const leftChanged=comparisonElements(a).filter(e=>!comparisonElements(b).some(f=>normalize(f.text)===normalize(e.text))),rightChanged=comparisonElements(b).filter(e=>!comparisonElements(a).some(f=>normalize(f.text)===normalize(e.text)));
-      const ocr=leftChanged.concat(rightChanged).some(e=>e.provenance==='inferred');
+      const changed=(old:ElementData[],next:ElementData[])=>{const byText=new Map<string,ElementData[]>();for(const e of next){const key=normalize(e.text);byText.set(key,[...(byText.get(key)??[]),e]);}return old.filter(e=>!(byText.get(normalize(e.text))??[]).some(f=>regionOverlap(e,f)>0.6));};
+      const left=comparisonElements(a),right=comparisonElements(b),before=changed(left,right),after=changed(right,left);
+      const ocr=a.comparison_basis==='raster_ocr'||b.comparison_basis==='raster_ocr'||before.concat(after).some(e=>e.provenance==='inferred')||(!before.length&&!after.length&&left.concat(right).some(e=>e.method==='vision_ocr'));
       add('text_modified',a,b,m,ocr?'ocr_inferred_text_requires_source_review':a.elements.concat(b.elements).some(e=>e.visibility==='occluded')?'visible_text_after_inferred_opaque_cover':undefined);
       changes.at(-1)!.text_assessment=ocr?'inferred':'observed';
-      const change=changes.at(-1)!,left=comparisonElements(a),right=comparisonElements(b);
-      const changed=(old:ElementData[],next:ElementData[])=>old.filter(e=>!next.some(f=>normalize(f.text)===normalize(e.text)));
-      const before=changed(left,right),after=changed(right,left);
+      const change=changes.at(-1)!;
       change.evidence=[...(before.length?before.slice(0,32).map(e=>evidence(from,a,false,e)):[evidence(from,a)]),...(after.length?after.slice(0,32).map(e=>evidence(to,b,false,e)):[evidence(to,b)])];
       if(before.length>32||after.length>32)change.coverage_gaps.push({feature:'evidence',reason:'additional_changed_regions_available_via_page_elements'});
     }
     if(samePixels&&!sameRaster&&textDiffers)add('coverage_gap',a,b,m,'ooxml_source_changed_while_libreoffice_appearance_unchanged');
     const sourcePdfAppearance=formatA==='pdf'&&formatB==='pdf';
     if(textDiffers&&!sameRaster&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){
-      const left=regionElements(a),right=regionElements(b),pattern=(s:string)=>normalize(s).replace(/[+−-]?\s*[0-9]+(?:[.,][0-9]+)*/g,'#');
+      const left=regionElements(a),right=regionElements(b),leftText=new Set(left.map(e=>normalize(e.text))),rightText=new Set(right.map(e=>normalize(e.text))),pattern=(s:string)=>normalize(s).replace(/[+−-]?\s*[0-9]+(?:[.,][0-9]+)*/g,'#');
       const supported=(e:ElementData)=>(e.visibility===undefined||e.visibility==='visible')&&e.bbox[2]*e.bbox[3]<0.8;
       // Pair geometry before looking at values, including unchanged and uncertain observations.
       // Repeated/overlapping rows and an unreadable counterpart cannot become a replacement.
@@ -65,13 +66,14 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
         const neighbors=right.filter(e=>regionOverlap(old,e)>0.6);if(neighbors.length!==1)continue;
         const current=neighbors[0];if(!supported(current)||left.filter(e=>regionOverlap(e,current)>0.6).length!==1)continue;
         if(right.some(e=>!supported(e)&&regionOverlap(old,e)>0.05)||left.some(e=>!supported(e)&&regionOverlap(e,current)>0.05))continue;
-        if(right.some(e=>normalize(e.text)===normalize(old.text))||left.some(e=>normalize(e.text)===normalize(current.text))||normalize(old.text)===normalize(current.text)||pattern(old.text)!==pattern(current.text)||(old.text.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length!==1||(current.text.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length!==1)continue;
-        add('text_modified',a,b,m,'other_page_regions_unresolved');const change=changes.at(-1)!;change.before=old.text;change.after=current.text;change.text_scope='region';change.text_assessment=old.provenance==='inferred'||current.provenance==='inferred'?'inferred':'observed';
+        if(rightText.has(normalize(old.text))||leftText.has(normalize(current.text))||normalize(old.text)===normalize(current.text))continue;
+        if((old.provenance==='inferred'||current.provenance==='inferred')&&(pattern(old.text)!==pattern(current.text)||(old.text.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length!==1||(current.text.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length!==1))continue;
+        add('text_modified',a,b,m,'other_page_regions_unresolved');const change=changes.at(-1)!;change.before=old.text;change.after=current.text;change.text_scope='region';change.region_pairing_assessment='inferred';change.text_assessment=old.provenance==='inferred'||current.provenance==='inferred'?'inferred':'observed';
         change.evidence=[evidence(from,a,false,old),evidence(to,b,false,current)];
         if(change.text_assessment==='inferred')change.coverage_gaps.push({feature:'ocr',reason:'ocr_inferred_text_requires_source_review'});
       }
     }
-    if(rasterA&&rasterB&&rasterA!==rasterB&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){add('visual_region_changed',a,b,m,sourcePdfAppearance?'native_raster_difference_is_not_semantic_deletion':'render_difference_may_include_renderer_substitution');const change=changes.at(-1)!;change.appearance_assessment=sourcePdfAppearance?'observed':'inferred';change.evidence=change.evidence.map((e,i)=>({...e,quote:'',method:'native_raster',provenance:(i===0?formatA:formatB)==='pdf'?'observed':'inferred',render_sha256:i===0?rasterA:rasterB}));}
+    if(formatA===formatB&&(formatA==='pdf'||a.preview?.environment===b.preview?.environment)&&rasterA&&rasterB&&rasterA!==rasterB&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){add('visual_region_changed',a,b,m,sourcePdfAppearance?'native_raster_difference_is_not_semantic_deletion':'render_difference_may_include_renderer_substitution');const change=changes.at(-1)!;change.appearance_assessment=sourcePdfAppearance?'observed':'inferred';change.evidence=change.evidence.map((e,i)=>({...e,quote:'',method:'native_raster',provenance:(i===0?formatA:formatB)==='pdf'?'observed':'inferred',render_sha256:i===0?rasterA:rasterB}));}
     if((a.suppressed_text||b.suppressed_text)&&normalize(a.text)!==normalize(b.text)&&normalize(comparisonText(a))===normalize(comparisonText(b)))add('coverage_gap',a,b,m,'raw_text_changed_in_suppressed_layer');
     for(const old of a.elements.filter(e=>e.text)){
       const same=b.elements.filter(e=>e.method===old.method&&e.normalized_text===old.normalized_text);
@@ -91,11 +93,11 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     if(gaps.length) add('coverage_gap',a,b,m,'incomparable_capabilities:'+gaps.join(','));
   }
   for(const a of from.pages.filter(p=>!paired.some(m=>m.from_page_id===p.page_id))) {
-    const reason=a.hidden&&to.assets.some(s=>s.format==='pdf')?'not_observed_in_export':comparisonIncomplete?'comparison_observation_incomplete':candidates.some(c=>c.from_page_id===a.page_id)?'unresolved_mapping':undefined;
+    const reason=a.hidden&&to.assets.some(s=>s.format==='pdf')?'not_observed_in_export':!comparisonText(a).trim()?'nontext_page_lineage_unresolved':comparisonIncomplete?'comparison_observation_incomplete':candidates.some(c=>c.from_page_id===a.page_id)?'unresolved_mapping':undefined;
     add(reason?'coverage_gap':'page_deleted',a,undefined,undefined,reason);
   }
   for(const b of to.pages.filter(p=>!paired.some(m=>m.to_page_id===p.page_id))) {
-    const reason=b.hidden&&from.assets.some(s=>s.format==='pdf')?'not_observed_in_export':comparisonIncomplete?'comparison_observation_incomplete':candidates.some(c=>c.to_page_id===b.page_id)?'unresolved_mapping':undefined;
+    const reason=b.hidden&&from.assets.some(s=>s.format==='pdf')?'not_observed_in_export':!comparisonText(b).trim()?'nontext_page_lineage_unresolved':comparisonIncomplete?'comparison_observation_incomplete':candidates.some(c=>c.to_page_id===b.page_id)?'unresolved_mapping':undefined;
     add(reason?'coverage_gap':'page_added',undefined,b,undefined,reason);
   }
   return changes;

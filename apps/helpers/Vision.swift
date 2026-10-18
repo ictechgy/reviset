@@ -148,12 +148,13 @@ import CoreText
     static func main() async {
         do {
             func one(_ input:[String:Any]) async throws->[String:Any]{
+                defer{raster=nil}
                 var result=try autoreleasepool{try process(input)}
                 if result["ocr_performed"] as? Bool == true,let image=raster{
                     if #available(macOS 26.0, *) {do{result.merge(try await structure(image)){_,new in new}}catch{result["structure_status"]="failed"}}
                     else{result["structure_status"]="unsupported_os"}
                 }
-                raster=nil;return result
+                return result
             }
             var result:[String:Any]
             if CommandLine.arguments.count==2 && CommandLine.arguments[1]=="--info"{result=try info()}
