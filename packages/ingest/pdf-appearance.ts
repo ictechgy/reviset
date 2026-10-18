@@ -2,7 +2,7 @@ import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } fr
 import { paintedGlyphs } from './pdf-glyphs.js';
 import { OPS, AnnotationType, AnnotationMode, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, normalize, type Box, type ElementData } from '../schema/index.js';
-interface Region {bbox:Box;order:number;kind:'fill'|'line'|'stroke'|'image'|'text';opaque:boolean;axisAligned:boolean;color?:string}
+interface Region {bbox:Box;order:number;kind:'fill'|'line'|'stroke'|'image'|'text';opaque:boolean;axisAligned:boolean;color?:string;line?:Region}
 const area=(b:Box)=>b[2]*b[3];
 const overlap=(a:Box,b:Box)=>Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
 const compact=(s:string)=>normalize(s).replace(/\s/gu,'');
@@ -51,9 +51,10 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
               if(last&&next){const segment=bounds([Math.min(last[0],next[0]),Math.min(last[1],next[1]),Math.max(last[0],next[0]),Math.max(last[1],next[1])]);
                 const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;
                 const footprint=box(segment.bbox[0]-pad/viewport.width,segment.bbox[1]-pad/viewport.height,segment.bbox[2]+2*pad/viewport.width,segment.bbox[3]+2*pad/viewport.height);
-                regions.push({bbox:footprint,axisAligned:segment.axisAligned,order:i,kind:2*pad>2?'image':'stroke',opaque:false});
+                const line:Region={...segment,order:i,kind:'line',opaque:!optional&&state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)};
+                regions.push({bbox:footprint,axisAligned:segment.axisAligned,order:i,kind:2*pad>2?'image':'stroke',opaque:false,line});
                 if(2*pad>2)gaps.push({feature:'pdf_visibility',reason:'thick_stroke_overlap_requires_review'});
-                else regions.push({...segment,order:i,kind:'line',opaque:!optional&&state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)});
+                else regions.push(line);
               }last=next;}
             else if(command===2){unknownStroke();cursor+=6;last=undefined;}else if(command===3){unknownStroke();cursor+=4;last=undefined;}else break;
           }
@@ -76,6 +77,10 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     for(let key=Math.floor((r.bbox[0]-0.003)*100);key<=Math.floor((r.bbox[0]+r.bbox[2]+0.003)*100)&&!connected;key++)connected=(verticalBuckets.get(key)??[]).some(v=>v.bbox[0]>=r.bbox[0]-0.003&&v.bbox[0]<=r.bbox[0]+r.bbox[2]+0.003&&lineY>=v.bbox[1]-0.003&&lineY<=v.bbox[1]+v.bbox[3]+0.003);
     connectedCache.set(r,connected);return connected;
   }
+  function strikeCandidate(r:Region,e:ElementData):boolean{
+    const mid=e.bbox[1]+e.bbox[3]*0.5,lineY=r.bbox[1]+r.bbox[3]/2,widthRatio=r.bbox[2]/e.bbox[2];
+    return r.opaque&&r.axisAligned&&!connectedLine(r)&&r.bbox[3]<=Math.max(0.002,e.bbox[3]*0.13)&&Math.abs(lineY-mid)<e.bbox[3]*0.22&&widthRatio>=0.8&&widthRatio<=1.15;
+  }
   // Correlate operator-derived glyphs with textContent only after geometry has been computed.
   let cursor=0;
   const stream=glyphs.flatMap(g=>g.text.split('').filter(c=>!/\s/u.test(c)).map(c=>({char:c,glyph:g}))),source=stream.map(v=>v.char).join('');
@@ -90,13 +95,17 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       const backgrounds=regions.filter(r=>r.kind==='fill'&&r.opaque&&r.axisAligned&&r.order<g.order&&area(g.bbox)>0&&overlap(g.bbox,r.bbox)/area(g.bbox)>=0.95);
       const background=backgrounds.at(-1)?.color??'#ffffff';
       if(g.color!=='unknown'&&background!=='unknown'&&g.color===background){state='uncertain';e.visibility_evidence.push({method:'text_color_matches_background',bbox:g.bbox,assessment:'inferred',coverage:1});}
+      const centralBand=box(g.bbox[0],g.bbox[1]+g.bbox[3]*0.25,g.bbox[2],g.bbox[3]*0.5);
       for(const r of regions){
         const coverage=area(g.bbox)>0?overlap(g.bbox,r.bbox)/area(g.bbox):0;
         if(r.kind==='fill'&&r.order>g.order&&coverage>0.05){
           if(r.opaque&&r.axisAligned){state=coverage>=0.999?'occluded':'partially_occluded';e.visibility_evidence.push({method:'later_opaque_rectangle_per_glyph',bbox:r.bbox,assessment:'inferred',coverage});}
-          else if(coverage>=0.2){state='uncertain';e.visibility_evidence.push({method:'transparency_clip_or_transform_overlap',bbox:r.bbox,assessment:'inferred',coverage});}
+          else{state='uncertain';e.visibility_evidence.push({method:'transparency_clip_or_transform_overlap',bbox:r.bbox,assessment:'inferred',coverage});}
         }
-        if((r.kind==='image'&&coverage>0.005||r.kind==='stroke'&&coverage>0.2||r.kind==='text'&&state==='visible'&&coverage>0.2)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
+        // Even a short thin line can erase a minus sign. Grid membership does
+        // not prove visibility when a stroke crosses the actual glyph body.
+        const shortStroke=r.kind==='stroke'&&r.order>g.order&&coverage>0.005&&overlap(centralBand,r.bbox)>0&&(!r.line||!strikeCandidate(r.line,e));
+        if((r.kind==='image'&&coverage>0.005||r.kind==='stroke'&&coverage>0.2||shortStroke||r.kind==='text'&&state==='visible'&&coverage>0.2)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:shortStroke?'short_stroke_glyph_body_overlap_unverified':'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
       }
       for(const a of annotations){
         if(a.annotationFlags&35)continue;
@@ -126,9 +135,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     else if(states.some(s=>s.includes('struck')))e.visibility='partially_struck_through';
     const order=selected[0]?.order??Infinity;
     for(const r of regions.filter(r=>r.kind==='line'&&r.opaque&&r.order>order&&r.axisAligned)){
-      const mid=e.bbox[1]+e.bbox[3]*0.5,lineY=r.bbox[1]+r.bbox[3]/2,widthRatio=r.bbox[2]/e.bbox[2];
-      const connected=connectedLine(r);
-      if(!connected&&r.bbox[3]<=Math.max(0.002,e.bbox[3]*0.13)&&Math.abs(lineY-mid)<e.bbox[3]*0.22&&widthRatio>=0.8&&widthRatio<=1.15&&e.visibility==='visible'){e.visibility='struck_inferred';e.visibility_evidence.push({method:'flattened_non_grid_strike_candidate',bbox:r.bbox,assessment:'inferred',coverage:Math.min(1,widthRatio)});}
+      if(strikeCandidate(r,e)&&e.visibility==='visible'){e.visibility='struck_inferred';e.visibility_evidence.push({method:'flattened_non_grid_strike_candidate',bbox:r.bbox,assessment:'inferred',coverage:Math.min(1,r.bbox[2]/e.bbox[2])});}
     }
     e.visibility_evidence=[...new Map(e.visibility_evidence.map(v=>[v.method+JSON.stringify(v.bbox),v])).values()];
     if(!['visible','struck_through','hidden_render_mode'].includes(e.visibility))gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:'+e.visibility});

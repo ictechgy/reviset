@@ -193,3 +193,13 @@ test('unmatched hidden or fully covered pages never fabricate definitive add/del
     const changes=diffRevisions(rev('a',left),rev('b',right),pair.matches,pair.candidates,p=>p);assert.equal(changes.length,2);assert.ok(changes.every(c=>c.kind==='coverage_gap'&&c.coverage_gaps.length));
   }
 });
+test('small nearly opaque covers and short strokes across a minus glyph remain unresolved',async()=>{
+  const draw=(d:PDFKit.PDFDocument)=>d.fillColor('black').fontSize(12).text('-500',50,80,{lineBreak:false}),base=await get(draw),minus=base.elements[0].visibility_spans!.find(s=>s.text==='-')!,b=minus.bbox;
+  for(const kind of ['fill','stroke']){
+    const page=await get(d=>{draw(d);const x=b[0]*600,y=(b[1]+b[3]*0.5)*400,w=b[2]*600;
+      if(kind==='fill')d.fillOpacity(0.995).rect(x,y-b[3]*400*0.05,w,b[3]*400*0.1).fill('white');
+      else d.lineWidth(2).moveTo(x,y).lineTo(x+w,y).stroke('white');
+    });
+    assert.equal(page.elements[0].visibility,'uncertain',kind);assert.equal(page.elements[0].visibility_spans!.find(s=>s.text==='-')!.state,'uncertain');assert.ok(page.unresolved_text?.includes('-500'));assert.ok(!page.visible_text?.includes('-'));assert.ok(page.text.includes('-500'));
+  }
+});
