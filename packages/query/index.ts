@@ -14,7 +14,7 @@ export const querySchemas={
   list_revisions:base,
   list_pages:base.extend({revision_id:internalId}),
   get_page:base.extend({revision_id:internalId,page_id:internalId}),
-  get_element:base.extend({observation_id:internalId,text_offset:z.number().int().nonnegative().default(0),text_length:z.number().int().min(1).max(1000).default(500)}),
+  get_element:base.extend({observation_id:internalId,text_offset:z.number().int().nonnegative().default(0),text_length:z.number().int().min(1).max(1000).default(500),span_offset:z.number().int().nonnegative().default(0),span_limit:z.number().int().min(0).max(20).default(0),appearance_evidence_offset:z.number().int().nonnegative().default(0),appearance_evidence_limit:z.number().int().min(0).max(10).default(0)}),
   list_changes:base.extend({from:internalId.optional(),to:internalId.optional(),mode:z.enum(['adjacent','range_net','history']).default('history'),kind:z.string().max(60).optional(),change_id:internalId.optional(),entity_id:internalId.optional(),text:z.string().max(500).optional()}),
   get_entity_history:base.extend({entity_id:internalId}),
   get_evidence:base.extend({change_id:internalId.optional(),observation_id:internalId.optional(),text_offset:z.number().int().nonnegative().default(0),text_length:z.number().int().min(1).max(1000).default(500)})
@@ -58,16 +58,17 @@ export class QueryService {
       case 'get_report': return [{schema_version:r.schema_version,report_id:r.report_id,project_id:r.project_id,engine_version:r.engine_version,schema_hash:r.schema_hash,timeline_revision_id:r.timeline_revision_id,mapping_revision_id:r.mapping_revision_id,
         observation_environment:r.observation_environment,revision_count:r.revisions.length,change_count:r.changes.length,unresolved_candidates:r.candidates.filter(c=>c.status==='needs_review').length,resource_uri:resource(r,'manifest')}];
       case 'list_revisions':return r.revisions.map(({pages,...v})=>({...v,page_count:pages.length,coverage_gaps:undefined}));
-      case 'list_pages':return revision().pages.map(({elements,notes,text,...p})=>({...p,text_excerpt:text.slice(0,160),element_count:elements.length,resource_uri:resource(r,`revisions/${revision().revision_occurrence_id}/pages`,p.page_id)}));
+      case 'list_pages':return revision().pages.map(({elements,notes,text,visible_text,unresolved_text,suppressed_text,...p})=>({...p,text_excerpt:text.slice(0,160),element_count:elements.length,resource_uri:resource(r,`revisions/${revision().revision_occurrence_id}/pages`,p.page_id)}));
       case 'get_page': {
         const p=revision().pages.find(p=>p.page_id===args.page_id);if(!p)throw new DocverError('PAGE_NOT_FOUND','Page is outside this revision');
         // One item per element allows even a large page to be traversed without a monolithic payload.
-        return p.elements.length?p.elements.map(e=>({page_id:p.page_id,page:p.page,capabilities:p.capabilities,...e,resource_uri:resource(r,'evidence',e.observation_id)})):
+        return p.elements.length?p.elements.map(e=>({page_id:p.page_id,page:p.page,capabilities:p.capabilities,...e,visibility_spans:undefined,visibility_evidence:undefined,visibility_span_count:e.visibility_spans?.length??0,visibility_evidence_count:e.visibility_evidence?.length??0,resource_uri:resource(r,'evidence',e.observation_id)})):
           [{page_id:p.page_id,page:p.page,capabilities:p.capabilities,coverage_gaps:p.coverage_gaps,elements:[],text:''}];
       }
       case 'get_element': {
         const {v,p,e}=element();const text=e.text.slice(args.text_offset,args.text_offset+args.text_length);
-        return [{...e,text,normalized_text:undefined,text_offset:args.text_offset,next_text_offset:args.text_offset+text.length<e.text.length?args.text_offset+text.length:null,
+        const spans=e.visibility_spans??[],appearance=e.visibility_evidence??[],chunk=spans.slice(args.span_offset,args.span_offset+args.span_limit),evidence=appearance.slice(args.appearance_evidence_offset,args.appearance_evidence_offset+args.appearance_evidence_limit);
+        return [{...e,text,normalized_text:undefined,visibility_spans:args.span_limit?chunk:undefined,visibility_evidence:args.appearance_evidence_limit?evidence:undefined,visibility_span_count:spans.length,visibility_evidence_count:appearance.length,span_offset:args.span_offset,next_span_offset:args.span_offset+chunk.length<spans.length?args.span_offset+chunk.length:null,appearance_evidence_offset:args.appearance_evidence_offset,next_appearance_evidence_offset:args.appearance_evidence_offset+evidence.length<appearance.length?args.appearance_evidence_offset+evidence.length:null,text_offset:args.text_offset,next_text_offset:args.text_offset+text.length<e.text.length?args.text_offset+text.length:null,
           revision_id:v.revision_id,page_id:p.page_id,page:p.page,resource_uri:resource(r,'evidence',e.observation_id)}];
       }
       case 'list_changes': {

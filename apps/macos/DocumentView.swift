@@ -9,19 +9,21 @@ struct OriginalPDFView: NSViewRepresentable {
     let evidence: JSON
     let page: JSON
     func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator { var path = ""; var marks: [(PDFPage, PDFAnnotation)] = [] }
+    final class Coordinator { var path = ""; var pageNumber = -1; var zoom = -1.0; var marks: [(PDFPage, PDFAnnotation)] = [] }
     func makeNSView(context: Context) -> PDFView {
         let view = PDFView(); view.displayMode = .singlePage; view.displayDirection = .vertical
         view.displaysPageBreaks = false; view.backgroundColor = NSColor.windowBackgroundColor
         view.minScaleFactor = 0.1; view.maxScaleFactor = 8; return view
     }
     func updateNSView(_ view: PDFView, context: Context) {
-        if context.coordinator.path != path { view.document = PDFDocument(url: URL(fileURLWithPath: path)); context.coordinator.path = path }
+        let sourceChanged=context.coordinator.path != path
+        if sourceChanged { view.document = PDFDocument(url: URL(fileURLWithPath: path)); context.coordinator.path = path }
         for (p, a) in context.coordinator.marks { p.removeAnnotation(a) }; context.coordinator.marks = []
         guard let current = view.document?.page(at: max(0, pageNumber - 1)) else { return }
-        view.autoScales = zoom == 0
-        view.go(to: current)
-        if zoom > 0 { view.scaleFactor = zoom }
+        if sourceChanged || context.coordinator.pageNumber != pageNumber || context.coordinator.zoom != zoom {
+            view.autoScales = zoom == 0;view.go(to:current);if zoom>0{view.scaleFactor=zoom}
+            context.coordinator.pageNumber=pageNumber;context.coordinator.zoom=zoom
+        }
         let b = evidence["bbox"].array.map(\.number), t = page["source_transform"].array.map(\.number)
         if b.count == 4 && t.count == 6 {
             let det = t[0] * t[3] - t[1] * t[2]
@@ -34,8 +36,9 @@ struct OriginalPDFView: NSViewRepresentable {
                 let xs = points.map(\.x), ys = points.map(\.y)
                 let rect = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()!-xs.min()!, height: ys.max()!-ys.min()!)
                 let mark = PDFAnnotation(bounds: rect, forType: .square, withProperties: nil)
+                mark.shouldDisplay=true;current.displaysAnnotations=true
                 mark.color = NSColor.systemBlue.withAlphaComponent(0.85); let border = PDFBorder(); border.lineWidth = 1.5; mark.border = border
-                current.addAnnotation(mark); context.coordinator.marks.append((current,mark))
+                current.addAnnotation(mark); context.coordinator.marks.append((current,mark));view.annotationsChanged(on:current);view.needsDisplay=true
             }
         }
     }

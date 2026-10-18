@@ -80,13 +80,14 @@ export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
             const tableId=id('table',[assetId,path,elements.length]);let yy=0;
             for(const [ri,row] of rows.entries()){
               let xx=0;
-              for(const [ci,cell] of arr(row.tc).entries()){
+              const cells=arr(row.tc),compactRow=cells.length<columns.length;let column=0;
+              for(const cell of cells){const ci=column;
                 const cellText=arr(cell.txBody?.p).map(p=>texts(p).map(decoded).join('')).join('\n'),cw=columns[ci]??0;
                 const colSpan=Math.max(1,Number(cell['@_gridSpan']??1)),rowSpan=Math.max(1,Number(cell['@_rowSpan']??1));
                 const spanWidth=columns.slice(ci,ci+colSpan).reduce((a,b)=>a+b,0),spanHeight=rows.slice(ri,ri+rowSpan).reduce((a,r)=>a+Number(r['@_h']),0);
                 const cellBox=totalW>0&&totalH>0?box(bbox[0]+bbox[2]*xx/totalW,bbox[1]+bbox[3]*yy/totalH,bbox[2]*spanWidth/totalW,bbox[3]*spanHeight/totalH):bbox;
-                if(cellText)elements.push({observation_id:id('obs',[assetId,path,elements.length]),kind:'table_cell',text:cellText,normalized_text:normalize(cellText),bbox:cellBox,reading_order:elements.length,availability:'available',method:'ooxml_table_cell',source_ref:path+'#table/'+ri+'/'+ci,provenance:'observed',table:{table_id:tableId,row:ri,column:ci,row_span:rowSpan,column_span:colSpan,origin:'ooxml_table',assessment:'observed'}});
-                xx+=cw;
+                if(cellText&&!['1','true'].includes(String(cell['@_hMerge']))&&!['1','true'].includes(String(cell['@_vMerge'])))elements.push({observation_id:id('obs',[assetId,path,elements.length]),kind:'table_cell',text:cellText,normalized_text:normalize(cellText),bbox:cellBox,reading_order:elements.length,availability:'available',method:'ooxml_table_cell',source_ref:path+'#table/'+ri+'/'+ci,provenance:'observed',table:{table_id:tableId,row:ri,column:ci,row_span:rowSpan,column_span:colSpan,origin:'ooxml_table',assessment:'observed'}});
+                xx+=compactRow?spanWidth:cw;column+=compactRow?colSpan:1;
                 if(cell['@_gridSpan']||cell['@_rowSpan']||cell['@_hMerge']||cell['@_vMerge'])gaps.push({feature:'table_geometry',reason:'merged_cell_geometry_requires_review'});
               }
               yy+=Number(row['@_h']);

@@ -13,6 +13,8 @@ await build({entryPoints:{bridge:'apps/bridge/main.ts',mcp:'apps/mcp/main.ts'},o
 await cp('package.json',join(resources,'package.json'));
 await cp('package-lock.json',join(resources,'package-lock.json'));
 execFileSync('npm',['ci','--omit=dev','--ignore-scripts','--no-audit','--no-fund','--prefix',resources],{stdio:'inherit'});
+const linked=execFileSync('otool',['-L',process.execPath],{encoding:'utf8'}).split('\n').slice(1).map(line=>line.trim().split(' (')[0]).filter(Boolean);
+if(linked.some(path=>!path.startsWith('/usr/lib/')&&!path.startsWith('/System/Library/')))throw new Error('Node links a non-system dylib; choose a self-contained runtime before packaging.');
 await cp(process.execPath,join(contents,'Helpers/node'));
 await generateFixtures(resolve('tests/fixtures/generated'));await mkdir(join(resources,'demo'),{recursive:true});await cp('tests/fixtures/generated/lifecycle-five',join(resources,'demo/lifecycle-five'),{recursive:true});
 const canvas=createCanvas(1024,1024),ctx=canvas.getContext('2d');ctx.fillStyle='#1769e0';ctx.beginPath();ctx.roundRect(50,50,924,924,210);ctx.fill();ctx.fillStyle='#91bcf8';ctx.beginPath();ctx.roundRect(240,200,465,565,45);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.roundRect(330,280,465,565,45);ctx.fill();ctx.fillStyle='#1769e0';for(const [y,w] of [[440,270],[520,220],[600,265]])ctx.fillRect(425,y,w,25);

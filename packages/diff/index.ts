@@ -25,15 +25,15 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     const a=from.pages[ai],b=to.pages[bi];
     if(order.some(o=>(o.a-ai)*(o.b-bi)<0)) add('page_moved',a,b,m);
     if((a.unresolved_text||b.unresolved_text)){add('coverage_gap',a,b,m,'pdf_visibility_unresolved_text_comparison_withheld');}
-    if(!a.unresolved_text&&!b.unresolved_text&&a.capabilities.text==='available'&&b.capabilities.text==='available'&&normalize(a.visible_text??a.text)!==normalize(b.visible_text??b.text)) add('text_modified',a,b,m);
+    if(!a.unresolved_text&&!b.unresolved_text&&a.capabilities.text==='available'&&b.capabilities.text==='available'&&normalize(a.visible_text??a.text)!==normalize(b.visible_text??b.text)) add('text_modified',a,b,m,a.elements.concat(b.elements).some(e=>e.visibility==='occluded')?'visible_text_after_inferred_opaque_cover':undefined);
     for(const old of a.elements.filter(e=>e.text)){
       const same=b.elements.filter(e=>e.normalized_text===old.normalized_text);
       if(same.length!==1||a.elements.filter(e=>e.normalized_text===old.normalized_text).length!==1)continue;
-      const current=same[0],oldState=old.visibility??'visible',newState=current.visibility??'visible';
+      const current=same[0];if(!old.visibility||!current.visibility)continue;const oldState=old.visibility,newState=current.visibility;
       if(oldState===newState)continue;
       const kind=newState==='occluded'||newState==='partially_occluded'?'text_occluded':newState==='struck_through'||newState==='struck_inferred'||newState==='partially_struck_through'?'text_struck_through':['occluded','struck_through','partially_occluded','partially_struck_through'].includes(oldState)&&newState==='visible'?'text_revealed':null;
       if(!kind)continue;
-      add(kind,a,b,m);const change=changes.at(-1)!;change.before=old.text;change.after=current.text;
+      add(kind,a,b,m);const change=changes.at(-1)!;change.before=old.text;change.after=current.text;change.appearance_assessment=kind==='text_struck_through'&&newState==='struck_through'?'observed':'inferred';
       change.lineage.reasons=[...change.lineage.reasons,'appearance:'+oldState+'→'+newState];
       change.evidence=[{...evidence(from,a),observation_id:old.observation_id,bbox:old.bbox,quote:old.text,method:old.method},{...evidence(to,b),observation_id:current.observation_id,bbox:current.bbox,quote:current.text,method:current.method}];
     }

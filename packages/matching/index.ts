@@ -51,10 +51,14 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
     const score=weights[i][j];
     const competingRow=topRow[i].find(v=>v.j!==j)?.score??0,competingCol=topCol[j].find(v=>v.i!==i)?.score??0;
     const ambiguous=competingRow>=score-0.06||competingCol>=score-0.06;
-    return {from_page_id:left[i].page_id,to_page_id:right[j].page_id,score,status:ambiguous?'needs_review':'inferred',reasons:['normalized_text_bigrams',...(ambiguous?['competing_duplicate_or_split_merge_candidate']:[]),...(topRow[i].filter(v=>v.score>=0.4).length>8?['candidate_pool_limited_to_top_8_per_page']:[])]};
+    return {from_page_id:left[i].page_id,to_page_id:right[j].page_id,score,status:ambiguous?'needs_review':'inferred',reasons:['normalized_text_bigrams',...(ambiguous?['competing_duplicate_or_split_merge_candidate']:[]),...(topRow[i].filter(v=>v.score>=0.4).length>8||topCol[j].filter(v=>v.score>=0.4).length>8?['candidate_pool_limited_to_top_8_per_direction']:[])]};
   }
-  for(let i=0;i<left.length;i++)for(const {score,j} of topRow[i].filter(v=>v.score>=0.4).slice(0,8))if(score>=0.4)candidates.push(candidate(i,j));
+  // Retain both directions: absence from this bounded array must still mean no plausible edge.
+  const retained=new Set<string>();
+  function keep(i:number,j:number){const key=i+'|'+j;if(weights[i][j]>=0.4&&!retained.has(key)){retained.add(key);candidates.push(candidate(i,j));}}
+  for(let i=0;i<left.length;i++)for(const {j} of topRow[i].filter(v=>v.score>=0.4).slice(0,8))keep(i,j);
+  for(let j=0;j<right.length;j++)for(const {i} of topCol[j].filter(v=>v.score>=0.4).slice(0,8))keep(i,j);
   const chosen=assignment(weights.map(row=>row.map(s=>s>=0.58?s:0)));
-  chosen.forEach((j,i)=>{if(j<right.length&&j>=0&&weights[i][j]>=0.58) matches.push(candidate(i,j));});
+  chosen.forEach((j,i)=>{if(j<right.length&&j>=0&&weights[i][j]>=0.58) {matches.push(candidate(i,j));keep(i,j);}});
   return {matches,candidates};
 }

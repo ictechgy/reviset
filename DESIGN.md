@@ -27,7 +27,7 @@
 - Content hierarchy: 프로젝트 → 고정 보고서 → 비교 구간 → 변경 → 원문/근거.
 
 ## Design principles
-- 원문 사실과 대응 추정을 구분하고 unavailable을 삭제로 표현하지 않는다.
+- 원문 사실·표시 상태의 관측/추정·페이지 대응 추정을 구분하고 unavailable을 삭제로 표현하지 않는다.
 - 작업 가능한 다음 행동을 제공하며 과거 report를 고정해서 다시 읽게 한다.
 - Tradeoffs: 첫 앱은 구조 보기 fallback을 명시하고 렌더 충실도를 과장하지 않는다.
 

@@ -44,18 +44,30 @@ final class Bridge: @unchecked Sendable {
                 var env = ProcessInfo.processInfo.environment
                 env.removeValue(forKey: "ELECTRON_RUN_AS_NODE"); env.removeValue(forKey: "NODE_OPTIONS"); env.removeValue(forKey: "NODE_PATH")
                 process.environment = env
-                let errorQueue = DispatchQueue(label: "org.docver.stderr")
-                var errorBuffer = Data()
-                errors.fileHandleForReading.readabilityHandler = { handle in
-                    let chunk = handle.availableData
-                    if chunk.isEmpty { return }
-                    errorQueue.sync {
-                        errorBuffer.append(chunk)
-                        while let range = errorBuffer.firstRange(of: Data([10])) {
-                            let line = errorBuffer.subdata(in: 0..<range.lowerBound); errorBuffer.removeSubrange(0...range.lowerBound)
-                            if let data = try? JSONSerialization.jsonObject(with: line) { let event = JSON(data); if event["event"].string == "progress" { progress?(event["progress"]) } }
+                let stderrDone = DispatchGroup(); stderrDone.enter()
+                var stderrData = Data()
+                DispatchQueue.global(qos:.utility).async {
+                    var pending = Data()
+                    while true {
+                        let chunk = errors.fileHandleForReading.availableData
+                        if chunk.isEmpty { break }
+                        stderrData.append(chunk)
+                        if stderrData.count > 262144 { stderrData.removeFirst(stderrData.count - 262144) }
+                        pending.append(chunk)
+                        while let range = pending.firstRange(of: Data([10])) {
+                            let line = pending.subdata(in:0..<range.lowerBound); pending.removeSubrange(0...range.lowerBound)
+                            if let data = try? JSONSerialization.jsonObject(with:line) { let event=JSON(data); if event["event"].string=="progress" { progress?(event["progress"]) } }
                         }
+                        if pending.count > 262144 { pending.removeAll() }
                     }
+                    stderrDone.leave()
+                }
+                func failure(_ code:String,_ message:String) -> BridgeError {
+                    let folder=self.library.appendingPathComponent("logs")
+                    try? FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+                    let log=folder.appendingPathComponent("helper-"+UUID().uuidString+".log")
+                    do {try stderrData.write(to:log);return BridgeError(code:code,message:message+" 진단 로그: "+log.path)}
+                    catch {return BridgeError(code:code,message:message+" "+String(decoding:stderrData.suffix(1000),as:UTF8.self))}
                 }
                 do {
                     if analysis { self.lock.lock(); let stopped = self.cancelled; self.lock.unlock(); if stopped { throw BridgeError(code:"CANCELLED",message:"분석을 취소했습니다.") } }
@@ -63,16 +75,21 @@ final class Bridge: @unchecked Sendable {
                     if analysis { self.lock.lock(); self.analysisProcess = process; let stopped = self.cancelled; self.lock.unlock(); if stopped { process.terminate() } }
                     try input.fileHandleForWriting.write(contentsOf: request); try input.fileHandleForWriting.close()
                     let data = output.fileHandleForReading.readDataToEndOfFile()
-                    process.waitUntilExit(); errors.fileHandleForReading.readabilityHandler = nil
+                    process.waitUntilExit(); stderrDone.wait()
                     if analysis { self.lock.lock(); if self.analysisProcess === process { self.analysisProcess = nil }; self.lock.unlock() }
-                    if process.terminationReason == .uncaughtSignal { throw BridgeError(code: "CANCELLED", message: "분석을 취소했습니다. 이전 보고서는 유지됩니다.") }
-                    let reply = JSON(try JSONSerialization.jsonObject(with: data))
+                    if process.terminationReason == .uncaughtSignal {
+                        let requested=self.lock.withLock {self.cancelled}
+                        if analysis && requested {throw BridgeError(code:"CANCELLED",message:"분석을 취소했습니다. 이전 보고서는 유지됩니다.")}
+                        throw failure("HELPER_CRASH","분석 엔진이 예기치 않게 종료되었습니다 (signal \(process.terminationStatus)).")
+                    }
+                    guard let object=try? JSONSerialization.jsonObject(with:data) else {throw failure("HELPER_PROTOCOL","분석 엔진 응답을 읽지 못했습니다 (exit \(process.terminationStatus)).")}
+                    let reply = JSON(object)
                     guard reply["protocol_version"].string == "0.1.0" && reply["schema_version"].string == "0.1.0" else { throw BridgeError(code:"PROTOCOL_MISMATCH",message:"앱과 분석 엔진의 계약 버전이 다릅니다.") }
                     guard reply["ok"].bool else { throw BridgeError(code: reply["error"]["code"].string, message: reply["error"]["message"].string) }
                     continuation.resume(returning: reply["value"])
                 } catch {
                     if analysis { self.lock.lock(); if self.analysisProcess === process { self.analysisProcess = nil }; self.lock.unlock() }
-                    errors.fileHandleForReading.readabilityHandler = nil
+                    try? input.fileHandleForWriting.close();try? errors.fileHandleForWriting.close()
                     continuation.resume(throwing: error)
                 }
             }

@@ -17,7 +17,7 @@ test('late opaque box suppresses old glyphs but not replacement painted afterwar
   const page=await get(d=>{text(d);d.rect(45,76,170,35).fill('white');text(d,'Revenue 120');});
   const old=page.elements.find(e=>e.text==='Revenue 100')!,replacement=page.elements.find(e=>e.text==='Revenue 120')!;
   assert.equal(old.visibility,'occluded');assert.equal(replacement.visibility,'visible');assert.ok(old.visibility_spans!.every(s=>s.state==='occluded'));assert.ok(page.text.includes('100'));assert.ok(page.text.includes('120'));
-  assert.ok(page.unresolved_text?.includes('100'));assert.ok(old.visibility_evidence!.some(e=>e.method==='later_opaque_rectangle_per_glyph'));
+  assert.ok(page.suppressed_text?.includes('100'));assert.ok(old.visibility_evidence!.some(e=>e.method==='later_opaque_rectangle_per_glyph'));
 });
 test('background before text, transparent overlay, underline, and table edge never certify deletion',async()=>{
   const background=await get(d=>{d.rect(45,76,170,35).fill('white');text(d);});assert.equal(background.elements[0].visibility,'visible');
@@ -70,4 +70,65 @@ test('rotated and cropped PDF coordinates stay within normalized evidence bounds
   const rotated=await get(d=>{(d.page.dictionary.data as any).Rotate=90;(d.page.dictionary.data as any).CropBox=[20,20,580,380];text(d);d.rect(45,76,170,35).fill('white');});
   assert.equal(rotated.width,360);assert.equal(rotated.height,560);assert.equal(rotated.elements[0].visibility,'occluded');
   assert.ok(rotated.elements[0].visibility_spans!.every(s=>s.bbox.every(Number.isFinite)&&s.bbox[0]>=0&&s.bbox[1]>=0));
+});
+test('solid image masks are not certified visible and compound grid paths are parsed',async()=>{
+  const masked=await get(d=>{text(d);const image=d.ref({Type:'XObject',Subtype:'Image',Width:1,Height:1,ImageMask:true,BitsPerComponent:1,Decode:[0,1]});image.end(Buffer.from([0]));d.page.xobjects.MaskTest=image;d.addContent('q\n1 1 1 rg\n170 0 0 35 45 76 cm\n/MaskTest Do\nQ');});
+  assert.equal(masked.elements[0].visibility,'uncertain');assert.ok(masked.unresolved_text?.includes('100'));assert.ok(masked.coverage_gaps.some(g=>g.feature==='pdf_visibility'));
+  const grid=await get(d=>{for(const x of [50,200,350])d.moveTo(x,50).lineTo(x,150);for(const y of [50,100,150])d.moveTo(50,y).lineTo(350,y);d.stroke();d.fontSize(16).text('Q1',60,65).text('100',210,65).text('Q2',60,115).text('120',210,115);});
+  assert.equal(grid.elements.filter(e=>e.table?.origin==='pdf_grid_inferred').length,4);
+});
+test('full opaque cover replacement yields visible delta while preserving suppressed raw text',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-cover-')),service=new DesktopService(join(folder,'library'));
+  try{
+    const a=join(folder,'a.pdf'),b=join(folder,'b.pdf');await writeFile(a,await pdf(d=>text(d)));await writeFile(b,await pdf(d=>{text(d);d.rect(45,76,170,35).fill('white');text(d,'Revenue 120');}));
+    const project=await service.create('Cover',[{label:'Before',files:[a]},{label:'After',files:[b]}]),{report}=await service.run(project.project_id);
+    const c=report.changes.find(c=>c.kind==='text_modified');assert.ok(c);assert.equal(c.before,'Revenue 100');assert.equal(c.after,'Revenue 120');assert.ok(c.coverage_gaps.some(g=>g.reason==='visible_text_after_inferred_opaque_cover'));assert.ok(report.changes.some(c=>c.kind==='text_occluded'));
+  }finally{service.close();await rm(folder,{recursive:true,force:true});}
+});
+test('long PDF element text and glyph visibility are independently traversable within MCP budget',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-spans-')),service=new DesktopService(join(folder,'library'));
+  try{
+    const source=join(folder,'long.pdf'),value='Revenue 100 verified. '.repeat(10);await writeFile(source,await pdf(d=>d.fillColor('black').fontSize(3).text(value,20,80,{lineBreak:false})));
+    const project=await service.create('Spans',[{label:'v1',files:[source]}]),{report}=await service.run(project.project_id),e=report.revisions[0].pages[0].elements[0];assert.ok(e.visibility_spans!.length>100);
+    const q=service.queryService(project.project_id),args={project_id:project.project_id,report_id:report.report_id,observation_id:e.observation_id,max_output_tokens:8000};let offset=0,recovered='';
+    while(true){const r=q.query('get_element',{...args,text_offset:offset,text_length:19});assert.ok(Buffer.byteLength(JSON.stringify(r))<=8000);const item=r.items[0];assert.equal(item.visibility_spans,undefined);recovered+=item.text;if(item.next_text_offset===null)break;offset=Number(item.next_text_offset);}
+    assert.equal(recovered,e.text);offset=0;let count=0;
+    while(true){const r=q.query('get_element',{...args,text_length:1,span_offset:offset,span_limit:8});assert.ok(Buffer.byteLength(JSON.stringify(r))<=8000);const item=r.items[0];count+=(item.visibility_spans as unknown[]).length;if(item.next_span_offset===null)break;assert.ok(Number(item.next_span_offset)>offset);offset=Number(item.next_span_offset);}
+    assert.equal(count,e.visibility_spans!.length);
+  }finally{service.close();await rm(folder,{recursive:true,force:true});}
+});
+import { matchPages } from '../../packages/matching/index.js';
+import { diffRevisions } from '../../packages/diff/index.js';
+import type { RevisionData } from '../../packages/schema/index.js';
+test('bounded candidates preserve incoming and outgoing ambiguity beyond eight templates',async()=>{
+  const template=await get(d=>text(d)),pages=(prefix:string,n:number)=>Array.from({length:n},(_,i)=>({...template,page_id:prefix+i,page:i+1}));
+  for(const [left,right] of [[pages('a',1),pages('b',12)],[pages('a',12),pages('b',1)]]){
+    const pairing=matchPages(left,right),rev=(id:string,p:typeof left)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:p,coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData;
+    assert.ok(left.every(p=>pairing.candidates.some(c=>c.from_page_id===p.page_id)));assert.ok(right.every(p=>pairing.candidates.some(c=>c.to_page_id===p.page_id)));assert.ok(pairing.matches.every(m=>pairing.candidates.some(c=>c.from_page_id===m.from_page_id&&c.to_page_id===m.to_page_id)));
+    const changes=diffRevisions(rev('before',left),rev('after',right),pairing.matches,pairing.candidates,p=>p);assert.ok(changes.every(c=>c.kind!=='page_added'&&c.kind!=='page_deleted'));assert.ok(changes.some(c=>c.coverage_gaps.some(g=>g.reason==='unresolved_mapping')));
+  }
+});
+test('page bounds clips and Form BBoxes do not block ordinary visible text',async()=>{
+  const clipped=await get(d=>{d.save().rect(0,0,600,400).clip();text(d);d.restore();});assert.equal(clipped.elements[0].visibility,'visible');assert.equal(clipped.unresolved_text,'');
+  const form=await get(d=>{const x=d.ref({Type:'XObject',Subtype:'Form',FormType:1,BBox:[0,0,600,400],Resources:(d.page as any).resources});x.end('q 1 0 0 -1 0 400 cm BT /F1 24 Tf 50 300 Td (Revenue 100) Tj ET Q');d.font('Helvetica');d.page.fonts.F1=(d as any)._font.ref();d.page.xobjects.FormTest=x;d.addContent('/FormTest Do');});
+  assert.equal(form.elements[0].visibility,'visible');
+});
+test('annotation overlay is uncertain while a displayed strike annotation remains observed',async()=>{
+  const overlay=await get(d=>{text(d);d.annotate(45,76,170,35,Object.assign({},{Subtype:'Square',IC:[1,1,1],C:[1,1,1]}));});assert.equal(overlay.elements[0].visibility,'uncertain');assert.ok(overlay.elements[0].visibility_evidence!.some(v=>v.method==='annotation_overlay_unverified'));
+});
+import { OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { paintedGlyphs } from '../../packages/ingest/pdf-glyphs.js';
+import { unzipSync,zipSync,strFromU8,strToU8 } from 'fflate';
+test('double-quote text operator applies spacing and unknown color cannot certify visibility',()=>{
+  const g=(text:string,width:number,space=false)=>({unicode:text,width,isSpace:space}),page={commonObjs:{get:()=>({ascent:0.8,descent:-0.2})}},viewport={width:600,height:400,transform:[1,0,0,-1,0,400]};
+  const ops={fnArray:[OPS.beginText,OPS.setFont,OPS.setTextMatrix,OPS.nextLineSetSpacingShowText],argsArray:[null,['font',20],[1,0,0,1,50,300],[10,5,[g('A',500),g(' ',250,true),g('B',500)]]]};
+  const glyphs=paintedGlyphs(page,viewport,ops);assert.equal(glyphs.length,3);assert.ok(Math.abs(glyphs[2].bbox[0]-85/600)<0.00001);
+  ops.fnArray.splice(3,0,OPS.setFillGray);ops.argsArray.splice(3,0,[1]);assert.equal(paintedGlyphs(page,viewport,ops)[0].reliable,false);
+});
+test('merged OOXML placeholders do not duplicate text and omitted placeholders keep column geometry',async()=>{
+  const deck=new (pptxgen as unknown as typeof pptxgen.default)();deck.layout='LAYOUT_WIDE';deck.addSlide().addTable([['A','B','C'],['D','E','F']].map(row=>row.map(text=>({text}))),{x:1,y:1,w:6,h:2});const raw=await deck.write({outputType:'nodebuffer'}) as Buffer;
+  for(const compact of [false,true]){
+    const zip=unzipSync(raw),path='ppt/slides/slide1.xml';let xml=strFromU8(zip[path]);xml=xml.replace(/<a:tr\b[^>]*>[\s\S]*?<\/a:tr>/,row=>{let index=0;return row.replace(/<a:tc\b[^>]*>[\s\S]*?<\/a:tc>/g,cell=>{index++;if(index===1)return cell.replace('<a:tc>','<a:tc gridSpan="2">');if(index===2)return compact?'':cell.replace('<a:tc>','<a:tc hMerge="1">');return cell;});});zip[path]=strToU8(xml);
+    const cells=extractPptx(zipSync(zip),'sha256:merged')[0].elements.filter(e=>e.kind==='table_cell');assert.equal(cells.length,5);assert.ok(!cells.some(e=>e.text==='B'));const a=cells.find(e=>e.text==='A')!,c=cells.find(e=>e.text==='C')!;assert.equal(c.table!.column,2);assert.ok(Math.abs(a.bbox[0]+a.bbox[2]-c.bbox[0])<0.00001);
+  }
 });

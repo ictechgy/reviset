@@ -5,6 +5,7 @@ import Darwin
 
 @MainActor final class AppModel: ObservableObject {
     @Published var libraryAvailable = true
+    @Published var initializing = true
     @Published var projects: [JSON] = []
     @Published var projectID = ""
     @Published var report = JSON()
@@ -34,8 +35,11 @@ import Darwin
     let bridge: Bridge
     private var libraryLock: Int32 = -1
     private var cancelRequested = false
+    private var analysisToken: UUID?
     private var started = false
     private var rangeGeneration = 0
+    private var selectionGeneration = 0
+    private var pageNavigation: (report:String, from:Int, to:Int, left:String, right:String)?
     init() {
         let resources = Bundle.main.resourceURL!
         let base = ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Docver")
@@ -57,25 +61,27 @@ import Darwin
     func fail(_ e: Error) { error = e.localizedDescription }
     func refresh() async throws { projects = try await bridge.call("projects").array }
     func start() async {
-        guard error.isEmpty && !started else { return }; started = true
+        guard error.isEmpty && !started else {if !started{initializing=false};return};started = true;defer{initializing=false}
         do { _ = try await bridge.call("recover"); try await refresh(); if let p = projects.first { await selectProject(p["project_id"].string) } }
         catch { fail(error) }
     }
     func selectProject(_ id: String, snapshot: String? = nil) async {
         guard libraryAvailable && !busy else { return }
+        selectionGeneration += 1;rangeGeneration += 1;let generation=selectionGeneration;pageNavigation=nil
         loading = true; error = ""; projectID = id; report = JSON(); changes = []; selectedChangeID = nil
         do {
-            try await refresh(); reports = try await bridge.call("reports", ["project_id": id]).array
+            try await refresh();let loadedReports = try await bridge.call("reports", ["project_id": id]).array
+            guard generation==selectionGeneration else{return};reports=loadedReports
             let reportID = snapshot ?? project["last_report_id"].string
             if reportID.isEmpty { report = JSON(); changes = [] }
             else {
-                report = try await bridge.call("view", ["project_id": id, "report_id": reportID]); from = 0; to = min(1, revisions.count - 1)
+                let loadedReport = try await bridge.call("view", ["project_id": id, "report_id": reportID]);guard generation==selectionGeneration else{return};report=loadedReport; from = 0; to = min(1, revisions.count - 1)
                 leftPageID = primaryPages(revision(from)).first?["page_id"].string ?? ""
                 rightPageID = primaryPages(revision(to)).first?["page_id"].string ?? ""
                 try await updateChanges()
             }
-        } catch { fail(error) }
-        loading = false
+        } catch {if generation==selectionGeneration{fail(error)}}
+        if generation==selectionGeneration{loading = false}
     }
     func updateChanges() async throws {
         guard !report.isNull else { return }
@@ -88,31 +94,41 @@ import Darwin
         selectEvidence()
     }
     func selectEvidence() {
+        if let n=pageNavigation,n.report==report["report_id"].string,n.from==from,n.to==to {leftPageID=n.left;rightPageID=n.right;return}
         guard !selected.isNull else { return }
         if tab == "history" { return }
         let evidence = selected["evidence"].array
         leftPageID = evidence.first { $0["revision_occurrence_id"].string == revision(from)["revision_occurrence_id"].string }?["page_id"].string ?? ""
         rightPageID = evidence.first { $0["revision_occurrence_id"].string == revision(to)["revision_occurrence_id"].string }?["page_id"].string ?? ""
     }
+    func chooseChange(_ id:String){pageNavigation=nil;selectedChangeID=id;selectEvidence()}
+    func openHistoryPage(_ index:Int,_ pageID:String){
+        from=max(0,index-1);to=min(revisions.count-1,max(1,index))
+        let ids=report["lineages"].array.first{$0["page_ids"].array.map(\.string).contains(pageID)}?["page_ids"].array.map(\.string) ?? [pageID]
+        let left=primaryPages(revision(from)).first{ids.contains($0["page_id"].string)}?["page_id"].string ?? ""
+        let right=primaryPages(revision(to)).first{ids.contains($0["page_id"].string)}?["page_id"].string ?? ""
+        pageNavigation=(report["report_id"].string,from,to,index==0 ? pageID:left,index==0 ? right:pageID)
+        tab="compare";selectEvidence();changeRange()
+    }
     func changeRange() { Task { do { try await updateChanges() } catch { fail(error) } } }
     func run(_ id: String) async {
-        guard libraryAvailable && !busy else { return }; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
+        guard libraryAvailable && !initializing && !busy else { return };let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
         do {
             let result = try await bridge.call("analyze", ["project_id": id], analysis: true) { [weak self] p in
-                Task { @MainActor in self?.progress = p; self?.status = p["phase"].string == "match" ? "페이지 대응과 변경을 계산합니다" : p["label"].string.isEmpty ? "원본을 추출합니다" : p["label"].string + " 추출 중" }
+                Task { @MainActor in guard let self,self.busy,!self.committing,self.analysisToken==token else{return}; self.progress = p; self.status = p["phase"].string == "match" ? "페이지 대응과 변경을 계산합니다" : p["label"].string.isEmpty ? "원본을 추출합니다" : p["label"].string + " 추출 중" }
             }
             if cancelRequested { throw BridgeError(code: "CANCELLED", message: "분석을 취소했습니다.") }
             committing = true; status = "고정 보고서를 저장합니다"
             _ = try await bridge.call("commit", ["project_id": id, "result": result.raw])
-            busy = false; committing = false
+            analysisToken=nil;busy = false; committing = false
             await selectProject(id, snapshot: result["report_id"].string); status = "새 고정 보고서를 만들었습니다"
         } catch {
-            busy = false; committing = false
+            analysisToken=nil;committing = false
             if cancelRequested || (error as? BridgeError)?.code == "CANCELLED" {
                 _ = try? await bridge.call("recover", progress["analysis_run_id"].string.isEmpty ? [:] : ["run_id": progress["analysis_run_id"].string])
                 status = "분석을 취소했습니다. 이전 보고서는 유지됩니다."
             } else { fail(error) }
-            try? await refresh()
+            try? await refresh();busy=false
         }
     }
     func cancel() { guard busy && !committing else { return }; cancelRequested = true; bridge.cancel(); status = "분석을 취소하고 있습니다" }

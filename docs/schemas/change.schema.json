@@ -52,6 +52,13 @@
         "null"
       ]
     },
+    "appearance_assessment": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "inferred"
+      ]
+    },
     "evidence": {
       "type": "array",
       "items": {

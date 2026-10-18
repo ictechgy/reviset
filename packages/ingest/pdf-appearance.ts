@@ -1,55 +1,64 @@
+import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } from './pdf-geometry.js';
 import { paintedGlyphs } from './pdf-glyphs.js';
-import { OPS, AnnotationType, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { OPS, AnnotationType, AnnotationMode, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, normalize, type Box, type ElementData } from '../schema/index.js';
-interface Region {bbox:Box;order:number;kind:'fill'|'line'|'image';opaque:boolean;axisAligned:boolean;color?:string}
+interface Region {bbox:Box;order:number;kind:'fill'|'line'|'image'|'text';opaque:boolean;axisAligned:boolean;color?:string}
 const area=(b:Box)=>b[2]*b[3];
 const overlap=(a:Box,b:Box)=>Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
 const compact=(s:string)=>normalize(s).replace(/\s/gu,'');
 export async function inspectAppearance(page:any,viewport:any,elements:ElementData[]):Promise<{regions:Region[];gaps:{feature:string;reason:string}[]}> {
-  const operators=await page.getOperatorList(),annotations=await page.getAnnotations({intent:'display'}),regions:Region[]=[],gaps:{feature:string;reason:string}[]=[];
+  const operators=await page.getOperatorList({annotationMode:AnnotationMode.DISABLE}),annotations=await page.getAnnotations({intent:'display'}),regions:Region[]=[],gaps:{feature:string;reason:string}[]=[];
   if(operators.fnArray.length>250000){for(const e of elements)e.visibility='unverified';return{regions,gaps:[{feature:'pdf_visibility',reason:'operator_limit_exceeded_visibility_unverified'}]};}
-  let state={matrix:[1,0,0,1,0,0],alpha:1,blend:'Normal',mask:false,clip:false,color:'#000000'},stack:typeof state[]=[];
+  let state={matrix:[1,0,0,1,0,0],alpha:1,strokeAlpha:1,lineWidth:1,blend:'Normal',mask:false,clip:null as Clip,pendingClip:false,color:'#000000'},stack:typeof state[]=[];
   const glyphs=paintedGlyphs(page,viewport,operators);
-  function bounds(rect:number[],matrix=state.matrix):{bbox:Box;axisAligned:boolean;color?:string}{
-    const transform=Util.transform(viewport.transform,matrix);
-    const points=[[rect[0],rect[1]],[rect[2],rect[1]],[rect[2],rect[3]],[rect[0],rect[3]]].map(p=>{Util.applyTransform(p,transform);return p;});
-    const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
-    const axisAligned=(Math.abs(points[1][0]-points[0][0])<0.01||Math.abs(points[1][1]-points[0][1])<0.01)&&(Math.abs(points[2][0]-points[1][0])<0.01||Math.abs(points[2][1]-points[1][1])<0.01);
-    return{bbox:box(Math.min(...xs)/viewport.width,Math.min(...ys)/viewport.height,(Math.max(...xs)-Math.min(...xs))/viewport.width,(Math.max(...ys)-Math.min(...ys))/viewport.height),axisAligned};
-  }
+  const bounds=(rect:number[],matrix=state.matrix)=>transformedBounds(rect,matrix,viewport);
   for(let i=0;i<operators.fnArray.length;i++){
     const op=operators.fnArray[i],args=operators.argsArray[i];
     if(op===OPS.save){stack.push({...state,matrix:[...state.matrix]});continue;}
     if(op===OPS.restore){state=stack.pop()??state;continue;}
+    if(op===OPS.setLineWidth){state.lineWidth=Number(args[0]);continue;}
+    if([OPS.setFillGray,OPS.setFillCMYKColor,OPS.setFillColor,OPS.setFillColorN].includes(op)){state.color='unknown';continue;}
     if(op===OPS.setFillRGBColor){state.color=typeof args[0]==='string'?args[0]:'unknown';continue;}
-    if(op===OPS.paintFormXObjectBegin){stack.push({...state,matrix:[...state.matrix]});if(args[0])state.matrix=Util.transform(state.matrix,args[0]);if(args[1])state.clip=true;continue;}
+    if(op===OPS.paintFormXObjectBegin){stack.push({...state,matrix:[...state.matrix]});if(args[0])state.matrix=Util.transform(state.matrix,args[0]);if(args[1]){const b=bounds(Array.from(args[1]));state.clip=intersectClip(state.clip,b.axisAligned?b.bbox:'unknown');}continue;}
     if(op===OPS.paintFormXObjectEnd){state=stack.pop()??state;continue;}
     if(op===OPS.beginGroup){stack.push({...state,matrix:[...state.matrix]});state.mask=true;continue;}
     if(op===OPS.endGroup){state=stack.pop()??state;continue;}
     if(op===OPS.transform){state.matrix=Util.transform(state.matrix,args);continue;}
-    if(op===OPS.setGState){for(const [key,value] of args[0]??[]){if(key==='ca')state.alpha=Number(value);if(key==='BM')state.blend=String(value);if(key==='SMask')state.mask=value!==false&&value!=='None';}continue;}
-    if(op===OPS.clip||op===OPS.eoClip){state.clip=true;continue;}
+    if(op===OPS.setGState){for(const [key,value] of args[0]??[]){if(key==='ca')state.alpha=Number(value);if(key==='CA')state.strokeAlpha=Number(value);if(key==='BM')state.blend=String(value);if(key==='SMask')state.mask=value!==false&&value!=='None';}continue;}
+    if(op===OPS.clip||op===OPS.eoClip){state.pendingClip=true;continue;}
     if(op===OPS.constructPath&&Array.isArray(args)&&args.length>=3){
-      const [paintOp,paths,rect]=args;if(!rect||rect.length<4)continue;
-      const chunks=(paths??[]).flatMap((p:any)=>Array.from(p as number[])) as number[];
-      const shape=bounds(Array.from(rect));
+      const [paintOp,paths,rect]=args;if(!rect||rect.length<4){regions.push({bbox:box(0,0,1,1),axisAligned:false,order:i,kind:'image',opaque:false});gaps.push({feature:'pdf_visibility',reason:'path_geometry_unresolved'});continue;}
+      const shape=bounds(Array.from(rect)),isRectangle=rectanglePath(paths);
+      if(state.pendingClip){state.clip=intersectClip(state.clip,isRectangle&&shape.axisAligned?shape.bbox:'unknown');state.pendingClip=false;}
       const fill=[OPS.fill,OPS.eoFill,OPS.fillStroke,OPS.eoFillStroke,OPS.closeFillStroke,OPS.closeEOFillStroke].includes(paintOp);
       const stroke=[OPS.stroke,OPS.closeStroke,OPS.fillStroke,OPS.eoFillStroke,OPS.closeFillStroke,OPS.closeEOFillStroke].includes(paintOp);
-      // PDF.js 6's normalized path encoding: move(0), line(1), cubic(2), close(4).
-      const vertices=[chunks.slice(1,3),chunks.slice(4,6),chunks.slice(7,9),chunks.slice(10,12)];
-      const isRectangle=chunks.length===13&&chunks[0]===0&&chunks[3]===1&&chunks[6]===1&&chunks[9]===1&&chunks[12]===4
-        &&vertices.every((p,j)=>{const q=vertices[(j+1)%4];return (Math.abs(p[0]-q[0])<0.001)!==(Math.abs(p[1]-q[1])<0.001);})
-        &&new Set(vertices.map(p=>p[0])).size===2&&new Set(vertices.map(p=>p[1])).size===2;
-      const isLine=chunks.length===6&&chunks[0]===0&&chunks[3]===1;
-      if(fill&&isRectangle)regions.push({...shape,order:i,kind:'fill',color:state.color,opaque:state.alpha>=0.999&&state.blend==='Normal'&&!state.mask&&!state.clip});
+      if(fill&&isRectangle)regions.push({...shape,order:i,kind:'fill',color:state.color,opaque:state.color!=='unknown'&&state.alpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,shape.bbox)});
       else if(fill&&area(shape.bbox)>0){regions.push({...shape,order:i,kind:'fill',opaque:false});gaps.push({feature:'pdf_visibility',reason:'non_rectangular_fill_not_used_as_confirmed_occlusion'});}
-      if(stroke&&isLine)regions.push({...shape,order:i,kind:'line',opaque:state.alpha>=0.999&&state.blend==='Normal'&&!state.mask&&!state.clip});
+      if(stroke){
+        // A single stroke can contain every border of a table or many strike lines.
+        for(const path of paths??[]){const p=Array.from(path as number[]);let cursor=0,last:number[]|undefined,start:number[]|undefined;
+          while(cursor<p.length){const command=p[cursor++];
+            if(command===0){last=[p[cursor++],p[cursor++]];start=last;}
+            else if(command===1||command===4){const next=command===4?start:[p[cursor++],p[cursor++]];
+              if(last&&next){const segment=bounds([Math.min(last[0],next[0]),Math.min(last[1],next[1]),Math.max(last[0],next[0]),Math.max(last[1],next[1])]);
+                if(state.lineWidth>3){const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;regions.push({bbox:box(segment.bbox[0]-pad/viewport.width,segment.bbox[1]-pad/viewport.height,segment.bbox[2]+2*pad/viewport.width,segment.bbox[3]+2*pad/viewport.height),axisAligned:segment.axisAligned,order:i,kind:'image',opaque:false});gaps.push({feature:'pdf_visibility',reason:'thick_stroke_overlap_requires_review'});}
+                else regions.push({...segment,order:i,kind:'line',opaque:state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)});
+              }last=next;}
+            else if(command===2){cursor+=6;last=undefined;}else if(command===3){cursor+=4;last=undefined;}else break;
+          }
+        }
+      }
     }
-    if(op===OPS.paintImageXObject||op===OPS.paintInlineImageXObject){
-      const shape=bounds([0,0,1,1]);regions.push({...shape,order:i,kind:'image',opaque:false});
+    const ordinaryImage=op===OPS.paintImageXObject||op===OPS.paintInlineImageXObject||op===OPS.paintImageMaskXObject||op===OPS.paintSolidColorImageMask;
+    const complexPaint=[OPS.paintImageMaskXObjectGroup,OPS.paintImageMaskXObjectRepeat,OPS.paintImageXObjectRepeat,OPS.paintInlineImageXObjectGroup,OPS.shadingFill].includes(op);
+    if(ordinaryImage||complexPaint){
+      const shape=complexPaint?{bbox:box(0,0,1,1),axisAligned:false}:bounds([0,0,1,1]);regions.push({...shape,order:i,kind:'image',opaque:false});
       gaps.push({feature:'pdf_visibility',reason:'image_opacity_or_mask_requires_review'});
     }
   }
+  const textRuns=new Map<number,Box>();
+  for(const g of glyphs){if(g.hidden)continue;const b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],g.bbox[0]),Math.min(b[1],g.bbox[1]),Math.max(b[0]+b[2],g.bbox[0]+g.bbox[2])-Math.min(b[0],g.bbox[0]),Math.max(b[1]+b[3],g.bbox[1]+g.bbox[3])-Math.min(b[1],g.bbox[1])):g.bbox);}
+  for(const [order,bbox] of textRuns)regions.push({bbox,order,kind:'text',opaque:false,axisAligned:false});
   // Correlate operator-derived glyphs with textContent only after geometry has been computed.
   let cursor=0;
   const stream=glyphs.flatMap(g=>g.text.split('').filter(c=>!/\s/u.test(c)).map(c=>({char:c,glyph:g}))),source=stream.map(v=>v.char).join('');
@@ -63,18 +72,22 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       let state=g.hidden?'hidden_render_mode':'visible',assessment:'observed'|'inferred'=g.hidden?'observed':'inferred';
       const backgrounds=regions.filter(r=>r.kind==='fill'&&r.opaque&&r.order<g.order&&area(g.bbox)>0&&overlap(g.bbox,r.bbox)/area(g.bbox)>=0.95);
       const background=backgrounds.at(-1)?.color??'#ffffff';
-      if(g.color===background){state='uncertain';e.visibility_evidence.push({method:'text_color_matches_background',bbox:g.bbox,assessment:'inferred',coverage:1});}
+      if(g.color!=='unknown'&&background!=='unknown'&&g.color===background){state='uncertain';e.visibility_evidence.push({method:'text_color_matches_background',bbox:g.bbox,assessment:'inferred',coverage:1});}
       for(const r of regions){
         const coverage=area(g.bbox)>0?overlap(g.bbox,r.bbox)/area(g.bbox):0;
         if(r.kind==='fill'&&r.order>g.order&&coverage>0.05){
-          if(r.opaque&&r.axisAligned){state=coverage>=0.95?'occluded':'partially_occluded';e.visibility_evidence.push({method:'later_opaque_rectangle_per_glyph',bbox:r.bbox,assessment:'inferred',coverage});}
+          if(r.opaque&&r.axisAligned){state=coverage>=0.999?'occluded':'partially_occluded';e.visibility_evidence.push({method:'later_opaque_rectangle_per_glyph',bbox:r.bbox,assessment:'inferred',coverage});}
           else if(coverage>=0.2){state='uncertain';e.visibility_evidence.push({method:'transparency_clip_or_transform_overlap',bbox:r.bbox,assessment:'inferred',coverage});}
         }
-        if(r.kind==='image'&&r.order>g.order&&coverage>0.2){state='uncertain';e.visibility_evidence.push({method:'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
+        if((r.kind==='image'||r.kind==='text'&&state==='visible')&&r.order>g.order&&coverage>0.2){state='uncertain';e.visibility_evidence.push({method:'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
       }
       for(const a of annotations){
         if(a.annotationFlags&35)continue;
-        if(a.annotationType!==AnnotationType.STRIKEOUT&&a.subtype!=='Redact')continue;
+        if(a.annotationType!==AnnotationType.STRIKEOUT&&a.subtype!=='Redact'){
+          if(a.annotationType===AnnotationType.LINK||a.annotationType===AnnotationType.POPUP)continue;
+          if(a.rect?.length===4){const r=bounds(Array.from(a.rect),[1,0,0,1,0,0]).bbox,coverage=area(g.bbox)>0?overlap(g.bbox,r)/area(g.bbox):0;if(coverage>0.2){state='uncertain';e.visibility_evidence.push({method:'annotation_overlay_unverified',bbox:r,assessment:'inferred',coverage});}}
+          continue;
+        }
         const q=a.quadPoints?Array.from(a.quadPoints) as number[]:[];
         if(q.length<8){e.visibility_evidence.push({method:'annotation_quadpoints_missing',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
         for(let k=0;k+7<q.length;k+=8){const group=q.slice(k,k+8),xs=group.filter((_,i)=>i%2===0),ys=group.filter((_,i)=>i%2===1),region=bounds([Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)],[1,0,0,1,0,0]).bbox,coverage=area(g.bbox)>0?overlap(region,g.bbox)/area(g.bbox):0;
@@ -124,6 +137,6 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     }
   }
 
-  if(state.mask||state.clip)gaps.push({feature:'pdf_visibility',reason:'clipping_or_soft_mask_visibility_not_fully_verified'});
+  if(state.mask||state.clip==='unknown'||state.pendingClip)gaps.push({feature:'pdf_visibility',reason:'clipping_or_soft_mask_visibility_not_fully_verified'});
   return{regions,gaps:[...new Map(gaps.map(g=>[g.reason,g])).values()]};
 }

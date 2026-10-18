@@ -44,7 +44,7 @@ export type MappingDecision = z.infer<typeof Decision>;
 export const Change = z.object({ schema_version: z.literal(SCHEMA_VERSION), report_id: z.string(), change_id: z.string(), entity_id: z.string(),
   from_revision: z.string(), to_revision: z.string(), from_occurrence: z.string(), to_occurrence: z.string(),
   kind: z.enum(['page_added','page_deleted','page_moved','text_modified','text_struck_through','text_occluded','text_revealed','coverage_gap']),
-  before: z.string().nullable(), after: z.string().nullable(), evidence: z.array(Evidence),
+  before: z.string().nullable(), after: z.string().nullable(), appearance_assessment:z.enum(['observed','inferred']).optional(), evidence: z.array(Evidence),
   lineage: z.object({ status: z.enum(['inferred','human_confirmed','needs_review']), score: z.number(), reasons: z.array(z.string()) }),
   coverage_gaps: z.array(Gap), evidence_uri: z.string() });
 export const Lineage = z.object({ entity_id: z.string(), page_ids: z.array(z.string()), status: z.enum(['inferred','needs_review','human_confirmed']) });
