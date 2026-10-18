@@ -2,7 +2,7 @@ import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } fr
 import { OPS, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, type Box } from '../schema/index.js';
 export interface PaintedGlyph {text:string;bbox:Box;order:number;hidden:boolean;reliable:boolean;run:number;color:string}
-export function paintedGlyphs(page:any,viewport:any,operators:any):PaintedGlyph[]{
+export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Record<string,any>={}):PaintedGlyph[]{
   let s={ctm:[1,0,0,1,0,0],tm:[1,0,0,1,0,0],lm:[1,0,0,1,0,0],x:0,size:12,font:'',char:0,word:0,hscale:1,rise:0,leading:0,mode:0,textClipPending:false,alpha:1,strokeAlpha:1,color:'#000000',clip:null as Clip,pendingClip:false,mask:false,blend:'Normal'};
   const stack:typeof s[]=[],glyphs:PaintedGlyph[]=[],marked:boolean[]=[];let optional=false;
   const move=(x:number,y:number)=>{s.lm=[s.lm[0],s.lm[1],s.lm[2],s.lm[3],s.lm[4]+s.lm[0]*x+s.lm[2]*y,s.lm[5]+s.lm[1]*x+s.lm[3]*y];s.tm=[...s.lm];s.x=0;};
@@ -27,7 +27,7 @@ export function paintedGlyphs(page:any,viewport:any,operators:any):PaintedGlyph[
     if(op===OPS.setTextRise){s.rise=a[0];continue;}
     if(op===OPS.setLeading){s.leading=a[0];continue;}
     if(op===OPS.setTextRenderingMode){s.mode=a[0];continue;}
-    if(op===OPS.setGState){for(const [key,value] of a[0]??[]){if(key==='ca')s.alpha=Number(value);if(key==='CA')s.strokeAlpha=Number(value);if(key==='BM')s.blend=String(value);if(key==='SMask')s.mask=value!==false&&value!=='None';}continue;}
+    if(op===OPS.setGState){for(const [key,value] of a[0]??[]){if(key==='ca')s.alpha=Number(value);if(key==='CA')s.strokeAlpha=Number(value);if(key==='BM')s.blend=['source-over','Normal','Compatible'].includes(String(value))?'Normal':String(value);if(key==='SMask')s.mask=value!==false&&value!=='None';}continue;}
     if(op===OPS.beginGroup){stack.push({...s,ctm:[...s.ctm],tm:[...s.tm],lm:[...s.lm]});s.mask=true;continue;}
     if(op===OPS.endGroup){s=stack.pop()??s;continue;}
     if(op===OPS.beginMarkedContent||op===OPS.beginMarkedContentProps){marked.push(optional);if(a?.[0]==='OC')optional=true;continue;}
@@ -40,7 +40,9 @@ export function paintedGlyphs(page:any,viewport:any,operators:any):PaintedGlyph[
     if(op===OPS.nextLineSetSpacingShowText){s.word=Number(a[0]);s.char=Number(a[1]);}
     const glyphArgs=op===OPS.nextLineSetSpacingShowText?a[2]:a[0];
     let font:any;try{font=page.commonObjs.get(s.font);}catch{font=null;}
-    const ascent=font?.ascent??0.8,descent=font?.descent??-0.2;
+    const metrics=fontStyles[s.font]??font;
+    const ascent=metrics?.ascent??0.8,descent=metrics?.descent??-0.2,metricsKnown=Number.isFinite(metrics?.ascent)&&Number.isFinite(metrics?.descent);
+    const standardMatrix=!font?.fontMatrix||font.fontMatrix.every((v:number,i:number)=>Math.abs(v-([0.001,0,0,0.001,0,0][i]??NaN))<0.000001);
     const m=Util.transform(viewport.transform,Util.transform(s.ctm,s.tm));
     for(const glyph of (glyphArgs??[]).flat(3)){
       if(typeof glyph==='number'){s.x-=glyph/1000*s.size;continue;}
@@ -50,7 +52,7 @@ export function paintedGlyphs(page:any,viewport:any,operators:any):PaintedGlyph[
       const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
       const bbox=box(Math.min(...xs)/viewport.width,Math.min(...ys)/viewport.height,(Math.max(...xs)-Math.min(...xs))/viewport.width,(Math.max(...ys)-Math.min(...ys))/viewport.height);
       const hidden=s.mode===3||s.mode===7||([0,4].includes(s.mode)&&s.alpha===0)||([2,6].includes(s.mode)&&s.alpha===0&&s.strokeAlpha===0);
-      glyphs.push({text:glyph.unicode,bbox,order,run:order,hidden,color:s.color,reliable:(s.alpha>=0.999||hidden)&&s.color!=='unknown'&&!!font&&!font.isType3Font&&(s.mode===0||s.mode===2||s.mode===3)&&Number.isFinite(ascent)&&Number.isFinite(descent)&&!font.vertical&&insideClip(s.clip,bbox)&&!s.pendingClip&&!s.mask&&s.blend==='Normal'&&!optional});
+      glyphs.push({text:glyph.unicode,bbox,order,run:order,hidden,color:s.color,reliable:(s.alpha>=0.999||hidden)&&s.color!=='unknown'&&!!font&&!font.isType3Font&&(s.mode===0||s.mode===3)&&metricsKnown&&standardMatrix&&Number.isFinite(ascent)&&Number.isFinite(descent)&&!font.vertical&&insideClip(s.clip,bbox)&&!s.pendingClip&&!s.mask&&s.blend==='Normal'&&!optional});
       s.x+=advance+s.char+(glyph.isSpace?s.word:0);
     }
   }

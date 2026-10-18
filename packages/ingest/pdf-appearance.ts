@@ -6,11 +6,11 @@ interface Region {bbox:Box;order:number;kind:'fill'|'line'|'stroke'|'image'|'tex
 const area=(b:Box)=>b[2]*b[3];
 const overlap=(a:Box,b:Box)=>Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
 const compact=(s:string)=>normalize(s).replace(/\s/gu,'');
-export async function inspectAppearance(page:any,viewport:any,elements:ElementData[]):Promise<{regions:Region[];gaps:{feature:string;reason:string}[]}> {
+export async function inspectAppearance(page:any,viewport:any,elements:ElementData[],fontStyles:Record<string,any>={}):Promise<{regions:Region[];gaps:{feature:string;reason:string}[]}> {
   const operators=await page.getOperatorList({annotationMode:AnnotationMode.DISABLE}),annotations=await page.getAnnotations({intent:'display'}),regions:Region[]=[],gaps:{feature:string;reason:string}[]=[];
   if(operators.fnArray.length>250000){for(const e of elements)e.visibility='unverified';return{regions,gaps:[{feature:'pdf_visibility',reason:'operator_limit_exceeded_visibility_unverified'}]};}
   let state={matrix:[1,0,0,1,0,0],alpha:1,strokeAlpha:1,lineWidth:1,blend:'Normal',mask:false,clip:null as Clip,pendingClip:false,textMode:0,textClipPending:false,color:'#000000'},stack:typeof state[]=[],marked:boolean[]=[];let sawComplexClipOrMask=false,optional=false;
-  const glyphs=paintedGlyphs(page,viewport,operators);
+  const glyphs=paintedGlyphs(page,viewport,operators,fontStyles);
   const bounds=(rect:number[],matrix=state.matrix)=>transformedBounds(rect,matrix,viewport);
   for(let i=0;i<operators.fnArray.length;i++){
     const op=operators.fnArray[i],args=operators.argsArray[i];
@@ -29,7 +29,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     if(op===OPS.beginGroup){stack.push({...state,matrix:[...state.matrix]});state.mask=true;sawComplexClipOrMask=true;continue;}
     if(op===OPS.endGroup){state=stack.pop()??state;continue;}
     if(op===OPS.transform){state.matrix=Util.transform(state.matrix,args);continue;}
-    if(op===OPS.setGState){for(const [key,value] of args[0]??[]){if(key==='ca')state.alpha=Number(value);if(key==='CA')state.strokeAlpha=Number(value);if(key==='BM')state.blend=String(value);if(key==='SMask')state.mask=value!==false&&value!=='None';}if(state.mask)sawComplexClipOrMask=true;continue;}
+    if(op===OPS.setGState){for(const [key,value] of args[0]??[]){if(key==='ca')state.alpha=Number(value);if(key==='CA')state.strokeAlpha=Number(value);if(key==='BM')state.blend=['source-over','Normal','Compatible'].includes(String(value))?'Normal':String(value);if(key==='SMask')state.mask=value!==false&&value!=='None';}if(state.mask)sawComplexClipOrMask=true;continue;}
     if(op===OPS.clip||op===OPS.eoClip){state.pendingClip=true;continue;}
     if(op===OPS.constructPath&&Array.isArray(args)&&args.length>=3){
       const [paintOp,paths,rect]=args;if(!rect||rect.length<4){regions.push({bbox:box(0,0,1,1),axisAligned:false,order:i,kind:'image',opaque:false});gaps.push({feature:'pdf_visibility',reason:'path_geometry_unresolved'});continue;}
@@ -84,7 +84,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     const target=compact(e.text),index=source.indexOf(target,cursor);
     if(!target||index<0){e.visibility_evidence.push({method:'glyph_text_correlation_unresolved',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
     const selected=[...new Set(stream.slice(index,index+target.length).map(v=>v.glyph))];cursor=index+target.length;
-    if(!selected.every(g=>g.reliable)||selected.some(g=>overlap(g.bbox,e.bbox)<=0)){e.visibility_evidence.push({method:'font_metrics_or_glyph_geometry_unresolved',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
+    if(!selected.every(g=>g.reliable)||selected.some(g=>overlap(g.bbox,e.bbox)<=0)){e.visibility_evidence.push({method:'glyph_geometry_or_paint_state_unresolved',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
     for(const g of selected){
       let state=g.hidden?'hidden_render_mode':'visible',assessment:'observed'|'inferred'=g.hidden?'observed':'inferred';
       const backgrounds=regions.filter(r=>r.kind==='fill'&&r.opaque&&r.axisAligned&&r.order<g.order&&area(g.bbox)>0&&overlap(g.bbox,r.bbox)/area(g.bbox)>=0.95);

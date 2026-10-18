@@ -33,7 +33,7 @@ export async function extractPdf(bytes:Uint8Array,assetId:string):Promise<PageDa
           bbox:box(Math.min(...xs)/viewport.width,Math.min(...ys)/viewport.height,(Math.max(...xs)-Math.min(...xs))/viewport.width,(Math.max(...ys)-Math.min(...ys))/viewport.height),
           reading_order:elements.length,availability:'available',method:'pdf_text',source_ref:`page:${n}/text:${elements.length}`,provenance:'observed'});
       }
-      const appearance=await inspectAppearance(page,viewport,elements);
+      const appearance=await inspectAppearance(page,viewport,elements,content.styles);
       const hasText=elements.length>0;
       pages.push({page_id:id('pg',[assetId,n-1]),asset_id:assetId,page:n,width:viewport.width,height:viewport.height,
         coordinate_system:'pdf_user_space_bottom_left',source_transform:viewport.transform,hidden:null,

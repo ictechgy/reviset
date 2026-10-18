@@ -14,19 +14,19 @@ async function pdf(draw:(doc:PDFKit.PDFDocument)=>void):Promise<Uint8Array>{
 const text=(d:PDFKit.PDFDocument,value='Revenue 100')=>d.fillColor('black').fontSize(24).text(value,50,80,{lineBreak:false});
 const get=async(draw:(d:PDFKit.PDFDocument)=>void)=>(await extractPdf(await pdf(draw),'sha256:test'))[0];
 test('late opaque box suppresses old glyphs but not replacement painted afterward',async()=>{
-  const page=await get(d=>{text(d);d.rect(45,76,170,35).fill('white');text(d,'Revenue 120');});
+  const page=await get(d=>{text(d);d.rect(45,74,170,40).fill('white');text(d,'Revenue 120');});
   const old=page.elements.find(e=>e.text==='Revenue 100')!,replacement=page.elements.find(e=>e.text==='Revenue 120')!;
   assert.equal(old.visibility,'occluded');assert.equal(replacement.visibility,'visible');assert.ok(old.visibility_spans!.every(s=>s.state==='occluded'));assert.ok(page.text.includes('100'));assert.ok(page.text.includes('120'));
   assert.ok(page.suppressed_text?.includes('100'));assert.ok(old.visibility_evidence!.some(e=>e.method==='later_opaque_rectangle_per_glyph'));
 });
 test('background before text, transparent overlay, underline, and table edge never certify deletion',async()=>{
-  const background=await get(d=>{d.rect(45,76,170,35).fill('white');text(d);});assert.equal(background.elements[0].visibility,'visible');
+  const background=await get(d=>{d.rect(45,74,170,40).fill('white');text(d);});assert.equal(background.elements[0].visibility,'visible');
   const alpha=await get(d=>{text(d);d.save().fillOpacity(0.4).rect(45,76,170,35).fill('yellow').restore();});assert.notEqual(alpha.elements[0].visibility,'occluded');
   const underline=await get(d=>{text(d);d.moveTo(50,108).lineTo(195,108).stroke();});assert.equal(underline.elements[0].visibility,'visible');
   const edge=await get(d=>{text(d);d.rect(45,76,200,40).stroke();});assert.equal(edge.elements[0].visibility,'visible');
 });
 test('partial masks retain per-glyph states and withhold definitive text delta',async()=>{
-  const page=await get(d=>{text(d);d.rect(50,76,70,35).fill('white');});
+  const page=await get(d=>{text(d);d.rect(50,74,70,40).fill('white');});
   assert.equal(page.elements[0].visibility,'partially_occluded');assert.ok(page.elements[0].visibility_spans!.some(s=>s.state==='visible'));assert.ok(page.elements[0].visibility_spans!.some(s=>s.state==='occluded'));
   assert.ok(page.coverage_gaps.some(g=>g.reason.includes('visibility_requires_review')));
 });
@@ -63,11 +63,11 @@ test('desktop compute is uncommitted until coordinator transaction; recovery and
 test('nonrectangular fills, clipped text, blended groups and partial strike stay conservative',async()=>{
   const polygon=await get(d=>{text(d);d.moveTo(45,76).lineTo(215,76).lineTo(180,111).lineTo(80,111).closePath().fill('white');});assert.notEqual(polygon.elements[0].visibility,'occluded');assert.ok(polygon.unresolved_text);
   const clipped=await get(d=>{d.save().rect(50,80,40,20).clip();text(d);d.restore();});assert.equal(clipped.elements[0].visibility,'unverified');assert.ok(clipped.coverage_gaps.some(g=>g.feature==='pdf_visibility'));
-  const blend=await get(d=>{text(d);d.save();const gs=d.ref({Type:'ExtGState',BM:'Multiply'});gs.end('');d.page.ext_gstates['BlendTest']=gs;d.addContent('/BlendTest gs');d.rect(45,76,170,35).fill('white').restore();});assert.notEqual(blend.elements[0].visibility,'occluded');
+  const blend=await get(d=>{text(d);d.save();const gs=d.ref({Type:'ExtGState',BM:'Multiply'});gs.end('');d.page.ext_gstates['BlendTest']=gs;d.addContent('/BlendTest gs');d.rect(45,74,170,40).fill('white').restore();});assert.notEqual(blend.elements[0].visibility,'occluded');
   const partial=await get(d=>{text(d);d.strike(49,76,50,35,{color:'red'});});assert.equal(partial.elements[0].visibility,'partially_struck_through');assert.ok(partial.unresolved_text);
 });
 test('rotated and cropped PDF coordinates stay within normalized evidence bounds',async()=>{
-  const rotated=await get(d=>{(d.page.dictionary.data as any).Rotate=90;(d.page.dictionary.data as any).CropBox=[20,20,580,380];text(d);d.rect(45,76,170,35).fill('white');});
+  const rotated=await get(d=>{(d.page.dictionary.data as any).Rotate=90;(d.page.dictionary.data as any).CropBox=[20,20,580,380];text(d);d.rect(45,74,170,40).fill('white');});
   assert.equal(rotated.width,360);assert.equal(rotated.height,560);assert.equal(rotated.elements[0].visibility,'occluded');
   assert.ok(rotated.elements[0].visibility_spans!.every(s=>s.bbox.every(Number.isFinite)&&s.bbox[0]>=0&&s.bbox[1]>=0));
 });
@@ -80,7 +80,7 @@ test('solid image masks are not certified visible and compound grid paths are pa
 test('full opaque cover replacement yields visible delta while preserving suppressed raw text',async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-cover-')),service=new DesktopService(join(folder,'library'));
   try{
-    const a=join(folder,'a.pdf'),b=join(folder,'b.pdf');await writeFile(a,await pdf(d=>text(d)));await writeFile(b,await pdf(d=>{text(d);d.rect(45,76,170,35).fill('white');text(d,'Revenue 120');}));
+    const a=join(folder,'a.pdf'),b=join(folder,'b.pdf');await writeFile(a,await pdf(d=>text(d)));await writeFile(b,await pdf(d=>{text(d);d.rect(45,74,170,40).fill('white');text(d,'Revenue 120');}));
     const project=await service.create('Cover',[{label:'Before',files:[a]},{label:'After',files:[b]}]),{report}=await service.run(project.project_id);
     const c=report.changes.find(c=>c.kind==='text_modified');assert.ok(c);assert.equal(c.before,'Revenue 100');assert.equal(c.after,'Revenue 120');assert.ok(c.coverage_gaps.some(g=>g.reason==='visible_text_after_inferred_opaque_cover'));assert.ok(report.changes.some(c=>c.kind==='text_occluded'));
   }finally{service.close();await rm(folder,{recursive:true,force:true});}
@@ -138,11 +138,11 @@ test('unsupported thick curve stroke retains covered text as uncertain with an e
   assert.equal(page.elements[0].visibility,'uncertain');assert.ok(page.text.includes('Revenue 100'));assert.ok(page.unresolved_text?.includes('100'));assert.equal(page.visible_text,'');assert.ok(page.coverage_gaps.some(g=>g.reason==='curve_stroke_visibility_unverified'));
 });
 test('hidden optional-content paint cannot certify occlusion of ordinary visible text',async()=>{
-  const page=await get(d=>{text(d);const oc=d.ref({Type:'OCG',Name:'Hidden'});oc.end('');(d as any)._root.data.OCProperties={OCGs:[oc],D:{BaseState:'ON',OFF:[oc]}};(d.page as any).resources.data.Properties={HiddenLayer:oc};d.addContent('/OC /HiddenLayer BDC');d.rect(45,76,170,35).fill('white');d.addContent('EMC');});
+  const page=await get(d=>{text(d);const oc=d.ref({Type:'OCG',Name:'Hidden'});oc.end('');(d as any)._root.data.OCProperties={OCGs:[oc],D:{BaseState:'ON',OFF:[oc]}};(d.page as any).resources.data.Properties={HiddenLayer:oc};d.addContent('/OC /HiddenLayer BDC');d.rect(45,74,170,40).fill('white');d.addContent('EMC');});
   assert.equal(page.elements[0].visibility,'uncertain');assert.ok(page.unresolved_text?.includes('100'));assert.ok(page.coverage_gaps.some(g=>g.reason==='optional_content_visibility_unverified'));
 });
 test('text rendering clip cannot turn a later bounding rectangle into definite occlusion',async()=>{
-  const page=await get(d=>{text(d);d.save();d.addContent('BT /F1 24 Tf 4 Tr 0 100 Td (X) Tj ET');d.rect(45,76,170,35).fill('white');d.restore();});assert.equal(page.elements[0].visibility,'uncertain');assert.ok(page.unresolved_text?.includes('Revenue'));assert.ok(page.coverage_gaps.some(g=>g.reason==='clipping_or_soft_mask_visibility_not_fully_verified'));
+  const page=await get(d=>{text(d);d.save();d.addContent('BT /F1 24 Tf 4 Tr 0 100 Td (X) Tj ET');d.rect(45,74,170,40).fill('white');d.restore();});assert.equal(page.elements[0].visibility,'uncertain');assert.ok(page.unresolved_text?.includes('Revenue'));assert.ok(page.coverage_gaps.some(g=>g.reason==='clipping_or_soft_mask_visibility_not_fully_verified'));
 });
 test('strike markup stays in visible text and suppressed raw-layer edits remain explicit',async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-layer-')),service=new DesktopService(join(folder,'library'));
@@ -150,13 +150,13 @@ test('strike markup stays in visible text and suppressed raw-layer edits remain 
     const plain=join(folder,'plain.pdf'),strike=join(folder,'strike.pdf');await writeFile(plain,await pdf(d=>text(d)));await writeFile(strike,await pdf(d=>{text(d);d.strike(49,76,145,35,{color:'red'});}));
     let project=await service.create('Strike',[{label:'Before',files:[plain]},{label:'After',files:[strike]}]),result=await service.run(project.project_id);
     assert.equal(result.report.revisions[1].pages[0].visible_text,'Revenue 100');assert.ok(!result.report.changes.some(c=>c.kind==='text_modified'));assert.equal(result.report.changes.find(c=>c.kind==='text_struck_through')?.appearance_assessment,'observed');
-    const paths=[];for(const number of ['100','200']){const file=join(folder,number+'.pdf');await writeFile(file,await pdf(d=>{text(d,'Revenue '+number);d.rect(45,76,170,35).fill('white');}));paths.push(file);}
+    const paths=[];for(const number of ['100','200']){const file=join(folder,number+'.pdf');await writeFile(file,await pdf(d=>{text(d,'Revenue '+number);d.rect(45,74,170,40).fill('white');}));paths.push(file);}
     project=await service.create('Suppressed',[{label:'Before',files:[paths[0]]},{label:'After',files:[paths[1]]}]);result=await service.run(project.project_id);
     const gap=result.report.changes.find(c=>c.coverage_gaps.some(g=>g.reason==='raw_text_changed_in_suppressed_layer'));assert.ok(gap);assert.ok(gap.before?.includes('100'));assert.ok(gap.after?.includes('200'));
   }finally{service.close();await rm(folder,{recursive:true,force:true});}
 });
 test('strike annotation cannot promote hidden or uncertain glyphs to definite visible text',async()=>{
-  const hidden=await get(d=>{d.addContent('3 Tr');text(d);d.rect(45,76,170,35).fill('white');d.strike(49,76,145,35,{color:'red'});});assert.equal(hidden.elements[0].visibility,'hidden_render_mode');assert.equal(hidden.visible_text,'');assert.ok(hidden.unresolved_text?.includes('100'));
+  const hidden=await get(d=>{d.addContent('3 Tr');text(d);d.rect(45,74,170,40).fill('white');d.strike(49,76,145,35,{color:'red'});});assert.equal(hidden.elements[0].visibility,'hidden_render_mode');assert.equal(hidden.visible_text,'');assert.ok(hidden.unresolved_text?.includes('100'));
   const uncertain=await get(d=>{text(d);const image=d.ref({Type:'XObject',Subtype:'Image',Width:1,Height:1,ImageMask:true,BitsPerComponent:1,Decode:[0,1]});image.end(Buffer.from([0]));d.page.xobjects.Mask=image;d.addContent('q 1 1 1 rg 170 0 0 35 45 76 cm /Mask Do Q');d.strike(49,76,145,35,{color:'red'});});assert.equal(uncertain.elements[0].visibility,'uncertain');assert.equal(uncertain.visible_text,'');
 });
 test('scaled stroke widths and small-font stroke footprints remain uncertain',async()=>{
@@ -166,4 +166,16 @@ test('scaled stroke widths and small-font stroke footprints remain uncertain',as
 test('fractional text alpha and fill-plus-stroke alpha do not invent definite visibility',async()=>{
   const fractional=await get(d=>{d.fillOpacity(0.01);text(d);});assert.equal(fractional.elements[0].visibility,'unverified');assert.ok(fractional.unresolved_text?.includes('100'));
   const outline=await get(d=>{d.fillOpacity(0).strokeOpacity(1).addContent('2 Tr');text(d);});assert.equal(outline.elements[0].visibility,'unverified');assert.notEqual(outline.elements[0].visibility,'hidden_render_mode');
+});
+import { renderPdf } from '../../packages/render/index.js';
+test('equal-render fill-plus-stroke text never becomes a definitive visible text delta',async()=>{
+  const a=await pdf(d=>{d.fillColor('black').strokeColor('white').lineWidth(100).addContent('2 Tr').fontSize(24).text('A100 Stable shared title',50,80,{lineBreak:false});}),b=await pdf(d=>{d.fillColor('black').strokeColor('white').lineWidth(100).addContent('2 Tr').fontSize(24).text('B100 Stable shared title',50,80,{lineBreak:false});});
+  assert.deepEqual(await renderPdf(a,1,600),await renderPdf(b,1,600));
+  const left=(await extractPdf(a,'sha256:a'))[0],right=(await extractPdf(b,'sha256:b'))[0];assert.equal(left.elements[0].visibility,'unverified');assert.equal(right.elements[0].visibility,'unverified');assert.ok(left.unresolved_text?.includes('A100'));
+  const rev=(id:string,p:typeof left)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:[p],coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData,pair=matchPages([left],[right]);const changes=diffRevisions(rev('a',left),rev('b',right),pair.matches,pair.candidates,p=>p);assert.ok(!changes.some(c=>c.kind==='text_modified'));assert.ok(changes.some(c=>c.kind==='coverage_gap'));
+});
+test('PDF.js source-over blend retains normal visible text, opaque cover and numeric diff',async()=>{
+  const normal=(d:PDFKit.PDFDocument)=>{const gs=d.ref({Type:'ExtGState',BM:'Normal',ca:1,CA:1});gs.end('');d.page.ext_gstates.NormalTest=gs;d.addContent('/NormalTest gs');};
+  const before=await get(d=>{normal(d);text(d);}),after=await get(d=>{normal(d);text(d,'Revenue 120');}),cover=await get(d=>{normal(d);text(d);d.rect(45,74,170,40).fill('white');});assert.equal(before.elements[0].visibility,'visible');assert.equal(after.elements[0].visibility,'visible');assert.equal(cover.elements[0].visibility,'occluded');
+  before.page_id='left';after.page_id='right';const rev=(id:string,p:typeof before)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:[p],coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData,pair=matchPages([before],[after]);assert.ok(diffRevisions(rev('a',before),rev('b',after),pair.matches,pair.candidates,p=>p).some(c=>c.kind==='text_modified'));
 });
