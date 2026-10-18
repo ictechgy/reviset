@@ -245,3 +245,16 @@ test('unimplemented ExtGState font changes cannot certify stale glyph geometry',
   const page=await get(d=>{d.fillColor('black').fontSize(12).text('Stable title',50,30,{lineBreak:false});const f=(d as any)._font,gs=d.ref({Type:'ExtGState',Font:[f.ref(),24]});gs.end('');d.page.ext_gstates.FontTest=gs;d.addContent(`BT /${f.id} 12 Tf /FontTest gs 1 0 0 1 50 300 Tm (Revenue 1.5) Tj ET`);});
   assert.ok(page.text.includes('Revenue 1.5'));assert.ok(page.unresolved_text?.includes('Revenue 1.5'));assert.ok(page.coverage_gaps.some(g=>g.reason==='unsupported_graphics_state:Font'));assert.ok(page.elements.some(e=>e.visibility==='unverified'));
 });
+test('real subpixel stroke ink remains unresolved for direct, GS, nonuniform and sheared transforms',async()=>{
+  const draw=(d:PDFKit.PDFDocument)=>d.fillColor('black').fontSize(12).text('Revenue 1.5',50,80,{lineBreak:false}),raw=await pdf(draw),base=(await extractPdf(raw,'sha256:thin-before'))[0],b=base.elements[0].visibility_spans!.find(s=>s.text==='.')!.bbox;
+  const crop=async(bytes:Uint8Array)=>{const img=await loadImage(await renderPdf(bytes,1,600)),canvas=createCanvas(img.width,img.height),ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);return Buffer.from(ctx.getImageData(Math.floor(b[0]*600),Math.floor(b[1]*400),Math.ceil(b[2]*600),Math.ceil(b[3]*400)).data);},original=await crop(raw);
+  for(const matrix of [[1,0,0,1],[1.2,0,0,0.8],[1,0.3,0.2,1]])for(const gs of [false,true]){
+    const [a,c1,c2,d1]=matrix,det=a*d1-c1*c2,point=(x:number,y:number)=>[(d1*x-c2*y)/det,(a*y-c1*x)/det];
+    const afterRaw=await pdf(d=>{draw(d);d.save().transform(a,c1,c2,d1,0,0);if(gs){const style=d.ref({Type:'ExtGState',LW:0.05});style.end('');d.page.ext_gstates.ThinTest=style;d.addContent('/ThinTest gs');}else d.lineWidth(0.05);const start=point(108.5,88.125),end=point(109.8,88.125);d.moveTo(start[0],start[1]).lineTo(end[0],end[1]).stroke('white').restore();}),after=(await extractPdf(afterRaw,'sha256:thin-after'))[0];
+    assert.notEqual(Buffer.compare(original,await crop(afterRaw)),0,'stroke must change actual punctuation ink');assert.equal(after.elements[0].visibility,'uncertain');assert.ok(after.text.includes('1.5'));assert.ok(after.unresolved_text?.includes('1.5'));
+  }
+});
+test('right-angle cell corners do not make six-point-padded readable text uncertain',async()=>{
+  const make=(first:boolean)=>pdf(d=>{const border=()=>d.lineWidth(1).lineJoin('miter').miterLimit(10).rect(50,70,180,40).stroke('black');if(first)border();d.fillColor('black').fontSize(12).text('Revenue 1.5',56,76,{lineBreak:false});if(!first)border();}),a=await make(true),b=await make(false);assert.equal(Buffer.compare(await renderPdf(a,1,1200),await renderPdf(b,1,1200)),0);
+  assert.equal((await extractPdf(a,'sha256:cell-a'))[0].elements[0].visibility,'visible');assert.equal((await extractPdf(b,'sha256:cell-b'))[0].elements[0].visibility,'visible');
+});

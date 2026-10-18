@@ -12,9 +12,15 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
   let state={matrix:[1,0,0,1,0,0],alpha:1,strokeAlpha:1,lineWidth:1,lineCap:0,lineJoin:0,miterLimit:10,blend:'Normal',mask:false,clip:null as Clip,pendingClip:false,textMode:0,textClipPending:false,color:'#000000',unsupportedState:false},stack:typeof state[]=[],marked:boolean[]=[];let sawComplexClipOrMask=false,optional=false;
   const glyphs=paintedGlyphs(page,viewport,operators,fontStyles);
   const bounds=(rect:number[],matrix=state.matrix)=>transformedBounds(rect,matrix,viewport);
-  const strokePad=()=>{const m=Util.transform(viewport.transform,state.matrix),trace=m[0]**2+m[1]**2+m[2]**2+m[3]**2,det=(m[0]*m[3]-m[1]*m[2])**2;
-    const scale=Math.sqrt((trace+Math.sqrt(Math.max(0,trace**2-4*det)))/2);
-    return(state.lineWidth===0?0.5:state.lineWidth*scale/2)*(state.lineCap===2?Math.SQRT2:1);};
+  const strokeMetrics=()=>{const m=Util.transform(viewport.transform,state.matrix),w=state.lineWidth,det=Math.abs(m[0]*m[3]-m[1]*m[2]),nx=Math.hypot(m[0],m[1]),ny=Math.hypot(m[2],m[3]);
+    if(!det||!nx||!ny)return null;
+    // Match pinned PDF.js getScaleForStroking: positive subpixel widths,
+    // as well as w=0 hairlines, are enlarged per axis before stroking.
+    const sx=m[1]===0&&m[2]===0?(w===0?1/nx:Math.max(1,1/(w*nx))):(w===0?ny/det:Math.max(1,ny/(w*det)));
+    const sy=m[1]===0&&m[2]===0?(w===0?1/ny:Math.max(1,1/(w*ny))):(w===0?nx/det:Math.max(1,nx/(w*det)));
+    const a=m[0]*sx,b=m[1]*sx,c=m[2]*sy,d=m[3]*sy,trace=a*a+b*b+c*c+d*d,product=(a*d-b*c)**2;
+    const scale=Math.sqrt((trace+Math.sqrt(Math.max(0,trace*trace-4*product)))/2),pad=(w||1)*scale/2*(state.lineCap===2?Math.SQRT2:1);
+    return Number.isFinite(pad)&&Number.isFinite(sx)&&Number.isFinite(sy)?{pad,sx,sy}:null;};
   for(let i=0;i<operators.fnArray.length;i++){
     const op=operators.fnArray[i],args=operators.argsArray[i];
     if(op===OPS.beginMarkedContent||op===OPS.beginMarkedContentProps){marked.push(optional);if(args?.[0]==='OC'){optional=true;gaps.push({feature:'pdf_visibility',reason:'optional_content_visibility_unverified'});}continue;}
@@ -50,27 +56,31 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
           regions.push({bbox:box(0,0,1,1),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'invalid_stroke_state_visibility_unverified'});continue;
         }
         if(state.lineWidth===0)gaps.push({feature:'pdf_visibility',reason:'device_hairline_visibility_unverified'});
-        const pad=strokePad(),joinPad=pad*(state.lineJoin===0?2*Math.max(1,state.miterLimit):1);
-        const joinRegion=(point:number[])=>{const b=bounds([point[0],point[1],point[0],point[1]]).bbox;
-          regions.push({bbox:box(b[0]-joinPad/viewport.width,b[1]-joinPad/viewport.height,2*joinPad/viewport.width,2*joinPad/viewport.height),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'stroke_join_geometry_unverified'});};
+        const metrics=strokeMetrics();if(!metrics){regions.push({bbox:box(0,0,1,1),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'stroke_transform_visibility_unverified'});continue;}
+        const {pad,sx,sy}=metrics,joinPad=pad*(state.lineJoin===0?2*Math.max(1,state.miterLimit):1);
+        const joinRegion=(point:number[],from?:number[],to?:number[])=>{const b=bounds([point[0],point[1],point[0],point[1]]).bbox;let radius=joinPad;
+          if(state.lineJoin!==0)radius=pad;
+          else if(from&&to){const u=[(from[0]-point[0])/sx,(from[1]-point[1])/sy],v=[(to[0]-point[0])/sx,(to[1]-point[1])/sy],nu=Math.hypot(...u),nv=Math.hypot(...v);
+            if(nu>0&&nv>0){const cosine=Math.max(-1,Math.min(1,(u[0]*v[0]+u[1]*v[1])/(nu*nv))),ratio=1/Math.sqrt((1-cosine)/2);radius=pad*(Number.isFinite(ratio)&&ratio<=state.miterLimit?ratio:1);}}
+          regions.push({bbox:box(b[0]-radius/viewport.width,b[1]-radius/viewport.height,2*radius/viewport.width,2*radius/viewport.height),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'stroke_join_geometry_unverified'});};
         let curveReported=false;
         const unknownStroke=()=>{if(curveReported)return;curveReported=true;
           regions.push({bbox:box(shape.bbox[0]-joinPad/viewport.width,shape.bbox[1]-joinPad/viewport.height,shape.bbox[2]+2*joinPad/viewport.width,shape.bbox[3]+2*joinPad/viewport.height),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'curve_stroke_visibility_unverified'});};
         // A single stroke can contain every border of a table or many strike lines.
-        for(const path of paths??[]){const p=Array.from(path as number[]);if([OPS.closeStroke,OPS.closeFillStroke,OPS.closeEOFillStroke].includes(paintOp))p.push(4);let cursor=0,last:number[]|undefined,start:number[]|undefined,hasSegment=false;
+        for(const path of paths??[]){const p=Array.from(path as number[]);let cursor=0,last:number[]|undefined,start:number[]|undefined,previous:number[]|undefined,firstNext:number[]|undefined,closed=false;
+          const segmentTo=(next:number[]|undefined,closing=false)=>{if(last&&next){const segment=bounds([Math.min(last[0],next[0]),Math.min(last[1],next[1]),Math.max(last[0],next[0]),Math.max(last[1],next[1])]);
+              if(previous)joinRegion(last,previous,next);if(closing&&start&&firstNext)joinRegion(start,last,firstNext);firstNext??=next;
+              const footprint=box(segment.bbox[0]-pad/viewport.width,segment.bbox[1]-pad/viewport.height,segment.bbox[2]+2*pad/viewport.width,segment.bbox[3]+2*pad/viewport.height);
+              const line:Region={...segment,order:i,kind:'line',opaque:!optional&&!state.unsupportedState&&state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)};
+              regions.push({bbox:footprint,axisAligned:segment.axisAligned,order:i,kind:2*pad>2?'image':'stroke',opaque:false,line});if(2*pad>2)gaps.push({feature:'pdf_visibility',reason:'thick_stroke_overlap_requires_review'});else regions.push(line);
+              previous=last;last=next;}};
           while(cursor<p.length){const command=p[cursor++];
-            if(command===0){last=[p[cursor++],p[cursor++]];start=last;hasSegment=false;}
-            else if(command===1||command===4){const next=command===4?start:[p[cursor++],p[cursor++]];
-              if(last&&next){const segment=bounds([Math.min(last[0],next[0]),Math.min(last[1],next[1]),Math.max(last[0],next[0]),Math.max(last[1],next[1])]);
-                if(hasSegment)joinRegion(last);if(command===4&&start&&hasSegment)joinRegion(start);hasSegment=true;
-                const footprint=box(segment.bbox[0]-pad/viewport.width,segment.bbox[1]-pad/viewport.height,segment.bbox[2]+2*pad/viewport.width,segment.bbox[3]+2*pad/viewport.height);
-                const line:Region={...segment,order:i,kind:'line',opaque:!optional&&!state.unsupportedState&&state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)};
-                regions.push({bbox:footprint,axisAligned:segment.axisAligned,order:i,kind:2*pad>2?'image':'stroke',opaque:false,line});
-                if(2*pad>2)gaps.push({feature:'pdf_visibility',reason:'thick_stroke_overlap_requires_review'});
-                else regions.push(line);
-              }last=next;}
+            if(command===0){last=[p[cursor++],p[cursor++]];start=last;previous=undefined;firstNext=undefined;closed=false;}
+            else if(command===1)segmentTo([p[cursor++],p[cursor++]]);
+            else if(command===4){segmentTo(start,true);closed=true;}
             else if(command===2){unknownStroke();cursor+=6;last=undefined;}else if(command===3){unknownStroke();cursor+=4;last=undefined;}else break;
           }
+          if(!closed&&[OPS.closeStroke,OPS.closeFillStroke,OPS.closeEOFillStroke].includes(paintOp))segmentTo(start,true);
         }
       }
     }
