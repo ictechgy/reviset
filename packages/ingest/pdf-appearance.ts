@@ -40,8 +40,9 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       if(fill&&isRectangle)regions.push({...shape,order:i,kind:'fill',color:state.color,opaque:!optional&&state.color!=='unknown'&&state.alpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,shape.bbox)});
       else if(fill&&area(shape.bbox)>0){regions.push({...shape,order:i,kind:'fill',opaque:false});gaps.push({feature:'pdf_visibility',reason:'non_rectangular_fill_not_used_as_confirmed_occlusion'});}
       if(stroke){
+        if(state.lineWidth===0)gaps.push({feature:'pdf_visibility',reason:'device_hairline_visibility_unverified'});
         let curveReported=false;
-        const unknownStroke=()=>{if(curveReported)return;curveReported=true;const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;
+        const unknownStroke=()=>{if(curveReported)return;curveReported=true;const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth===0?0.5:state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;
           regions.push({bbox:box(shape.bbox[0]-pad/viewport.width,shape.bbox[1]-pad/viewport.height,shape.bbox[2]+2*pad/viewport.width,shape.bbox[3]+2*pad/viewport.height),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'curve_stroke_visibility_unverified'});};
         // A single stroke can contain every border of a table or many strike lines.
         for(const path of paths??[]){const p=Array.from(path as number[]);let cursor=0,last:number[]|undefined,start:number[]|undefined;
@@ -49,7 +50,8 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
             if(command===0){last=[p[cursor++],p[cursor++]];start=last;}
             else if(command===1||command===4){const next=command===4?start:[p[cursor++],p[cursor++]];
               if(last&&next){const segment=bounds([Math.min(last[0],next[0]),Math.min(last[1],next[1]),Math.max(last[0],next[0]),Math.max(last[1],next[1])]);
-                const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;
+                // PDF w=0 paints a device hairline, not an empty stroke.
+                const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth===0?0.5:state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;
                 const footprint=box(segment.bbox[0]-pad/viewport.width,segment.bbox[1]-pad/viewport.height,segment.bbox[2]+2*pad/viewport.width,segment.bbox[3]+2*pad/viewport.height);
                 const line:Region={...segment,order:i,kind:'line',opaque:!optional&&state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)};
                 regions.push({bbox:footprint,axisAligned:segment.axisAligned,order:i,kind:2*pad>2?'image':'stroke',opaque:false,line});
@@ -109,16 +111,16 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       }
       for(const a of annotations){
         if(a.annotationFlags&35)continue;
-        if(a.annotationType!==AnnotationType.STRIKEOUT&&a.subtype!=='Redact'){
-          if(a.annotationType===AnnotationType.LINK||a.annotationType===AnnotationType.POPUP)continue;
-          if(a.rect?.length===4){const r=bounds(Array.from(a.rect),[1,0,0,1,0,0]).bbox,coverage=area(g.bbox)>0?overlap(g.bbox,r)/area(g.bbox):0;if(coverage>0.2){state='uncertain';e.visibility_evidence.push({method:'annotation_overlay_unverified',bbox:r,assessment:'inferred',coverage});}}
+        if(a.annotationType!==AnnotationType.STRIKEOUT){
+          if((a.annotationType===AnnotationType.LINK||a.annotationType===AnnotationType.POPUP)&&!a.hasAppearance)continue;
+          if(a.rect?.length===4){const r=bounds(Array.from(a.rect),[1,0,0,1,0,0]).bbox,coverage=area(g.bbox)>0?overlap(g.bbox,r)/area(g.bbox):0;if(coverage>0){state='uncertain';assessment='inferred';e.visibility_evidence.push({method:a.subtype==='Redact'?'redaction_annotation_intent_unapplied':'annotation_overlay_unverified',bbox:r,assessment:'inferred',coverage});}}
           continue;
         }
         const q=a.quadPoints?Array.from(a.quadPoints) as number[]:[];
         if(q.length<8){e.visibility_evidence.push({method:'annotation_quadpoints_missing',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
         for(let k=0;k+7<q.length;k+=8){const group=q.slice(k,k+8),xs=group.filter((_,i)=>i%2===0),ys=group.filter((_,i)=>i%2===1),region=bounds([Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)],[1,0,0,1,0,0]).bbox,coverage=area(g.bbox)>0?overlap(region,g.bbox)/area(g.bbox):0;
-          if(coverage>0.2){if(a.subtype==='Redact'){state='uncertain';assessment='inferred';}else if(['visible','struck_through','partially_struck_through'].includes(state)){state=coverage>=0.8&&state!=='partially_struck_through'?'struck_through':'partially_struck_through';assessment=state==='struck_through'?'observed':'inferred';}
-            e.visibility_evidence.push({method:a.subtype==='Redact'?'redaction_annotation_intent_unapplied':'strikeout_annotation_quad',bbox:region,assessment,coverage});}
+          if(coverage>0.2){if(['visible','struck_through','partially_struck_through'].includes(state)){state=coverage>=0.8&&state!=='partially_struck_through'?'struck_through':'partially_struck_through';assessment=state==='struck_through'?'observed':'inferred';}
+            e.visibility_evidence.push({method:'strikeout_annotation_quad',bbox:region,assessment,coverage});}
         }
       }
       if(g.hidden)state='hidden_render_mode';

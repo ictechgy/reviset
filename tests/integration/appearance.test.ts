@@ -211,10 +211,18 @@ test('sub-five-percent covers over actual punctuation ink preserve uncertainty a
     const png=await loadImage(await renderPdf(raw,1,2400)),canvas=createCanvas(png.width,png.height),ctx=canvas.getContext('2d');ctx.drawImage(png,0,0);const pixels=ctx.getImageData(0,0,png.width,png.height).data;
     const ink:number[][]=[];for(let y=Math.ceil(b[1]*png.height);y<Math.floor((b[1]+b[3])*png.height);y++)for(let x=Math.ceil(b[0]*png.width);x<Math.floor((b[0]+b[2])*png.width);x++)if(pixels[(y*png.width+x)*4]<128)ink.push([x,y]);assert.ok(ink.length);
     const scale=png.width/600,x=ink[0][0]/scale,y=ink[0][1]/scale,w=1.3,h=1.3;assert.ok(w*h/(b[2]*600*b[3]*400)<0.05);
-    for(const kind of ['fill','stroke']){
-      const after=(await extractPdf(await pdf(d=>{draw(d);if(kind==='fill')d.rect(x,y,w,h).fill('white');else d.lineWidth(0.2).moveTo(x,y+0.125).lineTo(x+w,y+0.125).stroke('white');}),'sha256:punct-after'))[0];
+    for(const kind of ['fill','stroke','Square','Redact','Link']){
+      const afterRaw=await pdf(d=>{draw(d);if(kind==='fill')d.rect(x,y,w,h).fill('white');else if(kind==='stroke')d.lineWidth(0.2).moveTo(x,y+0.125).lineTo(x+w,y+0.125).stroke('white');else{const appearance=d.ref({Type:'XObject',Subtype:'Form',BBox:[0,0,w,h],Resources:{}});appearance.end('1 1 1 rg 0 0 1.3 1.3 re f');d.annotate(x,y,w,h,Object.assign({},{Subtype:kind,IC:[1,1,1],C:[1,1,1],AP:{N:appearance}}));}}),after=(await extractPdf(afterRaw,'sha256:punct-after'))[0];
       assert.equal(after.elements[0].visibility,'uncertain');assert.equal(after.elements[0].visibility_spans!.find(s=>s.text===punctuation)!.state,'uncertain');assert.ok(after.text.includes(value));assert.ok(after.unresolved_text?.includes(value));
       const rev=(id:string,p:typeof before)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:[p],coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData,pair=matchPages([before],[after]),changes=diffRevisions(rev('a',before),rev('b',after),pair.matches,pair.candidates,p=>p);assert.ok(changes.some(c=>c.coverage_gaps.some(g=>g.reason==='pdf_visibility_unresolved_text_comparison_withheld')));
     }
+  }
+});
+test('zero-width device hairlines and curves cannot create an equal-render numeric delta',async()=>{
+  for(const curve of [false,true]){
+    const make=(value:string)=>pdf(d=>{d.fillColor('black').fontSize(12).text('Revenue '+value,50,80,{lineBreak:false});for(let y=85;y<=92;y+=0.25){d.lineWidth(0).moveTo(107,y);if(curve)d.bezierCurveTo(108,y,109.5,y,110.5,y);else d.lineTo(110.5,y);d.stroke('white');}}),a=await make('1.5'),b=await make('1,5');
+    if(!curve)assert.equal(Buffer.compare(await renderPdf(a,1,1200),await renderPdf(b,1,1200)),0,'straight hairline reproduction must render identically');
+    const left=(await extractPdf(a,'sha256:hairline-a'))[0],right=(await extractPdf(b,'sha256:hairline-b'))[0];assert.ok(left.unresolved_text?.includes('1.5'));assert.ok(right.unresolved_text?.includes('1,5'));assert.ok(left.coverage_gaps.some(g=>g.reason==='device_hairline_visibility_unverified'));
+    const rev=(id:string,p:typeof left)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:[p],coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData,pair=matchPages([left],[right]),changes=diffRevisions(rev('a',left),rev('b',right),pair.matches,pair.candidates,p=>p);assert.ok(!changes.some(c=>c.kind==='text_modified'));assert.ok(changes.some(c=>c.kind==='coverage_gap'));
   }
 });
