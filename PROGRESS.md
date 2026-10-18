@@ -1,3 +1,11 @@
+# OCR/렌더 리뷰 수정 · 2026-10-19
+
+- 현재 엔진은 `0.2.0-native.ocr-render.2`이다. 검증 중 생성한 미출시 `.ocr-render.1` 보고서는 저장된 history/export를 읽을 수 있지만 range 재계산은 unknown-engine 오류로 보류한다. 0.1 출시 엔진은 보존된 kernel로 계속 재계산한다.
+- full-diff 독립 리뷰가 재현한 겹친 숫자 행 오연결, OCR 취소선 근거의 observed 승격, SVG의 외부 로컬 파일 읽기를 수정하고 재현 회귀 테스트를 추가했다. 이전50ef32f 판정은 REQUEST CHANGES/BLOCK이며 현재 수정본 승인으로 사용하지 않는다.
+- Claude/Agy의 새 코드 리뷰도 REQUEST CHANGES였다. 파생 PPTX 화면이 OOXML 변경을 누르지 않도록 source/derived 근거를 분리하고, 파일 read/exec 제한, 정확한 공간·숫자 토큰 경고, xref 범위 메타데이터 정규화, 실패 batch 보존, 환경 확인 실패 시 OCR 보류, cold-cache 중복 렌더 생략, streaming timeline hash와 source-buffer 수명 축소, 선형 page-index projection을 보완했다. Grok 코드 리뷰는 timeout으로 무효이며 승인으로 집계하지 않는다.
+-50ef32f 실제 앱 기준 스캔300쪽×2가 약197초/최대RSS약862MB로 통과했지만, 수정된 최종 번들은 다시 검증한다. 이는 해당 합성 자료/현재 장비 측정이며512MiB 입력 성능 보증이 아니다.
+- PowerPoint 참조의 엄격한 화면 동일성은 계속 미통과다. 최종 검증·리뷰의 정확한 SHA와 raw evidence는 `.omx/artifacts/`와 `release/validation.json`에 남긴다.
+
 # OCR·렌더 품질 보완 · 2026-10-19
 
 사용자가 판독/OCR/PPTX 충실도를 보완할 때까지 계속 진행하도록 요구했다. 현재 변경은 `docs/QUALITY.md`와 ADR-004를 기준으로 한다. 아래 0.1 기록의 "OCR 미지원/PPTX 구조 보기"는 당시 체크포인트이며 현재 구현을 설명하지 않는다.

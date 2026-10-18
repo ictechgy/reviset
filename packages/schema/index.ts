@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createHash } from 'node:crypto';
 
 export const SCHEMA_VERSION = '0.1.0';
-export const ENGINE_VERSION = '0.2.0-native.ocr-render.1';
+export const ENGINE_VERSION = '0.2.0-native.ocr-render.2';
 export const MAX_INPUT_BYTES=512*1024*1024;
 export const MAX_PPTX_EXPANDED_BYTES=512*1024*1024;
 export const MAX_PPTX_PART_BYTES=64*1024*1024;

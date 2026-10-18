@@ -1,4 +1,5 @@
 import { test, before, after } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm, mkdir, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -46,7 +47,7 @@ for(const scenario of scenarios) test(`ground truth: ${scenario.name}`,async()=>
     assert.equal(r.lineages.filter(l=>hiddenIds.some(p=>l.page_ids.includes(p))).length,1);
     assert.ok(r.changes.some(c=>c.coverage_gaps.some(g=>g.reason==='not_observed_in_export')));
   }
-  if(scenario.expected.scan){assert.ok(r.coverage_gaps.some(g=>g.reason==='no_text_layer_ocr_not_run'||g.feature==='ocr'));assert.ok(numeric.every(c=>c.text_assessment==='inferred'&&c.coverage_gaps.some(g=>g.reason==='ocr_inferred_text_requires_source_review')));}
+  if(scenario.expected.scan){const scanPages=r.revisions.flatMap(v=>v.pages).filter(p=>p.ocr?.mode==='scan');assert.ok(scanPages.length>0);assert.ok(scanPages.some(p=>p.ocr?.status==='available'&&p.ocr_text?.includes('120')));assert.ok(r.coverage_gaps.some(g=>g.reason==='no_text_layer_ocr_not_run'||g.feature==='ocr'));assert.ok(numeric.every(c=>c.text_assessment==='inferred'&&c.coverage_gaps.some(g=>g.reason==='ocr_inferred_text_requires_source_review')));}
   if(scenario.expected.inconsistent){assert.ok(r.coverage_gaps.some(g=>g.reason==='bundle_inconsistent'));assert.equal(r.revisions[0].bundle_mapping.length,2);}
   assert.equal(r.changes.filter(c=>c.kind==='page_deleted'&&c.lineage.reasons.some(x=>x.includes('notes'))).length,0);
 });
@@ -152,7 +153,7 @@ test('PDF preview PNG works without LibreOffice; converter absence and timeout e
   const pdf=await readFile(join(dirname(paths[0]),'v2.pdf'));
   const image=await renderPdf(pdf,2,640);assert.equal(image.subarray(1,4).toString(),'PNG');await writeFile(join(root,'preview.png'),image);
   await assert.rejects(convertPptx(join(dirname(paths[0]),'v1.pptx'),join(root,'no-converter')),{code:'CONVERTER_UNAVAILABLE'});
-  const fake=join(root,'fake-converter');await writeFile(fake,'#!/bin/sh\nexec sleep 5\n');await chmod(fake,0o700);
+  const fake=join(root,'fake-converter');if(process.platform==='darwin')execFileSync('/usr/bin/clang',['-x','c','-','-o',fake],{input:'#include <unistd.h>\nint main(void){sleep(5);return 0;}\n'});else{await writeFile(fake,'#!/bin/sh\nexec sleep 5\n');await chmod(fake,0o700);}
   await assert.rejects(convertPptx(join(dirname(paths[0]),'v1.pptx'),fake,50),{code:'CONVERTER_TIMEOUT'});
 });
 test('real MCP stdio handshake, schemas, fixed reports, resources, read-only storage',async()=>{

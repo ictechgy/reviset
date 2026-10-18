@@ -23,15 +23,16 @@ for(const item of cases){
   const pages=extractPptx(source,'sha256:'+byteHash(source)),converted=await preparePptxPreview(join(folder,item.source),source,pages,join(folder,'cache'));
   if(!converted)throw new Error('Reference validation requires actual renderer');await writeFile(join(output,'converted.pdf'),converted);
   const actual=await extractPdf(converted,'sha256:'+byteHash(converted)),expected=await extractPdf(reference,'sha256:'+byteHash(reference));
+  if(actual.length!==item.expected_pages||expected.length!==item.expected_pages)throw new Error('Reference page-count mismatch: '+item.id);
   const metrics=[];
-  for(let n=1;n<=Math.min(actual.length,expected.length);n++){
-    const [a,b]=await Promise.all([renderPdf(converted,n,1440),renderPdf(reference,n,1440)]),ca=createCanvas(1440,810),cb=createCanvas(1440,810),xa=ca.getContext('2d'),xb=cb.getContext('2d');
-    xa.drawImage(await loadImage(a),0,0,1440,810);xb.drawImage(await loadImage(b),0,0,1440,810);
-    const pa=xa.getImageData(0,0,1440,810).data,pb=xb.getImageData(0,0,1440,810).data;let error=0,changed=0;
+  for(let n=1;n<=actual.length;n++){
+    const [a,b]=await Promise.all([renderPdf(converted,n,1440),renderPdf(reference,n,1440)]),ia=await loadImage(a),ib=await loadImage(b),width=Math.max(ia.width,ib.width),height=Math.max(ia.height,ib.height),ca=createCanvas(width,height),cb=createCanvas(width,height),xa=ca.getContext('2d'),xb=cb.getContext('2d');
+    for(const ctx of [xa,xb]){ctx.fillStyle='white';ctx.fillRect(0,0,width,height);}xa.drawImage(ia,0,0);xb.drawImage(ib,0,0);
+    const pa=xa.getImageData(0,0,width,height).data,pb=xb.getImageData(0,0,width,height).data;let error=0,changed=0;
     for(let i=0;i<pa.length;i+=4){let difference=0;for(let c=0;c<3;c++){const delta=Math.abs(pa[i+c]-pb[i+c]);error+=delta;difference=Math.max(difference,delta);}if(difference>24)changed++;}
     await writeFile(join(output,`actual-${n}.png`),a);await writeFile(join(output,`powerpoint-${n}.png`),b);
     const needed=pages[n-1].elements.filter(e=>e.text.trim()).map(e=>e.text.replace(/\s/gu,'')),text=actual[n-1].text.replace(/\s/gu,'');
-    metrics.push({page:n,mean_absolute_rgb_error:error/(1440*810*3),changed_pixel_fraction:changed/(1440*810),source_text_present:needed.filter(t=>text.includes(t)).length,source_text_count:needed.length});
+    metrics.push({page:n,actual_pixels:[ia.width,ia.height],reference_pixels:[ib.width,ib.height],geometry_matches:ia.width===ib.width&&ia.height===ib.height,mean_absolute_rgb_error:error/(width*height*3),changed_pixel_fraction:changed/(width*height),source_text_present:needed.filter(t=>text.includes(t)).length,source_text_count:needed.length});
   }
   const row={id:item.id,locale:item.locale,pages:actual.length,expected_pages:item.expected_pages,required_fonts:item.required_fonts,warnings:[...new Set(pages.flatMap(p=>p.preview?.warnings??[]))],metrics};results.push(row);
   await writeFile(join(folder,'result.json'),JSON.stringify({commit,reference:'Upstream-declared Microsoft PowerPoint16.111.1/macOS26.5.2 independent exports; pinned bytes verified',cases:results,scope:'Descriptive pixel differences, not an all-document or pixel-equivalence certification'},null,2));

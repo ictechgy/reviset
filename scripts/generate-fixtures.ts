@@ -59,7 +59,7 @@ export async function generateFixtures(root:string):Promise<string[]> {
     const manifestPath=join(folder,'manifest.json');await writeFile(manifestPath,JSON.stringify(manifest,null,2)+'\n');manifests.push(manifestPath);
     await writeFile(join(folder,'fixture.json'),JSON.stringify({seed:20261018,generator_version:'1.0.0',generators:{pptx:'PptxGenJS 4.0.1',pdf:'PDFKit 0.20.2',font:FONT,font_sha256:byteHash(await readFile(FONT))},
       assets,expected:scenario.expected,mapping:scenario.versions.map((v,i)=>({version:i+1,pages:v.slides.map((s,n)=>({key:s.key,source_page:n+1,hidden:s.hidden??false}))})),
-      allowed_loss:['PDF notes/animation/hidden slides unavailable','scan text layer unavailable; no OCR'],reference:'Independent semantic construction; not an office-renderer fidelity oracle'},null,2)+'\n');
+      allowed_loss:['PDF notes/animation/hidden slides unavailable','scan has no original text layer; OCR remains inferred'],reference:'Independent semantic construction; not an office-renderer fidelity oracle'},null,2)+'\n');
   }
   return manifests;
 }

@@ -74,3 +74,5 @@ npx tsx scripts/verify-office-reference.ts
 네이티브 smoke는 실제 `.app`을 실행하되 화면 조작은 앱 내부 모델로 수행합니다. OS 마우스/키보드 자동화나 전체 접근성 인증을 대신하지 않습니다. 결과와 화면은 `output/native-*`에 저장됩니다.
 
 [구현·검증 상태](PROGRESS.md), [UI 기준](DESIGN.md), [네이티브 아키텍처](docs/adr/003-native-macos.md), [의존성](docs/dependencies.md). 원래 [PLAN.md](PLAN.md)와 [HANDOFF.md](HANDOFF.md)는 보존하며 이후 사용자의 네이티브 앱 요구가 초기 Electron 가정을 대체합니다.
+
+변환기는 매크로/OLE, 지원하지 않는 임베디드 개체, 외부 리소스 및 SVG 외부 참조가 있는 PPTX를 구조 보기로 보류합니다. 512MiB는 입력 상한이며 그 크기의 모든 문서에 대한 메모리·시간 보증이 아닙니다.

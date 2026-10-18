@@ -1,6 +1,7 @@
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { mkdtemp,readFile,writeFile,rm,readdir } from 'node:fs/promises';
+import { mkdtemp,readFile,writeFile,rm,readdir,realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join,resolve } from 'node:path';
 import PDFDocument from 'pdfkit';
@@ -10,8 +11,8 @@ import { zipSync,unzipSync,strToU8 } from 'fflate';
 import { extractPdf } from '../../packages/ingest/pdf.js';
 import { extractPptx } from '../../packages/ingest/pptx.js';
 import { recognizePdf,captureNativePages } from '../../packages/ingest/ocr.js';
-import { convertPptx,validateRenderPackage } from '../../packages/render/index.js';
-import { preparePptxPreview } from '../../packages/render/pptx-preview.js';
+import { convertPptx,validateRenderPackage,normalizeConvertedPdf,rendererSandbox } from '../../packages/render/index.js';
+import { preparePptxPreview,missingRenderedText } from '../../packages/render/pptx-preview.js';
 import { officeExecutable,visionExecutable,visionInfo,runTool } from '../../packages/runtime/tools.js';
 import { byteHash,id,normalize,comparisonText,SCHEMA_VERSION,SCHEMA_HASH,ENGINE_VERSION,type PageData,type RevisionData,type ReportData } from '../../packages/schema/index.js';
 import { matchPages } from '../../packages/matching/index.js';
@@ -179,5 +180,77 @@ test('native subprocess timeout terminates the complete process group',async()=>
   try{const file=join(folder,'pid'),script='import os,time,signal; p=os.fork(); signal.signal(signal.SIGTERM,signal.SIG_IGN) if not p else open('+JSON.stringify(file)+',"w").write(str(p)); time.sleep(30)';
     await assert.rejects(runTool('/usr/bin/python3',['-c',script],{timeout:1500}),{code:'TOOL_TIMEOUT'});
     const pid=Number(await readFile(file,'utf8'));assert.throws(()=>process.kill(pid,0),{code:'ESRCH'});
+  }finally{await rm(folder,{recursive:true,force:true});}
+});
+
+
+test('regional inference cannot cross unchanged or unreadable overlapping numeric rows',()=>{
+  const make=(key:string):PageData=>({page_id:key,asset_id:key,page:1,width:960,height:540,coordinate_system:'normalized',source_transform:[],hidden:false,text:'Revenue 100\nRevenue 120',visible_text:'Revenue 100\nRevenue 120',unresolved_text:'unknown footer',elements:[100,120].map((n,i)=>({observation_id:key+i,kind:'text',text:'Revenue '+n,normalized_text:'Revenue '+n,bbox:[.1,.1+i*.07,.3,.08],reading_order:i,availability:'available',method:'vision_ocr',provenance:'inferred',source_ref:key+i,visibility:'visible'})),notes:null,capabilities:{text:'available',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},coverage_gaps:[],raster:{sha256:key.repeat(64),width:960,height:540,renderer:'test',environment:'test'}});
+  const a=make('a'),b=make('b');assert.equal(changes(a,b).filter(c=>c.kind==='text_modified').length,0);assert.ok(changes(a,b).some(c=>c.kind==='visual_region_changed'));
+  a.comparison_basis=b.comparison_basis='raster_ocr';a.ocr_text=a.text;b.ocr_text='Revenue 120';b.ocr_unresolved_text='Revenue 100';b.elements[0].visibility='uncertain';
+  assert.equal(changes(a,b).filter(c=>c.kind==='text_modified').length,0);
+  b.elements.shift();assert.equal(changes(a,b).filter(c=>c.kind==='text_modified').length,0);
+});
+
+test('mixed-page raster strike evidence retains inferred OCR provenance',native,async()=>{
+  const make=(strike:boolean)=>pdf(d=>{const c=createCanvas(1920,1080),ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1920,1080);ctx.font='48px Arial';ctx.fillStyle='black';ctx.fillText('Revenue 100',120,300);if(strike){ctx.strokeStyle='red';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(120,282);ctx.lineTo(390,282);ctx.stroke();}d.image(c.toBuffer('image/png'),0,0,{width:960,height:540});d.fontSize(24).text('Observed header',50,25,{lineBreak:false});});
+  const a=(await extractPdf(await make(false),'sha256:mixed-strike-a',{ocr:'auto'}))[0],b=(await extractPdf(await make(true),'sha256:mixed-strike-b',{ocr:'auto'}))[0];
+  assert.equal(a.ocr?.mode,'supplement');const event=changes(a,b).find(c=>c.kind==='text_struck_through');assert.ok(event);assert.equal(event.appearance_assessment,'inferred');assert.ok(event.evidence.every(e=>e.method==='vision_ocr'&&e.provenance==='inferred'));assert.ok(event.coverage_gaps.some(g=>g.reason==='ocr_inferred_text_requires_source_review'));
+});
+
+test('PPTX text coverage is spatial, canonically normalized and numeric-token exact',()=>{
+  const e={text:'한글 10',bbox:[.1,.1,.3,.1]} as any;
+  assert.equal(missingRenderedText([e],[{text:'한글'.normalize('NFD')+' 10',bbox:[.12,.12,.2,.04]}]),false);
+  assert.equal(missingRenderedText([e],[{text:'한글 100',bbox:[.12,.12,.2,.04]}]),true);
+  assert.equal(missingRenderedText([e],[{text:'한글 10',bbox:[.7,.7,.2,.04]}]),true);
+});
+
+test('metadata canonicalization preserves stream bytes and nonmetadata dictionary strings',async()=>{
+  const d=new PDFDocument({size:[960,540],margin:0,compress:false,info:{Title:'/CreationDate(D:20261019000000) /ID [<abcdef><abcdef>]'}}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(res=>d.on('end',()=>res(Buffer.concat(chunks))));
+  d.addContent('% /CreationDate(D:20261019000000) /ID [<abcdef><abcdef>] /DocChecksum /deadbeef /Type /Metadata');d.fontSize(20).text('Visible 2026-10-19T04:00:00',50,50);d.end();const bytes=await done,normalized=normalizeConvertedPdf(bytes);
+  const streams=(b:Buffer)=>[...b.toString('latin1').matchAll(/stream\r?\n([\s\S]*?)endstream/g)].map(m=>m[1]);assert.deepEqual(streams(normalized),streams(bytes));
+  assert.ok(normalized.toString('latin1').includes('/CreationDate(D:20261019000000) /ID [<abcdef><abcdef>] /DocChecksum /deadbeef'));
+});
+
+test('embedded SVG resource guards and renderer read isolation contain local dependencies',office,async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-svg-test-'));try{
+    const c=createCanvas(200,200);c.getContext('2d').fillRect(0,0,200,200);const Pptx=(pptxgen as any).default??pptxgen,p=new Pptx();p.addSlide().addImage({data:'image/png;base64,'+c.toBuffer('image/png').toString('base64'),x:1,y:1,w:3,h:3});
+    const zip=unzipSync(await p.write({outputType:'nodebuffer'}) as Buffer),name=Object.keys(zip).find(n=>/^ppt\/media\/.*\.png$/.test(n))!,external=join(folder,'outside.txt');await writeFile(external,'private fixture');
+    for(const href of ['file://'+external,'https://example.invalid/image.png','&#x66;ile://'+external]){zip[name]=strToU8(`<svg xmlns="http://www.w3.org/2000/svg"><image href="${href}"/></svg>`);assert.throws(()=>validateRenderPackage(zipSync(zip)),(e:any)=>e.code==='EXTERNAL_RELATIONSHIP');}
+    zip[name]=strToU8('<svg xmlns="http://www.w3.org/2000/svg"><rect width="200" height="200" fill="red"/></svg>');assert.doesNotThrow(()=>validateRenderPackage(zipSync(zip)));
+    const job=join(folder,'job');await import('node:fs/promises').then(fs=>fs.mkdir(job));const profile=rendererSandbox(await realpath(job),officeExecutable()!)+'(allow process-exec (literal "/bin/cat"))';
+    await assert.rejects(runTool('/usr/bin/sandbox-exec',['-p',profile,'/bin/cat',external]),(e:any)=>e.code==='TOOL_FAILED');
+    const inside=join(job,'inside.txt');await writeFile(inside,'allowed job fixture');assert.equal(await runTool('/usr/bin/sandbox-exec',['-p',profile,'/bin/cat',inside]),'allowed job fixture');
+  }finally{await rm(folder,{recursive:true,force:true});}
+});
+
+
+test('real PPTX background changes do not invent values and off-slide source edits survive equal renders',office,async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-source-render-')),service=new DesktopService(join(folder,'library'));
+  try{const Pptx=(pptxgen as any).default??pptxgen;
+    const deck=async(name:string,background:string,offslide?:string)=>{const p=new Pptx();p.layout='LAYOUT_WIDE';const slide=p.addSlide();slide.background={color:background};slide.addText('Revenue 100',{x:1,y:1,w:4,h:1,fontSize:12,margin:0});slide.addText('Revenue 120',{x:1,y:1.5,w:4,h:1,fontSize:12,margin:0});if(offslide)slide.addText('Hidden source '+offslide,{x:15,y:1,w:4,h:1,fontSize:12});const path=join(folder,name+'.pptx');await writeFile(path,await p.write({outputType:'nodebuffer'}) as Buffer);return path;};
+    const a=await deck('a','FFFFFF'),b=await deck('b','E0E0E0'),project=await service.create('Background',[{label:'a',files:[a]},{label:'b',files:[b]}]),{report}=await service.run(project.project_id);
+    assert.equal(report.changes.filter(c=>c.kind==='text_modified').length,0);const visual=report.changes.find(c=>c.kind==='visual_region_changed');assert.ok(visual);assert.equal(visual.appearance_assessment,'inferred');assert.ok(visual.evidence.every(e=>e.provenance==='inferred'));
+    const c=await deck('c','FFFFFF','100'),d=await deck('d','FFFFFF','120'),source=await service.create('Off-slide',[{label:'c',files:[c]},{label:'d',files:[d]}]),result=(await service.run(source.project_id)).report;
+    assert.equal(result.revisions[0].pages[0].raster?.sha256,result.revisions[1].pages[0].raster?.sha256);const delta=result.changes.find(c=>c.kind==='text_modified');assert.ok(delta);assert.equal(delta.text_assessment,'observed');assert.ok(delta.before?.includes('Hidden source 100'));assert.ok(delta.after?.includes('Hidden source 120'));assert.ok(result.changes.some(c=>c.coverage_gaps.some(g=>g.reason==='ooxml_source_changed_while_libreoffice_appearance_unchanged')));
+  }finally{service.close();await rm(folder,{recursive:true,force:true});}
+});
+
+test('an OCR-only unmatched page is a lineage gap rather than proof of deletion',native,async()=>{
+  const a=(await extractPdf(await scanned('QUARTERLY OUTLOOK 100'),'sha256:outlook',{ocr:'auto'}))[0],b=(await extractPdf(await scanned('SUPPLIER INVOICE 500'),'sha256:invoice',{ocr:'auto'}))[0],paired=matchPages([a],[b]),delta=diffRevisions(rev(a,'v1'),rev(b,'v2'),paired.matches,paired.candidates,()=> 'entity');
+  assert.equal(paired.matches.length,0);assert.equal(delta.filter(c=>c.kind==='page_added'||c.kind==='page_deleted').length,0);assert.ok(delta.some(c=>c.kind==='coverage_gap'));
+});
+
+
+test('native batch failure preserves completed pages and unverified environments never run OCR',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-native-fault-'));try{
+    const helper=join(folder,'fake-vision.mjs'),module=new URL('../../packages/ingest/ocr.ts',import.meta.url).href;
+    const result={version:'fault-fixture',revision:3,languages:['ko-KR','en-US'],language_correction:false,ocr_performed:false,renderer:'fixture',verification:'fixture',viewport_width:960,viewport_height:540,rotation:0,width:960,height:540,render_sha256:'a'.repeat(64),lines:[]};
+    await writeFile(helper,`#!${process.execPath}\nif(process.argv.includes('--info')){console.log(JSON.stringify({version:'fixture',os:'fixture',font_inventory_sha256:'fixture'}));}else{let s='';for await(const d of process.stdin)s+=d;const q=JSON.parse(s);if(q.pages[0]>16)console.log('broken batch');else console.log(JSON.stringify({pages:q.pages.map(page=>({page,result:${JSON.stringify(result)}}))}));}`,{mode:0o755});
+    const child=`import {captureNativePages} from ${JSON.stringify(module)};const r=await captureNativePages(new Uint8Array(),Array.from({length:20},(_,i)=>i+1),[]);console.log(JSON.stringify([...r.keys()]));`;
+    const output=execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',child],{encoding:'utf8',env:{...process.env,DOCVER_VISION:helper},timeout:15000});assert.deepEqual(JSON.parse(output),Array.from({length:16},(_,i)=>i+1));
+    await writeFile(helper,`#!${process.execPath}\nprocess.exit(7);`,{mode:0o755});
+    const unavailable=`import {recognizePdf} from ${JSON.stringify(module)};try{await recognizePdf(new Uint8Array(),1);throw Error('OCR executed');}catch(e){if(e.code!=='OCR_UNAVAILABLE')throw e;console.log(e.code);}`;
+    assert.equal(execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',unavailable],{encoding:'utf8',env:{...process.env,DOCVER_VISION:helper},timeout:15000}).trim(),'OCR_UNAVAILABLE');
   }finally{await rm(folder,{recursive:true,force:true});}
 });

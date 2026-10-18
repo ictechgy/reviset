@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { existsSync } from 'node:fs';
 import { mkdtemp,mkdir,readFile,writeFile,rm,rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,7 +18,8 @@ export async function recognizePdf(bytes:Uint8Array,page:number,options:OcrOptio
 }
 export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPages:number[],options:OcrOptions={}):Promise<Map<number,NativePageResult>>{
   const executable=visionExecutable();if(!executable)throw new DocverError('OCR_UNAVAILABLE','Native OCR helper is unavailable');
-  const sourceHash=options.sourceHash??byteHash(bytes),environment=await ocrEnvironment(),wanted=new Set(ocrPages),results=new Map<number,NativePageResult>(),missing:number[]=[];
+  const environment=await ocrEnvironment();if(environment==='unavailable')throw new DocverError('OCR_UNAVAILABLE','Native OCR environment could not be verified');
+  const sourceHash=options.sourceHash??byteHash(bytes),wanted=new Set(ocrPages),results=new Map<number,NativePageResult>(),missing:number[]=[];
   const cache=options.cacheRoot?join(options.cacheRoot,'ocr'):undefined;
   const keyFor=(page:number)=>hash([sourceHash,page,environment,wanted.has(page),'pdfkit-300dpi-4096-tiled-v4']);
   for(const page of pages){const path=cache?join(cache,keyFor(page)+'.json'):undefined;try{if(path){const saved=JSON.parse(await readFile(path,'utf8'));if(saved.key===keyFor(page)&&saved.sha256===hash(saved.value)){const value=Result.parse(saved.value);if(value.ocr_performed===wanted.has(page)){results.set(page,value);continue;}}}}catch{/* missing or corrupt cache is recomputed */}missing.push(page);}
@@ -27,7 +29,7 @@ export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPage
     const source=options.sourceFile??join(folder!,'source.pdf');if(folder)await writeFile(source,bytes,{mode:0o600});
     const save=async(page:number,value:NativePageResult)=>{if(!cache)return;await mkdir(cache,{recursive:true});const key=keyFor(page),path=join(cache,key+'.json'),staging=join(cache,key+'-'+randomUUID()+'.tmp');await writeFile(staging,JSON.stringify({key,sha256:hash(value),value}),{flag:'wx'});await rename(staging,path);};
     // OCR is an image observation: identical native pixels reuse recognition across versions.
-    if(cache&&missing.some(n=>wanted.has(n))){
+    if(cache&&existsSync(join(cache,'raster'))&&missing.some(n=>wanted.has(n))){
       const rendered=await captureNativePages(bytes,missing.filter(n=>wanted.has(n)),[],{...options,sourceFile:source,sourceHash,onPage:undefined});
       for(const [page,raster] of rendered){const key=hash([environment,raster.render_sha256]),path=join(cache,'raster',key+'.json');try{const saved=JSON.parse(await readFile(path,'utf8'));if(saved.key!==key||saved.sha256!==hash(saved.value))continue;const known=Result.parse(saved.value);if(!known.ocr_performed||known.render_sha256!==raster.render_sha256)continue;
         const value={...known,viewport_width:raster.viewport_width,viewport_height:raster.viewport_height,rotation:raster.rotation};results.set(page,value);await save(page,value);
@@ -35,11 +37,12 @@ export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPage
     }
     const pending=missing.filter(n=>!results.has(n));
     for(let start=0;start<pending.length;start+=16){
-      options.signal?.throwIfAborted();const chunk=pending.slice(start,start+16),response=z.object({pages:z.array(z.object({page:z.number().int().positive(),result:Result.optional(),error:z.string().optional()}).refine(row=>Boolean(row.result)!==Boolean(row.error))).max(16)}).parse(JSON.parse(await runTool(executable,[],{input:JSON.stringify({path:source,pages:chunk,ocr_pages:chunk.filter(n=>wanted.has(n))}),signal:options.signal,timeout:120_000,maxBytes:32*1024*1024})));
+      options.signal?.throwIfAborted();const chunk=pending.slice(start,start+16);try{const response=z.object({pages:z.array(z.object({page:z.number().int().positive(),result:Result.optional(),error:z.string().optional()}).refine(row=>Boolean(row.result)!==Boolean(row.error))).max(16)}).parse(JSON.parse(await runTool(executable,[],{input:JSON.stringify({path:source,pages:chunk,ocr_pages:chunk.filter(n=>wanted.has(n))}),signal:options.signal,timeout:30_000*chunk.length,maxBytes:32*1024*1024})));
       if(response.pages.length!==chunk.length||new Set(response.pages.map(p=>p.page)).size!==chunk.length||response.pages.some(p=>!chunk.includes(p.page)))throw new DocverError('OCR_PROTOCOL','Native observation page set mismatch');
       for(const row of response.pages){if(!row.result)continue;if(row.result.ocr_performed!==wanted.has(row.page))throw new DocverError('OCR_PROTOCOL','Native observation mode mismatch');results.set(row.page,row.result);await save(row.page,row.result);
         if(cache&&row.result.ocr_performed){const key=hash([environment,row.result.render_sha256]),folder=join(cache,'raster');await mkdir(folder,{recursive:true});const staging=join(folder,key+'-'+randomUUID()+'.tmp');await writeFile(staging,JSON.stringify({key,sha256:hash(row.result),value:row.result}),{flag:'wx'});await rename(staging,join(folder,key+'.json'));}
       }
+      }catch(e){if(options.signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;}
       options.onPage?.(Math.min(start+16,pending.length),pending.length);
     }
     return results;
@@ -71,7 +74,7 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
       const good=additions.filter(e=>e.visibility==='visible').map(e=>e.text).join('\n'),uncertain=additions.filter(e=>e.visibility!=='visible').map(e=>e.text).join('\n');
       page.ocr_text=good;page.ocr_unresolved_text=uncertain;
       if(rasterComparison)page.comparison_basis='raster_ocr';
-      else{page.visible_text=[page.visible_text,good].filter(Boolean).join('\n');page.unresolved_text=[page.unresolved_text,uncertain].filter(Boolean).join('\n');}
+      else page.visible_text=[page.visible_text,good].filter(Boolean).join('\n');
       page.coverage_gaps.push({feature:'ocr',reason:'ocr_inferred_text_requires_source_review'});
       if(uncertain)page.coverage_gaps.push({feature:'ocr',reason:'low_confidence_or_ambiguous_ocr_text_comparison_withheld'});
     }

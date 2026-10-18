@@ -2,16 +2,20 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Report,Page,Asset, canonical, byteHash, DocverError, type ReportData } from '../schema/index.js';
+import { Report,Page,Asset, canonical, byteHash, DocverError, type ReportData,type RevisionData,type PageData } from '../schema/index.js';
 import { z } from 'zod';
 const NativePage=z.object({page:Page,asset:Asset,reference:Page.pick({asset_id:true,page:true,width:true,height:true,source_transform:true}).optional()});
 function pagePayload(report:ReportData,pageId:string):z.infer<typeof NativePage>{
   const revision=report.revisions.find(v=>v.pages.some(p=>p.page_id===pageId)),page=revision?.pages.find(p=>p.page_id===pageId);
   if(!revision||!page)throw new DocverError('PAGE_NOT_FOUND','Page is outside this report');
+  return indexedPagePayload(revision,page);
+}
+function indexedPagePayload(revision:RevisionData,page:PageData,pages=new Map(revision.pages.map(p=>[p.page_id,p])),mapping=new Map(revision.bundle_mapping.map(m=>[m.source_page_id,m.rendered_page_id]))):z.infer<typeof NativePage>{
   const asset=revision.assets.find(a=>a.asset_id===page.asset_id)!;
-  const mapping=revision.bundle_mapping.find(m=>m.source_page_id===pageId),reference=!revision.coverage_gaps.some(g=>g.reason==='bundle_inconsistent')?revision.pages.find(p=>p.page_id===mapping?.rendered_page_id):undefined;
+  const reference=!revision.coverage_gaps.some(g=>g.reason==='bundle_inconsistent')?pages.get(mapping.get(page.page_id)??''):undefined;
   return NativePage.parse({page,asset,reference:reference?{asset_id:reference.asset_id,page:reference.page,width:reference.width,height:reference.height,source_transform:reference.source_transform}:undefined});
 }
+
 export class Store {
   readonly db:DatabaseSync;
   readonly root:string;
@@ -41,7 +45,7 @@ export class Store {
       if(existing&&existing.body!==body) throw new DocverError('SNAPSHOT_CONFLICT','Immutable report ID already has different content');
       this.db.prepare('INSERT OR IGNORE INTO reports VALUES (?,?,?,?)').run(report.report_id,report.project_id,new Date().toISOString(),body);
       const insert=this.db.prepare('INSERT OR IGNORE INTO native_pages VALUES (?,?,?)');
-      for(const revision of report.revisions)for(const page of revision.pages)insert.run(report.report_id,page.page_id,canonical(pagePayload(report,page.page_id)));
+      for(const revision of report.revisions){const pages=new Map(revision.pages.map(p=>[p.page_id,p])),mapping=new Map(revision.bundle_mapping.map(m=>[m.source_page_id,m.rendered_page_id]));for(const page of revision.pages)insert.run(report.report_id,page.page_id,canonical(indexedPagePayload(revision,page,pages,mapping)));}
       this.db.prepare('UPDATE runs SET report_id=?,finished_at=?,status=? WHERE id=?').run(report.report_id,new Date().toISOString(),status,runId);
       onCommit?.();
       this.db.exec('COMMIT');

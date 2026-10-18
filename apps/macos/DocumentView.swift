@@ -98,7 +98,7 @@ struct PageColumn: View {
                 TextField("페이지", text:$pageInput).frame(width:48).multilineTextAlignment(.center).onSubmit { if let n=Int(pageInput){go(n)} }
                 Text("/ \(pages.count)").foregroundStyle(.secondary).font(.caption)
                 Button { go(current["page"].int+1) } label: { Image(systemName:"chevron.right") }.disabled(current.isNull || current["page"].int>=pages.count)
-                Spacer(); Text(payload["source"]["origin"].string == "reference_pdf" ? "같은 버전의 원본 PDF" : payload["source"]["origin"].string == "pptx_converted" ? "PPTX 렌더 · LibreOffice" : payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 렌더 실패").font(.caption).foregroundStyle(.secondary)
+                Spacer(); Text(payload["source"]["origin"].string == "reference_pdf" ? "같은 버전의 원본 PDF" : payload["source"]["origin"].string == "pptx_converted" ? "PPTX 렌더 · LibreOffice" : payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 렌더 없음").font(.caption).foregroundStyle(.secondary)
             }.controlSize(.small)
             GeometryReader { geometry in
                 if current.isNull { ContentUnavailableView("대응하는 원문 없음", systemImage:"doc", description:Text("관측 부재와 실제 삭제를 변경 근거에서 구분하세요.")) }
