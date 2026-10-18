@@ -1,3 +1,9 @@
+# 계약 연결 재리뷰 수정 · 2026-10-19
+
+- dc86fa2의 native response-schema 검사 누락과 historical range matcher/schema-ID 재생 문제를 수정했다. native protocol0.1과 새 envelope schema0.2를 분리하며 Swift Bridge가 실제 번들 backend의 recover/projects 응답을 수락하는 회귀 검사를 추가했다.
+- 0.1 출시 kernel은 matching 후보와 schema 상수까지 고정한다. old range의 change kind와 net-ID 입력을 재현하며, 현재 매칭의 exact-source 개선을 과거 report에 섞지 않는다.
+- 이전 각 SHA의 BLOCK/REQUEST CHANGES는 보존하고 최종 full-diff 독립 리뷰와 새 번들 QA를 다시 수행한다.
+
 # 두 번째 재리뷰 수정 · 2026-10-19
 
 - c72d372도 REQUEST CHANGES/BLOCK이었다. full-page OCR many-to-one 대응, 같은 숫자 위치 교환의 observed 승격, 동일 textless PPTX 재가져오기의 거짓 add/delete를 추가 수정했다. 이전 판정을 현재 승인으로 사용하지 않는다.
@@ -7,7 +13,7 @@
 
 # OCR/렌더 리뷰 수정 · 2026-10-19
 
-- 현재 엔진은 `0.2.0-native.ocr-render.3`이다. 검증 중 생성한 미출시 `.ocr-render.1/.2` 보고서는 저장된 history/export를 읽을 수 있지만 range 재계산은 unknown-engine 오류로 보류한다. 0.1 출시 엔진은 보존된 kernel로 계속 재계산한다.
+- 현재 엔진은 `0.2.0-native.ocr-render.4`이다. 검증 중 생성한 미출시 `.ocr-render.1/.2/.3` 보고서는 저장된 history/export를 읽을 수 있지만 range 재계산은 unknown-engine 오류로 보류한다. 0.1 출시 엔진은 보존된 kernel로 계속 재계산한다.
 - full-diff 독립 리뷰가 재현한 겹친 숫자 행 오연결, OCR 취소선 근거의 observed 승격, SVG의 외부 로컬 파일 읽기를 수정하고 재현 회귀 테스트를 추가했다. 이전50ef32f 판정은 REQUEST CHANGES/BLOCK이며 현재 수정본 승인으로 사용하지 않는다.
 - Claude/Agy의 새 코드 리뷰도 REQUEST CHANGES였다. 파생 PPTX 화면이 OOXML 변경을 누르지 않도록 source/derived 근거를 분리하고, 파일 read/exec 제한, 정확한 공간·숫자 토큰 경고, xref 범위 메타데이터 정규화, 실패 batch 보존, 환경 확인 실패 시 OCR 보류, cold-cache 중복 렌더 생략, streaming timeline hash와 source-buffer 수명 축소, 선형 page-index projection을 보완했다. Grok 코드 리뷰는 timeout으로 무효이며 승인으로 집계하지 않는다.
 -50ef32f 실제 앱 기준 스캔300쪽×2가 약197초/최대RSS약862MB로 통과했지만, 수정된 최종 번들은 다시 검증한다. 이는 해당 합성 자료/현재 장비 측정이며512MiB 입력 성능 보증이 아니다.

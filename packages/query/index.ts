@@ -1,3 +1,4 @@
+import {matchPages as legacyNativeMatch} from '../matching/legacy-native-1.js';
 import { z } from 'zod';
 import { Store } from '../storage/index.js';
 import { SCHEMA_VERSION,ENGINE_VERSION, canonical, hash, id,comparisonText,textChunk, DocverError, Gap, Change, type ChangeData, type ReportData } from '../schema/index.js';
@@ -86,7 +87,8 @@ export class QueryService {
           const matches=left.pages.flatMap(p=>right.pages.filter(q=>entity(p.page_id)===entity(q.page_id)).map(q=>({from_page_id:p.page_id,to_page_id:q.page_id,score:Math.min(1,...r.matches.filter(m=>r.lineages.find(l=>l.entity_id===entity(p.page_id))?.page_ids.includes(m.from_page_id)).map(m=>m.score)),status:r.lineages.find(l=>l.entity_id===entity(p.page_id))?.status??'inferred',reasons:['snapshot_lineage_range_net']})));
           const diff=r.engine_version===ENGINE_VERSION?diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:undefined;
           if(!diff)throw new DocverError('ENGINE_VERSION_UNAVAILABLE','Historical range computation requires its archived engine; stored history/export remains readable, and reanalysis creates a new report');
-          changes=diff(left,right,matches,matchPages(left.pages,right.pages).candidates,entity).map((c,i)=>({...c,schema_version:r.schema_version,report_id:r.report_id,change_id:id('net',[r.report_id,args.from,args.to,i,c]),evidence_uri:resource(r,'manifest')}));
+          const candidates=(r.engine_version==='0.1.0-native.1'?legacyNativeMatch:matchPages)(left.pages,right.pages).candidates;
+          changes=diff(left,right,matches,candidates,entity).map((c,i)=>{const event={...c,schema_version:r.schema_version};return {...event,report_id:r.report_id,change_id:id('net',[r.report_id,args.from,args.to,i,event]),evidence_uri:resource(r,'manifest')};});
         } else {
           const revIndex=(key:string)=>r.revisions.findIndex(v=>v.revision_occurrence_id===key||v.revision_id===key);
           const start=args.from?revIndex(args.from):0,end=args.to?revIndex(args.to):r.revisions.length-1;
@@ -128,6 +130,19 @@ export class QueryService {
     const budget=Math.min(max_output_tokens,32768);
     const size=()=>Buffer.byteLength(JSON.stringify(result));
     const makeCursor=(n:number)=>Buffer.from(canonical({report_id:reportId,query_hash:queryHash,offset:n})).toString('base64url');
+    const summarize=(item:Record<string,unknown>):Record<string,unknown>=>{
+      if(item.truncated===true&&Array.isArray(item.omitted_fields))return item;
+      const keys=['project_id','report_id','change_id','entity_id','observation_id','page_id','revision_id','revision_occurrence_id','kind','resource_uri','evidence_uri'];
+      const summary:Record<string,unknown>={...Object.fromEntries(keys.filter(k=>item[k]!==undefined).map(k=>[k,item[k]])),truncated:true,omitted_fields:Object.keys(item).filter(k=>!keys.includes(k))};
+      if(item.observation_id)summary.retrieval='get_element with observation_id and text_offset/text_length';
+      else if(item.change_id)summary.retrieval=args.mode==='range_net'?'get_entity_history with entity_id, then get_page/get_element at the requested range endpoints':'get_evidence with change_id and text_offset/text_length';
+      else if(item.page_id&&item.revision_id)summary.retrieval='get_page with revision_id/page_id';
+      else if(item.resource_uri)summary.retrieval='read resource_uri';
+      else if(item.report_id)summary.retrieval='get_report with project_id/report_id';
+      else if(item.project_id)summary.retrieval='list_reports with project_id';
+      return summary;
+    };
+    const markOversized=()=>{if(!result.omitted_fields.includes('oversized_item_fields'))result.omitted_fields.push('oversized_item_fields');result.truncated=true;};
     let position=offset;
     while(position<rows.length&&result.items.length<limit) {
       const item=JSON.parse(JSON.stringify(rows[position]));
@@ -135,12 +150,7 @@ export class QueryService {
       if(size()>budget) {
         result.items.pop();
         if(!result.items.length) {
-          const keys=['change_id','entity_id','observation_id','page_id','revision_id','kind','resource_uri','evidence_uri'];
-          const summary:Record<string,unknown>=Object.fromEntries(keys.filter(k=>item[k]!==undefined).map(k=>[k,item[k]]));
-          summary.truncated=true;summary.omitted_fields=Object.keys(item).filter(k=>!keys.includes(k));
-          if(item.observation_id)summary.retrieval='get_element with text_offset/text_length';
-          else if(item.change_id)summary.retrieval='get_evidence with change_id and text_offset/text_length';
-          result.items.push(summary);result.omitted_fields.push('oversized_item_fields');result.truncated=true;position++;
+          result.items.push(summarize(item));markOversized();position++;
         }
         break;
       }
@@ -156,8 +166,7 @@ export class QueryService {
     // Envelope flags/coverage metadata can grow after an item initially fits.
     // Return a shorter page instead of failing an otherwise valid 8KiB query.
     while(size()>budget&&result.items.length>1){result.items.pop();position--;result.next_cursor=makeCursor(position);result.truncated=true;}
-    if(size()>budget&&result.items.length===1){const item=result.items[0],keys=['change_id','entity_id','observation_id','page_id','revision_id','kind','resource_uri','evidence_uri'];
-      result.items[0]={...Object.fromEntries(keys.filter(k=>item[k]!==undefined).map(k=>[k,item[k]])),truncated:true,omitted_fields:Object.keys(item).filter(k=>!keys.includes(k)),retrieval:item.change_id?'get_evidence with change_id and text_offset/text_length':'get_element with observation_id and text_offset/text_length'};result.truncated=true;result.omitted_fields.push('oversized_item_fields');}
+    if(size()>budget&&result.items.length===1){result.items[0]=summarize(result.items[0]);markOversized();}
     if(size()>budget)throw new DocverError('OUTPUT_BUDGET_TOO_SMALL','Increase max_output_tokens to fit the response envelope; minimum practical budget is 1024');
     return Envelope.parse(result);
   }

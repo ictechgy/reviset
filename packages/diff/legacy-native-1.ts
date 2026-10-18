@@ -1,5 +1,8 @@
 // Archived 0.1.0-native.1 query kernel from 6a736379. Preserve historical range results; fixes belong in a new snapshot.
-import { SCHEMA_VERSION, normalize, type RevisionData, type MatchData, type ChangeData, type PageData } from '../schema/index.js';
+import { normalize, type RevisionData, type MatchData, type ChangeData, type PageData } from '../schema/index.js';
+// The released kernel's output version is independent of today's producer.
+const SCHEMA_VERSION='0.1.0' as const;
+
 export function evidence(revision:RevisionData,page:PageData,focusText=false):ChangeData['evidence'][number] {
   const element=focusText?page.elements.find(e=>(e.kind==='text'||e.kind==='table_cell')&&(e.visibility===undefined||e.visibility==='visible')&&/[0-9]/.test(e.text)):undefined;
   return {revision_id:revision.revision_id,revision_occurrence_id:revision.revision_occurrence_id,asset_id:page.asset_id,page_id:page.page_id,page:page.page,
