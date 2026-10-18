@@ -22,7 +22,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     changes.push({schema_version:SCHEMA_VERSION,report_id:'',change_id:'',entity_id:entityFor((b??a)!.page_id),
       from_revision:from.revision_id,to_revision:to.revision_id,from_occurrence:from.revision_occurrence_id,to_occurrence:to.revision_occurrence_id,kind,
       before:(a?(kind==='text_modified'?comparisonText(a):a.text||a.ocr_text):null)??null,after:(b?(kind==='text_modified'?comparisonText(b):b.text||b.ocr_text):null)??null,evidence:[...(a?[evidence(from,a,kind==='text_modified')]:[]),...(b?[evidence(to,b,kind==='text_modified')]:[])],
-      lineage:match?{status:match.status,score:match.score,reasons:match.reasons}:{status:'inferred',score:0,reasons:['unmatched_page']},coverage_gaps:gaps,evidence_uri:''});
+      lineage:match?{status:match.status,score:match.score,reasons:[...match.reasons]}:{status:'inferred',score:0,reasons:['unmatched_page']},coverage_gaps:gaps,evidence_uri:''});
   }
   const uncertain=(r:RevisionData)=>r.status!=='success'||r.pages.some(p=>p.capabilities.text!=='available'||p.comparison_basis==='raster_ocr'||!!unresolvedComparisonText(p)||p.visible_text!==undefined&&!comparisonText(p).trim());
   if(from.status==='failed'||to.status==='failed') {
