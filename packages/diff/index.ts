@@ -13,11 +13,12 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
       before:(kind==='text_modified'?a?.visible_text??a?.text:a?.text)??null,after:(kind==='text_modified'?b?.visible_text??b?.text:b?.text)??null,evidence:[...(a?[evidence(from,a,kind==='text_modified')]:[]),...(b?[evidence(to,b,kind==='text_modified')]:[])],
       lineage:match?{status:match.status,score:match.score,reasons:match.reasons}:{status:'inferred',score:0,reasons:['unmatched_page']},coverage_gaps:gaps,evidence_uri:''});
   }
-  const uncertain=(r:RevisionData)=>r.status!=='success'||r.pages.some(p=>p.capabilities.text!=='available');
+  const uncertain=(r:RevisionData)=>r.status!=='success'||r.pages.some(p=>p.capabilities.text!=='available'||!!p.unresolved_text||(p.visible_text!==undefined&&!p.visible_text.trim()));
   if(from.status==='failed'||to.status==='failed') {
     const p=to.pages[0]??from.pages[0];if(p) add('coverage_gap',from.pages[0],to.pages[0],undefined,'failed_revision_no_comparison');
     return changes;
   }
+  const comparisonIncomplete=uncertain(from)||uncertain(to);
   const paired=matches.filter(m=>from.pages.some(p=>p.page_id===m.from_page_id)&&to.pages.some(p=>p.page_id===m.to_page_id));
   // A relative-order inversion is a move; insertions alone do not mark every later page moved.
   const order=paired.map(m=>({m,a:from.pages.findIndex(p=>p.page_id===m.from_page_id),b:to.pages.findIndex(p=>p.page_id===m.to_page_id)}));
@@ -43,11 +44,11 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     if(gaps.length) add('coverage_gap',a,b,m,'incomparable_capabilities:'+gaps.join(','));
   }
   for(const a of from.pages.filter(p=>!paired.some(m=>m.from_page_id===p.page_id))) {
-    const reason=a.hidden&&to.assets.some(s=>s.format==='pdf')?'not_observed_in_export':uncertain(to)?'target_observation_incomplete':candidates.some(c=>c.from_page_id===a.page_id)?'unresolved_mapping':undefined;
+    const reason=a.hidden&&to.assets.some(s=>s.format==='pdf')?'not_observed_in_export':comparisonIncomplete?'comparison_observation_incomplete':candidates.some(c=>c.from_page_id===a.page_id)?'unresolved_mapping':undefined;
     add(reason?'coverage_gap':'page_deleted',a,undefined,undefined,reason);
   }
   for(const b of to.pages.filter(p=>!paired.some(m=>m.to_page_id===p.page_id))) {
-    const reason=b.hidden&&from.assets.some(s=>s.format==='pdf')?'not_observed_in_export':uncertain(from)?'source_observation_incomplete':candidates.some(c=>c.to_page_id===b.page_id)?'unresolved_mapping':undefined;
+    const reason=b.hidden&&from.assets.some(s=>s.format==='pdf')?'not_observed_in_export':comparisonIncomplete?'comparison_observation_incomplete':candidates.some(c=>c.to_page_id===b.page_id)?'unresolved_mapping':undefined;
     add(reason?'coverage_gap':'page_added',undefined,b,undefined,reason);
   }
   return changes;

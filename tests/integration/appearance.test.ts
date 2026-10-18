@@ -125,6 +125,13 @@ test('double-quote text operator applies spacing and unknown color cannot certif
   const glyphs=paintedGlyphs(page,viewport,ops);assert.equal(glyphs.length,3);assert.ok(Math.abs(glyphs[2].bbox[0]-85/600)<0.00001);
   ops.fnArray.splice(3,0,OPS.setFillGray);ops.argsArray.splice(3,0,[1]);assert.equal(paintedGlyphs(page,viewport,ops)[0].reliable,false);
 });
+test('font geometry rejects degenerate metrics and malformed matrices while matching the renderer default',()=>{
+  const viewport={width:600,height:400,transform:[1,0,0,-1,0,400]},ops={fnArray:[OPS.beginText,OPS.setFont,OPS.setTextMatrix,OPS.showText],argsArray:[null,['font',20],[1,0,0,1,50,300],[[{unicode:'A',width:500}]]]};
+  const glyph=(font:any,metrics:any)=>paintedGlyphs({commonObjs:{get:()=>font}},viewport,ops,{font:metrics})[0];
+  assert.equal(glyph({}, {ascent:0.8,descent:-0.2}).reliable,true);
+  for(const metrics of [{ascent:0,descent:-0.2},{ascent:0.1,descent:-0.1},{ascent:0.8,descent:0.2},{descent:-0.2}])assert.equal(glyph({},metrics).reliable,false);
+  for(const fontMatrix of [[],[0.001,0,0,0.001,0],[0.002,0,0,0.002,0,0],[NaN,0,0,0.001,0,0],0])assert.equal(glyph({fontMatrix},{ascent:0.8,descent:-0.2}).reliable,false);
+});
 test('merged OOXML placeholders do not duplicate text and omitted placeholders keep column geometry',async()=>{
   const deck=new (pptxgen as unknown as typeof pptxgen.default)();deck.layout='LAYOUT_WIDE';deck.addSlide().addTable([['A','B','C'],['D','E','F']].map(row=>row.map(text=>({text}))),{x:1,y:1,w:6,h:2});const raw=await deck.write({outputType:'nodebuffer'}) as Buffer;
   for(const compact of [false,true]){
@@ -178,4 +185,11 @@ test('PDF.js source-over blend retains normal visible text, opaque cover and num
   const normal=(d:PDFKit.PDFDocument)=>{const gs=d.ref({Type:'ExtGState',BM:'Normal',ca:1,CA:1});gs.end('');d.page.ext_gstates.NormalTest=gs;d.addContent('/NormalTest gs');};
   const before=await get(d=>{normal(d);text(d);}),after=await get(d=>{normal(d);text(d,'Revenue 120');}),cover=await get(d=>{normal(d);text(d);d.rect(45,74,170,40).fill('white');});assert.equal(before.elements[0].visibility,'visible');assert.equal(after.elements[0].visibility,'visible');assert.equal(cover.elements[0].visibility,'occluded');
   before.page_id='left';after.page_id='right';const rev=(id:string,p:typeof before)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:[p],coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData,pair=matchPages([before],[after]);assert.ok(diffRevisions(rev('a',before),rev('b',after),pair.matches,pair.candidates,p=>p).some(c=>c.kind==='text_modified'));
+});
+test('unmatched hidden or fully covered pages never fabricate definitive add/delete events',async()=>{
+  for(const mode of ['invisible','covered']){
+    const make=(value:string)=>pdf(d=>{if(mode==='invisible')d.addContent('3 Tr');text(d,value);if(mode==='covered')d.rect(45,74,170,40).fill('white');});const a=await make('Revenue 100'),b=await make('ZZZZ');assert.deepEqual(await renderPdf(a,1,600),await renderPdf(b,1,600));
+    const left=(await extractPdf(a,'sha256:a'))[0],right=(await extractPdf(b,'sha256:b'))[0],rev=(id:string,p:typeof left)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:[p],coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData,pair=matchPages([left],[right]);assert.equal(pair.matches.length,0);assert.equal(pair.candidates.length,0);
+    const changes=diffRevisions(rev('a',left),rev('b',right),pair.matches,pair.candidates,p=>p);assert.equal(changes.length,2);assert.ok(changes.every(c=>c.kind==='coverage_gap'&&c.coverage_gaps.length));
+  }
 });

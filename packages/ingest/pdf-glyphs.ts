@@ -41,8 +41,12 @@ export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Rec
     const glyphArgs=op===OPS.nextLineSetSpacingShowText?a[2]:a[0];
     let font:any;try{font=page.commonObjs.get(s.font);}catch{font=null;}
     const metrics=fontStyles[s.font]??font;
-    const ascent=metrics?.ascent??0.8,descent=metrics?.descent??-0.2,metricsKnown=Number.isFinite(metrics?.ascent)&&Number.isFinite(metrics?.descent);
-    const standardMatrix=!font?.fontMatrix||font.fontMatrix.every((v:number,i:number)=>Math.abs(v-([0.001,0,0,0.001,0,0][i]??NaN))<0.000001);
+    const ascent=metrics?.ascent??0.8,descent=metrics?.descent??-0.2,metricsKnown=Number.isFinite(metrics?.ascent)&&Number.isFinite(metrics?.descent)&&ascent>0&&descent<=0&&ascent-descent>=0.5;
+    // PDF.js 6.4 CanvasGraphics.setFont and text extraction both use
+    // FONT_IDENTITY_MATRIX when the serialized fontMatrix is absent.
+    // Match that renderer default; reject malformed or nonstandard matrices.
+    const identity=[0.001,0,0,0.001,0,0],matrix=font?.fontMatrix??identity;
+    const standardMatrix=Array.isArray(matrix)&&matrix.length===6&&matrix.every((v:number,i:number)=>Number.isFinite(v)&&Math.abs(v-identity[i])<0.000001);
     const m=Util.transform(viewport.transform,Util.transform(s.ctm,s.tm));
     for(const glyph of (glyphArgs??[]).flat(3)){
       if(typeof glyph==='number'){s.x-=glyph/1000*s.size;continue;}
