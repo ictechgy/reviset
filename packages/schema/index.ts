@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createHash } from 'node:crypto';
 
 export const SCHEMA_VERSION = '0.1.0';
-export const ENGINE_VERSION = '0.1.0-checkpoint.1';
+export const ENGINE_VERSION = '0.1.0-native.1';
 export const canonical = (value: unknown): string => JSON.stringify(value, (_, v) =>
   v && typeof v === 'object' && !Array.isArray(v)
     ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b, 'en'))) : v);
@@ -17,13 +17,17 @@ export type Box = z.infer<typeof Bbox>;
 export const Capability = z.object({ text: Availability, notes: Availability, hidden_slides: Availability,
   animation: Availability, structure: Availability, preview: Availability });
 export const Gap = z.object({ feature: z.string(), reason: z.string(), revision_id: z.string().optional(), page_id: z.string().optional() });
-export const Element = z.object({ observation_id: z.string(), kind: z.enum(['text', 'image', 'shape', 'unsupported']),
+export const Element = z.object({ observation_id: z.string(), kind: z.enum(['text', 'table_cell', 'image', 'shape', 'unsupported']),
   text: z.string(), normalized_text: z.string(), bbox: Bbox, reading_order: z.number().int().nonnegative(),
   availability: Availability, method: z.string(), source_ref: z.string(), provenance: z.literal('observed'),
-  media_hash: z.string().optional() });
+  media_hash: z.string().optional(),
+  visibility:z.enum(['visible','occluded','partially_occluded','struck_through','struck_inferred','partially_struck_through','hidden_render_mode','uncertain','unverified']).optional(),
+  visibility_spans:z.array(z.object({text:z.string(),state:z.string(),bbox:Bbox,paint_index:z.number().int().nonnegative(),assessment:z.enum(['observed','inferred'])})).optional(),
+  visibility_evidence:z.array(z.object({method:z.string(),bbox:Bbox,assessment:z.enum(['observed','inferred']),coverage:z.number().min(0).max(1)})).optional(),
+  table:z.object({table_id:z.string(),row:z.number().int().nonnegative(),column:z.number().int().nonnegative(),row_span:z.number().int().positive().optional(),column_span:z.number().int().positive().optional(),origin:z.enum(['ooxml_table','pdf_grid_inferred']),assessment:z.enum(['observed','inferred'])}).optional() });
 export const Page = z.object({ page_id: z.string(), asset_id: z.string(), page: z.number().int().positive(),
   width: z.number().positive(), height: z.number().positive(), coordinate_system: z.string(),
-  source_transform: z.array(z.number()), hidden: z.boolean().nullable(), text: z.string(),
+  source_transform: z.array(z.number()), hidden: z.boolean().nullable(), text: z.string(), visible_text:z.string().optional(),unresolved_text:z.string().optional(),suppressed_text:z.string().optional(),
   elements: z.array(Element), notes: z.string().nullable(), capabilities: Capability, coverage_gaps: z.array(Gap) });
 export const Asset = z.object({ asset_id: z.string(), format: z.enum(['pptx','pdf']), bytes: z.number().int().nonnegative() });
 export const Revision = z.object({ revision_id: z.string(), revision_occurrence_id: z.string(), label: z.string(),
@@ -39,7 +43,7 @@ export const Decision = z.object({ from_page_id: z.string(), to_page_id: z.strin
 export type MappingDecision = z.infer<typeof Decision>;
 export const Change = z.object({ schema_version: z.literal(SCHEMA_VERSION), report_id: z.string(), change_id: z.string(), entity_id: z.string(),
   from_revision: z.string(), to_revision: z.string(), from_occurrence: z.string(), to_occurrence: z.string(),
-  kind: z.enum(['page_added','page_deleted','page_moved','text_modified','coverage_gap']),
+  kind: z.enum(['page_added','page_deleted','page_moved','text_modified','text_struck_through','text_occluded','text_revealed','coverage_gap']),
   before: z.string().nullable(), after: z.string().nullable(), evidence: z.array(Evidence),
   lineage: z.object({ status: z.enum(['inferred','human_confirmed','needs_review']), score: z.number(), reasons: z.array(z.string()) }),
   coverage_gaps: z.array(Gap), evidence_uri: z.string() });

@@ -13,7 +13,10 @@
     "cli": "tsx apps/cli/main.ts",
     "mcp": "tsx apps/mcp/main.ts",
     "spike": "tsx scripts/render-spike.ts",
-    "check": "npm run build && npm test"
+    "check": "npm run build && npm test",
+    "mac:build": "tsx scripts/build-macos.ts",
+    "mac:run": "npm run mac:build && open release/Docver.app",
+    "mac:smoke": "node scripts/native-smoke.mjs"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +33,7 @@
   "devDependencies": {
     "@types/node": "26.6.5",
     "@types/pdfkit": "0.17.6",
+    "esbuild": "0.28.2",
     "pdfkit": "0.20.2",
     "pptxgenjs": "4.0.1",
     "tsx": "4.23.15",
@@ -37,5 +41,6 @@
   },
   "overrides": {
     "image-size": "2.0.4"
-  }
+  },
+  "description": "Local mixed-format document version history for macOS"
 }

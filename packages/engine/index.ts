@@ -17,13 +17,15 @@ function dependencyVersion(name:string):string {
   }
   throw new Error('Dependency metadata not found: '+name);
 }
-export async function analyze(input:InputManifest,baseDir:string,store:Store,signal?:AbortSignal):Promise<{report:ReportData,analysis_run_id:string}> {
+export interface AnalyzeProgress {analysis_run_id:string;phase:'extract'|'match'|'save'|'complete';current:number;total:number;label?:string}
+export async function analyze(input:InputManifest,baseDir:string,store:Store,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,options:{persist?:boolean}={}):Promise<{report:ReportData,analysis_run_id:string}> {
   const manifest=Manifest.parse(input);
   const environment:Record<string,string>={node:process.version,platform:process.platform,arch:process.arch,engine:ENGINE_VERSION,
     pdfjs:dependencyVersion('pdfjs-dist'),xml:dependencyVersion('fast-xml-parser'),fflate:dependencyVersion('fflate'),
     renderer:'not_run',settings:'text-layer-no-ocr;max-input-50MiB;max-pdf-pages-1000'};
   const run=store.beginRun(manifest.project_id,manifest.title);
   try {
+    onProgress?.({analysis_run_id:run,phase:'extract',current:0,total:manifest.revisions.length});
     const revisions:RevisionData[]=[];
     const timelineIdentity=[];
     for(const [index,entry] of manifest.revisions.entries()) {
@@ -40,6 +42,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     const cache=new Map<string,Extracted>();
     for(const [index,entry] of manifest.revisions.entries()) {
       signal?.throwIfAborted();
+      onProgress?.({analysis_run_id:run,phase:'extract',current:index,total:manifest.revisions.length,label:entry.label});
       const extracted:Extracted[]=[], errors:RevisionData['errors']=[],failedInputs:string[]=[];
       for(const file of entry.files) {
         const path=resolve(baseDir,file);
@@ -74,6 +77,8 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
         coverage_gaps:[...gaps,...(errors.length?[{feature:'input',reason:'input_extraction_failed'}]:[]),...pages.flatMap(p=>p.coverage_gaps.map(g=>({...g,page_id:p.page_id,revision_id:revisionId})))],errors,bundle_mapping:bundleMapping};
       revisions.push(revision);
     }
+    onProgress?.({analysis_run_id:run,phase:'match',current:revisions.length,total:revisions.length});
+    signal?.throwIfAborted();
     const decisions=manifest.mapping_decisions;
     const allPageIds=new Set(revisions.flatMap(r=>r.pages.map(p=>p.page_id)));
     for(const d of decisions) {
@@ -119,7 +124,12 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     const reportId=id('rpt',base);
     changes.forEach((c,i)=>{c.report_id=reportId;c.change_id=id('chg',[reportId,i,c]);c.evidence_uri=`docver://projects/${manifest.project_id}/reports/${reportId}/changes/${c.change_id}`;});
     const report=Report.parse({...base,report_id:reportId});
-    store.finishRun(run,report,revisions.some(r=>r.status!=='success')?'partial':'success');
+    onProgress?.({analysis_run_id:run,phase:'save',current:revisions.length,total:revisions.length});
+    signal?.throwIfAborted();
+    if(options.persist!==false){
+      store.finishRun(run,report,revisions.some(r=>r.status!=='success')?'partial':'success');
+      onProgress?.({analysis_run_id:run,phase:'complete',current:revisions.length,total:revisions.length});
+    }
     return {report,analysis_run_id:run};
   } catch(e) {store.failRun(run,e instanceof DocverError?e.code:(e as Error).name);throw e;}
 }

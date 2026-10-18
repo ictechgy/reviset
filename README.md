@@ -1,95 +1,66 @@
-# Document Version Tracker
+# Document Version Tracker · Docver
 
-PPTX와 PDF가 섞인 버전들을 로컬에서 추출하고, 페이지 대응·숫자 변경·이동·중간 삽입/삭제를 원문 근거와 함께 보존하는 프로젝트입니다. 현재는 **첫 구현 체크포인트**이며 데스크톱 앱과 배포본은 아직 없습니다.
+PPTX·PDF 버전의 페이지 대응, 숫자 수정, 중간 삽입·삭제와 이동을 원문 근거와 함께 추적합니다. **SwiftUI·AppKit·PDFKit으로 만든 네이티브 macOS 앱**과 공통 TypeScript 분석 엔진, 읽기 전용 MCP를 제공합니다. 계정·API 키·업로드 없이 로컬에서 동작합니다.
 
-Node.js 24 이상이 필요합니다. 이 소스 체크아웃에서는 TypeScript 실행에 개발 의존성 `tsx`를 사용합니다. 모델 계정, API 키, LibreOffice 없이 합성 데모와 MCP 검증을 실행할 수 있습니다.
+## Mac에서 사용
+
+현재 Mac에서 빌드한 앱은 `release/Docver.app`입니다. 더블클릭해서 실행하고 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**를 선택합니다. 파일 순서를 버전 순서로 사용하며, PPTX 또는 PDF 하나만으로도 유효합니다. 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
+
+- A안의 밝은 macOS 디자인. 비교·전체 이력·근거·대응 수정·고정 보고서 선택·JSON/Markdown 내보내기·MCP 설정 복사.
+- `⌘⌥F` 문서 집중 모드, `⌘⌥I` 근거 패널, `⌘O` 가져오기. 문서 한쪽 크게 보기와 변경 목록 접기, 100~200% 확대, 페이지 번호 이동.
+- 수백 페이지의 원본은 선택한 페이지만 표시합니다. PDF는 복사해 둔 동일 hash 원본을 PDFKit으로 렌더합니다.
+- **PPTX 화면은 추출 구조 보기이며 PowerPoint 원본 렌더가 아닙니다.** 표 셀·텍스트를 표시하고 이미지·미지원 요소는 자리표시자를 표시합니다.
+- 파일당 50 MiB, PDF 1,000쪽, 프로젝트 100버전 한도. 합성 300쪽×3버전 작업을 실행 검증했습니다. 다양한 실제 문서의 성능·정확도 보장은 별도입니다.
+
+보관소는 `~/Library/Application Support/Docver/library/`입니다. 가져온 원본을 앱 전용 위치에 복사하며 원본을 덮어쓰지 않습니다. 분석은 별도 프로세스에서 수행하고 취소된 결과는 고정 보고서로 저장하지 않습니다. 과거 보고서와 새 분석 실행은 별개로 보존합니다.
+
+현재 패키지는 **Apple Silicon arm64, macOS 14 이상을 대상으로 한 로컬 ad-hoc 서명 앱**입니다. 실행 검증 환경은 현재 macOS 27.0.1입니다. 다른 Mac 설치·Developer ID 공증·공개 배포·프로젝트 라이선스 확정은 아직 완료하지 않았습니다.
+
+소스에서 빌드하려면 Node.js 24 이상과 Xcode Command Line Tools/Swift SDK가 필요합니다. 설치본에는 Node 실행 파일과 운영 의존성이 포함되므로 앱 실행에 별도 Node 설치는 필요하지 않습니다.
 
 ```sh
 npm ci
-npm run fixtures
 npm run check
+npm run mac:build
+open release/Docver.app
+```
+
+## PDF 표시 상태와 표
+
+추출 원문과 표시 상태를 따로 보존합니다. PDF 그림 명령의 순서·글자별 좌표·색상·불투명도를 살펴 나중에 덮인 사각형과 이전 배경을 구분합니다. 취소선 주석은 관측 사실, 납작해진 선과 박스 가림은 추정으로 기록하며 부분 가림·투명도·클리핑·마스크·이미지·복잡한 글꼴처럼 확정하기 어려운 부분은 관측 공백과 원문을 남깁니다. 가림을 작성자의 삭제 의도로 단정하지 않습니다. 불확실한 페이지의 단순 텍스트 변경 판정은 보류합니다.
+
+PPTX 표는 OOXML 셀 구조를 관측합니다. PDF의 닫힌 격자에서 추정한 셀은 `pdf_grid_inferred`로 구분합니다. PDF에서 표가 텍스트·선·이미지로 바뀌어도 원래 PPTX 표의 행·열 의미가 복구됐다고 주장하지 않으며 형식 간 셀 단위 diff는 제공하지 않습니다. 스캔 OCR, 모든 PDF 그래픽·폰트/OCG/마스크의 완전한 가시성 판정, PPTX 고충실도 렌더는 미완료입니다.
+
+## CLI와 AI 연결
+
+```sh
+npm run fixtures
 npm run cli -- analyze --manifest tests/fixtures/generated/forward/manifest.json
 npm run cli -- query --project prj_forward --tool list_changes --args '{"kind":"text_modified","max_output_tokens":8000}'
 npm run cli -- export --project prj_forward --out artifacts/forward
 ```
 
-`artifacts/forward/history.md`에서 `100 → 120 → 110`과 중간에만 존재했던 페이지를 확인할 수 있습니다. `report.json`, `manifest.json`, `changes.jsonl`, `pages.jsonl`, `elements.jsonl`, `revisions.json`, `lineages.json`, 페이지별 Markdown도 생성합니다. 생성된 fixture·원본 캐시·결과는 Git에서 제외합니다.
-
-기본 저장소는 `.docver/`입니다. 모든 CLI 명령에 `--store PATH`로 별도 저장소를 지정할 수 있습니다. 원본 파일을 덮어쓰지 않습니다. 테스트는 새 임시 폴더를 만들고 종료 시 지웁니다.
-
-## 자신의 합성 문서 입력
-
-다음 manifest를 작성하고 `analyze --manifest manifest.json`을 실행합니다. 파일 경로는 manifest 위치 기준입니다. 배열 순서가 버전 순서이며 각 버전은 파일 하나만으로 유효합니다.
+CLI 기본 저장소는 `.docver/`이며 `--store PATH`로 지정할 수 있습니다. manifest 배열의 순서가 버전 순서입니다.
 
 ```json
-{
-  "project_id": "prj_example",
-  "title": "합성 발표자료",
-  "revisions": [
-    {"label": "초안", "files": ["v1.pptx"]},
-    {"label": "검토", "files": ["v2.pdf"]},
-    {"label": "수정", "files": ["v3.pptx", "v3.pdf"]}
-  ],
-  "mapping_decisions": []
-}
+{"project_id":"prj_example","title":"검토 자료","revisions":[{"label":"초안","files":["v1.pptx"]},{"label":"검토","files":["v2.pdf"]},{"label":"수정","files":["v3.pptx","v3.pdf"]}],"mapping_decisions":[]}
 ```
 
-한 버전에 PPTX와 PDF를 하나씩 넣으면 선택적 bundle입니다. 숨김 슬라이드가 있을 수 있으므로 페이지 번호로 연결하지 않고 텍스트 대응을 계산합니다. 두 원문의 내용이 다르면 `bundle_inconsistent`를 기록하며 양쪽 관측을 보존합니다. 두 PDF 또는 두 PPTX를 한 버전으로 묶는 것은 거절합니다.
+앱의 **AI·내보내기**에서 현재 앱 위치와 프로젝트에 맞는 MCP 설정을 복사합니다. 패키지 안의 Node·MCP를 쓰므로 앱을 이동하면 설정을 다시 복사합니다. MCP는 report를 읽기 전용으로 조회하며 분석·파일 경로 조회·셸 실행 기능은 노출하지 않습니다. `latest`는 응답에서 고정 report ID로 해석하며, 인용에는 고정 ID를 사용하세요. 문서 내용은 실행 지시가 아닌 인용 데이터로 취급해야 합니다.
 
-`list_revisions`의 `revision_occurrence_id`로 버전의 특정 등장을 선택하고, `list_pages` → `get_page` → `get_element`/`get_evidence` 순서로 원문을 읽습니다. 같은 파일을 여러 번 넣으면 revision ID는 같아도 occurrence와 관측 ID는 다릅니다.
+내보내기는 전체 `report.json`, `manifest.json`, `changes.jsonl`, `pages.jsonl`, `elements.jsonl`, `revisions.json`, `lineages.json`, `history.md`, 페이지별 Markdown을 포함합니다. schema·범위·출력 예산은 [스키마 문서](docs/schemas/README.md)를 참조하세요.
 
-`list_changes`는 `history`, `adjacent`, `range_net`을 지원합니다. `history`는 모든 인접 이벤트를 유지하고, `range_net`은 `from`/`to` occurrence의 순변경을 계산합니다. 점수는 검증된 확률이 아닙니다. 복제·분할·병합 후보는 `needs_review`로 남습니다.
-
-현재 사용자 수정은 manifest의 `mapping_decisions`에 `from_page_id`, `to_page_id`, `action: "link" | "unlink"`, `reason`을 넣고 재분석합니다. 인접 버전 사이의 1:1 수정만 지원하며, 분할/병합 확정과 UI 편집은 다음 단계입니다. 과거 report는 유지됩니다.
-
-## 읽기 전용 MCP
-
-실행 전에 CLI로 보고서를 만듭니다. 클라이언트 프로세스의 stdout에는 JSON-RPC만 있어야 하므로 직접 실행하거나 `npm run --silent mcp`를 사용합니다.
+## 검증과 설계 기록
 
 ```sh
-node node_modules/tsx/dist/cli.mjs apps/mcp/main.ts --store .docver --project prj_forward
+npm run check
+npm run mac:build
+node scripts/native-backend-smoke.mjs
+node scripts/native-smoke.mjs
+npx tsx scripts/generate-scale-fixture.ts 300
+node scripts/native-smoke.mjs --scale
 ```
 
-클라이언트 설정 예시입니다. 아래 경로는 체크아웃과 Node 실행 파일의 절대경로로 바꿉니다.
+네이티브 smoke는 실제 `.app`을 실행하되 화면 조작은 앱 내부 모델로 수행합니다. OS 마우스/키보드 자동화나 전체 접근성 인증을 대신하지 않습니다. 결과와 화면은 `output/native-*`에 저장됩니다.
 
-```json
-{
-  "mcpServers": {
-    "docver": {
-      "command": "/absolute/path/to/node",
-      "args": [
-        "/absolute/project/node_modules/tsx/dist/cli.mjs",
-        "/absolute/project/apps/mcp/main.ts",
-        "--store", "/absolute/project/.docver",
-        "--project", "prj_forward"
-      ]
-    }
-  }
-}
-```
-
-공개 프로젝트는 시작 시 `--project`로 고정합니다. 여러 번 지정할 수 있습니다. 서버는 SQLite를 실제 읽기 전용으로 열며 import·재분석·쓰기·셸·모델 도구가 없습니다. SDK 1.32.1의 기본 협상 버전은 `2025-11-25`이며 호환 클라이언트의 이전 버전도 SDK가 협상합니다.
-
-도구와 resource 계약, 출력 한도와 원문 분할 방법은 [MCP 계약](docs/schemas/README.md)에 있습니다. 최초 `latest` 조회에서 받은 고정 `report_id`를 후속 호출에 사용하세요. 재계산 후에도 옛 report와 근거 URI가 유효합니다.
-
-## 렌더링 실험과 현재 한계
-
-```sh
-npm run spike
-npm run cli -- preview --file tests/fixtures/generated/forward/v2.pdf --page 2 --out artifacts/preview.png
-```
-
-`spike`는 한글·혼합 폰트·도형·투명도·표·차트·회전 텍스트가 있는 6쪽 PPTX, 숨김 3쪽, 독립 PDFKit 기준 PDF와 PNG, 환경·한계 보고서를 만듭니다. 현재 장비에는 LibreOffice가 없어 PPTX 변환을 검증하지 못했습니다. 설치된 변환기를 실험하려면 `DOCVER_SOFFICE=/path/to/soffice npm run spike`를 사용합니다. 자동으로 외부 프로그램을 설치하지 않습니다.
-
-합성 PDF 생성은 macOS AppleGothic을 기본으로 사용합니다. 다른 환경에서는 `DOCVER_FIXTURE_FONT=/path/to/korean-capable.ttf`를 설정하세요. 폰트는 저장소에 포함하거나 재배포하지 않습니다.
-
-- PPTX: 직접 작성된 텍스트·좌표·노트·숨김 상태·이미지 hash를 추출합니다. 마스터/레이아웃 상속과 그룹 변환은 미지원이며 좌표 한계를 기록합니다. 회전 도형의 bbox는 근사값입니다.
-- PDF: 텍스트 레이어·회전/크롭 viewport 변환·요소 bbox와 PNG 미리보기를 추출합니다. 읽기 순서는 추정이며 유인물 판별은 미구현입니다.
-- 스캔 PDF는 원문 텍스트를 만들지 않습니다. OCR과 시각 영역 diff는 미구현입니다. 텍스트가 관측되지 않는 구간은 삭제·숫자 수정으로 채우지 않습니다.
-- 현재 diff는 페이지 계보와 텍스트 중심입니다. 개체별 정밀 계보, 이미지·레이아웃 delta, 자동 재등장 연결, 분할/병합 확정, 작업 worker/복구 UI는 미구현입니다.
-- PPTX 렌더 충실도, 독립 Office 참조와의 픽셀 오차, 대규모 정확도·성능 목표는 미검증입니다. `.ppt`는 지원하지 않습니다.
-- 입력당 50 MiB, PDF 1000쪽, PPTX ZIP 전체 비압축 100 MiB/part 20 MiB 제한이 있습니다. 분석 취소는 버전 경계에서 협력적으로 처리합니다.
-
-단계별 현황과 검증 명령은 [PROGRESS.md](PROGRESS.md), 설계 기준은 [PLAN.md](PLAN.md), 구현 결정은 [ADR-001](docs/adr/001-engine.md)과 [ADR-002](docs/adr/002-rendering.md)를 참고하세요.
-
-공개 라이선스는 G5 결정 전입니다. 현재 패키지의 `private`/`UNLICENSED`는 배포 보류 상태를 나타냅니다. 의존성 라이선스는 [목록](docs/dependencies.md)에 기록했습니다.
+[구현·검증 상태](PROGRESS.md), [UI 기준](DESIGN.md), [네이티브 아키텍처](docs/adr/003-native-macos.md), [의존성](docs/dependencies.md). 원래 [PLAN.md](PLAN.md)와 [HANDOFF.md](HANDOFF.md)는 보존하며 이후 사용자의 네이티브 앱 요구가 초기 Electron 가정을 대체합니다.

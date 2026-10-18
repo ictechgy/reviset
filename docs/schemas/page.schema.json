@@ -39,6 +39,15 @@
     "text": {
       "type": "string"
     },
+    "visible_text": {
+      "type": "string"
+    },
+    "unresolved_text": {
+      "type": "string"
+    },
+    "suppressed_text": {
+      "type": "string"
+    },
     "elements": {
       "type": "array",
       "items": {
@@ -51,6 +60,7 @@
             "type": "string",
             "enum": [
               "text",
+              "table_cell",
               "image",
               "shape",
               "unsupported"
@@ -116,6 +126,190 @@
           },
           "media_hash": {
             "type": "string"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "visible",
+              "occluded",
+              "partially_occluded",
+              "struck_through",
+              "struck_inferred",
+              "partially_struck_through",
+              "hidden_render_mode",
+              "uncertain",
+              "unverified"
+            ]
+          },
+          "visibility_spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "bbox": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 4,
+                  "maxItems": 4
+                },
+                "paint_index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "assessment": {
+                  "type": "string",
+                  "enum": [
+                    "observed",
+                    "inferred"
+                  ]
+                }
+              },
+              "required": [
+                "text",
+                "state",
+                "bbox",
+                "paint_index",
+                "assessment"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "visibility_evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "bbox": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 4,
+                  "maxItems": 4
+                },
+                "assessment": {
+                  "type": "string",
+                  "enum": [
+                    "observed",
+                    "inferred"
+                  ]
+                },
+                "coverage": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "method",
+                "bbox",
+                "assessment",
+                "coverage"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "table": {
+            "type": "object",
+            "properties": {
+              "table_id": {
+                "type": "string"
+              },
+              "row": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "column": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "row_span": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "column_span": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "origin": {
+                "type": "string",
+                "enum": [
+                  "ooxml_table",
+                  "pdf_grid_inferred"
+                ]
+              },
+              "assessment": {
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "inferred"
+                ]
+              }
+            },
+            "required": [
+              "table_id",
+              "row",
+              "column",
+              "origin",
+              "assessment"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

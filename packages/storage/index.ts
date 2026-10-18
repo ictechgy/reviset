@@ -11,6 +11,7 @@ export class Store {
     const dbPath=join(this.root,'docver.sqlite');
     if(!readOnly) mkdirSync(dirname(dbPath),{recursive:true});
     this.db=new DatabaseSync(dbPath,{readOnly});
+    this.db.exec('PRAGMA busy_timeout=5000;');
     if(readOnly) this.db.exec('PRAGMA query_only=ON;');
     else this.db.exec(`PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY,title TEXT NOT NULL);
@@ -22,7 +23,7 @@ export class Store {
     const runId='run_'+randomUUID();
     this.db.prepare('INSERT INTO runs VALUES (?,?,NULL,?,NULL,?,NULL)').run(runId,projectId,new Date().toISOString(),'running');return runId;
   }
-  finishRun(runId:string,report:ReportData,status='success') {
+  finishRun(runId:string,report:ReportData,status='success',onCommit?:()=>void) {
     const body=canonical(Report.parse(report));
     this.db.exec('BEGIN IMMEDIATE');
     try {
@@ -30,6 +31,7 @@ export class Store {
       if(existing&&existing.body!==body) throw new DocverError('SNAPSHOT_CONFLICT','Immutable report ID already has different content');
       this.db.prepare('INSERT OR IGNORE INTO reports VALUES (?,?,?,?)').run(report.report_id,report.project_id,new Date().toISOString(),body);
       this.db.prepare('UPDATE runs SET report_id=?,finished_at=?,status=? WHERE id=?').run(report.report_id,new Date().toISOString(),status,runId);
+      onCommit?.();
       this.db.exec('COMMIT');
     } catch(e) {this.db.exec('ROLLBACK');throw e;}
   }

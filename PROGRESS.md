@@ -1,3 +1,23 @@
+# 네이티브 Mac 앱 구현 상태 · 2026-10-19
+
+사용자가 A안을 선택하고 중앙 문서 확대·수백 페이지·진짜 네이티브 앱을 요구하여 초기 Electron 가정을 SwiftUI·AppKit·PDFKit으로 대체했다. 원래 PLAN/HANDOFF는 수정하지 않았다. Claude의 세 시안은 `docs/design/concepts/`에 보존했다. Claude·Grok·Agy의 초기 설계 자문 원문/argv/해시/종료 상태는 `.omx/artifacts/ask-*`에 남겼으며, 설계 자문을 최종 코드 승인으로 취급하지 않는다.
+
+현재 `release/Docver.app`은 실제 실행 가능한 arm64 로컬 ad-hoc 서명 앱이다. Node helper와 lockfile 고정 운영 의존성이 들어 있다. 프로젝트 가져오기·순서 변경·전체 이력·인접/구간 비교·원본 PDF·PPTX 구조 보기·근거 강조·대응 수정·과거 고정 보고서·export·읽기 전용 MCP 설정을 제공한다. 집중 모드에서는 보조 패널/변경 목록을 접고 한 페이지를 창 대부분에 표시한다.
+
+검증:
+
+- `npm run check`: 28개 통합 테스트 통과. 그림 순서/가림/부분 가림/배경·투명도/관측 취소선과 숨김 주석/추정 선과 격자/비가시 OCR/색상/클리핑/비사각형/블렌드/회전·CropBox/표 출처를 포함한다.
+- `npm run mac:build`: Swift 네이티브 실행 파일과 Node helper를 빌드하고 ad-hoc 서명·strict verify.
+- `node scripts/native-backend-smoke.mjs`: 개발 Node가 아닌 번들 helper와 최소 PATH로 8개 작업 검증. stage 변조/취소·복구/stale draft 거절, 새·과거 report, lazy 원문, export 동일성, 실제 MCP stdio와 DB hash 불변.
+- `node scripts/native-smoke.mjs`: 실제 `.app`의 5버전 `[3,4,4,3,3]`쪽 데모, 숫자 변경 2개, 원문 비교·집중 모드·전체 이력 화면. stderr 비어 있음.
+- `node scripts/native-smoke.mjs --scale`: 300쪽×3버전 합성 PPTX→PDF→PPTX, 숫자 변경 2개, 300쪽 원문 표시. 약 5초(분석과 UI 대기·화면 저장을 포함한 현재 장비의 관측치). stderr 비어 있음. 결과·화면은 `output/native-*`.
+
+미완료/검증 범위: PPTX 고충실도 렌더와 Office 참조, OCR/이미지·차트 의미, 복합 PDF 가시성 전체 판정, 다양한 실문서 정확도 corpus, macOS 14 실기·다른 장비·접근성 전체 검증, Developer ID/공증·공개 배포·오픈소스 라이선스 확정. PDF 가림은 삭제 의도로 단정하지 않으며 불확실성은 원문과 gap으로 보존한다. 원본 OOXML 표와 PDF 격자 추정은 동일 셀 의미로 합치지 않는다. 외부 및 두 독립 lane의 최종 코드 리뷰 결과는 별도 snapshot artifact로 기록한다.
+
+아래는 초기 CLI/MCP 체크포인트의 당시 기록이다. 위의 현재 상태를 우선한다.
+
+---
+
 # 구현 진행 기록
 
 업데이트: 2026-10-19 KST · 상태: 첫 구현 체크포인트 완료, v0.1 전체 미완료

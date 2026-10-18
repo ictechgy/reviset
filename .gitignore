@@ -9,3 +9,5 @@ artifacts/
 .omx/
 dist/
 release/
+output/
+.omc/

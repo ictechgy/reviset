@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Store } from '../storage/index.js';
-import { SCHEMA_VERSION, canonical, hash, id, DocverError, Gap, type ReportData } from '../schema/index.js';
+import { SCHEMA_VERSION, canonical, hash, id, DocverError, Gap, Change, type ChangeData, type ReportData } from '../schema/index.js';
 import { matchPages } from '../matching/index.js';
 import { diffRevisions } from '../diff/index.js';
 const internalId=z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/);
@@ -25,11 +25,19 @@ export const Envelope=z.object({schema_version:z.literal(SCHEMA_VERSION),report_
 export type QueryResult=z.infer<typeof Envelope>;
 const resource=(r:ReportData,kind:string,key?:string)=>`docver://projects/${r.project_id}/reports/${r.report_id}/${kind}${key?'/'+key:''}`;
 export class QueryService {
-  constructor(readonly store:Store,readonly allowedProjects:Set<string>) {}
+  constructor(readonly store:Store,readonly allowedProjects:Set<string>,private readonly loadSnapshot?:(projectId:string,reportId:string)=>ReportData) {}
+  snapshot(projectId:string,reportId:string):ReportData {
+    if(!this.allowedProjects.has(projectId))throw new DocverError('PROJECT_SCOPE','Project is outside the configured scope');
+    return this.loadSnapshot?this.loadSnapshot(projectId,reportId):this.store.report(projectId,reportId);
+  }
+  changeSet(raw:unknown):ChangeData[] {
+    const args=querySchemas.list_changes.parse(raw);const report=this.snapshot(args.project_id,args.report_id);
+    return this.rows('list_changes',args,report).map(c=>Change.parse(c));
+  }
   query(name:QueryName,raw:unknown):QueryResult {
     const args:any=querySchemas[name].parse(raw);
     if(args.project_id&&!this.allowedProjects.has(args.project_id)) throw new DocverError('PROJECT_SCOPE','Project is outside the configured scope');
-    const report:ReportData|undefined=args.report_id?this.store.report(args.project_id,args.report_id):undefined;
+    const report:ReportData|undefined=args.report_id?this.snapshot(args.project_id,args.report_id):undefined;
     let rows:Record<string,unknown>[]=[];
     if(name==='list_projects') rows=this.store.projects().filter(p=>this.allowedProjects.has(p.project_id));
     else if(name==='list_reports') rows=this.store.reports(args.project_id);

@@ -74,6 +74,25 @@ export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
           if(!known) gaps.push({feature:'geometry',reason:'layout_inheritance_or_group_transform_unsupported'});
           if(transform?.['@_rot']) gaps.push({feature:'geometry',reason:'rotated_shape_bbox_is_approximate'});
           const bbox=known?box(Number(off['@_x'])/width,Number(off['@_y'])/height,Number(ext['@_cx'])/width,Number(ext['@_cy'])/height):box(0,0,1,1);
+          const table=shape.graphic?.graphicData?.tbl;
+          if(kind==='graphicFrame'&&table){
+            const columns=arr(table.tblGrid?.gridCol).map(c=>Number(c['@_w'])),rows=arr(table.tr),totalW=columns.reduce((a,b)=>a+b,0),totalH=rows.reduce((a,r)=>a+Number(r['@_h']),0);
+            const tableId=id('table',[assetId,path,elements.length]);let yy=0;
+            for(const [ri,row] of rows.entries()){
+              let xx=0;
+              for(const [ci,cell] of arr(row.tc).entries()){
+                const cellText=arr(cell.txBody?.p).map(p=>texts(p).map(decoded).join('')).join('\n'),cw=columns[ci]??0;
+                const colSpan=Math.max(1,Number(cell['@_gridSpan']??1)),rowSpan=Math.max(1,Number(cell['@_rowSpan']??1));
+                const spanWidth=columns.slice(ci,ci+colSpan).reduce((a,b)=>a+b,0),spanHeight=rows.slice(ri,ri+rowSpan).reduce((a,r)=>a+Number(r['@_h']),0);
+                const cellBox=totalW>0&&totalH>0?box(bbox[0]+bbox[2]*xx/totalW,bbox[1]+bbox[3]*yy/totalH,bbox[2]*spanWidth/totalW,bbox[3]*spanHeight/totalH):bbox;
+                if(cellText)elements.push({observation_id:id('obs',[assetId,path,elements.length]),kind:'table_cell',text:cellText,normalized_text:normalize(cellText),bbox:cellBox,reading_order:elements.length,availability:'available',method:'ooxml_table_cell',source_ref:path+'#table/'+ri+'/'+ci,provenance:'observed',table:{table_id:tableId,row:ri,column:ci,row_span:rowSpan,column_span:colSpan,origin:'ooxml_table',assessment:'observed'}});
+                xx+=cw;
+                if(cell['@_gridSpan']||cell['@_rowSpan']||cell['@_hMerge']||cell['@_vMerge'])gaps.push({feature:'table_geometry',reason:'merged_cell_geometry_requires_review'});
+              }
+              yy+=Number(row['@_h']);
+            }
+            continue;
+          }
           const text=arr(shape.txBody?.p).map(p=>texts(p).map(decoded).join('')).join('\n');
           const element:ElementData={observation_id:id('obs',[assetId,path,elements.length]), kind:kind==='pic'?'image':text?'text':kind==='graphicFrame'?'unsupported':'shape',
             text, normalized_text:normalize(text),bbox,reading_order:elements.length,availability:kind==='graphicFrame'?'unsupported':'available',
@@ -94,7 +113,7 @@ export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
     let notes='';
     if(noteRel) { const note=xml(target(path,noteRel)); notes=arr(note.notes?.cSld?.spTree?.sp).filter(s=>s.nvSpPr?.nvPr?.ph?.['@_type']==='body').map(s=>texts(s.txBody).map(decoded).join('')).join('\n'); }
     return { page_id:id('pg',[assetId,index]),asset_id:assetId,page:index+1,width,height,coordinate_system:'ooxml_emu_top_left',source_transform:[1/width,0,0,1/height,0,0],
-      hidden:slide['@_show']==='0'||slide['@_show']==='false',text:elements.filter(e=>e.kind==='text').map(e=>e.text).join('\n'), elements, notes,
+      hidden:slide['@_show']==='0'||slide['@_show']==='false',text:elements.filter(e=>e.kind==='text'||e.kind==='table_cell').map(e=>e.text).join('\n'), elements, notes,
       capabilities:{text:'available',notes:'available',hidden_slides:'available',animation:'unsupported',structure:'available',preview:'unavailable'},
       coverage_gaps:[...gaps,{feature:'preview',reason:'pptx_conversion_not_run'},{feature:'animation',reason:'animation_diff_unsupported'}] };
   });

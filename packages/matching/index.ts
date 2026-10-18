@@ -3,12 +3,12 @@ function grams(text:string):Set<string> {
   const s=normalize(text).toLowerCase().replace(/[+−-]?\d+(?:[.,]\d+)*/gu,'#').replace(/\s/gu,'');
   return new Set(Array.from({length:Math.max(0,s.length-1)},(_,i)=>s.slice(i,i+2)));
 }
-export function similarity(a:PageData,b:PageData):number {
-  const x=grams(a.text),y=grams(b.text);
+function dice(x:Set<string>,y:Set<string>):number {
   if(!x.size||!y.size) return 0;
   const intersection=[...x].filter(g=>y.has(g)).length;
   return 2*intersection/(x.size+y.size);
 }
+export function similarity(a:PageData,b:PageData):number{return dice(grams(a.text),grams(b.text));}
 // Rectangular maximum-weight assignment with private dummy columns for unmatched rows.
 function assignment(weights:number[][]):number[] {
   if(!weights.length) return [];
@@ -42,15 +42,19 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
   if(links.some(d=>blocked.has(d.from_page_id+'|'+d.to_page_id))) throw new DocverError('MAPPING_CONFLICT','Same pair is linked and unlinked');
   const left=from.filter(p=>!links.some(d=>d.from_page_id===p.page_id));
   const right=to.filter(p=>!links.some(d=>d.to_page_id===p.page_id));
-  const weights=left.map(a=>right.map(b=>blocked.has(a.page_id+'|'+b.page_id)?0:similarity(a,b)));
+  const leftGrams=left.map(p=>grams(p.text)),rightGrams=right.map(p=>grams(p.text));
+  const weights=left.map((a,i)=>right.map((b,j)=>blocked.has(a.page_id+'|'+b.page_id)?0:dice(leftGrams[i],rightGrams[j])));
   const candidates:MatchData[]=[],matches:MatchData[]=links.map(d=>({from_page_id:d.from_page_id,to_page_id:d.to_page_id,score:1,status:'human_confirmed',reasons:[d.reason]}));
-  for(let i=0;i<left.length;i++) for(let j=0;j<right.length;j++) if(weights[i][j]>=0.4) {
+  const topRow=weights.map(row=>row.map((score,j)=>({score,j})).sort((a,b)=>b.score-a.score||a.j-b.j));
+  const topCol=right.map((_,j)=>weights.map((row,i)=>({score:row[j],i})).sort((a,b)=>b.score-a.score||a.i-b.i));
+  function candidate(i:number,j:number):MatchData {
     const score=weights[i][j];
-    const ambiguous=weights[i].some((s,k)=>k!==j&&s>=score-0.06)||weights.some((row,k)=>k!==i&&row[j]>=score-0.06);
-    candidates.push({from_page_id:left[i].page_id,to_page_id:right[j].page_id,score,status:ambiguous?'needs_review':'inferred',
-      reasons:['normalized_text_bigrams',...(ambiguous?['competing_duplicate_or_split_merge_candidate']:[])]});
+    const competingRow=topRow[i].find(v=>v.j!==j)?.score??0,competingCol=topCol[j].find(v=>v.i!==i)?.score??0;
+    const ambiguous=competingRow>=score-0.06||competingCol>=score-0.06;
+    return {from_page_id:left[i].page_id,to_page_id:right[j].page_id,score,status:ambiguous?'needs_review':'inferred',reasons:['normalized_text_bigrams',...(ambiguous?['competing_duplicate_or_split_merge_candidate']:[]),...(topRow[i].filter(v=>v.score>=0.4).length>8?['candidate_pool_limited_to_top_8_per_page']:[])]};
   }
+  for(let i=0;i<left.length;i++)for(const {score,j} of topRow[i].filter(v=>v.score>=0.4).slice(0,8))if(score>=0.4)candidates.push(candidate(i,j));
   const chosen=assignment(weights.map(row=>row.map(s=>s>=0.58?s:0)));
-  chosen.forEach((j,i)=>{if(j<right.length&&j>=0&&weights[i][j]>=0.58) matches.push(candidates.find(c=>c.from_page_id===left[i].page_id&&c.to_page_id===right[j].page_id)!);});
+  chosen.forEach((j,i)=>{if(j<right.length&&j>=0&&weights[i][j]>=0.58) matches.push(candidate(i,j));});
   return {matches,candidates};
 }

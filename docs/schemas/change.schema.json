@@ -34,6 +34,9 @@
         "page_deleted",
         "page_moved",
         "text_modified",
+        "text_struck_through",
+        "text_occluded",
+        "text_revealed",
         "coverage_gap"
       ]
     },

@@ -1,3 +1,4 @@
+import { inspectAppearance } from './pdf-appearance.js';
 import { getDocument, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -32,12 +33,13 @@ export async function extractPdf(bytes:Uint8Array,assetId:string):Promise<PageDa
           bbox:box(Math.min(...xs)/viewport.width,Math.min(...ys)/viewport.height,(Math.max(...xs)-Math.min(...xs))/viewport.width,(Math.max(...ys)-Math.min(...ys))/viewport.height),
           reading_order:elements.length,availability:'available',method:'pdf_text',source_ref:`page:${n}/text:${elements.length}`,provenance:'observed'});
       }
+      const appearance=await inspectAppearance(page,viewport,elements);
       const hasText=elements.length>0;
       pages.push({page_id:id('pg',[assetId,n-1]),asset_id:assetId,page:n,width:viewport.width,height:viewport.height,
         coordinate_system:'pdf_user_space_bottom_left',source_transform:viewport.transform,hidden:null,
-        text:elements.map(e=>e.text).join('\n'),elements,notes:null,
+        text:elements.map(e=>e.text).join('\n'),visible_text:elements.filter(e=>e.visibility==='visible').map(e=>e.text).join('\n'),unresolved_text:elements.filter(e=>!['visible','struck_through'].includes(e.visibility??'unverified')).map(e=>e.text).join('\n'),suppressed_text:elements.filter(e=>['struck_through','hidden_render_mode'].includes(e.visibility??'')).map(e=>e.text).join('\n'),elements,notes:null,
         capabilities:{text:hasText?'available':'unavailable',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},
-        coverage_gaps:[{feature:'notes',reason:'not_present_in_pdf'},{feature:'hidden_slides',reason:'export_visibility_unknown'},
+        coverage_gaps:[...appearance.gaps,{feature:'table_semantics',reason:'pdf_grid_is_inferred_not_original_table_structure'},{feature:'notes',reason:'not_present_in_pdf'},{feature:'hidden_slides',reason:'export_visibility_unknown'},
           {feature:'animation',reason:'not_present_in_pdf'},{feature:'structure',reason:'pdf_has_no_original_shape_semantics'},
           ...(!hasText?[{feature:'text',reason:'no_text_layer_ocr_not_run'}]:[])]});
       page.cleanup();
