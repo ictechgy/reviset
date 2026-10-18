@@ -1,3 +1,19 @@
+# OCR·렌더 품질 보완 · 2026-10-19
+
+사용자가 판독/OCR/PPTX 충실도를 보완할 때까지 계속 진행하도록 요구했다. 현재 변경은 `docs/QUALITY.md`와 ADR-004를 기준으로 한다. 아래 0.1 기록의 "OCR 미지원/PPTX 구조 보기"는 당시 체크포인트이며 현재 구현을 설명하지 않는다.
+
+- Swift Vision/PDFKit helper: 한글/영어, 숫자·부호 재인식, 겹치는 타일, 원본 CropBox/회전, native raster 지문, 이미지 취소선 후보. macOS26+ 화면 표의 행/열/병합 셀 추정.
+- 원문·표시 상태와 OCR annex 분리. raw 불확실성을 지우지 않고 별도 추정 비교를 지원한다. 낮은 점수·대안 충돌·OCR 영역 누락은 보류하고, 확실한 숫자 영역은 부분 비교한다. 동일 화면에 텍스트 수정 없음; 이미지/차트/배치 차이는 화면 변경으로 관측한다.
+- 실제 PPTX PDF 렌더를 위해 공식 SHA와 TDF 서명을 검증한 LibreOffice를 앱에 포함한다. 시스템 설치는 하지 않는다. 숨김 슬라이드, 페이지 수/비율, 한글 폰트, missing-font/변환 원문 경고, 확인된 bundle의 원본 PDF 우선 표시.
+- source bytes를 검증한 임시 사본으로 변환하고, isolated profile/HOME/font cache, IP network 차단, process-group 취소/timeout, Python bytecode 쓰기 방지를 적용한다. 원본·vendor signature를 유지한다.
+- 512MiB 파일 상한, 최대16쪽 native batch, 동일 픽셀의 OCR 재사용. report/run/latest와 같은 트랜잭션에서 개별 native page 인덱스를 저장한다. 페이지 source hash는 stream한다.
+- 중간 source의 70개 테스트 통과. 최종 새 패키지·300쪽 스캔×2·이동 ZIP·독립 full-diff 리뷰는 정확한 최종 source snapshot의 별도 artifact로 검증한다. source가 바뀌면 이전 승인을 재사용하지 않는다.
+- PowerPoint 독립 참조 10덱/26쪽을 확보해 해시를 확인했다. 초기 픽셀 오차는 0이 아니므로 원본 충실도의 최종 합격으로 세지 않는다. 목표 PowerPoint 환경과 실제 문서 corpus의 확장이 남아 있다. `docs/QUALITY.md`에 수치의 의미와 남은 게이트를 기록한다.
+
+이 시점에서 모든 PDF의 완벽한 판독이나 모든 PowerPoint 환경의 픽셀 동일성이 완료됐다고 보고하지 않는다. 실제 개선과 미통과 기준을 분리해 계속 검증한다.
+
+---
+
 # 네이티브 Mac 앱 구현 상태 · 2026-10-19
 
 사용자가 A안을 선택하고 중앙 문서 확대·수백 페이지·진짜 네이티브 앱을 요구하여 초기 Electron 가정을 SwiftUI·AppKit·PDFKit으로 대체했다. 원래 PLAN/HANDOFF는 수정하지 않았다. Claude의 세 시안은 `docs/design/concepts/`에 보존했다. Claude·Grok·Agy의 초기 설계 자문 원문/argv/해시/종료 상태는 `.omx/artifacts/ask-*`에 남겼으며, 설계 자문을 최종 코드 승인으로 취급하지 않는다.

@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { Store } from '../storage/index.js';
-import { SCHEMA_VERSION, canonical, hash, id, DocverError, Gap, Change, type ChangeData, type ReportData } from '../schema/index.js';
+import { SCHEMA_VERSION,ENGINE_VERSION, canonical, hash, id,comparisonText,textChunk, DocverError, Gap, Change, type ChangeData, type ReportData } from '../schema/index.js';
 import { matchPages } from '../matching/index.js';
 import { diffRevisions } from '../diff/index.js';
+import { diffRevisions as legacyNativeDiff } from '../diff/legacy-native-1.js';
 const internalId=z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/);
 const paging={cursor:z.string().max(2048).optional(),limit:z.number().int().min(1).max(200).default(50),max_output_tokens:z.number().int().min(256).max(8000).default(4000)};
 const scope={project_id:internalId,report_id:internalId};
@@ -14,7 +15,7 @@ export const querySchemas={
   list_revisions:base,
   list_pages:base.extend({revision_id:internalId}),
   get_page:base.extend({revision_id:internalId,page_id:internalId}),
-  get_element:base.extend({observation_id:internalId,text_offset:z.number().int().nonnegative().default(0),text_length:z.number().int().min(1).max(1000).default(500),span_offset:z.number().int().nonnegative().default(0),span_limit:z.number().int().min(0).max(20).default(0),appearance_evidence_offset:z.number().int().nonnegative().default(0),appearance_evidence_limit:z.number().int().min(0).max(10).default(0)}),
+  get_element:base.extend({observation_id:internalId,text_offset:z.number().int().nonnegative().default(0),text_length:z.number().int().min(1).max(1000).default(500),span_offset:z.number().int().nonnegative().default(0),span_limit:z.number().int().min(0).max(20).default(0),appearance_evidence_offset:z.number().int().nonnegative().default(0),appearance_evidence_limit:z.number().int().min(0).max(10).default(0),ocr_alternative_index:z.number().int().min(0).max(2).default(0),ocr_alternative_offset:z.number().int().nonnegative().default(0),ocr_alternative_length:z.number().int().min(1).max(1000).default(256)}),
   list_changes:base.extend({from:internalId.optional(),to:internalId.optional(),mode:z.enum(['adjacent','range_net','history']).default('history'),kind:z.string().max(60).optional(),change_id:internalId.optional(),entity_id:internalId.optional(),text:z.string().max(500).optional()}),
   get_entity_history:base.extend({entity_id:internalId}),
   get_evidence:base.extend({change_id:internalId.optional(),observation_id:internalId.optional(),text_offset:z.number().int().nonnegative().default(0),text_length:z.number().int().min(1).max(1000).default(500)})
@@ -58,17 +59,18 @@ export class QueryService {
       case 'get_report': return [{schema_version:r.schema_version,report_id:r.report_id,project_id:r.project_id,engine_version:r.engine_version,schema_hash:r.schema_hash,timeline_revision_id:r.timeline_revision_id,mapping_revision_id:r.mapping_revision_id,
         observation_environment:r.observation_environment,revision_count:r.revisions.length,change_count:r.changes.length,unresolved_candidates:r.candidates.filter(c=>c.status==='needs_review').length,resource_uri:resource(r,'manifest')}];
       case 'list_revisions':return r.revisions.map(({pages,...v})=>({...v,page_count:pages.length,coverage_gaps:undefined}));
-      case 'list_pages':return revision().pages.map(({elements,notes,text,visible_text,unresolved_text,suppressed_text,...p})=>({...p,text_excerpt:text.slice(0,160),element_count:elements.length,resource_uri:resource(r,`revisions/${revision().revision_occurrence_id}/pages`,p.page_id)}));
+      case 'list_pages':return revision().pages.map(page=>{const {elements,notes,text,visible_text,unresolved_text,suppressed_text,ocr_text,ocr_unresolved_text,...p}=page;return {...p,text_excerpt:textChunk(comparisonText(page),0,160),element_count:elements.length,resource_uri:resource(r,`revisions/${revision().revision_occurrence_id}/pages`,p.page_id)};});
       case 'get_page': {
         const p=revision().pages.find(p=>p.page_id===args.page_id);if(!p)throw new DocverError('PAGE_NOT_FOUND','Page is outside this revision');
         // One item per element allows even a large page to be traversed without a monolithic payload.
-        return p.elements.length?p.elements.map(e=>({page_id:p.page_id,page:p.page,capabilities:p.capabilities,...e,visibility_spans:undefined,visibility_evidence:undefined,visibility_span_count:e.visibility_spans?.length??0,visibility_evidence_count:e.visibility_evidence?.length??0,resource_uri:resource(r,'evidence',e.observation_id)})):
+        return p.elements.length?p.elements.map(e=>({page_id:p.page_id,page:p.page,capabilities:p.capabilities,...e,ocr:e.ocr?{...e.ocr,alternatives:e.ocr.alternatives.map(a=>({confidence:a.confidence,text_length:a.text.length,truncated:a.truncated}))}:undefined,visibility_spans:undefined,visibility_evidence:undefined,visibility_span_count:e.visibility_spans?.length??0,visibility_evidence_count:e.visibility_evidence?.length??0,resource_uri:resource(r,'evidence',e.observation_id)})):
           [{page_id:p.page_id,page:p.page,capabilities:p.capabilities,coverage_gaps:p.coverage_gaps,elements:[],text:''}];
       }
       case 'get_element': {
-        const {v,p,e}=element();const text=e.text.slice(args.text_offset,args.text_offset+args.text_length);
+        const {v,p,e}=element();const text=textChunk(e.text,args.text_offset,args.text_length);
         const spans=e.visibility_spans??[],appearance=e.visibility_evidence??[],chunk=spans.slice(args.span_offset,args.span_offset+args.span_limit),evidence=appearance.slice(args.appearance_evidence_offset,args.appearance_evidence_offset+args.appearance_evidence_limit);
-        return [{...e,text,normalized_text:undefined,visibility_spans:args.span_limit?chunk:undefined,visibility_evidence:args.appearance_evidence_limit?evidence:undefined,visibility_span_count:spans.length,visibility_evidence_count:appearance.length,span_offset:args.span_offset,next_span_offset:args.span_offset+chunk.length<spans.length?args.span_offset+chunk.length:null,appearance_evidence_offset:args.appearance_evidence_offset,next_appearance_evidence_offset:args.appearance_evidence_offset+evidence.length<appearance.length?args.appearance_evidence_offset+evidence.length:null,text_offset:args.text_offset,next_text_offset:args.text_offset+text.length<e.text.length?args.text_offset+text.length:null,
+        const alternative=e.ocr?.alternatives[args.ocr_alternative_index],alternativeText=alternative?textChunk(alternative.text,args.ocr_alternative_offset,args.ocr_alternative_length):undefined;
+        return [{...e,text,normalized_text:undefined,ocr:e.ocr?{...e.ocr,alternatives:e.ocr.alternatives.map(a=>({confidence:a.confidence,text_length:a.text.length,truncated:a.truncated}))}:undefined,ocr_alternative:alternative?{index:args.ocr_alternative_index,confidence:alternative.confidence,text:alternativeText,text_length:alternative.text.length,text_offset:args.ocr_alternative_offset,next_text_offset:args.ocr_alternative_offset+alternativeText!.length<alternative.text.length?args.ocr_alternative_offset+alternativeText!.length:null}:undefined,visibility_spans:args.span_limit?chunk:undefined,visibility_evidence:args.appearance_evidence_limit?evidence:undefined,visibility_span_count:spans.length,visibility_evidence_count:appearance.length,span_offset:args.span_offset,next_span_offset:args.span_offset+chunk.length<spans.length?args.span_offset+chunk.length:null,appearance_evidence_offset:args.appearance_evidence_offset,next_appearance_evidence_offset:args.appearance_evidence_offset+evidence.length<appearance.length?args.appearance_evidence_offset+evidence.length:null,text_offset:args.text_offset,next_text_offset:args.text_offset+text.length<e.text.length?args.text_offset+text.length:null,
           revision_id:v.revision_id,page_id:p.page_id,page:p.page,resource_uri:resource(r,'evidence',e.observation_id)}];
       }
       case 'list_changes': {
@@ -82,7 +84,9 @@ export class QueryService {
           const primary=(v:typeof a)=>v.assets.some(s=>s.format==='pptx')?{...v,pages:v.pages.filter(p=>v.assets.find(s=>s.asset_id===p.asset_id)?.format==='pptx')}:v;
           const left=primary(a),right=primary(b);
           const matches=left.pages.flatMap(p=>right.pages.filter(q=>entity(p.page_id)===entity(q.page_id)).map(q=>({from_page_id:p.page_id,to_page_id:q.page_id,score:Math.min(1,...r.matches.filter(m=>r.lineages.find(l=>l.entity_id===entity(p.page_id))?.page_ids.includes(m.from_page_id)).map(m=>m.score)),status:r.lineages.find(l=>l.entity_id===entity(p.page_id))?.status??'inferred',reasons:['snapshot_lineage_range_net']})));
-          changes=diffRevisions(left,right,matches,matchPages(left.pages,right.pages).candidates,entity).map((c,i)=>({...c,report_id:r.report_id,change_id:id('net',[r.report_id,args.from,args.to,i,c]),evidence_uri:resource(r,'manifest')}));
+          const diff=r.engine_version===ENGINE_VERSION?diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:undefined;
+          if(!diff)throw new DocverError('ENGINE_VERSION_UNAVAILABLE','Historical range computation requires its archived engine; stored history/export remains readable, and reanalysis creates a new report');
+          changes=diff(left,right,matches,matchPages(left.pages,right.pages).candidates,entity).map((c,i)=>({...c,report_id:r.report_id,change_id:id('net',[r.report_id,args.from,args.to,i,c]),evidence_uri:resource(r,'manifest')}));
         } else {
           const revIndex=(key:string)=>r.revisions.findIndex(v=>v.revision_occurrence_id===key||v.revision_id===key);
           const start=args.from?revIndex(args.from):0,end=args.to?revIndex(args.to):r.revisions.length-1;
@@ -101,9 +105,9 @@ export class QueryService {
       case 'get_evidence': {
         if(Boolean(args.change_id)===Boolean(args.observation_id))throw new DocverError('EVIDENCE_TARGET','Supply exactly one change_id or observation_id');
         if(args.change_id) {const c=r.changes.find(c=>c.change_id===args.change_id);if(!c)throw new DocverError('CHANGE_NOT_FOUND','Change is outside this report');
-          return c.evidence.map(e=>{const quote=e.quote.slice(args.text_offset,args.text_offset+args.text_length);return {...e,quote,text_offset:args.text_offset,next_text_offset:args.text_offset+quote.length<e.quote.length?args.text_offset+quote.length:null};});}
-        const {v,p,e}=element(),quote=e.text.slice(args.text_offset,args.text_offset+args.text_length);
-        return [{revision_id:v.revision_id,revision_occurrence_id:v.revision_occurrence_id,asset_id:p.asset_id,page_id:p.page_id,page:p.page,observation_id:e.observation_id,bbox:e.bbox,quote,method:e.method,
+          return c.evidence.map(e=>{const quote=textChunk(e.quote,args.text_offset,args.text_length);return {...e,quote,text_offset:args.text_offset,next_text_offset:args.text_offset+quote.length<e.quote.length?args.text_offset+quote.length:null};});}
+        const {v,p,e}=element(),quote=textChunk(e.text,args.text_offset,args.text_length);
+        return [{revision_id:v.revision_id,revision_occurrence_id:v.revision_occurrence_id,asset_id:p.asset_id,page_id:p.page_id,page:p.page,observation_id:e.observation_id,bbox:e.bbox,quote,method:e.method,provenance:e.provenance,ocr:e.ocr?{confidence:e.ocr.confidence,numeric_consensus:e.ocr.numeric_consensus,ambiguous:e.ocr.ambiguous,confidence_scope:e.ocr.confidence_scope,alternative_count:e.ocr.alternatives.length}:undefined,
           text_offset:args.text_offset,next_text_offset:args.text_offset+quote.length<e.text.length?args.text_offset+quote.length:null}];
       }
       default:throw new DocverError('UNKNOWN_QUERY','Unsupported query');

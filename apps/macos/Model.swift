@@ -121,7 +121,14 @@ import Darwin
             committing = true; status = "고정 보고서를 저장합니다"
             _ = try await bridge.call("commit", ["project_id": id, "result": result.raw])
             analysisToken=nil;busy = false; committing = false
-            await selectProject(id, snapshot: result["report_id"].string); status = "새 고정 보고서를 만들었습니다"
+            await selectProject(id, snapshot: result["report_id"].string)
+            var summary=["새 고정 보고서 저장"]
+            let quality=report["quality_counts"]
+            if quality["ocr_inferred_pages"].int>0{summary.append("OCR 추정 \(quality["ocr_inferred_pages"].int)쪽")}
+            if quality["ocr_failed_pages"].int>0{summary.append("OCR 실패 \(quality["ocr_failed_pages"].int)쪽")}
+            if quality["unresolved_comparison_pages"].int>0{summary.append("판독 보류 \(quality["unresolved_comparison_pages"].int)쪽")}
+            if quality["pptx_without_render"].int>0{summary.append("PPTX 렌더 없음 \(quality["pptx_without_render"].int)쪽")}
+            status=summary.joined(separator:" · ")
         } catch {
             analysisToken=nil;committing = false
             if cancelRequested || (error as? BridgeError)?.code == "CANCELLED" {
@@ -164,4 +171,4 @@ import Darwin
     func page(_ id: String) async throws -> JSON { try await bridge.call("page", ["project_id": projectID, "report_id": report["report_id"].string, "page_id": id]) }
 }
 struct ImportRow: Identifiable { let id = UUID(); var label: String; var urls: [URL] }
-let changeNames = ["text_modified": "텍스트 수정", "page_moved": "페이지 이동", "page_added": "페이지 추가", "page_deleted": "페이지 삭제", "text_struck_through": "취소선 표시", "text_occluded": "텍스트 가림", "text_revealed": "텍스트 다시 표시", "coverage_gap": "관측 공백"]
+let changeNames = ["text_modified": "텍스트 수정", "page_moved": "페이지 이동", "page_added": "페이지 추가", "page_deleted": "페이지 삭제", "text_struck_through": "취소선 표시", "text_occluded": "텍스트 가림", "text_revealed": "텍스트 다시 표시", "visual_region_changed": "화면 변경", "coverage_gap": "관측 공백"]

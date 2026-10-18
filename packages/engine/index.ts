@@ -2,11 +2,13 @@ import { resolve, dirname, join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { Manifest, Report, SCHEMA_VERSION, SCHEMA_HASH, ENGINE_VERSION, id, byteHash, DocverError, type InputManifest, type RevisionData, type ReportData } from '../schema/index.js';
+import { MAX_INPUT_BYTES,Manifest, Report, SCHEMA_VERSION, SCHEMA_HASH, ENGINE_VERSION, id, byteHash, DocverError, type InputManifest, type RevisionData, type ReportData } from '../schema/index.js';
 import { ingest, type Extracted } from '../ingest/index.js';
 import { matchPages, similarity } from '../matching/index.js';
 import { diffRevisions } from '../diff/index.js';
 import { Store } from '../storage/index.js';
+import { ocrEnvironment } from '../ingest/ocr.js';
+import { officeEnvironment,preparePptxPreview } from '../render/pptx-preview.js';
 const require=createRequire(import.meta.url);
 function dependencyVersion(name:string):string {
   let folder=dirname(require.resolve(name));
@@ -18,11 +20,11 @@ function dependencyVersion(name:string):string {
   throw new Error('Dependency metadata not found: '+name);
 }
 export interface AnalyzeProgress {analysis_run_id:string;phase:'extract'|'match'|'save'|'complete';current:number;total:number;label?:string}
-export async function analyze(input:InputManifest,baseDir:string,store:Store,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,options:{persist?:boolean}={}):Promise<{report:ReportData,analysis_run_id:string}> {
+export async function analyze(input:InputManifest,baseDir:string,store:Store,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,options:{persist?:boolean;ocr?:'off'|'auto'|'all';pptxPreview?:boolean}={}):Promise<{report:ReportData,analysis_run_id:string}> {
   const manifest=Manifest.parse(input);
   const environment:Record<string,string>={node:process.version,platform:process.platform,arch:process.arch,engine:ENGINE_VERSION,
     pdfjs:dependencyVersion('pdfjs-dist'),xml:dependencyVersion('fast-xml-parser'),fflate:dependencyVersion('fflate'),
-    renderer:'not_run',settings:'text-layer-no-ocr;max-input-50MiB;max-pdf-pages-1000'};
+    renderer:options.pptxPreview===false?'disabled':await officeEnvironment()??'unavailable',ocr:options.ocr==='off'?'disabled':await ocrEnvironment(),settings:`ocr:${options.ocr??'auto'};max-input-512MiB;max-pdf-pages-1000`};
   const run=store.beginRun(manifest.project_id,manifest.title);
   try {
     onProgress?.({analysis_run_id:run,phase:'extract',current:0,total:manifest.revisions.length});
@@ -33,7 +35,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
       for(const [fileIndex,file] of entry.files.entries()) {
         try {
           const path=resolve(baseDir,file),size=(await stat(path)).size;
-          inputs.push(size>50*1024*1024?`oversized:${size}`:'sha256:'+byteHash(await readFile(path)));
+          inputs.push(size>MAX_INPUT_BYTES?`oversized:${size}`:'sha256:'+byteHash(await readFile(path)));
         } catch {inputs.push(`unreadable:${index}:${fileIndex}`);}
       }
       timelineIdentity.push({label:entry.label,assets:inputs.sort()});
@@ -47,11 +49,17 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
       for(const file of entry.files) {
         const path=resolve(baseDir,file);
         try {
-          const observation=cache.get(path)??await ingest(path);cache.set(path,observation);
+          const observation=cache.get(path)??await ingest(path,{ocr:options.ocr??'auto',cacheRoot:join(store.root,'cache'),signal,onPage:(current,total)=>onProgress?.({analysis_run_id:run,phase:'extract',current:index,total:manifest.revisions.length,label:entry.label+` · PDF ${current}/${total}`})});
+          if(!cache.has(path)&&observation.asset.format==='pptx'&&options.pptxPreview!==false){
+            try{const pdf=await preparePptxPreview(path,observation.bytes,observation.pages,join(store.root,'cache'),signal);if(pdf)store.putAsset('sha256:'+byteHash(pdf),pdf);}
+            catch(e){if(signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;for(const p of observation.pages){p.preview=undefined;p.capabilities.preview='unavailable';p.coverage_gaps.push({feature:'preview',reason:e instanceof DocverError?e.code:'CONVERSION_FAILED'});}}
+          }
+          cache.set(path,observation);
           store.putAsset(observation.asset.asset_id,observation.bytes);extracted.push(observation);
         } catch(e) {
+          if(signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;
           // Preserve a content identity even when parsing fails; never put local paths in a report.
-          try {const size=(await stat(path)).size;failedInputs.push(size>50*1024*1024?`oversized:${size}`:'sha256:'+byteHash(await readFile(path)));} catch {failedInputs.push('unreadable:'+failedInputs.length);}
+          try {const size=(await stat(path)).size;failedInputs.push(size>MAX_INPUT_BYTES?`oversized:${size}`:'sha256:'+byteHash(await readFile(path)));} catch {failedInputs.push('unreadable:'+failedInputs.length);}
           errors.push({code:e instanceof DocverError?e.code:'INPUT_UNREADABLE',message:e instanceof DocverError?e.message:'Input could not be read'});
         }
       }

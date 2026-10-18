@@ -1,9 +1,9 @@
 import { unzipSync } from 'fflate';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { posix } from 'node:path';
-import { box, byteHash, DocverError, id, normalize, type ElementData, type PageData } from '../schema/index.js';
+import { MAX_PPTX_EXPANDED_BYTES,MAX_PPTX_PART_BYTES,box, byteHash, DocverError, id, normalize, type ElementData, type PageData } from '../schema/index.js';
 
-const MAX_UNCOMPRESSED=100*1024*1024;
+const MAX_UNCOMPRESSED=MAX_PPTX_EXPANDED_BYTES;
 const parser=new XMLParser({ignoreAttributes:false, removeNSPrefix:false, transformTagName:(name:string)=>name.split(':').at(-1)!, textNodeName:'#text',
   trimValues:false, parseTagValue:false, parseAttributeValue:false, processEntities:false});
 const arr=(v:any):any[] => v == null ? [] : Array.isArray(v) ? v : [v];
@@ -13,15 +13,17 @@ function texts(node:any):string[] {
 }
 // Decode predefined entities only, after parsing. DTDs and custom entities are rejected.
 function decoded(text:string):string {
-  return text.replace(/&(amp|lt|gt|quot|apos);/g,(_,k)=>({amp:'&',lt:'<',gt:'>',quot:'"',apos:"'"}[k as string]!))
-    .replace(/&#(x[0-9a-f]+|[0-9]+);/gi,(_,n)=>{ const cp=n[0].toLowerCase()==='x'?parseInt(n.slice(1),16):Number(n); return cp<=0x10ffff?String.fromCodePoint(cp):'�'; });
+  return text.replace(/&(amp|lt|gt|quot|apos|#x[0-9a-f]+|#[0-9]+);/gi,(match,k:string)=>{
+    if(k[0]!=='#')return {amp:'&',lt:'<',gt:'>',quot:'"',apos:"'"}[k]??match;
+    const n=k.slice(1),cp=n[0].toLowerCase()==='x'?parseInt(n.slice(1),16):Number(n);if(!cp||cp>0x10ffff||cp>=0xd800&&cp<=0xdfff)throw new DocverError('INVALID_XML','Invalid XML Unicode scalar');return String.fromCodePoint(cp);
+  });
 }
 export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
   let total=0;
   let zip:Record<string,Uint8Array>;
   try { zip=unzipSync(bytes,{filter:entry=> {
     total+=entry.originalSize;
-    if (total>MAX_UNCOMPRESSED || entry.originalSize>20*1024*1024) throw new DocverError('ZIP_LIMIT','Uncompressed package exceeds limit');
+    if (total>MAX_UNCOMPRESSED || entry.originalSize>MAX_PPTX_PART_BYTES) throw new DocverError('ZIP_LIMIT','Uncompressed package exceeds limit');
     if (entry.name.startsWith('/') || entry.name.split('/').includes('..')) throw new DocverError('ZIP_PATH','Unsafe ZIP part');
     return true;
   }}); } catch(e) { if(e instanceof DocverError) throw e; throw new DocverError('INVALID_PPTX','Invalid ZIP package'); }

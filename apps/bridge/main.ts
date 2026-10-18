@@ -1,15 +1,21 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync,createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { mkdir,writeFile,readFile,rm,readdir } from 'node:fs/promises';
 import { dirname,join,resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { DesktopService } from '../../packages/desktop/service.js';
-import { DocverError, Decision, byteHash, hash, SCHEMA_VERSION, ENGINE_VERSION } from '../../packages/schema/index.js';
+import { DocverError, Decision, byteHash, hash,comparisonText,textChunk,unresolvedComparisonText, SCHEMA_VERSION, ENGINE_VERSION } from '../../packages/schema/index.js';
 import { querySchemas } from '../../packages/query/index.js';
 const key=z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/),scope=z.object({project_id:key,report_id:key});
 const request=JSON.parse(readFileSync(0,'utf8')) as {action:string;args:any};
 const rootArg=process.argv.indexOf('--root');if(rootArg<0)throw new Error('Explicit app library required');
 const root=resolve(process.argv[rootArg+1]),service=new DesktopService(root),args=request.args??{};
+async function verifiedSource(assetId:string):Promise<string>{
+  if(!/^sha256:[a-f0-9]{64}$/.test(assetId))throw new DocverError('ASSET_ID','잘못된 원본 ID입니다.');
+  const path=join(root,'assets',assetId.slice(7)),digest=createHash('sha256');for await(const chunk of createReadStream(path,{highWaterMark:1024*1024}))digest.update(chunk);
+  if(digest.digest('hex')!==assetId.slice(7))throw new DocverError('ASSET_CORRUPT','표시할 원본의 hash가 일치하지 않습니다.');return path;
+}
 try{
   let value:unknown;
   switch(request.action){
@@ -24,16 +30,19 @@ try{
     case 'changes':{const d=querySchemas.list_changes.parse(args);value=service.queryService(d.project_id).changeSet(d);break;}
     case 'view':{
       const d=scope.parse(args),r=service.snapshot(d.project_id,d.report_id);
-      const revisions=r.revisions.map(({pages,...v})=>({...v,pages:pages.map(p=>({page_id:p.page_id,asset_id:p.asset_id,page:p.page,width:p.width,height:p.height,text:p.text.slice(0,180),capabilities:p.capabilities,hidden:p.hidden,coverage_gaps:p.coverage_gaps.slice(0,3)}))}));
-      value={...r,revisions,changes:undefined,candidates:undefined,matches:undefined,coverage_gaps:r.coverage_gaps.slice(0,500),coverage_gap_count:r.coverage_gaps.length,change_counts:r.changes.reduce<Record<string,number>>((a,c)=>(a[c.kind]=(a[c.kind]??0)+1,a),{})};break;
+      const revisions=r.revisions.map(({pages,...v})=>({...v,pages:pages.map(p=>({page_id:p.page_id,asset_id:p.asset_id,page:p.page,width:p.width,height:p.height,text:textChunk(comparisonText(p),0,180),capabilities:p.capabilities,hidden:p.hidden,ocr:p.ocr,coverage_gaps:p.coverage_gaps.slice(0,3)}))}));
+      const all=r.revisions.flatMap(v=>v.pages),quality_counts={ocr_inferred_pages:all.filter(p=>p.elements.some(e=>e.method==='vision_ocr')).length,ocr_failed_pages:all.filter(p=>p.ocr&&['failed','unavailable'].includes(p.ocr.status)).length,unresolved_comparison_pages:all.filter(p=>!!unresolvedComparisonText(p)).length,pptx_without_render:all.filter(p=>!p.preview&&r.revisions.some(v=>v.assets.some(a=>a.asset_id===p.asset_id&&a.format==='pptx'))).length};
+      value={...r,revisions,quality_counts,changes:undefined,candidates:undefined,matches:undefined,coverage_gaps:r.coverage_gaps.slice(0,500),coverage_gap_count:r.coverage_gaps.length,change_counts:r.changes.reduce<Record<string,number>>((a,c)=>(a[c.kind]=(a[c.kind]??0)+1,a),{})};break;
     }
     case 'page':{
-      const d=scope.extend({page_id:key}).parse(args),r=service.snapshot(d.project_id,d.report_id),v=r.revisions.find(v=>v.pages.some(p=>p.page_id===d.page_id)),page=v?.pages.find(p=>p.page_id===d.page_id);
-      if(!page||!v)throw new DocverError('PAGE_NOT_FOUND','페이지를 찾을 수 없습니다.');
-      const asset=v.assets.find(a=>a.asset_id===page.asset_id)!;
-      if(!/^sha256:[a-f0-9]{64}$/.test(asset.asset_id))throw new DocverError('ASSET_ID','잘못된 원본 ID입니다.');
-      const assetPath=join(root,'assets',asset.asset_id.slice(7));if(byteHash(await readFile(assetPath))!==asset.asset_id.slice(7))throw new DocverError('ASSET_CORRUPT','표시할 원본의 hash가 일치하지 않습니다.');
-      value={page,source:{kind:asset.format,path:assetPath}};break;
+      const d=scope.extend({page_id:key}).parse(args),{page,asset,reference}=service.pageData(d.project_id,d.report_id,d.page_id),assetPath=await verifiedSource(asset.asset_id);
+      if(reference){
+        const path=await verifiedSource(reference.asset_id);
+        value={page,display_page:reference,source:{kind:'pdf',origin:'reference_pdf',path,renderer:'Imported reference PDF',warnings:[]},display_page_number:reference.page};
+      }else if(page.preview){
+        const previewPath=await verifiedSource(page.preview.asset_id);
+        value={page,display_page:{...page,width:page.preview.width,height:page.preview.height,source_transform:page.preview.source_transform},source:{kind:'pdf',origin:'pptx_converted',path:previewPath,renderer:page.preview.renderer,warnings:page.preview.warnings}};
+      }else value={page,display_page:page,source:{kind:asset.format,path:assetPath,origin:'original'}};break;
     }
     case 'export':{const d=scope.extend({folder:z.string().min(1)}).parse(args);value=await service.export(d.project_id,d.report_id,resolve(d.folder));break;}
     case 'mcpConfig':{const {project_id}=z.object({project_id:key}).parse(args);service.project(project_id);value=JSON.stringify({mcpServers:{docver:{command:process.execPath,args:[join(dirname(fileURLToPath(import.meta.url)),'mcp.mjs'),'--store',root,'--project',project_id]}}},null,2);break;}

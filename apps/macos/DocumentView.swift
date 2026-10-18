@@ -2,6 +2,13 @@ import SwiftUI
 import AppKit
 import PDFKit
 
+func renderWarningName(_ value:String)->String{
+    if value.hasPrefix("font_substitution_possible:"){return "대체될 수 있는 글꼴: "+String(value.dropFirst("font_substitution_possible:".count))}
+    if value=="rendered_text_differs_from_ooxml_requires_source_review"{return "변환 화면에서 일부 원문 텍스트를 확인하지 못했습니다."}
+    if value=="chart_smartart_or_other_object_render_requires_review"{return "차트·SmartArt 등 복합 개체의 변환 결과를 확인하세요."}
+    return value
+}
+
 struct OriginalPDFView: NSViewRepresentable {
     let path: String
     let pageNumber: Int
@@ -91,14 +98,14 @@ struct PageColumn: View {
                 TextField("페이지", text:$pageInput).frame(width:48).multilineTextAlignment(.center).onSubmit { if let n=Int(pageInput){go(n)} }
                 Text("/ \(pages.count)").foregroundStyle(.secondary).font(.caption)
                 Button { go(current["page"].int+1) } label: { Image(systemName:"chevron.right") }.disabled(current.isNull || current["page"].int>=pages.count)
-                Spacer(); Text(payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 원본 렌더 아님").font(.caption).foregroundStyle(.secondary)
+                Spacer(); Text(payload["source"]["origin"].string == "reference_pdf" ? "같은 버전의 원본 PDF" : payload["source"]["origin"].string == "pptx_converted" ? "PPTX 렌더 · LibreOffice" : payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 렌더 실패").font(.caption).foregroundStyle(.secondary)
             }.controlSize(.small)
             GeometryReader { geometry in
                 if current.isNull { ContentUnavailableView("대응하는 원문 없음", systemImage:"doc", description:Text("관측 부재와 실제 삭제를 변경 근거에서 구분하세요.")) }
                 else if !failure.isEmpty { ContentUnavailableView("페이지를 열지 못했습니다",systemImage:"exclamationmark.triangle",description:Text(failure)) }
                 else if payload.isNull { ProgressView("원문 페이지 로딩…").frame(maxWidth:.infinity,maxHeight:.infinity) }
                 else if payload["source"]["kind"].string == "pdf" {
-                    OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["page"]["page"].int,zoom:model.zoom,evidence:evidence,page:payload["page"])
+                    OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:evidence,page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
                 } else {
                     ScrollView([.horizontal,.vertical]) {
                         let width = geometry.size.width * (model.zoom == 0 ? 1 : model.zoom)
@@ -109,11 +116,14 @@ struct PageColumn: View {
             DisclosureGroup("추출 원문·표·표시 상태",isExpanded:$rawOpen) {
                 ScrollView { VStack(alignment:.leading,spacing:10) {
                     Text("원문은 보이는 텍스트와 별도로 보존합니다.").font(.caption).foregroundStyle(.secondary)
+                    if !payload["page"]["ocr"].isNull {Text("로컬 OCR · \(payload["page"]["ocr"]["status"].string) · 인식 결과는 원본 화면으로 확인하세요.").font(.caption).foregroundStyle(.orange)}
+                    ForEach(payload["source"]["warnings"].array.indices,id:\.self){i in Text(renderWarningName(payload["source"]["warnings"].array[i].string)).font(.caption).foregroundStyle(.orange)}
                     ForEach(payload["page"]["elements"].array) { e in
                         VStack(alignment:.leading,spacing:4) {
                             Text(e["text"].string).textSelection(.enabled)
                             HStack { Text(e["visibility"].string.isEmpty ? "원본 구조" : e["visibility"].string)
-                                if !e["table"].isNull { Text(e["table"]["origin"].string == "ooxml_table" ? "PPTX 셀 · 구조 관측" : "PDF 격자 · 추정") }
+                                if e["method"].string == "vision_ocr" {Text("OCR 추정 · \(Int(e["ocr"]["confidence"].number*100))점")}
+                                if !e["table"].isNull { Text(e["table"]["origin"].string == "ooxml_table" ? "PPTX 셀 · 구조 관측" : e["table"]["origin"].string == "vision_table_inferred" ? "화면 OCR 표 셀 · 추정" : "PDF 격자 · 추정") }
                             }.font(.caption2).foregroundStyle(e["visibility"].string.contains("occluded") || e["visibility"].string.contains("struck") ? .orange : .secondary)
                         }.padding(8).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:4))
                     }

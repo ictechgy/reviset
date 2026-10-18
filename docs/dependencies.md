@@ -15,8 +15,10 @@
 | typescript | 7.0.2 | Apache-2.0 | 개발용 타입 검사 |
 | tsx | 4.23.15 | MIT | 소스 체크아웃 실행 |
 
-시스템 폰트는 사용 환경에서 읽을 뿐 저장소에 복사하지 않는다. LibreOffice는 설치·재배포하지 않았다. canvas의 전이 네이티브 구성요소, PDF.js 포함 폰트/wasm, Node 런타임 등 번들 구성요소의 배포 notice는 M6에서 별도 검토한다.
+시스템 폰트는 사용 환경에서 읽을 뿐 저장소에 복사하지 않는다. 현재 로컬 패키지는 공식 TDF 서명 LibreOffice 26.8.1.1을 `Contents/Helpers/LibreOffice.app`에 포함한다. DMG SHA-256은 ca074e0b13571efb30a31fc531c5f95e997030637325e5d5de92d67aefdf0dfc, vendor Team ID는 7P5S3ZLCN7이다. 원본 vendor LICENSE.html/NOTICE와 source 링크를 보존하며 이 로컬 번들을 공개 배포 승인으로 취급하지 않는다. 시스템에 별도 LibreOffice를 설치하지 않는다. canvas의 전이 네이티브 구성요소, PDF.js 포함 폰트/wasm, Node 런타임 등 번들 구성요소의 배포 notice는 M6에서 별도 검토한다.
 
 초기 npm audit에서 개발용 PptxGenJS의 image-size 전이 의존성 경고가 있었다. image-size를 호환 API의 2.0.4로 override한 뒤 fixture/이미지 포함 렌더 spike를 실행 검증했다. 최종 `npm audit` 전체 범위와 `npm audit --omit=dev` 결과는 PROGRESS.md에 기록한다. 이 목록은 제품 설치본 라이선스 검토를 대신하지 않는다.
 
 네이티브 앱 UI는 시스템 SwiftUI·AppKit·PDFKit을 사용한다. Electron/React는 포함하지 않는다. esbuild 0.28.2(MIT)는 backend/MCP 번들 생성에만 사용한다. build는 root package-lock.json을 복사하고 npm ci --omit=dev로 운영 의존성을 재현한다. 현재 로컬 앱에는 Node 24.19.0 arm64 실행 파일을 복사하며 실행 환경의 libc++/시스템 dylib을 사용한다. 다른 장비의 최소 OS 검증과 공개 재배포 notice/라이선스 검토는 아직 완료되지 않았다.
+
+OCR/표 구조는 macOS 시스템 Vision·PDFKit·CoreText를 사용한다. 모델·시스템 글꼴을 저장소나 설치본에 복사하지 않는다. Swift helper는 앱에 포함하며 macOS26+ 구조 API는 availability guard로 분리한다. 개발 검증 자료의 PowerPoint PDF는 upstream의 독립 참조이며 제품 번들에 포함하지 않는다.

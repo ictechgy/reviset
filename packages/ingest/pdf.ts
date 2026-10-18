@@ -3,17 +3,19 @@ import { getDocument, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { box, DocverError, id, normalize, type PageData, type ElementData } from '../schema/index.js';
+import { captureNativePages,ocrEnvironment,supplementPdfOcr,type OcrOptions } from './ocr.js';
 const require=createRequire(import.meta.url);
 const pdfRoot=dirname(require.resolve('pdfjs-dist/package.json'));
 export const pdfOptions = {isEvalSupported:false,useSystemFonts:false,standardFontDataUrl:join(pdfRoot,'standard_fonts/'),
   cMapUrl:join(pdfRoot,'cmaps/'),cMapPacked:true,wasmUrl:join(pdfRoot,'wasm/'),verbosity:0};
-export async function extractPdf(bytes:Uint8Array,assetId:string):Promise<PageData[]> {
+export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOptions&{ocr?:'off'|'auto'|'all'}={}):Promise<PageData[]> {
   const task=getDocument({...pdfOptions,data:new Uint8Array(bytes)});
   try {
     const document=await task.promise;
     if(document.numPages>1000) throw new DocverError('PAGE_LIMIT','PDF exceeds 1000 pages');
-    const pages:PageData[]=[];
+    const pages:PageData[]=[],ocrPages:number[]=[];
     for(let n=1;n<=document.numPages;n++) {
+      options.signal?.throwIfAborted();
       const page=await document.getPage(n), viewport=page.getViewport({scale:1});
       const content=await page.getTextContent({disableNormalization:true});
       const elements:ElementData[]=[];
@@ -42,7 +44,20 @@ export async function extractPdf(bytes:Uint8Array,assetId:string):Promise<PageDa
         coverage_gaps:[...appearance.gaps,{feature:'table_semantics',reason:'pdf_grid_is_inferred_not_original_table_structure'},{feature:'notes',reason:'not_present_in_pdf'},{feature:'hidden_slides',reason:'export_visibility_unknown'},
           {feature:'animation',reason:'not_present_in_pdf'},{feature:'structure',reason:'pdf_has_no_original_shape_semantics'},
           ...(!hasText?[{feature:'text',reason:'no_text_layer_ocr_not_run'}]:[])]});
+      if(options.ocr&&options.ocr!=='off'&&(options.ocr==='all'||!hasText||!!pages.at(-1)!.unresolved_text||appearance.regions.some(r=>r.kind==='image'))){
+        ocrPages.push(n);
+      }
       page.cleanup();
+    }
+    if(options.ocr&&options.ocr!=='off'){
+      const environment=await ocrEnvironment();
+      try{
+        const observations=await captureNativePages(bytes,pages.map(p=>p.page),ocrPages,options);
+        for(const p of pages){const result=observations.get(p.page);if(!result){p.coverage_gaps.push({feature:'raster_verification',reason:'native_page_observation_failed'});if(ocrPages.includes(p.page))p.ocr={status:'failed',engine:'native-vision-helper',environment,reason:'NATIVE_PAGE_FAILED'};continue;}
+          p.raster={sha256:result.render_sha256,width:result.width,height:result.height,renderer:result.renderer,environment};
+          if(ocrPages.includes(p.page))await supplementPdfOcr(p,bytes,{...options,nativeResult:result});
+        }
+      }catch(e){if(options.signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;for(const p of pages){p.coverage_gaps.push({feature:'raster_verification',reason:e instanceof DocverError?e.code:'NATIVE_PAGE_FAILED'});if(ocrPages.includes(p.page))p.ocr={status:e instanceof DocverError&&e.code==='OCR_UNAVAILABLE'?'unavailable':'failed',engine:'native-vision-helper',environment,reason:e instanceof DocverError?e.code:'NATIVE_PAGE_FAILED'};}}
     }
     return pages;
   } catch(e) {

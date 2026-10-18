@@ -46,7 +46,7 @@ for(const scenario of scenarios) test(`ground truth: ${scenario.name}`,async()=>
     assert.equal(r.lineages.filter(l=>hiddenIds.some(p=>l.page_ids.includes(p))).length,1);
     assert.ok(r.changes.some(c=>c.coverage_gaps.some(g=>g.reason==='not_observed_in_export')));
   }
-  if(scenario.expected.scan){assert.equal(numeric.length,0);assert.ok(r.coverage_gaps.some(g=>g.reason==='no_text_layer_ocr_not_run'));}
+  if(scenario.expected.scan){assert.ok(r.coverage_gaps.some(g=>g.reason==='no_text_layer_ocr_not_run'||g.feature==='ocr'));assert.ok(numeric.every(c=>c.text_assessment==='inferred'&&c.coverage_gaps.some(g=>g.reason==='ocr_inferred_text_requires_source_review')));}
   if(scenario.expected.inconsistent){assert.ok(r.coverage_gaps.some(g=>g.reason==='bundle_inconsistent'));assert.equal(r.revisions[0].bundle_mapping.length,2);}
   assert.equal(r.changes.filter(c=>c.kind==='page_deleted'&&c.lineage.reasons.some(x=>x.includes('notes'))).length,0);
 });

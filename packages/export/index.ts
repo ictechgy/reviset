@@ -26,7 +26,7 @@ export async function exportReport(service:QueryService,projectId:string,reportI
   for(const r of report.revisions) {
     const contentDir=join(folder,'content',r.revision_occurrence_id);await mkdir(contentDir,{recursive:true});
     for(const p of r.pages) await writeFile(join(contentDir,`page-${String(p.page).padStart(4,'0')}-${p.asset_id.slice(7,15)}.md`),
-      `# ${r.label} · page ${p.page}\n\nReport: \`${report.report_id}\`\nPage: \`${p.page_id}\`\n\n${quote(p.text)}\n\n## 발표자 노트\n\n${p.notes===null?'unavailable':quote(p.notes)}\n\n## 관측 한계\n\n${p.coverage_gaps.map(g=>`- ${g.feature}: ${g.reason}`).join('\n')}\n`);
+      `# ${r.label} · page ${p.page}\n\nReport: \`${report.report_id}\`\nPage: \`${p.page_id}\`\n\n${quote(p.text)}\n\n${p.ocr?`## 화면 OCR · 추정\n\n상태: ${p.ocr.status}. 인식 결과이며 원본 화면 확인이 필요합니다.\n\n${quote(p.ocr_text??'')}\n\n미확정 인식:\n\n${quote(p.ocr_unresolved_text??'')}\n\n`:''}## 발표자 노트\n\n${p.notes===null?'unavailable':quote(p.notes)}\n\n## 관측 한계\n\n${p.coverage_gaps.map(g=>`- ${g.feature}: ${g.reason}`).join('\n')}\n`);
   }
   return report.report_id;
 }

@@ -1,6 +1,6 @@
 {
   "name": "document-version-tracker",
-  "version": "0.1.0-dev.0",
+  "version": "0.2.0-dev.0",
   "private": true,
   "engines": {
     "node": ">=24.0.0"
@@ -16,7 +16,10 @@
     "check": "npm run build && npm test",
     "mac:build": "tsx scripts/build-macos.ts",
     "mac:run": "npm run mac:build && open release/Docver.app",
-    "mac:smoke": "node scripts/native-smoke.mjs"
+    "mac:smoke": "node scripts/native-smoke.mjs",
+    "native:helpers": "tsx scripts/build-native-helpers.ts",
+    "native:office": "tsx scripts/prepare-office.ts",
+    "pretest": "tsx scripts/check-native-runtime.ts"
   },
   "keywords": [],
   "author": "",

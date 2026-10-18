@@ -7,7 +7,7 @@ import { QueryService } from '../query/index.js';
 import { analyze, type AnalyzeProgress } from '../engine/index.js';
 import { exportReport } from '../export/index.js';
 import { renderPdf } from '../render/index.js';
-import { byteHash, DocverError, Report, Decision, type InputManifest, type ReportData } from '../schema/index.js';
+import { byteHash,MAX_INPUT_BYTES, DocverError, Report, Decision, type InputManifest, type ReportData } from '../schema/index.js';
 
 const FileRef=z.object({blob:z.string().regex(/^[a-f0-9]{64}\.(pptx|pdf)$/),name:z.string(),bytes:z.number().int().nonnegative()});
 const Draft=z.object({project_id:z.string(),title:z.string().min(1).max(200),revisions:z.array(z.object({label:z.string().min(1).max(200),files:z.array(FileRef).min(1).max(2)})).min(1).max(100),mapping_decisions:z.array(Decision),last_report_id:z.string().nullable(),dirty:z.boolean()});
@@ -37,8 +37,8 @@ export class DesktopService {
       for(const path of rev.files) {
         const ext=extname(path).toLowerCase();
         if(!['.pptx','.pdf'].includes(ext))throw new DocverError('UNSUPPORTED_FORMAT','PPTX 또는 PDF 파일을 선택하세요.');
-        const size=(await stat(path)).size;if(size>50*1024*1024)throw new DocverError('FILE_LIMIT','파일당 50 MiB 이하를 지원합니다.');
-        const bytes=await readFile(path);if(bytes.length>50*1024*1024)throw new DocverError('FILE_LIMIT','파일 크기가 가져오기 한도를 넘었습니다.');
+        const size=(await stat(path)).size;if(size>MAX_INPUT_BYTES)throw new DocverError('FILE_LIMIT','파일당 512 MiB 이하를 지원합니다.');
+        const bytes=await readFile(path);if(bytes.length>MAX_INPUT_BYTES)throw new DocverError('FILE_LIMIT','파일 크기가 가져오기 한도를 넘었습니다.');
         const blob=byteHash(bytes)+ext,target=join(this.root,'imports',blob);
         try{await writeFile(target,bytes,{flag:'wx'});}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;if(byteHash(await readFile(target))!==byteHash(bytes))throw new DocverError('ASSET_CORRUPT','가져온 원본의 검증에 실패했습니다.');}
         files.push({blob,name:basename(path),bytes:bytes.length});
@@ -84,6 +84,7 @@ export class DesktopService {
   }
   queryService(projectId:string){this.project(projectId);return new QueryService(this.store,new Set([projectId]),(p,r)=>{const key=p+'|'+r;if(r!=='latest'&&this.snapshots.has(key))return this.snapshots.get(key)!;const report=this.store.report(p,r);if(this.snapshots.size>=2)this.snapshots.delete(this.snapshots.keys().next().value!);this.snapshots.set(p+'|'+report.report_id,report);return report;});}
   snapshot(projectId:string,reportId:string):ReportData{return this.queryService(projectId).snapshot(projectId,reportId);}
+  pageData(projectId:string,reportId:string,pageId:string){this.project(projectId);return this.store.nativePage(projectId,reportId,pageId);}
   reports(projectId:string){this.project(projectId);return this.store.reports(projectId);}
   async preview(projectId:string,reportId:string,pageId:string) {
     const r=this.snapshot(projectId,reportId),revision=r.revisions.find(v=>v.pages.some(p=>p.page_id===pageId)),page=revision?.pages.find(p=>p.page_id===pageId);

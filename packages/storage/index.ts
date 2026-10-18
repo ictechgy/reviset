@@ -2,7 +2,16 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Report, canonical, byteHash, DocverError, type ReportData } from '../schema/index.js';
+import { Report,Page,Asset, canonical, byteHash, DocverError, type ReportData } from '../schema/index.js';
+import { z } from 'zod';
+const NativePage=z.object({page:Page,asset:Asset,reference:Page.pick({asset_id:true,page:true,width:true,height:true,source_transform:true}).optional()});
+function pagePayload(report:ReportData,pageId:string):z.infer<typeof NativePage>{
+  const revision=report.revisions.find(v=>v.pages.some(p=>p.page_id===pageId)),page=revision?.pages.find(p=>p.page_id===pageId);
+  if(!revision||!page)throw new DocverError('PAGE_NOT_FOUND','Page is outside this report');
+  const asset=revision.assets.find(a=>a.asset_id===page.asset_id)!;
+  const mapping=revision.bundle_mapping.find(m=>m.source_page_id===pageId),reference=!revision.coverage_gaps.some(g=>g.reason==='bundle_inconsistent')?revision.pages.find(p=>p.page_id===mapping?.rendered_page_id):undefined;
+  return NativePage.parse({page,asset,reference:reference?{asset_id:reference.asset_id,page:reference.page,width:reference.width,height:reference.height,source_transform:reference.source_transform}:undefined});
+}
 export class Store {
   readonly db:DatabaseSync;
   readonly root:string;
@@ -16,7 +25,8 @@ export class Store {
     else this.db.exec(`PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY,title TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),created_at TEXT NOT NULL,body TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),report_id TEXT REFERENCES reports(id),started_at TEXT NOT NULL,finished_at TEXT,status TEXT NOT NULL,error TEXT);`);
+      CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),report_id TEXT REFERENCES reports(id),started_at TEXT NOT NULL,finished_at TEXT,status TEXT NOT NULL,error TEXT);
+      CREATE TABLE IF NOT EXISTS native_pages (report_id TEXT NOT NULL REFERENCES reports(id),page_id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(report_id,page_id));`);
   }
   beginRun(projectId:string,title:string):string {
     this.db.prepare('INSERT INTO projects VALUES (?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title').run(projectId,title);
@@ -30,6 +40,8 @@ export class Store {
       const existing=this.db.prepare('SELECT body FROM reports WHERE id=?').get(report.report_id);
       if(existing&&existing.body!==body) throw new DocverError('SNAPSHOT_CONFLICT','Immutable report ID already has different content');
       this.db.prepare('INSERT OR IGNORE INTO reports VALUES (?,?,?,?)').run(report.report_id,report.project_id,new Date().toISOString(),body);
+      const insert=this.db.prepare('INSERT OR IGNORE INTO native_pages VALUES (?,?,?)');
+      for(const revision of report.revisions)for(const page of revision.pages)insert.run(report.report_id,page.page_id,canonical(pagePayload(report,page.page_id)));
       this.db.prepare('UPDATE runs SET report_id=?,finished_at=?,status=? WHERE id=?').run(report.report_id,new Date().toISOString(),status,runId);
       onCommit?.();
       this.db.exec('COMMIT');
@@ -49,6 +61,11 @@ export class Store {
     const parsed=Report.safeParse(JSON.parse(String(row.body)));
     if(!parsed.success)throw new DocverError('SCHEMA_INCOMPATIBLE','Stored snapshot does not match the supported schema; migration is not implemented');
     return parsed.data;
+  }
+  nativePage(projectId:string,reportId:string,pageId:string):z.infer<typeof NativePage>{
+    const indexed=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_pages'").get();
+    if(indexed){const row=this.db.prepare('SELECT p.body FROM native_pages p JOIN reports r ON r.id=p.report_id WHERE r.project_id=? AND r.id=? AND p.page_id=?').get(projectId,reportId,pageId);if(row)return NativePage.parse(JSON.parse(String(row.body)));}
+    return pagePayload(this.report(projectId,reportId),pageId);
   }
   projects():{project_id:string,title:string}[] {return this.db.prepare('SELECT id AS project_id,title FROM projects ORDER BY id').all() as any;}
   reports(projectId:string) {return this.db.prepare('SELECT id AS report_id,created_at FROM reports WHERE project_id=? ORDER BY rowid').all(projectId);}

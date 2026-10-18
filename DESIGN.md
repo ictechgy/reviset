@@ -29,7 +29,7 @@
 ## Design principles
 - 원문 사실·표시 상태의 관측/추정·페이지 대응 추정을 구분하고 unavailable을 삭제로 표현하지 않는다.
 - 작업 가능한 다음 행동을 제공하며 과거 report를 고정해서 다시 읽게 한다.
-- Tradeoffs: 첫 앱은 구조 보기 fallback을 명시하고 렌더 충실도를 과장하지 않는다.
+- Tradeoffs: PPTX는 실제 변환 PDF를 우선하며 구조 보기는 변환 실패 fallback이다. 원본 PDF/변환 화면/추정 OCR의 출처를 표시하고 충실도를 과장하지 않는다.
 
 ## Visual language
 - Color: A 시안의 밝은 macOS형 중립색과 파란 강조색을 기본으로 사용. 상태는 색과 문자 함께 표시.
@@ -41,7 +41,7 @@
 
 ## Components
 - Existing components to reuse: 없음. 공통 query/report 계약을 재사용.
-- New/changed components: AppShell, ProjectList, ImportSheet, VersionBar, HistoryList, ComparePane, PageView, MappingControls, ExportPanel.
+- New/changed components: AppShell, ProjectList, ImportSheet, VersionBar, HistoryList, ComparePane, PageView, MappingControls, ExportPanel. PageView는 원본 PDF/변환 PPTX 출처, OCR 추정 점수·원문 확인, 글꼴 대체/누락 경고를 한국어로 제공한다. 화면 변경은 의미상 삭제와 구분한다.
 - Variants and states: 선택/비활성/처리 중/오류/부분 성공/관측 공백.
 - Token/component ownership: apps/macos의 SwiftUI·AppKit view와 시스템 색상/폰트.
 

@@ -7,6 +7,7 @@ import { FONT } from './generate-fixtures.js';
 import { renderPdf, convertPptx } from '../packages/render/index.js';
 import { ingest } from '../packages/ingest/index.js';
 import { byteHash, DocverError } from '../packages/schema/index.js';
+import { officeExecutable } from '../packages/runtime/tools.js';
 const folder=resolve(process.argv[2]??'artifacts/render-spike');await mkdir(folder,{recursive:true});
 const deck=new (pptxgen as unknown as typeof pptxgen.default)();deck.layout='LAYOUT_WIDE';
 const reference=new PDFDocument({autoFirstPage:false,info:{Title:'Independent PDFKit synthetic reference'}}),chunks:Buffer[]=[];
@@ -47,7 +48,7 @@ const report:any={created_at:new Date().toISOString(),environment:{node:process.
   structure:{pages:extracted.pages.length,hidden_pages:extracted.pages.filter(p=>p.hidden).length,text_elements:extracted.pages.flatMap(p=>p.elements).filter(e=>e.kind==='text').length,
     table_chart_semantics:'unsupported',rotation_bbox:'approximate'},converter:{status:'not_run'},pixel_comparison:{status:'unverified',reason:'Independent Office-rendered reference not available'}};
 try {
-  const executable=process.env.DOCVER_SOFFICE??'soffice';
+  const executable=officeExecutable();
   const converted=await convertPptx(join(folder,'deck.pptx'),executable);await writeFile(join(folder,'converted.pdf'),converted);
   report.converter={status:'success',executable};
   const actual=await renderPdf(converted,1),expected=await renderPdf(ref,1);await writeFile(join(folder,'converted-1.png'),actual);

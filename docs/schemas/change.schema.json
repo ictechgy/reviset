@@ -37,6 +37,7 @@
         "text_struck_through",
         "text_occluded",
         "text_revealed",
+        "visual_region_changed",
         "coverage_gap"
       ]
     },
@@ -57,6 +58,20 @@
       "enum": [
         "observed",
         "inferred"
+      ]
+    },
+    "text_assessment": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "inferred"
+      ]
+    },
+    "text_scope": {
+      "type": "string",
+      "enum": [
+        "page",
+        "region"
       ]
     },
     "evidence": {
@@ -117,6 +132,17 @@
           },
           "method": {
             "type": "string"
+          },
+          "provenance": {
+            "type": "string",
+            "enum": [
+              "observed",
+              "inferred"
+            ]
+          },
+          "render_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
           }
         },
         "required": [

@@ -71,7 +71,64 @@
     },
     "provenance": {
       "type": "string",
-      "const": "observed"
+      "enum": [
+        "observed",
+        "inferred"
+      ]
+    },
+    "ocr": {
+      "type": "object",
+      "properties": {
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confidence_scope": {
+          "type": "string",
+          "const": "line"
+        },
+        "numeric_consensus": {
+          "type": "boolean"
+        },
+        "ambiguous": {
+          "type": "boolean"
+        },
+        "alternatives": {
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "text",
+              "confidence",
+              "truncated"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "confidence",
+        "confidence_scope",
+        "numeric_consensus",
+        "ambiguous",
+        "alternatives"
+      ],
+      "additionalProperties": false
     },
     "media_hash": {
       "type": "string"
@@ -240,7 +297,8 @@
           "type": "string",
           "enum": [
             "ooxml_table",
-            "pdf_grid_inferred"
+            "pdf_grid_inferred",
+            "vision_table_inferred"
           ]
         },
         "assessment": {
