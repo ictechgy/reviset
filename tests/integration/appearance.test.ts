@@ -23,7 +23,8 @@ test('background before text, transparent overlay, underline, and table edge nev
   const background=await get(d=>{d.rect(45,74,170,40).fill('white');text(d);});assert.equal(background.elements[0].visibility,'visible');
   const alpha=await get(d=>{text(d);d.save().fillOpacity(0.4).rect(45,76,170,35).fill('yellow').restore();});assert.notEqual(alpha.elements[0].visibility,'occluded');
   const underline=await get(d=>{text(d);d.moveTo(50,108).lineTo(195,108).stroke();});assert.equal(underline.elements[0].visibility,'visible');
-  const edge=await get(d=>{text(d);d.rect(45,76,200,40).stroke();});assert.equal(edge.elements[0].visibility,'visible');
+  const edge=await get(d=>{text(d);d.rect(45,76,200,40).stroke();});assert.equal(edge.elements[0].visibility,'uncertain'); // Border intersects the font-metric box; ink separation is unverified.
+  const outside=await get(d=>{text(d);d.rect(40,60,220,70).stroke();});assert.equal(outside.elements[0].visibility,'visible');
 });
 test('partial masks retain per-glyph states and withhold definitive text delta',async()=>{
   const page=await get(d=>{text(d);d.rect(50,74,70,40).fill('white');});
@@ -201,5 +202,19 @@ test('small nearly opaque covers and short strokes across a minus glyph remain u
       else d.lineWidth(2).moveTo(x,y).lineTo(x+w,y).stroke('white');
     });
     assert.equal(page.elements[0].visibility,'uncertain',kind);assert.equal(page.elements[0].visibility_spans!.find(s=>s.text==='-')!.state,'uncertain');assert.ok(page.unresolved_text?.includes('-500'));assert.ok(!page.visible_text?.includes('-'));assert.ok(page.text.includes('-500'));
+  }
+});
+import { createCanvas,loadImage } from '@napi-rs/canvas';
+test('sub-five-percent covers over actual punctuation ink preserve uncertainty and raw values',async()=>{
+  for(const value of ['1.5','1,000']){
+    const draw=(d:PDFKit.PDFDocument)=>d.fillColor('black').fontSize(12).text('Revenue '+value,50,80,{lineBreak:false}),raw=await pdf(draw),before=(await extractPdf(raw,'sha256:punct-before'))[0],punctuation=value.includes('.')?'.':',',span=before.elements[0].visibility_spans!.find(s=>s.text===punctuation)!,b=span.bbox;
+    const png=await loadImage(await renderPdf(raw,1,2400)),canvas=createCanvas(png.width,png.height),ctx=canvas.getContext('2d');ctx.drawImage(png,0,0);const pixels=ctx.getImageData(0,0,png.width,png.height).data;
+    const ink:number[][]=[];for(let y=Math.ceil(b[1]*png.height);y<Math.floor((b[1]+b[3])*png.height);y++)for(let x=Math.ceil(b[0]*png.width);x<Math.floor((b[0]+b[2])*png.width);x++)if(pixels[(y*png.width+x)*4]<128)ink.push([x,y]);assert.ok(ink.length);
+    const scale=png.width/600,x=ink[0][0]/scale,y=ink[0][1]/scale,w=1.3,h=1.3;assert.ok(w*h/(b[2]*600*b[3]*400)<0.05);
+    for(const kind of ['fill','stroke']){
+      const after=(await extractPdf(await pdf(d=>{draw(d);if(kind==='fill')d.rect(x,y,w,h).fill('white');else d.lineWidth(0.2).moveTo(x,y+0.125).lineTo(x+w,y+0.125).stroke('white');}),'sha256:punct-after'))[0];
+      assert.equal(after.elements[0].visibility,'uncertain');assert.equal(after.elements[0].visibility_spans!.find(s=>s.text===punctuation)!.state,'uncertain');assert.ok(after.text.includes(value));assert.ok(after.unresolved_text?.includes(value));
+      const rev=(id:string,p:typeof before)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:[p],coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData,pair=matchPages([before],[after]),changes=diffRevisions(rev('a',before),rev('b',after),pair.matches,pair.candidates,p=>p);assert.ok(changes.some(c=>c.coverage_gaps.some(g=>g.reason==='pdf_visibility_unresolved_text_comparison_withheld')));
+    }
   }
 });

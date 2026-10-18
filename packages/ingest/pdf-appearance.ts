@@ -95,17 +95,17 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       const backgrounds=regions.filter(r=>r.kind==='fill'&&r.opaque&&r.axisAligned&&r.order<g.order&&area(g.bbox)>0&&overlap(g.bbox,r.bbox)/area(g.bbox)>=0.95);
       const background=backgrounds.at(-1)?.color??'#ffffff';
       if(g.color!=='unknown'&&background!=='unknown'&&g.color===background){state='uncertain';e.visibility_evidence.push({method:'text_color_matches_background',bbox:g.bbox,assessment:'inferred',coverage:1});}
-      const centralBand=box(g.bbox[0],g.bbox[1]+g.bbox[3]*0.25,g.bbox[2],g.bbox[3]*0.5);
       for(const r of regions){
         const coverage=area(g.bbox)>0?overlap(g.bbox,r.bbox)/area(g.bbox):0;
-        if(r.kind==='fill'&&r.order>g.order&&coverage>0.05){
-          if(r.opaque&&r.axisAligned){state=coverage>=0.999?'occluded':'partially_occluded';e.visibility_evidence.push({method:'later_opaque_rectangle_per_glyph',bbox:r.bbox,assessment:'inferred',coverage});}
+        // A decimal point can occupy less than 5% of its font-metric box.
+        // Any positive overlap is uncertain unless a stronger assessment applies.
+        if(r.kind==='fill'&&r.order>g.order&&coverage>0){
+          if(r.opaque&&r.axisAligned&&coverage>0.05){state=coverage>=0.999?'occluded':'partially_occluded';e.visibility_evidence.push({method:'later_opaque_rectangle_per_glyph',bbox:r.bbox,assessment:'inferred',coverage});}
           else{state='uncertain';e.visibility_evidence.push({method:'transparency_clip_or_transform_overlap',bbox:r.bbox,assessment:'inferred',coverage});}
         }
-        // Even a short thin line can erase a minus sign. Grid membership does
-        // not prove visibility when a stroke crosses the actual glyph body.
-        const shortStroke=r.kind==='stroke'&&r.order>g.order&&coverage>0.005&&overlap(centralBand,r.bbox)>0&&(!r.line||!strikeCandidate(r.line,e));
-        if((r.kind==='image'&&coverage>0.005||r.kind==='stroke'&&coverage>0.2||shortStroke||r.kind==='text'&&state==='visible'&&coverage>0.2)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:shortStroke?'short_stroke_glyph_body_overlap_unverified':'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
+        // Grid membership or a small overlap cannot prove punctuation visibility.
+        const shortStroke=r.kind==='stroke'&&r.order>g.order&&coverage>0&&(!r.line||!strikeCandidate(r.line,e));
+        if((r.kind==='image'&&coverage>0||shortStroke||r.kind==='text'&&state==='visible'&&coverage>0)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:shortStroke?'short_stroke_glyph_overlap_unverified':'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
       }
       for(const a of annotations){
         if(a.annotationFlags&35)continue;
