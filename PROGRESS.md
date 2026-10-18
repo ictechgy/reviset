@@ -6,7 +6,7 @@
 
 검증:
 
-- `npm run check`: 40개 통합 테스트 통과. 그림 순서/가림/부분 가림/배경·투명도/관측 취소선과 숨김 주석/추정 선과 격자/비가시 OCR/색상/클리핑/비사각형/블렌드/회전·CropBox/표 출처를 포함한다.
+- `npm run check`: 43개 통합 테스트 통과. 그림 순서/가림/부분 가림/배경·투명도/관측 취소선과 숨김 주석/추정 선과 격자/비가시 OCR/색상/클리핑/비사각형/블렌드/회전·CropBox/표 출처를 포함한다.
 - `npm run mac:build`: Swift 네이티브 실행 파일과 Node helper를 빌드하고 ad-hoc 서명·strict verify.
 - `node scripts/native-backend-smoke.mjs`: 개발 Node가 아닌 번들 helper와 최소 PATH로 8개 작업 검증. stage 변조/취소·복구/stale draft 거절, 새·과거 report, lazy 원문, export 동일성, 실제 MCP stdio와 DB hash 불변.
 - `node scripts/native-smoke.mjs`: 실제 `.app`의 5버전 `[3,4,4,3,3]`쪽 데모, 숫자 변경 2개, 원문 비교·집중 모드·전체 이력 화면. stderr 비어 있음.

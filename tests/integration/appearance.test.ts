@@ -155,3 +155,15 @@ test('strike markup stays in visible text and suppressed raw-layer edits remain 
     const gap=result.report.changes.find(c=>c.coverage_gaps.some(g=>g.reason==='raw_text_changed_in_suppressed_layer'));assert.ok(gap);assert.ok(gap.before?.includes('100'));assert.ok(gap.after?.includes('200'));
   }finally{service.close();await rm(folder,{recursive:true,force:true});}
 });
+test('strike annotation cannot promote hidden or uncertain glyphs to definite visible text',async()=>{
+  const hidden=await get(d=>{d.addContent('3 Tr');text(d);d.rect(45,76,170,35).fill('white');d.strike(49,76,145,35,{color:'red'});});assert.equal(hidden.elements[0].visibility,'hidden_render_mode');assert.equal(hidden.visible_text,'');assert.ok(hidden.unresolved_text?.includes('100'));
+  const uncertain=await get(d=>{text(d);const image=d.ref({Type:'XObject',Subtype:'Image',Width:1,Height:1,ImageMask:true,BitsPerComponent:1,Decode:[0,1]});image.end(Buffer.from([0]));d.page.xobjects.Mask=image;d.addContent('q 1 1 1 rg 170 0 0 35 45 76 cm /Mask Do Q');d.strike(49,76,145,35,{color:'red'});});assert.equal(uncertain.elements[0].visibility,'uncertain');assert.equal(uncertain.visible_text,'');
+});
+test('scaled stroke widths and small-font stroke footprints remain uncertain',async()=>{
+  const scaled=await get(d=>{text(d);d.save().scale(10).lineWidth(3).moveTo(5,9).lineTo(21.5,9).stroke('white').restore();});assert.equal(scaled.elements[0].visibility,'uncertain');assert.ok(scaled.coverage_gaps.some(g=>g.reason==='thick_stroke_overlap_requires_review'));
+  const tiny=await get(d=>{d.fillColor('black').fontSize(2).text('tiny100',50,80,{lineBreak:false});d.lineWidth(2).moveTo(45,81).lineTo(100,81).stroke('white');});assert.equal(tiny.elements[0].visibility,'uncertain');
+});
+test('fractional text alpha and fill-plus-stroke alpha do not invent definite visibility',async()=>{
+  const fractional=await get(d=>{d.fillOpacity(0.01);text(d);});assert.equal(fractional.elements[0].visibility,'unverified');assert.ok(fractional.unresolved_text?.includes('100'));
+  const outline=await get(d=>{d.fillOpacity(0).strokeOpacity(1).addContent('2 Tr');text(d);});assert.equal(outline.elements[0].visibility,'unverified');assert.notEqual(outline.elements[0].visibility,'hidden_render_mode');
+});

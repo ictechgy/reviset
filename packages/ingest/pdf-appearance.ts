@@ -2,7 +2,7 @@ import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } fr
 import { paintedGlyphs } from './pdf-glyphs.js';
 import { OPS, AnnotationType, AnnotationMode, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, normalize, type Box, type ElementData } from '../schema/index.js';
-interface Region {bbox:Box;order:number;kind:'fill'|'line'|'image'|'text';opaque:boolean;axisAligned:boolean;color?:string}
+interface Region {bbox:Box;order:number;kind:'fill'|'line'|'stroke'|'image'|'text';opaque:boolean;axisAligned:boolean;color?:string}
 const area=(b:Box)=>b[2]*b[3];
 const overlap=(a:Box,b:Box)=>Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
 const compact=(s:string)=>normalize(s).replace(/\s/gu,'');
@@ -49,7 +49,10 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
             if(command===0){last=[p[cursor++],p[cursor++]];start=last;}
             else if(command===1||command===4){const next=command===4?start:[p[cursor++],p[cursor++]];
               if(last&&next){const segment=bounds([Math.min(last[0],next[0]),Math.min(last[1],next[1]),Math.max(last[0],next[0]),Math.max(last[1],next[1])]);
-                if(state.lineWidth>3){const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;regions.push({bbox:box(segment.bbox[0]-pad/viewport.width,segment.bbox[1]-pad/viewport.height,segment.bbox[2]+2*pad/viewport.width,segment.bbox[3]+2*pad/viewport.height),axisAligned:segment.axisAligned,order:i,kind:'image',opaque:false});gaps.push({feature:'pdf_visibility',reason:'thick_stroke_overlap_requires_review'});}
+                const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;
+                const footprint=box(segment.bbox[0]-pad/viewport.width,segment.bbox[1]-pad/viewport.height,segment.bbox[2]+2*pad/viewport.width,segment.bbox[3]+2*pad/viewport.height);
+                regions.push({bbox:footprint,axisAligned:segment.axisAligned,order:i,kind:2*pad>2?'image':'stroke',opaque:false});
+                if(2*pad>2)gaps.push({feature:'pdf_visibility',reason:'thick_stroke_overlap_requires_review'});
                 else regions.push({...segment,order:i,kind:'line',opaque:!optional&&state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)});
               }last=next;}
             else if(command===2){unknownStroke();cursor+=6;last=undefined;}else if(command===3){unknownStroke();cursor+=4;last=undefined;}else break;
@@ -93,7 +96,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
           if(r.opaque&&r.axisAligned){state=coverage>=0.999?'occluded':'partially_occluded';e.visibility_evidence.push({method:'later_opaque_rectangle_per_glyph',bbox:r.bbox,assessment:'inferred',coverage});}
           else if(coverage>=0.2){state='uncertain';e.visibility_evidence.push({method:'transparency_clip_or_transform_overlap',bbox:r.bbox,assessment:'inferred',coverage});}
         }
-        if((r.kind==='image'&&coverage>0.005||r.kind==='text'&&state==='visible'&&coverage>0.2)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
+        if((r.kind==='image'&&coverage>0.005||r.kind==='stroke'&&coverage>0.2||r.kind==='text'&&state==='visible'&&coverage>0.2)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
       }
       for(const a of annotations){
         if(a.annotationFlags&35)continue;
@@ -105,10 +108,11 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
         const q=a.quadPoints?Array.from(a.quadPoints) as number[]:[];
         if(q.length<8){e.visibility_evidence.push({method:'annotation_quadpoints_missing',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
         for(let k=0;k+7<q.length;k+=8){const group=q.slice(k,k+8),xs=group.filter((_,i)=>i%2===0),ys=group.filter((_,i)=>i%2===1),region=bounds([Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)],[1,0,0,1,0,0]).bbox,coverage=area(g.bbox)>0?overlap(region,g.bbox)/area(g.bbox):0;
-          if(coverage>0.2){if(a.subtype==='Redact'){state='uncertain';assessment='inferred';}else if(coverage>=0.8&&state!=='occluded'){state='struck_through';assessment='observed';}else if(state!=='occluded'){state='partially_struck_through';assessment='inferred';}
+          if(coverage>0.2){if(a.subtype==='Redact'){state='uncertain';assessment='inferred';}else if(['visible','struck_through','partially_struck_through'].includes(state)){state=coverage>=0.8&&state!=='partially_struck_through'?'struck_through':'partially_struck_through';assessment=state==='struck_through'?'observed':'inferred';}
             e.visibility_evidence.push({method:a.subtype==='Redact'?'redaction_annotation_intent_unapplied':'strikeout_annotation_quad',bbox:region,assessment,coverage});}
         }
       }
+      if(g.hidden)state='hidden_render_mode';
       if(state!=='hidden_render_mode'&&state!=='struck_through')assessment='inferred';
       e.visibility_spans.push({text:g.text,state,bbox:g.bbox,paint_index:g.order,assessment});
     }

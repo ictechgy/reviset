@@ -1,8 +1,8 @@
 import { SCHEMA_VERSION, normalize, type RevisionData, type MatchData, type ChangeData, type PageData } from '../schema/index.js';
 export function evidence(revision:RevisionData,page:PageData,focusText=false):ChangeData['evidence'][number] {
-  const element=focusText?page.elements.find(e=>(e.kind==='text'||e.kind==='table_cell')&&!['occluded','struck_through'].includes(e.visibility??'')&&/[0-9]/.test(e.text)):undefined;
+  const element=focusText?page.elements.find(e=>(e.kind==='text'||e.kind==='table_cell')&&(e.visibility===undefined||e.visibility==='visible')&&/[0-9]/.test(e.text)):undefined;
   return {revision_id:revision.revision_id,revision_occurrence_id:revision.revision_occurrence_id,asset_id:page.asset_id,page_id:page.page_id,page:page.page,
-    bbox:element?.bbox??[0,0,1,1],quote:element?.text??page.text,method:element?.method??page.elements[0]?.method??'page_observation',...(element?{observation_id:element.observation_id}:{})};
+    bbox:element?.bbox??[0,0,1,1],quote:element?.text??(focusText?page.visible_text??page.text:page.text),method:element?.method??page.elements[0]?.method??'page_observation',...(element?{observation_id:element.observation_id}:{})};
 }
 export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchData[],candidates:MatchData[],entityFor:(pageId:string)=>string):ChangeData[] {
   const changes:ChangeData[]=[];
