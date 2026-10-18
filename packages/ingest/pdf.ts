@@ -37,7 +37,7 @@ export async function extractPdf(bytes:Uint8Array,assetId:string):Promise<PageDa
       const hasText=elements.length>0;
       pages.push({page_id:id('pg',[assetId,n-1]),asset_id:assetId,page:n,width:viewport.width,height:viewport.height,
         coordinate_system:'pdf_user_space_bottom_left',source_transform:viewport.transform,hidden:null,
-        text:elements.map(e=>e.text).join('\n'),visible_text:elements.filter(e=>e.visibility==='visible').map(e=>e.text).join('\n'),unresolved_text:elements.filter(e=>!['visible','occluded','struck_through'].includes(e.visibility??'unverified')).map(e=>e.text).join('\n'),suppressed_text:elements.filter(e=>['occluded','struck_through','hidden_render_mode'].includes(e.visibility??'')).map(e=>e.text).join('\n'),elements,notes:null,
+        text:elements.map(e=>e.text).join('\n'),visible_text:elements.filter(e=>['visible','struck_through'].includes(e.visibility??'')).map(e=>e.text).join('\n'),unresolved_text:elements.filter(e=>!['visible','occluded','struck_through'].includes(e.visibility??'unverified')).map(e=>e.text).join('\n'),suppressed_text:elements.filter(e=>['occluded','hidden_render_mode'].includes(e.visibility??'')).map(e=>e.text).join('\n'),elements,notes:null,
         capabilities:{text:hasText?'available':'unavailable',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},
         coverage_gaps:[...appearance.gaps,{feature:'table_semantics',reason:'pdf_grid_is_inferred_not_original_table_structure'},{feature:'notes',reason:'not_present_in_pdf'},{feature:'hidden_slides',reason:'export_visibility_unknown'},
           {feature:'animation',reason:'not_present_in_pdf'},{feature:'structure',reason:'pdf_has_no_original_shape_semantics'},

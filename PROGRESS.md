@@ -6,13 +6,13 @@
 
 검증:
 
-- `npm run check`: 37개 통합 테스트 통과. 그림 순서/가림/부분 가림/배경·투명도/관측 취소선과 숨김 주석/추정 선과 격자/비가시 OCR/색상/클리핑/비사각형/블렌드/회전·CropBox/표 출처를 포함한다.
+- `npm run check`: 40개 통합 테스트 통과. 그림 순서/가림/부분 가림/배경·투명도/관측 취소선과 숨김 주석/추정 선과 격자/비가시 OCR/색상/클리핑/비사각형/블렌드/회전·CropBox/표 출처를 포함한다.
 - `npm run mac:build`: Swift 네이티브 실행 파일과 Node helper를 빌드하고 ad-hoc 서명·strict verify.
 - `node scripts/native-backend-smoke.mjs`: 개발 Node가 아닌 번들 helper와 최소 PATH로 8개 작업 검증. stage 변조/취소·복구/stale draft 거절, 새·과거 report, lazy 원문, export 동일성, 실제 MCP stdio와 DB hash 불변.
 - `node scripts/native-smoke.mjs`: 실제 `.app`의 5버전 `[3,4,4,3,3]`쪽 데모, 숫자 변경 2개, 원문 비교·집중 모드·전체 이력 화면. stderr 비어 있음.
 - `node scripts/native-smoke.mjs --scale`: 300쪽×3버전 합성 PPTX→PDF→PPTX, 숫자 변경 2개, 300쪽 원문 표시. 약 6초(분석과 UI 대기·화면 저장을 포함한 현재 장비의 관측치). stderr 비어 있음. 결과·화면은 `output/native-*`.
 
-미완료/검증 범위: PPTX 고충실도 렌더와 Office 참조, OCR/이미지·차트 의미, 복합 PDF 가시성 전체 판정, 다양한 실문서 정확도 corpus, macOS 14 실기·다른 장비·접근성 전체 검증, Developer ID/공증·공개 배포·오픈소스 라이선스 확정. PDF 가림은 삭제 의도로 단정하지 않으며 불확실성은 원문과 gap으로 보존한다. 원본 OOXML 표와 PDF 격자 추정은 동일 셀 의미로 합치지 않는다. 1차 코드 리뷰에서 발견한 후보 cap의 비대칭 모호성, MCP의 긴 표시 배열 순회 실패, 이미지 마스크 가림 누락, helper crash/cancel 혼동을 수정하고 회귀 검증했다. Claude/Agy의 클리핑·Form BBox·annotation overlay·복합 선·병합 셀·전체 이력 이동·초기화 race 지적도 반영했다. 표시 상태 이벤트에는 관측/추정 필드를 추가했고 PPTX의 미계산 표시 상태를 PDF의 확인된 보임으로 취급하지 않는다. 사각형/페이지 경계 clip은 내부 글자를 불확실성 없이 통과시키고 복잡한 clip은 gap으로 남긴다. OCR 모드3 텍스트는 화면 검증이 없어 비교를 보류한다. 표 텍스트를 page.text에 포함해 초기 매칭/report ID와 달라진다. Grok 1차 코드 packet은 timeout으로 무효이며 작은 범위로 운영 재시도한다. 재리뷰의 두꺼운 곡선 stroke 누락도 수정해 불명확한 paint를 uncertain/gap으로 보존한다. 최종 리뷰 결과는 정확한 snapshot artifact로 별도 기록한다.
+미완료/검증 범위: PPTX 고충실도 렌더와 Office 참조, OCR/이미지·차트 의미, 복합 PDF 가시성 전체 판정, 다양한 실문서 정확도 corpus, macOS 14 실기·다른 장비·접근성 전체 검증, Developer ID/공증·공개 배포·오픈소스 라이선스 확정. PDF 가림은 삭제 의도로 단정하지 않으며 불확실성은 원문과 gap으로 보존한다. 원본 OOXML 표와 PDF 격자 추정은 동일 셀 의미로 합치지 않는다. 1차 코드 리뷰에서 발견한 후보 cap의 비대칭 모호성, MCP의 긴 표시 배열 순회 실패, 이미지 마스크 가림 누락, helper crash/cancel 혼동을 수정하고 회귀 검증했다. Claude/Agy의 클리핑·Form BBox·annotation overlay·복합 선·병합 셀·전체 이력 이동·초기화 race 지적도 반영했다. 표시 상태 이벤트에는 관측/추정 필드를 추가했고 PPTX의 미계산 표시 상태를 PDF의 확인된 보임으로 취급하지 않는다. 사각형/페이지 경계 clip은 내부 글자를 불확실성 없이 통과시키고 복잡한 clip은 gap으로 남긴다. OCR 모드3 텍스트는 화면 검증이 없어 비교를 보류한다. 표 텍스트를 page.text에 포함해 초기 매칭/report ID와 달라진다. Grok 1차 코드 packet은 timeout으로 무효이며 작은 범위로 운영 재시도한다. 재리뷰의 두꺼운 곡선 stroke 누락도 수정해 불명확한 paint를 uncertain/gap으로 보존한다. 숨김 OC 레이어의 그림과 text clipping 모드도 확정 가림으로 쓰지 않는다. 관측 취소선은 visible_text에 남기며 전용 표시 이벤트로 기록하고, 보이지 않는 원문층의 변경은 별도 gap으로 알린다. 최종 리뷰 결과는 정확한 snapshot artifact로 별도 기록한다.
 
 아래는 초기 CLI/MCP 체크포인트의 당시 기록이다. 위의 현재 상태를 우선한다.
 
@@ -103,3 +103,6 @@ npm run cli -- export --project prj_forward --out artifacts/forward
 3. M3의 worker·캐시·세밀한 취소/재시도·migration, 계보 alias/supersedes를 추가한다.
 4. 공통 query 위에 M5 UI를 구현하고, 5버전 작업·근거 클릭·수정→새 report를 실제 화면에서 검증한다.
 5. M4 클라이언트 실사용과 M6 라이선스/새 장비 설치를 검증한다. CLI/MCP 구현만으로 v0.1 완료라고 보고하지 않는다.
+
+
+밀도 검증 추가(481b580 패키지, 현재 장비): PDF 300쪽×2, 쪽당 본문 10줄. 분석 2.488초/최대 RSS 1.123GB, 저장 1.809초/1.486GB, 원문 페이지 요청 0.652초/0.798GB. `output/native-dense/result.json`의 `/usr/bin/time -l` 기록이며 보편적인 자원 상한은 아니다. helper가 요청마다 full report를 파싱하고 원본 hash를 확인하므로 빠른 페이지 이동의 중복 읽기와 메모리 비용은 WATCH로 유지한다. 공개·실문서 성능 보장을 넓히기 전 요청 병합/동시성 제한·page index가 필요하다.

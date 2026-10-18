@@ -26,6 +26,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     if(order.some(o=>(o.a-ai)*(o.b-bi)<0)) add('page_moved',a,b,m);
     if((a.unresolved_text||b.unresolved_text)){add('coverage_gap',a,b,m,'pdf_visibility_unresolved_text_comparison_withheld');}
     if(!a.unresolved_text&&!b.unresolved_text&&a.capabilities.text==='available'&&b.capabilities.text==='available'&&normalize(a.visible_text??a.text)!==normalize(b.visible_text??b.text)) add('text_modified',a,b,m,a.elements.concat(b.elements).some(e=>e.visibility==='occluded')?'visible_text_after_inferred_opaque_cover':undefined);
+    if(normalize(a.text)!==normalize(b.text)&&normalize(a.visible_text??a.text)===normalize(b.visible_text??b.text))add('coverage_gap',a,b,m,'raw_text_changed_in_suppressed_layer');
     for(const old of a.elements.filter(e=>e.text)){
       const same=b.elements.filter(e=>e.normalized_text===old.normalized_text);
       if(same.length!==1||a.elements.filter(e=>e.normalized_text===old.normalized_text).length!==1)continue;

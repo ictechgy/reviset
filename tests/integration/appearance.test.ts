@@ -137,3 +137,21 @@ test('unsupported thick curve stroke retains covered text as uncertain with an e
   const page=await get(d=>{text(d);d.lineWidth(40).moveTo(45,95).bezierCurveTo(90,95,140,95,215,95).stroke('white');});
   assert.equal(page.elements[0].visibility,'uncertain');assert.ok(page.text.includes('Revenue 100'));assert.ok(page.unresolved_text?.includes('100'));assert.equal(page.visible_text,'');assert.ok(page.coverage_gaps.some(g=>g.reason==='curve_stroke_visibility_unverified'));
 });
+test('hidden optional-content paint cannot certify occlusion of ordinary visible text',async()=>{
+  const page=await get(d=>{text(d);const oc=d.ref({Type:'OCG',Name:'Hidden'});oc.end('');(d as any)._root.data.OCProperties={OCGs:[oc],D:{BaseState:'ON',OFF:[oc]}};(d.page as any).resources.data.Properties={HiddenLayer:oc};d.addContent('/OC /HiddenLayer BDC');d.rect(45,76,170,35).fill('white');d.addContent('EMC');});
+  assert.equal(page.elements[0].visibility,'uncertain');assert.ok(page.unresolved_text?.includes('100'));assert.ok(page.coverage_gaps.some(g=>g.reason==='optional_content_visibility_unverified'));
+});
+test('text rendering clip cannot turn a later bounding rectangle into definite occlusion',async()=>{
+  const page=await get(d=>{text(d);d.save();d.addContent('BT /F1 24 Tf 4 Tr 0 100 Td (X) Tj ET');d.rect(45,76,170,35).fill('white');d.restore();});assert.equal(page.elements[0].visibility,'uncertain');assert.ok(page.unresolved_text?.includes('Revenue'));assert.ok(page.coverage_gaps.some(g=>g.reason==='clipping_or_soft_mask_visibility_not_fully_verified'));
+});
+test('strike markup stays in visible text and suppressed raw-layer edits remain explicit',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-layer-')),service=new DesktopService(join(folder,'library'));
+  try{
+    const plain=join(folder,'plain.pdf'),strike=join(folder,'strike.pdf');await writeFile(plain,await pdf(d=>text(d)));await writeFile(strike,await pdf(d=>{text(d);d.strike(49,76,145,35,{color:'red'});}));
+    let project=await service.create('Strike',[{label:'Before',files:[plain]},{label:'After',files:[strike]}]),result=await service.run(project.project_id);
+    assert.equal(result.report.revisions[1].pages[0].visible_text,'Revenue 100');assert.ok(!result.report.changes.some(c=>c.kind==='text_modified'));assert.equal(result.report.changes.find(c=>c.kind==='text_struck_through')?.appearance_assessment,'observed');
+    const paths=[];for(const number of ['100','200']){const file=join(folder,number+'.pdf');await writeFile(file,await pdf(d=>{text(d,'Revenue '+number);d.rect(45,76,170,35).fill('white');}));paths.push(file);}
+    project=await service.create('Suppressed',[{label:'Before',files:[paths[0]]},{label:'After',files:[paths[1]]}]);result=await service.run(project.project_id);
+    const gap=result.report.changes.find(c=>c.coverage_gaps.some(g=>g.reason==='raw_text_changed_in_suppressed_layer'));assert.ok(gap);assert.ok(gap.before?.includes('100'));assert.ok(gap.after?.includes('200'));
+  }finally{service.close();await rm(folder,{recursive:true,force:true});}
+});

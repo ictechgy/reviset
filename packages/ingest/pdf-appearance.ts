@@ -9,11 +9,16 @@ const compact=(s:string)=>normalize(s).replace(/\s/gu,'');
 export async function inspectAppearance(page:any,viewport:any,elements:ElementData[]):Promise<{regions:Region[];gaps:{feature:string;reason:string}[]}> {
   const operators=await page.getOperatorList({annotationMode:AnnotationMode.DISABLE}),annotations=await page.getAnnotations({intent:'display'}),regions:Region[]=[],gaps:{feature:string;reason:string}[]=[];
   if(operators.fnArray.length>250000){for(const e of elements)e.visibility='unverified';return{regions,gaps:[{feature:'pdf_visibility',reason:'operator_limit_exceeded_visibility_unverified'}]};}
-  let state={matrix:[1,0,0,1,0,0],alpha:1,strokeAlpha:1,lineWidth:1,blend:'Normal',mask:false,clip:null as Clip,pendingClip:false,color:'#000000'},stack:typeof state[]=[];
+  let state={matrix:[1,0,0,1,0,0],alpha:1,strokeAlpha:1,lineWidth:1,blend:'Normal',mask:false,clip:null as Clip,pendingClip:false,textMode:0,textClipPending:false,color:'#000000'},stack:typeof state[]=[],marked:boolean[]=[];let sawComplexClipOrMask=false,optional=false;
   const glyphs=paintedGlyphs(page,viewport,operators);
   const bounds=(rect:number[],matrix=state.matrix)=>transformedBounds(rect,matrix,viewport);
   for(let i=0;i<operators.fnArray.length;i++){
     const op=operators.fnArray[i],args=operators.argsArray[i];
+    if(op===OPS.beginMarkedContent||op===OPS.beginMarkedContentProps){marked.push(optional);if(args?.[0]==='OC'){optional=true;gaps.push({feature:'pdf_visibility',reason:'optional_content_visibility_unverified'});}continue;}
+    if(op===OPS.endMarkedContent){optional=marked.pop()??false;continue;}
+    if(op===OPS.setTextRenderingMode){state.textMode=Number(args[0]);continue;}
+    if([OPS.showText,OPS.showSpacedText,OPS.nextLineShowText,OPS.nextLineSetSpacingShowText].includes(op)&&state.textMode>=4)state.textClipPending=true;
+    if(op===OPS.endText&&state.textClipPending){state.clip='unknown';state.textClipPending=false;sawComplexClipOrMask=true;continue;}
     if(op===OPS.save){stack.push({...state,matrix:[...state.matrix]});continue;}
     if(op===OPS.restore){state=stack.pop()??state;continue;}
     if(op===OPS.setLineWidth){state.lineWidth=Number(args[0]);continue;}
@@ -21,18 +26,18 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     if(op===OPS.setFillRGBColor){state.color=typeof args[0]==='string'?args[0]:'unknown';continue;}
     if(op===OPS.paintFormXObjectBegin){stack.push({...state,matrix:[...state.matrix]});if(args[0])state.matrix=Util.transform(state.matrix,args[0]);if(args[1]){const b=bounds(Array.from(args[1]));state.clip=intersectClip(state.clip,b.axisAligned?b.bbox:'unknown');}continue;}
     if(op===OPS.paintFormXObjectEnd){state=stack.pop()??state;continue;}
-    if(op===OPS.beginGroup){stack.push({...state,matrix:[...state.matrix]});state.mask=true;continue;}
+    if(op===OPS.beginGroup){stack.push({...state,matrix:[...state.matrix]});state.mask=true;sawComplexClipOrMask=true;continue;}
     if(op===OPS.endGroup){state=stack.pop()??state;continue;}
     if(op===OPS.transform){state.matrix=Util.transform(state.matrix,args);continue;}
-    if(op===OPS.setGState){for(const [key,value] of args[0]??[]){if(key==='ca')state.alpha=Number(value);if(key==='CA')state.strokeAlpha=Number(value);if(key==='BM')state.blend=String(value);if(key==='SMask')state.mask=value!==false&&value!=='None';}continue;}
+    if(op===OPS.setGState){for(const [key,value] of args[0]??[]){if(key==='ca')state.alpha=Number(value);if(key==='CA')state.strokeAlpha=Number(value);if(key==='BM')state.blend=String(value);if(key==='SMask')state.mask=value!==false&&value!=='None';}if(state.mask)sawComplexClipOrMask=true;continue;}
     if(op===OPS.clip||op===OPS.eoClip){state.pendingClip=true;continue;}
     if(op===OPS.constructPath&&Array.isArray(args)&&args.length>=3){
       const [paintOp,paths,rect]=args;if(!rect||rect.length<4){regions.push({bbox:box(0,0,1,1),axisAligned:false,order:i,kind:'image',opaque:false});gaps.push({feature:'pdf_visibility',reason:'path_geometry_unresolved'});continue;}
       const shape=bounds(Array.from(rect)),isRectangle=rectanglePath(paths);
-      if(state.pendingClip){state.clip=intersectClip(state.clip,isRectangle&&shape.axisAligned?shape.bbox:'unknown');state.pendingClip=false;}
+      if(state.pendingClip){state.clip=intersectClip(state.clip,isRectangle&&shape.axisAligned?shape.bbox:'unknown');state.pendingClip=false;if(state.clip==='unknown')sawComplexClipOrMask=true;}
       const fill=[OPS.fill,OPS.eoFill,OPS.fillStroke,OPS.eoFillStroke,OPS.closeFillStroke,OPS.closeEOFillStroke].includes(paintOp);
       const stroke=[OPS.stroke,OPS.closeStroke,OPS.fillStroke,OPS.eoFillStroke,OPS.closeFillStroke,OPS.closeEOFillStroke].includes(paintOp);
-      if(fill&&isRectangle)regions.push({...shape,order:i,kind:'fill',color:state.color,opaque:state.color!=='unknown'&&state.alpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,shape.bbox)});
+      if(fill&&isRectangle)regions.push({...shape,order:i,kind:'fill',color:state.color,opaque:!optional&&state.color!=='unknown'&&state.alpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,shape.bbox)});
       else if(fill&&area(shape.bbox)>0){regions.push({...shape,order:i,kind:'fill',opaque:false});gaps.push({feature:'pdf_visibility',reason:'non_rectangular_fill_not_used_as_confirmed_occlusion'});}
       if(stroke){
         let curveReported=false;
@@ -45,7 +50,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
             else if(command===1||command===4){const next=command===4?start:[p[cursor++],p[cursor++]];
               if(last&&next){const segment=bounds([Math.min(last[0],next[0]),Math.min(last[1],next[1]),Math.max(last[0],next[0]),Math.max(last[1],next[1])]);
                 if(state.lineWidth>3){const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;regions.push({bbox:box(segment.bbox[0]-pad/viewport.width,segment.bbox[1]-pad/viewport.height,segment.bbox[2]+2*pad/viewport.width,segment.bbox[3]+2*pad/viewport.height),axisAligned:segment.axisAligned,order:i,kind:'image',opaque:false});gaps.push({feature:'pdf_visibility',reason:'thick_stroke_overlap_requires_review'});}
-                else regions.push({...segment,order:i,kind:'line',opaque:state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)});
+                else regions.push({...segment,order:i,kind:'line',opaque:!optional&&state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)});
               }last=next;}
             else if(command===2){unknownStroke();cursor+=6;last=undefined;}else if(command===3){unknownStroke();cursor+=4;last=undefined;}else break;
           }
@@ -62,6 +67,12 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
   const textRuns=new Map<number,Box>();
   for(const g of glyphs){if(g.hidden)continue;const b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],g.bbox[0]),Math.min(b[1],g.bbox[1]),Math.max(b[0]+b[2],g.bbox[0]+g.bbox[2])-Math.min(b[0],g.bbox[0]),Math.max(b[1]+b[3],g.bbox[1]+g.bbox[3])-Math.min(b[1],g.bbox[1])):g.bbox);}
   for(const [order,bbox] of textRuns)regions.push({bbox,order,kind:'text',opaque:false,axisAligned:false});
+  const verticalBuckets=new Map<number,Region[]>(),connectedCache=new Map<Region,boolean>();
+  for(const v of regions.filter(v=>v.kind==='line'&&v.bbox[2]<0.002&&v.bbox[3]>0.02)){const key=Math.floor(v.bbox[0]*100);verticalBuckets.set(key,[...(verticalBuckets.get(key)??[]),v]);}
+  function connectedLine(r:Region):boolean{if(connectedCache.has(r))return connectedCache.get(r)!;const lineY=r.bbox[1]+r.bbox[3]/2;let connected=false;
+    for(let key=Math.floor((r.bbox[0]-0.003)*100);key<=Math.floor((r.bbox[0]+r.bbox[2]+0.003)*100)&&!connected;key++)connected=(verticalBuckets.get(key)??[]).some(v=>v.bbox[0]>=r.bbox[0]-0.003&&v.bbox[0]<=r.bbox[0]+r.bbox[2]+0.003&&lineY>=v.bbox[1]-0.003&&lineY<=v.bbox[1]+v.bbox[3]+0.003);
+    connectedCache.set(r,connected);return connected;
+  }
   // Correlate operator-derived glyphs with textContent only after geometry has been computed.
   let cursor=0;
   const stream=glyphs.flatMap(g=>g.text.split('').filter(c=>!/\s/u.test(c)).map(c=>({char:c,glyph:g}))),source=stream.map(v=>v.char).join('');
@@ -112,7 +123,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     const order=selected[0]?.order??Infinity;
     for(const r of regions.filter(r=>r.kind==='line'&&r.opaque&&r.order>order&&r.axisAligned)){
       const mid=e.bbox[1]+e.bbox[3]*0.5,lineY=r.bbox[1]+r.bbox[3]/2,widthRatio=r.bbox[2]/e.bbox[2];
-      const connected=regions.some(v=>v.kind==='line'&&v.bbox[2]<0.002&&v.bbox[3]>0.02&&v.bbox[0]>=r.bbox[0]-0.003&&v.bbox[0]<=r.bbox[0]+r.bbox[2]+0.003&&lineY>=v.bbox[1]-0.003&&lineY<=v.bbox[1]+v.bbox[3]+0.003);
+      const connected=connectedLine(r);
       if(!connected&&r.bbox[3]<=Math.max(0.002,e.bbox[3]*0.13)&&Math.abs(lineY-mid)<e.bbox[3]*0.22&&widthRatio>=0.8&&widthRatio<=1.15&&e.visibility==='visible'){e.visibility='struck_inferred';e.visibility_evidence.push({method:'flattened_non_grid_strike_candidate',bbox:r.bbox,assessment:'inferred',coverage:Math.min(1,widthRatio)});}
     }
     e.visibility_evidence=[...new Map(e.visibility_evidence.map(v=>[v.method+JSON.stringify(v.bbox),v])).values()];
@@ -141,6 +152,6 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     }
   }
 
-  if(state.mask||state.clip==='unknown'||state.pendingClip)gaps.push({feature:'pdf_visibility',reason:'clipping_or_soft_mask_visibility_not_fully_verified'});
+  if(sawComplexClipOrMask||state.mask||state.clip==='unknown'||state.pendingClip)gaps.push({feature:'pdf_visibility',reason:'clipping_or_soft_mask_visibility_not_fully_verified'});
   return{regions,gaps:[...new Map(gaps.map(g=>[g.reason,g])).values()]};
 }

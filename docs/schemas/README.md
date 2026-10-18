@@ -67,3 +67,5 @@ cursor는 report ID·쿼리 hash·안정 정렬 위치에 묶는다. cursor를 �
 `get_element`는 원문과 글자별 상태를 각각 분할 조회한다. 기본 `span_limit=0`, `appearance_evidence_limit=0`은 큰 배열을 생략하고 count와 다음 offset만 반환한다. `span_limit=1~20`과 `span_offset`으로 `visibility_spans`를, `appearance_evidence_limit=1~10`과 `appearance_evidence_offset`으로 `visibility_evidence`를 순회한다. 각각 `next_span_offset`·`next_appearance_evidence_offset`이 null이면 끝이다. offset 단위는 각 배열의 항목 인덱스다. 긴 text를 읽을 때는 span/evidence 기본값 0을 유지한다. `get_page`도 큰 표시 배열을 생략하고 count 및 요소 ID를 제공한다. 작은 출력 예산에서는 chunk 길이를 줄인다.
 
 OOXML 표의 `ooxml_table/observed`와 PDF 격자에서 추정한 `pdf_grid_inferred/inferred`는 원래 같은 구조를 뜻하지 않는다. 현재 diff는 페이지 텍스트 단위이며 형식 사이의 셀 대응은 제공하지 않는다. 표 텍스트가 추가되면서 초기 체크포인트와 매칭 점수/report ID가 달라질 수 있다.
+
+관측 취소선은 여전히 화면에서 읽을 수 있으므로 `visible_text`에 포함하고 `text_struck_through`로 표시 변경을 표현한다. 숨김 OC paint나 글자 clipping 모드는 확정 가림으로 쓰지 않는다. 보이는 내용이 같더라도 억제된 원문층이 바뀌면 `raw_text_changed_in_suppressed_layer` 관측 공백을 기록한다.
