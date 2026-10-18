@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from_page_id": {
+      "type": "string"
+    },
+    "to_page_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "link",
+        "unlink"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "from_page_id",
+    "to_page_id",
+    "action",
+    "reason"
+  ],
+  "additionalProperties": false
+}

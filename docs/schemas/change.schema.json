@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1.0"
+    },
+    "report_id": {
+      "type": "string"
+    },
+    "change_id": {
+      "type": "string"
+    },
+    "entity_id": {
+      "type": "string"
+    },
+    "from_revision": {
+      "type": "string"
+    },
+    "to_revision": {
+      "type": "string"
+    },
+    "from_occurrence": {
+      "type": "string"
+    },
+    "to_occurrence": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "page_added",
+        "page_deleted",
+        "page_moved",
+        "text_modified",
+        "coverage_gap"
+      ]
+    },
+    "before": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "after": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "revision_id": {
+            "type": "string"
+          },
+          "revision_occurrence_id": {
+            "type": "string"
+          },
+          "asset_id": {
+            "type": "string"
+          },
+          "page_id": {
+            "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "observation_id": {
+            "type": "string"
+          },
+          "bbox": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            ],
+            "items": false,
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "quote": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision_id",
+          "revision_occurrence_id",
+          "asset_id",
+          "page_id",
+          "page",
+          "bbox",
+          "quote",
+          "method"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "inferred",
+            "human_confirmed",
+            "needs_review"
+          ]
+        },
+        "score": {
+          "type": "number"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "score",
+        "reasons"
+      ],
+      "additionalProperties": false
+    },
+    "coverage_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "revision_id": {
+            "type": "string"
+          },
+          "page_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "feature",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evidence_uri": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "report_id",
+    "change_id",
+    "entity_id",
+    "from_revision",
+    "to_revision",
+    "from_occurrence",
+    "to_occurrence",
+    "kind",
+    "before",
+    "after",
+    "evidence",
+    "lineage",
+    "coverage_gaps",
+    "evidence_uri"
+  ],
+  "additionalProperties": false
+}

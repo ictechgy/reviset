@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "page_id": {
+      "type": "string"
+    },
+    "asset_id": {
+      "type": "string"
+    },
+    "page": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "width": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "height": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "coordinate_system": {
+      "type": "string"
+    },
+    "source_transform": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "hidden": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "text": {
+      "type": "string"
+    },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "observation_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "shape",
+              "unsupported"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "normalized_text": {
+            "type": "string"
+          },
+          "bbox": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            ],
+            "items": false,
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "reading_order": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable",
+              "unsupported",
+              "extraction_failed"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "source_ref": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "string",
+            "const": "observed"
+          },
+          "media_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "observation_id",
+          "kind",
+          "text",
+          "normalized_text",
+          "bbox",
+          "reading_order",
+          "availability",
+          "method",
+          "source_ref",
+          "provenance"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported",
+            "extraction_failed"
+          ]
+        },
+        "notes": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported",
+            "extraction_failed"
+          ]
+        },
+        "hidden_slides": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported",
+            "extraction_failed"
+          ]
+        },
+        "animation": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported",
+            "extraction_failed"
+          ]
+        },
+        "structure": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported",
+            "extraction_failed"
+          ]
+        },
+        "preview": {
+          "type": "string",
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported",
+            "extraction_failed"
+          ]
+        }
+      },
+      "required": [
+        "text",
+        "notes",
+        "hidden_slides",
+        "animation",
+        "structure",
+        "preview"
+      ],
+      "additionalProperties": false
+    },
+    "coverage_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "revision_id": {
+            "type": "string"
+          },
+          "page_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "feature",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "page_id",
+    "asset_id",
+    "page",
+    "width",
+    "height",
+    "coordinate_system",
+    "source_transform",
+    "hidden",
+    "text",
+    "elements",
+    "notes",
+    "capabilities",
+    "coverage_gaps"
+  ],
+  "additionalProperties": false
+}

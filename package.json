@@ -1,0 +1,41 @@
+{
+  "name": "document-version-tracker",
+  "version": "0.1.0-dev.0",
+  "private": true,
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "tsx --test tests/integration/*.test.ts",
+    "fixtures": "tsx scripts/generate-fixtures.ts",
+    "schemas": "tsx scripts/generate-schemas.ts",
+    "cli": "tsx apps/cli/main.ts",
+    "mcp": "tsx apps/mcp/main.ts",
+    "spike": "tsx scripts/render-spike.ts",
+    "check": "npm run build && npm test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@napi-rs/canvas": "1.0.11",
+    "fast-xml-parser": "5.11.2",
+    "fflate": "0.8.3",
+    "pdfjs-dist": "6.4.299",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "@types/pdfkit": "0.17.6",
+    "pdfkit": "0.20.2",
+    "pptxgenjs": "4.0.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  },
+  "overrides": {
+    "image-size": "2.0.4"
+  }
+}

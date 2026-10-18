@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{1,100}$"
+    },
+    "title": {
+      "type": "string"
+    },
+    "revisions": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "files": {
+            "minItems": 1,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "label",
+          "files"
+        ]
+      }
+    },
+    "mapping_decisions": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from_page_id": {
+            "type": "string"
+          },
+          "to_page_id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "link",
+              "unlink"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "from_page_id",
+          "to_page_id",
+          "action",
+          "reason"
+        ]
+      }
+    }
+  },
+  "required": [
+    "project_id",
+    "title",
+    "revisions"
+  ]
+}

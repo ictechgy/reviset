@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "seed": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "generator_version": {
+      "type": "string"
+    },
+    "generators": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "assets": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[a-f0-9]{64}$"
+      }
+    },
+    "expected": {
+      "type": "object",
+      "properties": {
+        "revenue": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "temporary": {
+          "type": "object",
+          "properties": {
+            "added": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "deleted": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "added",
+            "deleted"
+          ],
+          "additionalProperties": false
+        },
+        "ambiguity": {
+          "type": "boolean"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "scan": {
+          "type": "boolean"
+        },
+        "inconsistent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "revenue"
+      ],
+      "additionalProperties": false
+    },
+    "mapping": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "source_page": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "hidden": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "key",
+                "source_page",
+                "hidden"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "version",
+          "pages"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "allowed_loss": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "reference": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "seed",
+    "generator_version",
+    "generators",
+    "assets",
+    "expected",
+    "mapping",
+    "allowed_loss",
+    "reference"
+  ],
+  "additionalProperties": false
+}

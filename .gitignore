@@ -1,0 +1,11 @@
+node_modules/
+.docver/
+tmp/
+coverage/
+*.tsbuildinfo
+.DS_Store
+tests/fixtures/generated/
+artifacts/
+.omx/
+dist/
+release/

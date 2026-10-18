@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1.0"
+    },
+    "report_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "coverage_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "revision_id": {
+            "type": "string"
+          },
+          "page_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "feature",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "omitted_fields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "token_estimation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "report_id",
+    "items",
+    "next_cursor",
+    "coverage_gaps",
+    "truncated",
+    "omitted_fields",
+    "token_estimation"
+  ],
+  "additionalProperties": false
+}
