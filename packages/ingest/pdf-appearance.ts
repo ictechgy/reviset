@@ -117,9 +117,9 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
           continue;
         }
         const q=a.quadPoints?Array.from(a.quadPoints) as number[]:[];
-        if(q.length<8){e.visibility_evidence.push({method:'annotation_quadpoints_missing',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
+        if(q.length<8){if(a.rect?.length===4&&overlap(g.bbox,bounds(Array.from(a.rect),[1,0,0,1,0,0]).bbox)>0){state='uncertain';assessment='inferred';}e.visibility_evidence.push({method:'annotation_quadpoints_missing',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
         for(let k=0;k+7<q.length;k+=8){const group=q.slice(k,k+8),xs=group.filter((_,i)=>i%2===0),ys=group.filter((_,i)=>i%2===1),region=bounds([Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)],[1,0,0,1,0,0]).bbox,coverage=area(g.bbox)>0?overlap(region,g.bbox)/area(g.bbox):0;
-          if(coverage>0.2){if(['visible','struck_through','partially_struck_through'].includes(state)){state=coverage>=0.8&&state!=='partially_struck_through'?'struck_through':'partially_struck_through';assessment=state==='struck_through'?'observed':'inferred';}
+          if(coverage>0){if(['visible','struck_through','partially_struck_through'].includes(state)){state=coverage<=0.2?'uncertain':coverage>=0.8&&state!=='partially_struck_through'?'struck_through':'partially_struck_through';assessment=state==='struck_through'?'observed':'inferred';}
             e.visibility_evidence.push({method:'strikeout_annotation_quad',bbox:region,assessment,coverage});}
         }
       }
