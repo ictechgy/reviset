@@ -35,6 +35,9 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       if(fill&&isRectangle)regions.push({...shape,order:i,kind:'fill',color:state.color,opaque:state.color!=='unknown'&&state.alpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,shape.bbox)});
       else if(fill&&area(shape.bbox)>0){regions.push({...shape,order:i,kind:'fill',opaque:false});gaps.push({feature:'pdf_visibility',reason:'non_rectangular_fill_not_used_as_confirmed_occlusion'});}
       if(stroke){
+        let curveReported=false;
+        const unknownStroke=()=>{if(curveReported)return;curveReported=true;const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;
+          regions.push({bbox:box(shape.bbox[0]-pad/viewport.width,shape.bbox[1]-pad/viewport.height,shape.bbox[2]+2*pad/viewport.width,shape.bbox[3]+2*pad/viewport.height),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'curve_stroke_visibility_unverified'});};
         // A single stroke can contain every border of a table or many strike lines.
         for(const path of paths??[]){const p=Array.from(path as number[]);let cursor=0,last:number[]|undefined,start:number[]|undefined;
           while(cursor<p.length){const command=p[cursor++];
@@ -44,7 +47,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
                 if(state.lineWidth>3){const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;regions.push({bbox:box(segment.bbox[0]-pad/viewport.width,segment.bbox[1]-pad/viewport.height,segment.bbox[2]+2*pad/viewport.width,segment.bbox[3]+2*pad/viewport.height),axisAligned:segment.axisAligned,order:i,kind:'image',opaque:false});gaps.push({feature:'pdf_visibility',reason:'thick_stroke_overlap_requires_review'});}
                 else regions.push({...segment,order:i,kind:'line',opaque:state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)});
               }last=next;}
-            else if(command===2){cursor+=6;last=undefined;}else if(command===3){cursor+=4;last=undefined;}else break;
+            else if(command===2){unknownStroke();cursor+=6;last=undefined;}else if(command===3){unknownStroke();cursor+=4;last=undefined;}else break;
           }
         }
       }
@@ -70,7 +73,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     if(!selected.every(g=>g.reliable)||selected.some(g=>overlap(g.bbox,e.bbox)<=0)){e.visibility_evidence.push({method:'font_metrics_or_glyph_geometry_unresolved',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
     for(const g of selected){
       let state=g.hidden?'hidden_render_mode':'visible',assessment:'observed'|'inferred'=g.hidden?'observed':'inferred';
-      const backgrounds=regions.filter(r=>r.kind==='fill'&&r.opaque&&r.order<g.order&&area(g.bbox)>0&&overlap(g.bbox,r.bbox)/area(g.bbox)>=0.95);
+      const backgrounds=regions.filter(r=>r.kind==='fill'&&r.opaque&&r.axisAligned&&r.order<g.order&&area(g.bbox)>0&&overlap(g.bbox,r.bbox)/area(g.bbox)>=0.95);
       const background=backgrounds.at(-1)?.color??'#ffffff';
       if(g.color!=='unknown'&&background!=='unknown'&&g.color===background){state='uncertain';e.visibility_evidence.push({method:'text_color_matches_background',bbox:g.bbox,assessment:'inferred',coverage:1});}
       for(const r of regions){
@@ -79,7 +82,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
           if(r.opaque&&r.axisAligned){state=coverage>=0.999?'occluded':'partially_occluded';e.visibility_evidence.push({method:'later_opaque_rectangle_per_glyph',bbox:r.bbox,assessment:'inferred',coverage});}
           else if(coverage>=0.2){state='uncertain';e.visibility_evidence.push({method:'transparency_clip_or_transform_overlap',bbox:r.bbox,assessment:'inferred',coverage});}
         }
-        if((r.kind==='image'||r.kind==='text'&&state==='visible')&&r.order>g.order&&coverage>0.2){state='uncertain';e.visibility_evidence.push({method:'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
+        if((r.kind==='image'&&coverage>0.005||r.kind==='text'&&state==='visible'&&coverage>0.2)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
       }
       for(const a of annotations){
         if(a.annotationFlags&35)continue;
@@ -95,6 +98,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
             e.visibility_evidence.push({method:a.subtype==='Redact'?'redaction_annotation_intent_unapplied':'strikeout_annotation_quad',bbox:region,assessment,coverage});}
         }
       }
+      if(state!=='hidden_render_mode'&&state!=='struck_through')assessment='inferred';
       e.visibility_spans.push({text:g.text,state,bbox:g.bbox,paint_index:g.order,assessment});
     }
     const states=e.visibility_spans.map(s=>s.state);

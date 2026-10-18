@@ -132,3 +132,8 @@ test('merged OOXML placeholders do not duplicate text and omitted placeholders k
     const cells=extractPptx(zipSync(zip),'sha256:merged')[0].elements.filter(e=>e.kind==='table_cell');assert.equal(cells.length,5);assert.ok(!cells.some(e=>e.text==='B'));const a=cells.find(e=>e.text==='A')!,c=cells.find(e=>e.text==='C')!;assert.equal(c.table!.column,2);assert.ok(Math.abs(a.bbox[0]+a.bbox[2]-c.bbox[0])<0.00001);
   }
 });
+
+test('unsupported thick curve stroke retains covered text as uncertain with an explicit gap',async()=>{
+  const page=await get(d=>{text(d);d.lineWidth(40).moveTo(45,95).bezierCurveTo(90,95,140,95,215,95).stroke('white');});
+  assert.equal(page.elements[0].visibility,'uncertain');assert.ok(page.text.includes('Revenue 100'));assert.ok(page.unresolved_text?.includes('100'));assert.equal(page.visible_text,'');assert.ok(page.coverage_gaps.some(g=>g.reason==='curve_stroke_visibility_unverified'));
+});
