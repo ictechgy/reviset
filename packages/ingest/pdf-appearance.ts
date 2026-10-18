@@ -1,5 +1,5 @@
 import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } from './pdf-geometry.js';
-import { paintedGlyphs } from './pdf-glyphs.js';
+import { paintedGlyphs,supportedGraphicsStateKey } from './pdf-glyphs.js';
 import { OPS, AnnotationType, AnnotationMode, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, normalize, type Box, type ElementData } from '../schema/index.js';
 interface Region {bbox:Box;order:number;kind:'fill'|'line'|'stroke'|'image'|'text';opaque:boolean;axisAligned:boolean;color?:string;line?:Region}
@@ -9,9 +9,12 @@ const compact=(s:string)=>normalize(s).replace(/\s/gu,'');
 export async function inspectAppearance(page:any,viewport:any,elements:ElementData[],fontStyles:Record<string,any>={}):Promise<{regions:Region[];gaps:{feature:string;reason:string}[]}> {
   const operators=await page.getOperatorList({annotationMode:AnnotationMode.DISABLE}),annotations=await page.getAnnotations({intent:'display'}),regions:Region[]=[],gaps:{feature:string;reason:string}[]=[];
   if(operators.fnArray.length>250000){for(const e of elements)e.visibility='unverified';return{regions,gaps:[{feature:'pdf_visibility',reason:'operator_limit_exceeded_visibility_unverified'}]};}
-  let state={matrix:[1,0,0,1,0,0],alpha:1,strokeAlpha:1,lineWidth:1,blend:'Normal',mask:false,clip:null as Clip,pendingClip:false,textMode:0,textClipPending:false,color:'#000000'},stack:typeof state[]=[],marked:boolean[]=[];let sawComplexClipOrMask=false,optional=false;
+  let state={matrix:[1,0,0,1,0,0],alpha:1,strokeAlpha:1,lineWidth:1,lineCap:0,lineJoin:0,miterLimit:10,blend:'Normal',mask:false,clip:null as Clip,pendingClip:false,textMode:0,textClipPending:false,color:'#000000',unsupportedState:false},stack:typeof state[]=[],marked:boolean[]=[];let sawComplexClipOrMask=false,optional=false;
   const glyphs=paintedGlyphs(page,viewport,operators,fontStyles);
   const bounds=(rect:number[],matrix=state.matrix)=>transformedBounds(rect,matrix,viewport);
+  const strokePad=()=>{const m=Util.transform(viewport.transform,state.matrix),trace=m[0]**2+m[1]**2+m[2]**2+m[3]**2,det=(m[0]*m[3]-m[1]*m[2])**2;
+    const scale=Math.sqrt((trace+Math.sqrt(Math.max(0,trace**2-4*det)))/2);
+    return(state.lineWidth===0?0.5:state.lineWidth*scale/2)*(state.lineCap===2?Math.SQRT2:1);};
   for(let i=0;i<operators.fnArray.length;i++){
     const op=operators.fnArray[i],args=operators.argsArray[i];
     if(op===OPS.beginMarkedContent||op===OPS.beginMarkedContentProps){marked.push(optional);if(args?.[0]==='OC'){optional=true;gaps.push({feature:'pdf_visibility',reason:'optional_content_visibility_unverified'});}continue;}
@@ -22,6 +25,9 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     if(op===OPS.save){stack.push({...state,matrix:[...state.matrix]});continue;}
     if(op===OPS.restore){state=stack.pop()??state;continue;}
     if(op===OPS.setLineWidth){state.lineWidth=Number(args[0]);continue;}
+    if(op===OPS.setLineCap){state.lineCap=Number(args[0]);continue;}
+    if(op===OPS.setLineJoin){state.lineJoin=Number(args[0]);continue;}
+    if(op===OPS.setMiterLimit){state.miterLimit=Number(args[0]);continue;}
     if([OPS.setFillGray,OPS.setFillCMYKColor,OPS.setFillColor,OPS.setFillColorN].includes(op)){state.color='unknown';continue;}
     if(op===OPS.setFillRGBColor){state.color=typeof args[0]==='string'?args[0]:'unknown';continue;}
     if(op===OPS.paintFormXObjectBegin){stack.push({...state,matrix:[...state.matrix]});if(args[0])state.matrix=Util.transform(state.matrix,args[0]);if(args[1]){const b=bounds(Array.from(args[1]));state.clip=intersectClip(state.clip,b.axisAligned?b.bbox:'unknown');}continue;}
@@ -29,7 +35,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     if(op===OPS.beginGroup){stack.push({...state,matrix:[...state.matrix]});state.mask=true;sawComplexClipOrMask=true;continue;}
     if(op===OPS.endGroup){state=stack.pop()??state;continue;}
     if(op===OPS.transform){state.matrix=Util.transform(state.matrix,args);continue;}
-    if(op===OPS.setGState){for(const [key,value] of args[0]??[]){if(key==='ca')state.alpha=Number(value);if(key==='CA')state.strokeAlpha=Number(value);if(key==='BM')state.blend=['source-over','Normal','Compatible'].includes(String(value))?'Normal':String(value);if(key==='SMask')state.mask=value!==false&&value!=='None';}if(state.mask)sawComplexClipOrMask=true;continue;}
+    if(op===OPS.setGState){for(const [key,value] of args[0]??[]){if(!supportedGraphicsStateKey(key)){state.unsupportedState=true;regions.push({bbox:box(0,0,1,1),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'unsupported_graphics_state:'+key});}if(key==='LW')state.lineWidth=Number(value);if(key==='LC')state.lineCap=Number(value);if(key==='LJ')state.lineJoin=Number(value);if(key==='ML')state.miterLimit=Number(value);if(key==='ca')state.alpha=Number(value);if(key==='CA')state.strokeAlpha=Number(value);if(key==='BM')state.blend=['source-over','Normal','Compatible'].includes(String(value))?'Normal':String(value);if(key==='SMask')state.mask=value!==false&&value!=='None';}if(state.mask)sawComplexClipOrMask=true;continue;}
     if(op===OPS.clip||op===OPS.eoClip){state.pendingClip=true;continue;}
     if(op===OPS.constructPath&&Array.isArray(args)&&args.length>=3){
       const [paintOp,paths,rect]=args;if(!rect||rect.length<4){regions.push({bbox:box(0,0,1,1),axisAligned:false,order:i,kind:'image',opaque:false});gaps.push({feature:'pdf_visibility',reason:'path_geometry_unresolved'});continue;}
@@ -37,23 +43,28 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       if(state.pendingClip){state.clip=intersectClip(state.clip,isRectangle&&shape.axisAligned?shape.bbox:'unknown');state.pendingClip=false;if(state.clip==='unknown')sawComplexClipOrMask=true;}
       const fill=[OPS.fill,OPS.eoFill,OPS.fillStroke,OPS.eoFillStroke,OPS.closeFillStroke,OPS.closeEOFillStroke].includes(paintOp);
       const stroke=[OPS.stroke,OPS.closeStroke,OPS.fillStroke,OPS.eoFillStroke,OPS.closeFillStroke,OPS.closeEOFillStroke].includes(paintOp);
-      if(fill&&isRectangle)regions.push({...shape,order:i,kind:'fill',color:state.color,opaque:!optional&&state.color!=='unknown'&&state.alpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,shape.bbox)});
+      if(fill&&isRectangle)regions.push({...shape,order:i,kind:'fill',color:state.color,opaque:!optional&&!state.unsupportedState&&state.color!=='unknown'&&state.alpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,shape.bbox)});
       else if(fill&&area(shape.bbox)>0){regions.push({...shape,order:i,kind:'fill',opaque:false});gaps.push({feature:'pdf_visibility',reason:'non_rectangular_fill_not_used_as_confirmed_occlusion'});}
       if(stroke){
+        if(!Number.isFinite(state.lineWidth)||state.lineWidth<0||!Number.isFinite(state.miterLimit)||state.miterLimit<1||![0,1,2].includes(state.lineCap)||![0,1,2].includes(state.lineJoin)){
+          regions.push({bbox:box(0,0,1,1),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'invalid_stroke_state_visibility_unverified'});continue;
+        }
         if(state.lineWidth===0)gaps.push({feature:'pdf_visibility',reason:'device_hairline_visibility_unverified'});
+        const pad=strokePad(),joinPad=pad*(state.lineJoin===0?2*Math.max(1,state.miterLimit):1);
+        const joinRegion=(point:number[])=>{const b=bounds([point[0],point[1],point[0],point[1]]).bbox;
+          regions.push({bbox:box(b[0]-joinPad/viewport.width,b[1]-joinPad/viewport.height,2*joinPad/viewport.width,2*joinPad/viewport.height),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'stroke_join_geometry_unverified'});};
         let curveReported=false;
-        const unknownStroke=()=>{if(curveReported)return;curveReported=true;const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth===0?0.5:state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;
-          regions.push({bbox:box(shape.bbox[0]-pad/viewport.width,shape.bbox[1]-pad/viewport.height,shape.bbox[2]+2*pad/viewport.width,shape.bbox[3]+2*pad/viewport.height),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'curve_stroke_visibility_unverified'});};
+        const unknownStroke=()=>{if(curveReported)return;curveReported=true;
+          regions.push({bbox:box(shape.bbox[0]-joinPad/viewport.width,shape.bbox[1]-joinPad/viewport.height,shape.bbox[2]+2*joinPad/viewport.width,shape.bbox[3]+2*joinPad/viewport.height),order:i,kind:'image',opaque:false,axisAligned:false});gaps.push({feature:'pdf_visibility',reason:'curve_stroke_visibility_unverified'});};
         // A single stroke can contain every border of a table or many strike lines.
-        for(const path of paths??[]){const p=Array.from(path as number[]);let cursor=0,last:number[]|undefined,start:number[]|undefined;
+        for(const path of paths??[]){const p=Array.from(path as number[]);if([OPS.closeStroke,OPS.closeFillStroke,OPS.closeEOFillStroke].includes(paintOp))p.push(4);let cursor=0,last:number[]|undefined,start:number[]|undefined,hasSegment=false;
           while(cursor<p.length){const command=p[cursor++];
-            if(command===0){last=[p[cursor++],p[cursor++]];start=last;}
+            if(command===0){last=[p[cursor++],p[cursor++]];start=last;hasSegment=false;}
             else if(command===1||command===4){const next=command===4?start:[p[cursor++],p[cursor++]];
               if(last&&next){const segment=bounds([Math.min(last[0],next[0]),Math.min(last[1],next[1]),Math.max(last[0],next[0]),Math.max(last[1],next[1])]);
-                // PDF w=0 paints a device hairline, not an empty stroke.
-                const m=Util.transform(viewport.transform,state.matrix),pad=state.lineWidth===0?0.5:state.lineWidth*Math.max(Math.hypot(m[0],m[1]),Math.hypot(m[2],m[3]))/2;
+                if(hasSegment)joinRegion(last);if(command===4&&start&&hasSegment)joinRegion(start);hasSegment=true;
                 const footprint=box(segment.bbox[0]-pad/viewport.width,segment.bbox[1]-pad/viewport.height,segment.bbox[2]+2*pad/viewport.width,segment.bbox[3]+2*pad/viewport.height);
-                const line:Region={...segment,order:i,kind:'line',opaque:!optional&&state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)};
+                const line:Region={...segment,order:i,kind:'line',opaque:!optional&&!state.unsupportedState&&state.strokeAlpha>=0.999&&state.blend==='Normal'&&!state.mask&&insideClip(state.clip,segment.bbox)};
                 regions.push({bbox:footprint,axisAligned:segment.axisAligned,order:i,kind:2*pad>2?'image':'stroke',opaque:false,line});
                 if(2*pad>2)gaps.push({feature:'pdf_visibility',reason:'thick_stroke_overlap_requires_review'});
                 else regions.push(line);
@@ -110,7 +121,9 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
         if((r.kind==='image'&&coverage>0||shortStroke||r.kind==='text'&&state==='visible'&&coverage>0)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:shortStroke?'short_stroke_glyph_overlap_unverified':'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
       }
       for(const a of annotations){
-        if(a.annotationFlags&35)continue;
+        // PDF.js displays known annotation types with Invisible (1) set.
+        // Hidden (2) and NoView (32) are the display exclusions.
+        if(a.annotationFlags&34)continue;
         if(a.annotationType!==AnnotationType.STRIKEOUT){
           if((a.annotationType===AnnotationType.LINK||a.annotationType===AnnotationType.POPUP)&&!a.hasAppearance)continue;
           if(a.rect?.length===4){const r=bounds(Array.from(a.rect),[1,0,0,1,0,0]).bbox,coverage=area(g.bbox)>0?overlap(g.bbox,r)/area(g.bbox):0;if(coverage>0){state='uncertain';assessment='inferred';e.visibility_evidence.push({method:a.subtype==='Redact'?'redaction_annotation_intent_unapplied':'annotation_overlay_unverified',bbox:r,assessment:'inferred',coverage});}}

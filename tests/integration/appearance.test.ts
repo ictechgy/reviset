@@ -211,8 +211,8 @@ test('sub-five-percent covers over actual punctuation ink preserve uncertainty a
     const png=await loadImage(await renderPdf(raw,1,2400)),canvas=createCanvas(png.width,png.height),ctx=canvas.getContext('2d');ctx.drawImage(png,0,0);const pixels=ctx.getImageData(0,0,png.width,png.height).data;
     const ink:number[][]=[];for(let y=Math.ceil(b[1]*png.height);y<Math.floor((b[1]+b[3])*png.height);y++)for(let x=Math.ceil(b[0]*png.width);x<Math.floor((b[0]+b[2])*png.width);x++)if(pixels[(y*png.width+x)*4]<128)ink.push([x,y]);assert.ok(ink.length);
     const scale=png.width/600,x=ink[0][0]/scale,y=ink[0][1]/scale,w=1.3,h=1.3;assert.ok(w*h/(b[2]*600*b[3]*400)<0.05);
-    for(const kind of ['fill','stroke','Square','Redact','Link','StrikeOut']){
-      const afterRaw=await pdf(d=>{draw(d);if(kind==='fill')d.rect(x,y,w,h).fill('white');else if(kind==='stroke')d.lineWidth(0.2).moveTo(x,y+0.125).lineTo(x+w,y+0.125).stroke('white');else{const appearance=d.ref({Type:'XObject',Subtype:'Form',BBox:[0,0,w,h],Resources:{}});appearance.end('1 1 1 rg 0 0 1.3 1.3 re f');d.annotate(x,y,w,h,Object.assign({},{Subtype:kind,IC:[1,1,1],C:[1,1,1],AP:{N:appearance}},kind==='StrikeOut'?{QuadPoints:[x,400-y,x+w,400-y,x,400-y-h,x+w,400-y-h]}:{}));}}),after=(await extractPdf(afterRaw,'sha256:punct-after'))[0];
+    for(const kind of ['fill','stroke','Square','SquareInvisible','Redact','Link','StrikeOut']){
+      const afterRaw=await pdf(d=>{draw(d);if(kind==='fill')d.rect(x,y,w,h).fill('white');else if(kind==='stroke')d.lineWidth(0.2).moveTo(x,y+0.125).lineTo(x+w,y+0.125).stroke('white');else{const appearance=d.ref({Type:'XObject',Subtype:'Form',BBox:[0,0,w,h],Resources:{}});appearance.end('1 1 1 rg 0 0 1.3 1.3 re f');d.annotate(x,y,w,h,Object.assign({},{Subtype:kind==='SquareInvisible'?'Square':kind,IC:[1,1,1],C:[1,1,1],AP:{N:appearance}},kind==='SquareInvisible'?{F:1}:{},kind==='StrikeOut'?{QuadPoints:[x,400-y,x+w,400-y,x,400-y-h,x+w,400-y-h]}:{}));}}),after=(await extractPdf(afterRaw,'sha256:punct-after'))[0];
       assert.equal(after.elements[0].visibility,'uncertain',value+':'+kind);assert.equal(after.elements[0].visibility_spans!.find(s=>s.text===punctuation)!.state,'uncertain');assert.ok(after.text.includes(value));assert.ok(after.unresolved_text?.includes(value));
       const rev=(id:string,p:typeof before)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:[p],coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData,pair=matchPages([before],[after]),changes=diffRevisions(rev('a',before),rev('b',after),pair.matches,pair.candidates,p=>p);assert.ok(changes.some(c=>c.coverage_gaps.some(g=>g.reason==='pdf_visibility_unresolved_text_comparison_withheld')));
     }
@@ -225,4 +225,23 @@ test('zero-width device hairlines and curves cannot create an equal-render numer
     const left=(await extractPdf(a,'sha256:hairline-a'))[0],right=(await extractPdf(b,'sha256:hairline-b'))[0];assert.ok(left.unresolved_text?.includes('1.5'));assert.ok(right.unresolved_text?.includes('1,5'));assert.ok(left.coverage_gaps.some(g=>g.reason==='device_hairline_visibility_unverified'));
     const rev=(id:string,p:typeof left)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:[p],coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData,pair=matchPages([left],[right]),changes=diffRevisions(rev('a',left),rev('b',right),pair.matches,pair.candidates,p=>p);assert.ok(!changes.some(c=>c.kind==='text_modified'));assert.ok(changes.some(c=>c.kind==='coverage_gap'));
   }
+});
+test('miter joins outside segment padding preserve equal-render numeric uncertainty including ExtGState',async()=>{
+  for(const gs of [false,true]){
+    const make=(value:string)=>pdf(d=>{d.fillColor('black').fontSize(12).text('Revenue '+value,50,80,{lineBreak:false});if(gs){const style=d.ref({Type:'ExtGState',LW:2,LC:0,LJ:0,ML:10});style.end('');d.page.ext_gstates.JoinTest=style;d.addContent('/JoinTest gs');}else d.lineWidth(2).lineJoin('miter').miterLimit(10);
+      for(let x=106;x<=112;x+=0.125)d.moveTo(x-1.1,103).lineTo(x,93).lineTo(x+1.1,103).stroke('white');}),a=await make('1.5'),b=await make('1,5');
+    assert.equal(Buffer.compare(await renderPdf(a,1,1200),await renderPdf(b,1,1200)),0);
+    const left=(await extractPdf(a,'sha256:join-a'))[0],right=(await extractPdf(b,'sha256:join-b'))[0];assert.ok(left.unresolved_text?.includes('1.5'));assert.ok(right.unresolved_text?.includes('1,5'));assert.ok(left.coverage_gaps.some(g=>g.reason==='stroke_join_geometry_unverified'));
+    const rev=(id:string,p:typeof left)=>({revision_id:id,revision_occurrence_id:id,label:id,assets:[],status:'success',pages:[p],coverage_gaps:[],errors:[],bundle_mapping:[]}) as RevisionData,pair=matchPages([left],[right]),changes=diffRevisions(rev('a',left),rev('b',right),pair.matches,pair.candidates,p=>p);assert.ok(!changes.some(c=>c.kind==='text_modified'));assert.ok(changes.some(c=>c.kind==='coverage_gap'));
+  }
+});
+test('ExtGState thick and zero-width strokes never use stale line width',async()=>{
+  for(const width of [0,30]){
+    const make=(value:string)=>pdf(d=>{d.fillColor('black').fontSize(12).text('Revenue '+value,50,80,{lineBreak:false});const gs=d.ref({Type:'ExtGState',LW:width});gs.end('');d.page.ext_gstates.WidthTest=gs;d.addContent('/WidthTest gs');if(width===0){for(let y=85;y<=92;y+=0.25)d.moveTo(107,y).lineTo(110.5,y).stroke('white');}else d.moveTo(40,100).lineTo(300,100).stroke('white');}),a=await make('1.5'),b=await make('1,5');assert.equal(Buffer.compare(await renderPdf(a,1,1200),await renderPdf(b,1,1200)),0);
+    const left=(await extractPdf(a,'sha256:gs-a'))[0],right=(await extractPdf(b,'sha256:gs-b'))[0];assert.ok(left.unresolved_text?.includes('1.5'));assert.ok(right.unresolved_text?.includes('1,5'));if(width===0)assert.ok(left.coverage_gaps.some(g=>g.reason==='device_hairline_visibility_unverified'));
+  }
+});
+test('unimplemented ExtGState font changes cannot certify stale glyph geometry',async()=>{
+  const page=await get(d=>{d.fillColor('black').fontSize(12).text('Stable title',50,30,{lineBreak:false});const f=(d as any)._font,gs=d.ref({Type:'ExtGState',Font:[f.ref(),24]});gs.end('');d.page.ext_gstates.FontTest=gs;d.addContent(`BT /${f.id} 12 Tf /FontTest gs 1 0 0 1 50 300 Tm (Revenue 1.5) Tj ET`);});
+  assert.ok(page.text.includes('Revenue 1.5'));assert.ok(page.unresolved_text?.includes('Revenue 1.5'));assert.ok(page.coverage_gaps.some(g=>g.reason==='unsupported_graphics_state:Font'));assert.ok(page.elements.some(e=>e.visibility==='unverified'));
 });
