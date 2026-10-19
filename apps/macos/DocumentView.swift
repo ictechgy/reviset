@@ -9,6 +9,17 @@ func renderWarningName(_ value:String)->String{
     return value
 }
 
+func hasEstimatedPDFGeometry(_ element:JSON)->Bool {
+    element["visibility_evidence"].array.contains { $0["method"].string == "pdf_text_geometry_estimated_or_unavailable" }
+}
+
+func canHighlightEvidence(_ evidence:JSON,page:JSON)->Bool {
+    let b=evidence["bbox"].array.map(\.number)
+    guard b.count==4 && b.allSatisfy({$0.isFinite}) && b[2]>0 && b[3]>0 else{return false}
+    let observation=evidence["observation_id"].string
+    return observation.isEmpty || !page["elements"].array.contains { $0["observation_id"].string==observation && hasEstimatedPDFGeometry($0) }
+}
+
 struct OriginalPDFView: NSViewRepresentable {
     let path: String
     let pageNumber: Int
@@ -32,7 +43,7 @@ struct OriginalPDFView: NSViewRepresentable {
             context.coordinator.pageNumber=pageNumber;context.coordinator.zoom=zoom
         }
         let b = evidence["bbox"].array.map(\.number), t = page["source_transform"].array.map(\.number)
-        if b.count == 4 && t.count == 6 {
+        if canHighlightEvidence(evidence,page:page) && t.count == 6 {
             let det = t[0] * t[3] - t[1] * t[2]
             if abs(det) > 0.000001 {
                 let x = b[0] * page["width"].number, y = b[1] * page["height"].number, w = b[2] * page["width"].number, h = b[3] * page["height"].number
@@ -71,7 +82,7 @@ struct StructureCanvas: NSViewRepresentable {
                 }
             }
             let b = evidence["bbox"].array.map(\.number)
-            if b.count == 4 { NSColor.systemBlue.setStroke(); let p = NSBezierPath(rect: NSRect(x:b[0]*bounds.width,y:b[1]*bounds.height,width:b[2]*bounds.width,height:b[3]*bounds.height)); p.lineWidth=2;p.stroke() }
+            if canHighlightEvidence(evidence,page:page) { NSColor.systemBlue.setStroke(); let p = NSBezierPath(rect: NSRect(x:b[0]*bounds.width,y:b[1]*bounds.height,width:b[2]*bounds.width,height:b[3]*bounds.height)); p.lineWidth=2;p.stroke() }
         }
     }
     func makeNSView(context: Context) -> Canvas { Canvas() }
@@ -125,6 +136,7 @@ struct PageColumn: View {
                     ForEach(payload["page"]["elements"].array) { e in
                         VStack(alignment:.leading,spacing:4) {
                             Text(e["text"].string).textSelection(.enabled)
+                            if hasEstimatedPDFGeometry(e) { Text("원문 위치·표시 상태 미검증 · 글꼴 좌표는 추정값입니다.").font(.caption).foregroundStyle(.orange) }
                             HStack { Text(e["visibility"].string.isEmpty ? "원본 구조" : e["visibility"].string)
                                 if e["method"].string == "vision_ocr" {Text("OCR 추정 · \(Int(e["ocr"]["confidence"].number*100))점")}
                                 if !e["comparison_role"].string.isEmpty {Text(e["comparison_role"].string == "selected" ? "비교에 사용" : e["comparison_role"].string == "unresolved" ? "비교 보류" : e["comparison_role"].string == "excluded" ? "숨은 원문 · 비교 제외" : e["provenance"].string == "inferred" ? "참고 OCR · 원문 우선" : "원문 보존 · OCR로 비교")}

@@ -1,8 +1,9 @@
 import { inspectAppearance } from './pdf-appearance.js';
+import {pdfFontMetrics,PDF_GEOMETRY_UNVERIFIED} from './pdf-text-geometry.js';
 import { getDocument, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { box, DocverError, id, normalize, type PageData, type ElementData } from '../schema/index.js';
+import { box, Page, DocverError, id, normalize, type PageData, type ElementData } from '../schema/index.js';
 import { captureNativePages,ocrEnvironment,supplementPdfOcr,type OcrOptions } from './ocr.js';
 const require=createRequire(import.meta.url);
 const pdfRoot=dirname(require.resolve('pdfjs-dist/package.json'));
@@ -19,6 +20,7 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
     for(let n=1;n<=document.numPages;n++) {
       options.signal?.throwIfAborted();
       const page=await document.getPage(n), viewport=page.getViewport({scale:1});
+      if(![viewport.width,viewport.height].every(v=>Number.isFinite(v)&&v>0)||viewport.transform.length!==6||!viewport.transform.every(Number.isFinite))throw new DocverError('INVALID_PDF','PDF page geometry is unavailable');
       const content=await page.getTextContent({disableNormalization:true});
       const elements:ElementData[]=[];
       for(const item of content.items) {
@@ -27,14 +29,15 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
         const vertical=!!content.styles[item.fontName]?.vertical;
         const height=Math.hypot(t[2],t[3]), width=item.width;
         const angle=Math.atan2(t[1],t[0])+(vertical?Math.PI/2:0);
-        const ascent=content.styles[item.fontName]?.ascent??0.8;
+        const metrics=pdfFontMetrics(content.styles[item.fontName]),ascent=metrics.ascent;
         // Bounding rectangle of a transformed glyph run, including rotated text.
         const ux=Math.cos(angle),uy=Math.sin(angle),vx=-uy,vy=ux;
         const corners=[[0,-height*ascent],[width,-height*ascent],[0,height*(1-ascent)],[width,height*(1-ascent)]]
           .map(([x,y])=>[t[4]+ux*x+vx*y,t[5]+uy*x+vy*y]);
         const xs=corners.map(c=>c[0]),ys=corners.map(c=>c[1]);
+        const finite=xs.concat(ys).every(Number.isFinite),bbox=finite?box(Math.min(...xs)/viewport.width,Math.min(...ys)/viewport.height,(Math.max(...xs)-Math.min(...xs))/viewport.width,(Math.max(...ys)-Math.min(...ys))/viewport.height):box(0,0,0,0);
         elements.push({observation_id:id('obs',[assetId,n,elements.length]),kind:'text',text:item.str,normalized_text:normalize(item.str),
-          bbox:box(Math.min(...xs)/viewport.width,Math.min(...ys)/viewport.height,(Math.max(...xs)-Math.min(...xs))/viewport.width,(Math.max(...ys)-Math.min(...ys))/viewport.height),
+          bbox,...(!metrics.known||!finite?{visibility_evidence:[{method:PDF_GEOMETRY_UNVERIFIED,bbox,assessment:'inferred' as const,coverage:0}]}:{}),
           reading_order:elements.length,availability:'available',method:'pdf_text',source_ref:`page:${n}/text:${elements.length}`,provenance:'observed'});
       }
       const appearance=await inspectAppearance(page,viewport,elements,content.styles);
@@ -61,7 +64,7 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
         }
       }catch(e){if(options.signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;for(const p of pages){p.coverage_gaps.push({feature:'raster_verification',reason:e instanceof DocverError?e.code:'NATIVE_PAGE_FAILED'});if(ocrPages.includes(p.page))p.ocr={status:e instanceof DocverError&&e.code==='OCR_UNAVAILABLE'?'unavailable':'failed',engine:'native-vision-helper',environment,reason:e instanceof DocverError?e.code:'NATIVE_PAGE_FAILED'};}}
     }
-    return pages;
+    return pages.map(p=>{const result=Page.safeParse(p);if(!result.success)throw new DocverError('INVALID_PAGE_OBSERVATION','PDF page '+p.page+' failed canonical validation at '+result.error.issues[0]?.path.join('.'));return result.data;});
   } catch(e) {
     if(e instanceof DocverError) throw e;
     throw new DocverError((e as Error).name==='PasswordException'?'ENCRYPTED_PDF':'INVALID_PDF','PDF extraction failed: '+(e as Error).name);

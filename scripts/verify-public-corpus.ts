@@ -14,6 +14,8 @@ import {validateRenderPackage,renderPdf} from '../packages/render/index.js';
 import {runTool,visionExecutable,visionInfo} from '../packages/runtime/tools.js';
 import {byteHash,normalize,ENGINE_VERSION,comparisonRegions,type PageData} from '../packages/schema/index.js';
 import {DesktopService} from '../packages/desktop/service.js';
+import {validateCorpusPages} from './public-corpus-validation.js';
+import {Report,Page} from '../packages/schema/index.js';
 import {fileSha256} from '../packages/runtime/file-hash.js';
 import {preparePdfjs} from './prepare-pdfjs.js';
 import {pdfWorkerEnvironment} from '../packages/runtime/pdfjs-environment.js';
@@ -59,12 +61,23 @@ async function bytesFor(source:Source){
   assert.equal(bytes.length,source.bytes);assert.equal(byteHash(bytes),source.sha256);assert.ok(source.format==='pdf'?bytes.subarray(0,5).toString()==='%PDF-':bytes.subarray(0,2).toString()==='PK');return {path,bytes};
 }
 async function pdfImage(image:Buffer,width:number,height:number){const d=new PDFDocument({size:[width,height],margin:0}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(r=>d.on('end',()=>r(Buffer.concat(chunks))));d.image(image,0,0,{width,height});d.end();return done;}
+async function storedImport(path:string,expectedPages:number,label:string){
+  const library=join(run,'import-libraries',label);let service=new DesktopService(library);
+  try{
+    const project=await service.create('Public canonical import '+label,[{label:'original',files:[path]}]),result=await service.run(project.project_id,undefined,undefined,false),report=Report.parse(result.report);
+    assert.equal(report.revisions.length,1);assert.equal(report.revisions[0].status,'success',label+' must not silently become a failed import');assert.deepEqual(report.revisions[0].errors,[]);assert.equal(report.revisions[0].pages.length,expectedPages);
+    assert.equal(service.reports(project.project_id).length,0);service.commit(project.project_id,result);service.close();service=new DesktopService(library);
+    const reloaded=service.snapshot(project.project_id,report.report_id);assert.deepEqual(reloaded,report);assert.equal(service.project(project.project_id).last_report_id,report.report_id);
+    for(const page of reloaded.revisions[0].pages)assert.deepEqual(Page.parse(service.pageData(project.project_id,report.report_id,page.page_id).page),page);
+    return {status:'PASS',report_id:report.report_id,pages:expectedPages,scope:'Actual DesktopService create, analyze, coordinator commit, reopened Store report and every indexed native page'};
+  }finally{service.close();}
+}
 const results:any[]=[];const variants:any[]=[];
 for(const source of manifest.sources){
   const {path,bytes}=await bytesFor(source),out=join(run,source.id);await mkdir(out,{recursive:true});const start=Date.now();
   if(source.format==='pdf'){
     const numbers=Array.from({length:source.pages!},(_,i)=>i+1),native=await captureNativePages(bytes,numbers,numbers,{sourceFile:path,cacheRoot:cache,reuseRasterOcr:false});assert.equal(native.size,numbers.length,'Every source page must return a native observation');assert.ok([...native.values()].every(n=>n.ocr_performed&&n.lines.length),'No silent failed/empty native OCR');
-    const pages=await extractPdf(bytes,'sha256:'+source.sha256,{ocr:'all',sourceFile:path,cacheRoot:cache,reuseRasterOcr:false});assert.equal(pages.length,source.pages);
+    const pages=validateCorpusPages(await extractPdf(bytes,'sha256:'+source.sha256,{ocr:'all',sourceFile:path,cacheRoot:cache,reuseRasterOcr:false}),source.id);assert.equal(pages.length,source.pages);
     await writeFile(join(out,'native.json'),JSON.stringify([...native],null,2));await writeFile(join(out,'pages.json'),JSON.stringify(pages,null,2));await runTool(visionExecutable()!,[],{input:JSON.stringify({path,page:1,render_only:true,render_path:join(out,'page-1.png')})});
     const first=native.get(1)!;results.push({id:source.id,source_sha256:source.sha256,pages:pages.length,ocr_lines:pages.map(p=>native.get(p.page)!.lines.length),native_tables:pages.map(p=>native.get(p.page)!.tables?.length??0),raster_grid_tables:pages.map(p=>native.get(p.page)!.grid_tables?.length??0),uncertain_ocr_lines:pages.map(p=>p.elements.filter(e=>e.method==='vision_ocr'&&e.visibility!=='visible').length),regions:regionResult(first,truth.regions[source.id]??[]),selected_comparison_regions:selectedRegionResult(pages[0],truth.regions[source.id]??[]),seconds:(Date.now()-start)/1000});
     if(source.id==='azure-layout'){const grids=first.grid_tables??[];assert.ok(grids.some(t=>t.cells.length===9&&t.cells.some(c=>c.row===2&&c.column===1&&c.text==='Microsoft')&&t.cells.filter(c=>!c.text.trim()).length===2),'Downloaded Microsoft3x3 table and two unobserved values must retain structure');}
@@ -78,15 +91,16 @@ for(const source of manifest.sources){
         const observed=await captureNativePages(pdf,[1],[1],{sourceFile:variant,cacheRoot:cache,reuseRasterOcr:false});assert.equal(observed.size,1);const result=observed.get(1)!;
         const c=Math.cos(angle),s=Math.sin(angle),matrix=[c,s*w/h,-s*h/w,c,(1-c)/2+s*h/w/2,(1-c)/2-s*w/h/2];
         const projected=truth.regions[source.id].map(r=>{const [x,y,rw,rh]=r.bbox,points=[[x,y],[x+rw,y],[x,y+rh],[x+rw,y+rh]].map(([x,y])=>[matrix[0]*x+matrix[2]*y+matrix[4],matrix[1]*x+matrix[3]*y+matrix[5]]),xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);return {...r,bbox:[Math.min(...xs),Math.min(...ys),Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys)] as Box};});
-        await writeFile(join(out,kind+'-native.json'),JSON.stringify(result,null,2));variants.push({id:source.id,kind,pdf_sha256:byteHash(pdf),raster_sha256:byteHash(raster),raster_pixels:[w,h],embedded_dpi:[w/page.width*72,h/page.height*72],helper_pixels:[result.width,result.height],ingestion:'Image-only PDF at original physical page size, through actual product PDFKit300DPI/cap rendering; low-resolution input is deliberately resampled by that path',normalized_forward_affine:matrix,occlusion:mask,regions:regionResult(result,projected,mask)});
+        const variantPages=validateCorpusPages(await extractPdf(pdf,'sha256:'+byteHash(pdf),{ocr:'all',sourceFile:variant,cacheRoot:cache,reuseRasterOcr:false}),source.id+'/'+kind);assert.equal(variantPages.length,1);await writeFile(join(out,kind+'-pages.json'),JSON.stringify(variantPages,null,2));const canonical_import=await storedImport(variant,1,source.id+'-'+kind);
+        await writeFile(join(out,kind+'-native.json'),JSON.stringify(result,null,2));variants.push({canonical_import,id:source.id,kind,pdf_sha256:byteHash(pdf),raster_sha256:byteHash(raster),raster_pixels:[w,h],embedded_dpi:[w/page.width*72,h/page.height*72],helper_pixels:[result.width,result.height],ingestion:'Image-only PDF at original physical page size, through actual product PDFKit300DPI/cap rendering; low-resolution input is deliberately resampled by that path',normalized_forward_affine:matrix,occlusion:mask,regions:regionResult(result,projected,mask)});
       }
     }
   }else{
     validateRenderPackage(bytes);const pages=extractPptx(bytes,'sha256:'+source.sha256);assert.equal(pages.length,source.expected_pages);
     for(const [i,page]of pages.entries()){const expected=source.expected_nonempty_table_cells![i],actual=page.elements.filter(e=>e.method==='ooxml_table_cell').map(e=>({row:e.table!.row,column:e.table!.column,text:e.text,row_span:e.table!.row_span??1,column_span:e.table!.column_span??1}));assert.deepEqual(actual,expected,'Independent XML table-cell coordinates/text/spans');}
-    const preview=await preparePptxPreview(path,bytes,pages,cache);assert.ok(preview);await writeFile(join(out,'preview.pdf'),preview);await writeFile(join(out,'page-1.png'),await renderPdf(preview,1,1440));await writeFile(join(out,'pages.json'),JSON.stringify(pages,null,2));results.push({id:source.id,source_sha256:source.sha256,pages:pages.length,table_cells:pages.map(p=>p.elements.filter(e=>e.method==='ooxml_table_cell').length),warnings:[...new Set(pages.flatMap(p=>p.preview?.warnings??[]))],seconds:(Date.now()-start)/1000,truth:'Pinned OOXML source structure; LibreOffice preview is under test, not a PowerPoint ground truth'});
+    const preview=await preparePptxPreview(path,bytes,pages,cache);assert.ok(preview);validateCorpusPages(pages,source.id);await writeFile(join(out,'preview.pdf'),preview);await writeFile(join(out,'page-1.png'),await renderPdf(preview,1,1440));await writeFile(join(out,'pages.json'),JSON.stringify(pages,null,2));results.push({id:source.id,source_sha256:source.sha256,pages:pages.length,table_cells:pages.map(p=>p.elements.filter(e=>e.method==='ooxml_table_cell').length),warnings:[...new Set(pages.flatMap(p=>p.preview?.warnings??[]))],seconds:(Date.now()-start)/1000,truth:'Pinned OOXML source structure; LibreOffice preview is under test, not a PowerPoint ground truth'});
   }
-  const row=results.at(-1);console.log(JSON.stringify({id:source.id,pages:row.pages,selected_regions_found:row.regions?.filter((r:any)=>r.normalized_found).length,selected_regions:row.regions?.length,native_tables:row.native_tables,raster_grid_tables:row.raster_grid_tables,seconds:row.seconds}));
+  const row=results.at(-1);row.canonical_import=await storedImport(path,row.pages,source.id);console.log(JSON.stringify({id:source.id,pages:row.pages,selected_regions_found:row.regions?.filter((r:any)=>r.normalized_found).length,selected_regions:row.regions?.length,native_tables:row.native_tables,raster_grid_tables:row.raster_grid_tables,seconds:row.seconds}));
 }
 // Positive and negative controls exercise the tracker, not just the OCR observer.
 const service=new DesktopService(join(run,'control-library'));
@@ -100,5 +114,5 @@ try{
   assert.ok(!gap.changes.some(c=>/deleted|removed/.test(c.kind)));assert.ok(gap.changes.some(c=>c.kind==='coverage_gap'),'Withheld comparison must be visible');
   controls={source_report_id:report.report_id,source_text_events:report.changes.filter(c=>c.kind==='text_modified').length,source_control_scope:'Text replacement/insertion/removal within a surviving OOXML text element, not whole-element deletion',occlusion_report_id:gap.report_id,occlusion_gap_events:gap.changes.filter(c=>c.kind==='coverage_gap').length,status:'PASS known source text replacement/insertion/removal and raster-occlusion negative control'};
 }finally{service.close();}
-const output={head,source_clean:sourceClean,working_patch_sha256:patchSha,untracked_sources:untracked,dirty_source_sha256:dirtySha,engine:ENGINE_VERSION,pdfjs_worker_sha256:await pdfWorkerEnvironment(),environment:await visionInfo(),source_manifest_sha256:byteHash(await readFile('docs/fixtures/public-corpus.json')),selected_truth_sha256:byteHash(await readFile('docs/fixtures/public-corpus-truth.json')),sources:results,variants,controls,scope:'Parse/structure/control gates passed; OCR selected-region misses retained. No universal accuracy, absence proof, security proof or strict PowerPoint pixel-equivalence claim. W3C prior OCR excluded from truth.'};
+const output={head,source_clean:sourceClean,working_patch_sha256:patchSha,untracked_sources:untracked,dirty_source_sha256:dirtySha,engine:ENGINE_VERSION,pdfjs_worker_sha256:await pdfWorkerEnvironment(),environment:await visionInfo(),source_manifest_sha256:byteHash(await readFile('docs/fixtures/public-corpus.json')),selected_truth_sha256:byteHash(await readFile('docs/fixtures/public-corpus-truth.json')),sources:results,variants,controls,scope:'Canonical Page validation, every original and variant DesktopService import/commit/reopen/native-page retrieval, structure and control gates passed; OCR selected-region misses retained. No universal accuracy, absence proof, security proof or strict PowerPoint pixel-equivalence claim. W3C prior OCR excluded from truth.'};
 await writeFile(join(run,'result.json'),JSON.stringify(output,null,2));await writeFile(join(folder,'latest.json'),JSON.stringify({run,result:join(run,'result.json')},null,2));console.log(JSON.stringify({run,sources:results.length,source_pages:results.reduce((n,r)=>n+r.pages,0),variant_pages:variants.length,controls}));

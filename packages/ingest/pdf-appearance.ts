@@ -1,8 +1,9 @@
 import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } from './pdf-geometry.js';
 import { paintedGlyphs,supportedGraphicsStateKey } from './pdf-glyphs.js';
+import {hasUnverifiedPdfGeometry,PDF_GEOMETRY_UNVERIFIED} from './pdf-text-geometry.js';
 import { OPS, AnnotationType, AnnotationMode, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, normalize, type Box, type ElementData } from '../schema/index.js';
-interface Region {bbox:Box;order:number;kind:'fill'|'line'|'stroke'|'image'|'text';opaque:boolean;axisAligned:boolean;color?:string;line?:Region}
+interface Region {bbox:Box;order:number;kind:'fill'|'line'|'stroke'|'image'|'text'|'unknown_text';opaque:boolean;axisAligned:boolean;color?:string;line?:Region}
 const area=(b:Box)=>b[2]*b[3];
 const overlap=(a:Box,b:Box)=>Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
 const compact=(s:string)=>normalize(s).replace(/\s/gu,'');
@@ -91,8 +92,11 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       gaps.push({feature:'pdf_visibility',reason:'image_opacity_or_mask_requires_review'});
     }
   }
-  const textRuns=new Map<number,Box>();
-  for(const g of glyphs){if(g.hidden)continue;const footprint=g.reliable&&g.clip_ink?g.clip_ink:g.bbox,b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],footprint[0]),Math.min(b[1],footprint[1]),Math.max(b[0]+b[2],footprint[0]+footprint[2])-Math.min(b[0],footprint[0]),Math.max(b[1]+b[3],footprint[1]+footprint[3])-Math.min(b[1],footprint[1])):footprint);}
+  const textRuns=new Map<number,Box>(),unknownTextOrders=new Set<number>();
+  for(const g of glyphs){if(g.hidden)continue;if(g.geometry_unverified){unknownTextOrders.add(g.order);continue;}const footprint=g.reliable&&g.clip_ink?g.clip_ink:g.bbox,b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],footprint[0]),Math.min(b[1],footprint[1]),Math.max(b[0]+b[2],footprint[0]+footprint[2])-Math.min(b[0],footprint[0]),Math.max(b[1]+b[3],footprint[1]+footprint[3])-Math.min(b[1],footprint[1])):footprint);}
+  // An estimate is not a maximum painted extent. It can only withhold
+  // visibility of earlier paint, never certify occlusion.
+  for(const order of unknownTextOrders)regions.push({bbox:box(0,0,1,1),order,kind:'unknown_text',opaque:false,axisAligned:false});
   for(const [order,bbox] of textRuns)regions.push({bbox,order,kind:'text',opaque:false,axisAligned:false});
   const verticalBuckets=new Map<number,Region[]>(),connectedCache=new Map<Region,boolean>();
   for(const v of regions.filter(v=>v.kind==='line'&&v.bbox[2]<0.002&&v.bbox[3]>0.02)){const key=Math.floor(v.bbox[0]*100);verticalBuckets.set(key,[...(verticalBuckets.get(key)??[]),v]);}
@@ -108,8 +112,10 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
   let cursor=0;
   const stream=glyphs.flatMap(g=>g.text.split('').filter(c=>!/\s/u.test(c)).map(c=>({char:c,glyph:g}))),source=stream.map(v=>v.char).join('');
   for(const e of elements){
-    e.visibility='unverified';e.visibility_evidence=[];e.visibility_spans=[];
+    const geometryUnverified=hasUnverifiedPdfGeometry(e);
+    e.visibility='unverified';e.visibility_evidence=geometryUnverified?[{method:PDF_GEOMETRY_UNVERIFIED,bbox:e.bbox,assessment:'inferred',coverage:0}]:[];e.visibility_spans=[];
     const target=compact(e.text),index=source.indexOf(target,cursor);
+    if(geometryUnverified){if(target&&index>=0)cursor=index+target.length;gaps.push({feature:'pdf_visibility',reason:PDF_GEOMETRY_UNVERIFIED});continue;}
     if(!target||index<0){e.visibility_evidence.push({method:'glyph_text_correlation_unresolved',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
     const selected=[...new Set(stream.slice(index,index+target.length).map(v=>v.glyph))];cursor=index+target.length;
     if(!selected.every(g=>g.reliable)||selected.some(g=>overlap(g.bbox,e.bbox)<=0)){e.visibility_evidence.push({method:'glyph_geometry_or_paint_state_unresolved',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
@@ -121,7 +127,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       const background=backgrounds.at(-1)?.color??'#ffffff';
       if(g.color!=='unknown'&&background!=='unknown'&&g.color===background){state='uncertain';e.visibility_evidence.push({method:'text_color_matches_background',bbox:g.bbox,assessment:'inferred',coverage:1});}
       for(const r of regions){
-        const coverage=area(footprint)>0?overlap(footprint,r.bbox)/area(footprint):0;
+        const coverage=area(footprint)>0?Math.min(1,overlap(footprint,r.bbox)/area(footprint)):0;
         // A decimal point can occupy less than 5% of its font-metric box.
         // Any positive overlap is uncertain unless a stronger assessment applies.
         if(r.kind==='fill'&&r.order>g.order&&coverage>0){
@@ -130,7 +136,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
         }
         // Grid membership or a small overlap cannot prove punctuation visibility.
         const shortStroke=r.kind==='stroke'&&r.order>g.order&&coverage>0&&(!r.line||!strikeCandidate(r.line,e));
-        if((r.kind==='image'&&coverage>0||shortStroke||r.kind==='text'&&state==='visible'&&coverage>0)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:shortStroke?'short_stroke_glyph_overlap_unverified':'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
+        if(((r.kind==='image'||r.kind==='unknown_text')&&coverage>0||shortStroke||r.kind==='text'&&state==='visible'&&coverage>0)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:r.kind==='unknown_text'?'later_text_geometry_unverified':shortStroke?'short_stroke_glyph_overlap_unverified':'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
       }
       for(const a of annotations){
         // PDF.js displays known annotation types with Invisible (1) set.
@@ -183,7 +189,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       const xs=[...new Set(vs.map(l=>Number(l.bbox[0].toFixed(4))))].sort((a,b)=>a-b),ys=[...new Set(hs.map(l=>Number(l.bbox[1].toFixed(4))))].sort((a,b)=>a-b);
       const xmin=xs[0],xmax=xs.at(-1)!,ymin=ys[0],ymax=ys.at(-1)!;
       if(hs.some(l=>Math.abs(l.bbox[0]-xmin)>tolerance||Math.abs(l.bbox[0]+l.bbox[2]-xmax)>tolerance)||vs.some(l=>Math.abs(l.bbox[1]-ymin)>tolerance||Math.abs(l.bbox[1]+l.bbox[3]-ymax)>tolerance))continue;
-      const assignments=elements.flatMap(e=>{const cx=e.bbox[0]+e.bbox[2]/2,cy=e.bbox[1]+e.bbox[3]/2,col=xs.findIndex((x,i)=>i<xs.length-1&&cx>=x&&cx<xs[i+1]),row=ys.findIndex((y,i)=>i<ys.length-1&&cy>=y&&cy<ys[i+1]);
+      const assignments=elements.flatMap(e=>{if(hasUnverifiedPdfGeometry(e))return [];const cx=e.bbox[0]+e.bbox[2]/2,cy=e.bbox[1]+e.bbox[3]/2,col=xs.findIndex((x,i)=>i<xs.length-1&&cx>=x&&cx<xs[i+1]),row=ys.findIndex((y,i)=>i<ys.length-1&&cy>=y&&cy<ys[i+1]);
         return row>=0&&col>=0&&e.bbox[0]>=xs[col]-tolerance&&e.bbox[0]+e.bbox[2]<=xs[col+1]+tolerance&&e.bbox[1]>=ys[row]-tolerance&&e.bbox[1]+e.bbox[3]<=ys[row+1]+tolerance?[{e,row,col}]:[];});
       if(new Set(assignments.map(a=>a.row)).size<2||new Set(assignments.map(a=>a.col)).size<2)continue;
       tableIndex++;for(const {e,row,col} of assignments)e.table={table_id:'pdf_grid_'+tableIndex,row,column:col,origin:'pdf_grid_inferred',assessment:'inferred'};

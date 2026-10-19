@@ -1,6 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
 import { extname } from 'node:path';
-import { Asset, byteHash, DocverError, MAX_INPUT_BYTES, type PageData } from '../schema/index.js';
+import { Asset, Page, byteHash, DocverError, MAX_INPUT_BYTES, type PageData } from '../schema/index.js';
 import { extractPptx } from './pptx.js';
 import { extractPdf } from './pdf.js';
 import type { z } from 'zod';
@@ -13,5 +13,6 @@ export async function ingest(path:string,options:OcrOptions&{ocr?:'off'|'auto'|'
   const bytes=await readFile(path);if(bytes.length>MAX_INPUT_BYTES)throw new DocverError('FILE_LIMIT','Input exceeds 512 MiB limit');
   const asset=Asset.parse({asset_id:'sha256:'+byteHash(bytes),format:ext.slice(1),bytes:bytes.length});
   const pages=asset.format==='pptx'?extractPptx(bytes,asset.asset_id):await extractPdf(bytes,asset.asset_id,options);
-  return {asset,pages,bytes};
+  const validated=pages.map(page=>{const result=Page.safeParse(page);if(!result.success)throw new DocverError('INVALID_PAGE_OBSERVATION','Extracted page '+page.page+' failed canonical validation');return result.data;});
+  return {asset,pages:validated,bytes};
 }

@@ -63,3 +63,20 @@ Engine20/helper17 requires complete integer-fraction operand boundaries: a numer
 Leading-decimal scalar observations such as .5 are now complete decimal slots, retaining the point in both the raw range and canonical verification value; an independent5 reading conflicts. Compact decimal ratios .5/2 remain unsupported. Explicit two-sided spaced numeric lists .5 / 2 retain the list interpretation, just like the existing decimal/signed lists; no mathematical interpretation is inferred. Spaced text/text slashes in numeric lines such as Revenue / Cost2026 remain an explicit conservative recall limit.
 
 The explicit spaced-list rule also supports1 / 2.3 and1 / 2,000 as two observations; compact1/2.3 and1/2,000 remain unsupported ratios. Spaces on both sides are an existing lexical list convention, not evidence of author arithmetic intent.
+
+Source PDF font metrics can be unavailable even for ordinary unembedded Times
+or Courier fonts. Engine21 retains their exact observed strings and finite
+estimated display bounds (or an empty box when the transform cannot locate
+text), with `pdf_text_geometry_estimated_or_unavailable` inferred evidence and
+an explicit visibility gap. Original metrics remain unavailable: these runs
+cannot establish visible glyphs, strikes, occlusion, original PDF grid cells,
+or complete source coverage/shadowing. Independently localized OCR may coexist
+as inferred comparison evidence; it does not resolve the raw geometry. Unknown
+painted text extent conservatively withholds earlier paint visibility across
+the page, while subsequent reliable text retains its own checks. Hidden text
+paint does not introduce this overlay. Canonical Page validation occurs before
+extraction succeeds; a remaining invalid asset is isolated by the engine's
+per-file failure path. The public corpus validates source and variant pages
+before JSON serialization and exercises every original and variant through
+DesktopService create/analyze/commit, reopened report and native-page storage.
+This avoids treating successful OCR scoring as successful app ingestion.

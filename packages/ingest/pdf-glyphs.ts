@@ -1,7 +1,8 @@
 import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } from './pdf-geometry.js';
 import { OPS, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, type Box } from '../schema/index.js';
-export interface PaintedGlyph {text:string;bbox:Box;order:number;hidden:boolean;reliable:boolean;run:number;color:string;clip_ink?:Box}
+import {pdfFontMetrics} from './pdf-text-geometry.js';
+export interface PaintedGlyph {text:string;bbox:Box;order:number;hidden:boolean;reliable:boolean;run:number;color:string;clip_ink?:Box;geometry_unverified?:boolean}
 const inkBounds=new WeakMap<object,Map<string,number[]|null>>();
 function outlineBounds(font:any,objects:any,glyph:any):number[]|undefined{
   if(font.docverEmbeddedFontProgram!==true||font.missingFile||font.isType3Font||font.remeasure||font.isInvalidPDFjsFont||glyph.isInFont!==true||glyph.accent||typeof glyph.fontChar!=='string'||typeof font.getPathGenerator!=='function')return;
@@ -53,7 +54,7 @@ export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Rec
     const glyphArgs=op===OPS.nextLineSetSpacingShowText?a[2]:a[0];
     let font:any;try{font=page.commonObjs.get(s.font);}catch{font=null;}
     const metrics=fontStyles[s.font]??font;
-    const ascent=metrics?.ascent??0.8,descent=metrics?.descent??-0.2,metricsKnown=Number.isFinite(metrics?.ascent)&&Number.isFinite(metrics?.descent)&&ascent>0&&descent<=0&&ascent-descent>=0.5;
+    const {ascent,descent,known:metricsKnown}=pdfFontMetrics(metrics);
     // PDF.js 6.4 CanvasGraphics.setFont and text extraction both use
     // FONT_IDENTITY_MATRIX when the serialized fontMatrix is absent.
     // Match that renderer default; reject malformed or nonstandard matrices.
@@ -66,7 +67,7 @@ export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Rec
       const advance=Number(glyph.width??0)/1000*s.size,base=s.x*s.hscale,w=advance*s.hscale;
       const points=[[base,s.rise+descent*s.size],[base+w,s.rise+descent*s.size],[base,s.rise+ascent*s.size],[base+w,s.rise+ascent*s.size]].map(p=>{Util.applyTransform(p,m);return p;});
       const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
-      const bbox=box(Math.min(...xs)/viewport.width,Math.min(...ys)/viewport.height,(Math.max(...xs)-Math.min(...xs))/viewport.width,(Math.max(...ys)-Math.min(...ys))/viewport.height);
+      const finite=xs.concat(ys).every(Number.isFinite),bbox=finite?box(Math.min(...xs)/viewport.width,Math.min(...ys)/viewport.height,(Math.max(...xs)-Math.min(...xs))/viewport.width,(Math.max(...ys)-Math.min(...ys))/viewport.height):box(0,0,0,0);
       const hidden=s.mode===3||s.mode===7||([0,4].includes(s.mode)&&s.alpha===0)||([2,6].includes(s.mode)&&s.alpha===0&&s.strokeAlpha===0);
       let clipOK=insideClip(s.clip,bbox),clipInk:Box|undefined;
       // Metric ascenders/descenders are not painted ink. A known rectangular
@@ -91,7 +92,7 @@ export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Rec
           }
         }
       }
-      glyphs.push({text:glyph.unicode,bbox,order,run:order,hidden,color:s.color,...(clipInk?{clip_ink:clipInk}:{}),reliable:(s.alpha>=0.999||hidden)&&s.color!=='unknown'&&!!font&&!font.isType3Font&&(s.mode===0||s.mode===3)&&metricsKnown&&standardMatrix&&Number.isFinite(ascent)&&Number.isFinite(descent)&&!font.vertical&&clipOK&&!s.pendingClip&&!s.mask&&!s.unsupportedState&&s.blend==='Normal'&&!optional});
+      glyphs.push({text:glyph.unicode,bbox,order,run:order,hidden,color:s.color,...(!metricsKnown||!finite?{geometry_unverified:true}:{}),...(clipInk?{clip_ink:clipInk}:{}),reliable:finite&&(s.alpha>=0.999||hidden)&&s.color!=='unknown'&&!!font&&!font.isType3Font&&(s.mode===0||s.mode===3)&&metricsKnown&&standardMatrix&&Number.isFinite(ascent)&&Number.isFinite(descent)&&!font.vertical&&clipOK&&!s.pendingClip&&!s.mask&&!s.unsupportedState&&s.blend==='Normal'&&!optional});
       s.x+=advance+s.char+(glyph.isSpace?s.word:0);
     }
   }

@@ -1,8 +1,9 @@
 import {normalize,type PageData,type ElementData,type Box} from '../schema/index.js';
 import {rowOrderedRegions} from './reading-order.js';
+import {hasUnverifiedPdfGeometry} from './pdf-text-geometry.js';
 
 const appearanceBlocked=new Set(['occluded','partially_occluded','struck_through','struck_inferred','partially_struck_through']);
-const readable=(e:ElementData)=>e.provenance==='observed'&&e.availability==='available'&&['visible','struck_through'].includes(e.visibility??'')&&!(e.visibility_spans??[]).some(s=>['occluded','partially_occluded','struck_inferred','partially_struck_through'].includes(s.state))&&(e.visibility!=='struck_through'||!!e.visibility_spans?.length&&e.visibility_spans.every(s=>s.state==='struck_through'&&s.assessment==='observed'));
+const readable=(e:ElementData)=>!hasUnverifiedPdfGeometry(e)&&e.provenance==='observed'&&e.availability==='available'&&['visible','struck_through'].includes(e.visibility??'')&&!(e.visibility_spans??[]).some(s=>['occluded','partially_occluded','struck_inferred','partially_struck_through'].includes(s.state))&&(e.visibility!=='struck_through'||!!e.visibility_spans?.length&&e.visibility_spans.every(s=>s.state==='struck_through'&&s.assessment==='observed'));
 export function sourceAppearanceBlocks(e:ElementData,region:Box):boolean{
   if(e.visibility==='hidden_render_mode')return false;
   return appearanceBlocked.has(e.visibility??'')&&intersection(e.bbox,region)>0||(e.visibility_spans??[]).some(s=>appearanceBlocked.has(s.state)&&intersection(s.bbox,region)>0);
@@ -91,6 +92,7 @@ export function selectHybridComparison(page:PageData):void{
       // Coverage is directional: seeing a prefix cannot resolve an unread tail.
       // Without per-glyph proof we retain the entire unverified source run.
       for(const r of unknown){const extent=boxes.get(r)!;
+        if(hasUnverifiedPdfGeometry(r)){page.coverage_gaps.push({feature:'ocr',reason:'estimated_source_geometry_remains_unresolved'});continue;}
         if(contains(e.bbox,extent,dx,dy)||corroboratesCompleteText(r,e,extent)){r.comparison_role='shadowed';r.comparison_reason='unverified_source_compared_by_inferred_raster';}
         else page.coverage_gaps.push({feature:'ocr',reason:'partial_raster_coverage_source_remains_unresolved'});
       }
