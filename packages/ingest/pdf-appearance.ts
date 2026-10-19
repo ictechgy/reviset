@@ -120,7 +120,17 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     const geometryUnverified=hasUnverifiedPdfGeometry(e);
     e.visibility='unverified';e.visibility_evidence=geometryUnverified?[{method:PDF_GEOMETRY_UNVERIFIED,bbox:e.bbox,assessment:'inferred',coverage:0}]:[];e.visibility_spans=[];
     const target=compact(e.text),index=source.indexOf(target,cursor);
-    if(geometryUnverified){if(target&&index>=0)cursor=index+target.length;gaps.push({feature:'pdf_visibility',reason:PDF_GEOMETRY_UNVERIFIED});continue;}
+    if(geometryUnverified){
+      if(target&&index>=0){
+        const correlated=stream.slice(index,index+target.length);cursor=index+target.length;
+        // Uniform explicit modes 3/7 do not paint text. This fact needs text
+        // correlation, not a glyph rectangle; mixed states remain unresolved.
+        if(correlated.length===target.length&&correlated.every(v=>v.glyph.nonpainting_mode)&&source.indexOf(target)===index&&source.indexOf(target,index+1)<0){
+          e.visibility='hidden_render_mode';e.visibility_evidence.push({method:'explicit_nonpainting_text_mode',bbox:box(0,0,0,0),assessment:'observed',coverage:0});
+        }
+      }
+      gaps.push({feature:'pdf_visibility',reason:PDF_GEOMETRY_UNVERIFIED});continue;
+    }
     if(!target||index<0){e.visibility_evidence.push({method:'glyph_text_correlation_unresolved',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
     const selected=[...new Set(stream.slice(index,index+target.length).map(v=>v.glyph))];cursor=index+target.length;
     if(!selected.every(g=>g.reliable)||selected.some(g=>overlap(g.bbox,e.bbox)<=0)){e.visibility_evidence.push({method:'glyph_geometry_or_paint_state_unresolved',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}

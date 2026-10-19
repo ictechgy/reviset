@@ -139,7 +139,7 @@ struct PageColumn: View {
                             if hasEstimatedPDFGeometry(e) { Text("원문 위치·표시 상태 미검증 · 글꼴 좌표는 추정값입니다.").font(.caption).foregroundStyle(.orange) }
                             HStack { Text(e["visibility"].string.isEmpty ? "원본 구조" : e["visibility"].string)
                                 if e["method"].string == "vision_ocr" {Text("OCR 추정 · \(Int(e["ocr"]["confidence"].number*100))점")}
-                                if !e["comparison_role"].string.isEmpty {Text(e["comparison_role"].string == "selected" ? "비교에 사용" : e["comparison_role"].string == "unresolved" ? "비교 보류" : e["comparison_role"].string == "excluded" ? "숨은 원문 · 비교 제외" : e["provenance"].string == "inferred" ? "참고 OCR · 원문 우선" : "원문 보존 · OCR로 비교")}
+                                if !e["comparison_role"].string.isEmpty {Text(e["method"].string == "pdf_page_annotation" ? "주석 메타데이터 · 텍스트 비교 제외" : e["comparison_role"].string == "selected" ? "비교에 사용" : e["comparison_role"].string == "unresolved" ? "비교 보류" : e["comparison_role"].string == "excluded" ? "숨은 원문 · 비교 제외" : e["provenance"].string == "inferred" ? "참고 OCR · 원문 우선" : "원문 보존 · OCR로 비교")}
                                 if !e["table"].isNull { Text(e["table"]["origin"].string == "ooxml_table" ? "PPTX 셀 · 구조 관측" : e["table"]["origin"].string == "vision_table_inferred" ? "화면 OCR 표 셀 · 추정" : "PDF 격자 · 추정") }
                             }.font(.caption2).foregroundStyle(e["visibility"].string.contains("occluded") || e["visibility"].string.contains("struck") ? .orange : .secondary)
                         }.padding(8).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:4))

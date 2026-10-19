@@ -69,7 +69,7 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
     for(const [i,line] of lines.entries()){
       // An OCR match never clears a raw visibility/strike warning. Add only separately imaged content.
       const intersects=(e:ElementData)=>Math.max(0,Math.min(e.bbox[0]+e.bbox[2],line.bbox[0]+line.bbox[2])-Math.max(e.bbox[0],line.bbox[0]))*Math.max(0,Math.min(e.bbox[1]+e.bbox[3],line.bbox[1]+line.bbox[3])-Math.max(e.bbox[1],line.bbox[1]));
-      if(!rasterComparison&&original.some(e=>intersects(e)>0||compact(e.text).includes(compact(line.text))))continue;
+      if(!rasterComparison&&original.some(e=>e.text.trim()&&(intersects(e)>0||compact(e.text).includes(compact(line.text)))))continue;
       const ambiguous=line.alternatives.some(c=>compact(c.text)!==compact(line.text)&&c.confidence>=line.confidence-0.15);
       const appearanceBlocked=original.some(e=>sourceAppearanceBlocks(e,line.bbox))||annotationBlocksRegion(original,line.bbox);
       const strikeEvaluated=!line.strike_status||['detected','not_detected'].includes(line.strike_status);

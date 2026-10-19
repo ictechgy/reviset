@@ -17,9 +17,9 @@ function ocrRegionsPaired(a:PageData,b:PageData):boolean{
   return paired(left,right)&&paired(right,left);
 }
 export function evidence(revision:RevisionData,page:PageData,focusText=false,focusElement?:ElementData):ChangeData['evidence'][number] {
-  const selected=comparisonElements(page),element=focusElement??(focusText?(selected.find(e=>numericSlots(e.text).length)??selected[0]):undefined);
+  const selected=comparisonElements(page),element=focusElement??(focusText?(selected.find(e=>numericSlots(e.text).length)??selected[0]):undefined),textSource=page.elements.find(e=>e.text.trim());
   return {revision_id:revision.revision_id,revision_occurrence_id:revision.revision_occurrence_id,asset_id:page.asset_id,page_id:page.page_id,page:page.page,
-    bbox:element?.bbox??[0,0,1,1],quote:element?.text??(focusText?comparisonText(page):page.text||page.ocr_text||''),method:element?.method??page.elements[0]?.method??'page_observation',provenance:element?.provenance??(page.comparison_basis==='raster_ocr'?'inferred':'observed'),...(element?{observation_id:element.observation_id}:{})};
+    bbox:element?.bbox??[0,0,1,1],quote:element?.text??(focusText?comparisonText(page):page.text||page.ocr_text||''),method:element?.method??textSource?.method??'page_observation',provenance:element?.provenance??textSource?.provenance??(page.comparison_basis==='raster_ocr'?'inferred':'observed'),...(element?{observation_id:element.observation_id}:{})};
 }
 export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchData[],candidates:MatchData[],entityFor:(pageId:string)=>string):ChangeData[] {
   const changes:ChangeData[]=[];let renderIntervalGap=false;
@@ -94,7 +94,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
         if(rasterPair&&(annotationBlocksRegion(a.elements,old.bbox)||annotationBlocksRegion(b.elements,current.bbox))){add('coverage_gap',a,b,m,'page_annotation_prevents_inferred_raster_edit');continue;}
         if((old.provenance==='inferred'||current.provenance==='inferred')&&(!numericNotationSupported(old.text)||!numericNotationSupported(current.text)||numericPattern(old.text)!==numericPattern(current.text)||numericSlots(old.text).length!==1||numericSlots(current.text).length!==1))continue;
         const sourceReviews=rasterPair?[{revision:from,page:a,ocr:old,review:reviewEstimatedSource(old,left)},{revision:to,page:b,ocr:current,review:reviewEstimatedSource(current,right)}]:[];
-        const disagreement=sourceReviews.some(s=>s.review.disagrees),budgetExceeded=sourceReviews.some(s=>s.review.budgetExceeded);
+        const disagreement=sourceReviews.some(s=>s.review.disagrees||s.review.numericConflict),budgetExceeded=sourceReviews.some(s=>s.review.budgetExceeded);
         if(disagreement||budgetExceeded){
           add('coverage_gap',a,b,m,budgetExceeded?'unlocalized_source_text_review_budget_exceeded':'ocr_disagrees_with_unlocalized_source_text');
           const gap=changes.at(-1)!;gap.before=old.text;gap.after=current.text;

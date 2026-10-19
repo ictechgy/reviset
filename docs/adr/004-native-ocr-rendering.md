@@ -126,3 +126,30 @@ context remains explicitly unresolved rather than being treated as a proven
 source-to-raster correspondence. Native pale-StrikeOut and unapplied-Redact
 controls now retain their source intent and withhold numeric edits after commit
 and reopened report/native-page retrieval.
+
+Engine25 preserves supplement OCR observations under annotation carriers: only
+text-bearing source observations deduplicate imaged lines. Annotation overlap
+withholds admission as uncertain/unresolved instead of discarding the reading,
+including a full-page unknown annotation region. A real native image-text
+observation under a Highlight and a controlled unknown-region carrier exercise
+both paths. Estimated source runs with zero-area bounds have unknown location;
+they participate in the bounded source contradiction review for every proposed
+OCR region, solely to warn or withhold. Matching text still permits the inferred
+numeric edit and never certifies source geometry. Numeric conflicts always leave
+an explicit quoted gap. Page-level text evidence takes its fallback method and
+provenance from a text-bearing observation, never an empty annotation carrier;
+the native source panel labels carriers as annotation metadata rather than hidden
+source text. These changes preserve raw strings and confidence without claiming
+universal source-to-raster correspondence.
+
+Uniform explicitly nonpainting text modes3/7 remain observed hidden state even
+when font metrics cannot locate the run. Complete, unique source/operator text correlation
+is required; mixed, repeated or unmatched text stays unverified. Type3 character
+programs and unsupported graphics state cannot establish this nonpainting proof
+(the text rendering mode does not govern Type3 glyph painting; see Adobe PDF1.4
+Reference, section5.2.5: https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/pdfreference1.4.pdf). The geometry marker and
+raw text remain, and the hidden-state evidence has zero-area/zero-coverage bounds.
+It neither invents a location nor establishes visibility/coverage. A real native
+image100→180 control with stale hidden Times text100→120 verifies that a prior
+invisible OCR layer cannot veto a new raster edit. Mixed visible text remains a
+source-conflict guard; unsupported geometry does not become readable source.

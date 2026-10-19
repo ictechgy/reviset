@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import PDFDocument from 'pdfkit';
+import {createCanvas} from '@napi-rs/canvas';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -8,7 +9,9 @@ import {extractPdf} from '../../packages/ingest/pdf.js';
 import {annotationBlocksRegion,PDF_ANNOTATION_CARRIER} from '../../packages/ingest/pdf-annotation-regions.js';
 import {PDF_ANNOTATION_LIMIT,PDF_ANNOTATION_POINT_LIMIT,PDF_ANNOTATION_QUAD_LIMIT} from '../../packages/ingest/pdf-annotations.js';
 import {selectHybridComparison} from '../../packages/ingest/comparison-selection.js';
-import {diffRevisions} from '../../packages/diff/index.js';
+import {diffRevisions,evidence} from '../../packages/diff/index.js';
+import {recognizePdf,supplementPdfOcr} from '../../packages/ingest/ocr.js';
+import {annotationCarriers} from '../../packages/ingest/pdf-annotations.js';
 import {DesktopService} from '../../packages/desktop/service.js';
 import {Page,byteHash,type PageData,type ElementData,type RevisionData} from '../../packages/schema/index.js';
 async function pdf(draw:(d:PDFKit.PDFDocument)=>void){const d=new PDFDocument({size:[600,400],margin:0}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(r=>d.on('end',()=>r(Buffer.concat(chunks))));draw(d);d.end();return done;}
@@ -30,6 +33,52 @@ test('unlocalized numeric contradictions remain explicit and cannot become infer
   const budget=await sample('120');budget.page.elements=[...Array.from({length:257},(_,i)=>({...structuredClone(budget.raw),observation_id:'budget-'+i,reading_order:i})),budget.ocr];selectHybridComparison(budget.page);const withheld=changes(before.page,budget.page);assert.ok(!withheld.some(c=>c.kind==='text_modified'));assert.ok(withheld.some(c=>c.coverage_gaps.some(g=>g.reason==='unlocalized_source_text_review_budget_exceeded')));
   const other=await sample('120');other.raw.text=other.raw.normalized_text='Cost 120 won';const qualified=changes(before.page,other.page);assert.equal(qualified.filter(c=>c.kind==='text_modified').length,1);assert.ok(qualified.some(c=>c.coverage_gaps.some(g=>g.reason==='ocr_disagrees_with_unlocalized_source_text')));
   const duplicate=structuredClone(before.page);duplicate.elements.push({...structuredClone(before.ocr),observation_id:'left-duplicate'});assert.ok(!changes(duplicate,(await sample('120')).page).some(c=>c.kind==='text_modified'));
+});
+
+test('unknown source locations still withhold numeric contradictions without assigning geometry',async()=>{
+  const before=await sample('100');
+  for(const side of ['before','after']){
+    const left=structuredClone(before),right=await sample('120'),target=side==='before'?left:right;
+    target.raw.bbox=[0,0,0,0];target.ocr.text=target.ocr.normalized_text='Revenue 180 won';selectHybridComparison(target.page);
+    const result=changes(left.page,right.page);assert.ok(!result.some(c=>c.kind==='text_modified'));assert.ok(result.some(c=>c.coverage_gaps.some(g=>g.reason==='ocr_disagrees_with_unlocalized_source_text')));assert.deepEqual(target.raw.bbox,[0,0,0,0]);
+  }
+  const positive=await sample('120');positive.raw.bbox=[0,0,0,0];selectHybridComparison(positive.page);assert.equal(changes(before.page,positive.page).filter(c=>c.kind==='text_modified').length,1);
+});
+
+test('supplement OCR under annotations remains an unresolved observation instead of disappearing',async()=>{
+  const canvas=createCanvas(1200,200),ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1200,200);ctx.fillStyle='black';ctx.font='64px Arial';ctx.fillText('Revenue 120 won',30,130);
+  const bytes=await pdf(d=>{d.font('Helvetica').fontSize(24).text('Header',50,30,{lineBreak:false});d.image(canvas.toBuffer('image/png'),50,180,{width:480,height:80});d.highlight(45,175,490,90);});
+  const observed=await recognizePdf(bytes,1),line=observed.lines.find(l=>l.text.includes('Revenue'));assert.ok(line,'Actual native raster observation must read the image');
+  for(const unknown of [false,true]){
+    const [page]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'off'});assert.equal(page.unresolved_text,'');
+    if(unknown)page.elements=page.elements.filter(e=>e.method!==PDF_ANNOTATION_CARRIER).concat(annotationCarriers([{subtype:'Square',annotationFlags:0}],{width:600,height:400,transform:[1,0,0,-1,0,400]},page.asset_id,1,page.elements.length).elements);
+    await supplementPdfOcr(page,bytes,{nativeResult:{...observed,lines:[line],tables:[],grid_tables:[]}});
+    const retained:ElementData|undefined=page.elements.find(e=>e.method==='vision_ocr'&&e.text===line.text);assert.ok(retained);assert.equal(retained.visibility,'uncertain');assert.equal(retained.comparison_role,'unresolved');assert.equal(page.ocr_unresolved_text,line.text);assert.equal(page.ocr_text,'');assert.equal(page.ocr?.mode,'supplement');assert.ok(page.coverage_gaps.some(g=>g.reason==='low_confidence_or_ambiguous_ocr_observation_retained'));Page.parse(page);
+  }
+  const [plain]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'off'});plain.elements=plain.elements.filter(e=>e.method!==PDF_ANNOTATION_CARRIER);await supplementPdfOcr(plain,bytes,{nativeResult:{...observed,lines:[line],tables:[],grid_tables:[]}});assert.ok(plain.elements.some(e=>e.method==='vision_ocr'&&e.text===line.text&&e.visibility==='visible'));
+});
+
+test('page-level OCR evidence never attributes its quote to annotation metadata',async()=>{
+  const {page,ocr}=await sample('120',d=>d.annotate(48,116,245,40,{Subtype:'Redact'} as any));const carrier=page.elements.find(e=>e.method===PDF_ANNOTATION_CARRIER)!;page.elements=[carrier,ocr];page.text='';page.ocr_text=ocr.text;page.comparison_basis='raster_ocr';
+  const revision={revision_id:'r',revision_occurrence_id:'o'} as RevisionData,entry=evidence(revision,page);assert.equal(entry.quote,ocr.text);assert.equal(entry.method,'vision_ocr');assert.equal(entry.provenance,'inferred');
+  page.elements=[carrier];page.ocr_text='';assert.equal(evidence(revision,page).method,'page_observation');
+});
+
+test('explicit nonpainting source text stays separate from actual native image edits despite unknown metrics',async()=>{
+  const image=(value:string)=>{const c=createCanvas(1200,200),ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1200,200);ctx.fillStyle='black';ctx.font='64px Arial';ctx.fillText('Revenue '+value+' won',30,130);return c.toBuffer('image/png');};
+  const pages:PageData[]=[];
+  for(const [rawValue,rasterValue]of [['100','100'],['120','180']]){
+    const bytes=await pdf(d=>{d.image(image(rasterValue),50,180,{width:480,height:80});d.addContent('3 Tr');text(d,rawValue);}),[page]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'auto'}),raw=page.elements.find(e=>e.method==='pdf_text')!;
+    assert.equal(raw.visibility,'hidden_render_mode');assert.equal(raw.text,'Revenue '+rawValue+' won');assert.ok(raw.visibility_evidence?.some(v=>v.method==='pdf_text_geometry_estimated_or_unavailable'));assert.ok(raw.visibility_evidence?.some(v=>v.method==='explicit_nonpainting_text_mode'&&v.assessment==='observed'&&v.coverage===0));assert.ok(page.elements.some(e=>e.method==='vision_ocr'&&e.text==='Revenue '+rasterValue+' won'&&e.visibility==='visible'));Page.parse(page);pages.push(page);
+  }
+  const edits=changes(pages[0],pages[1]).filter(c=>c.kind==='text_modified');assert.equal(edits.length,1);assert.equal(edits[0].before,'Revenue 100 won');assert.equal(edits[0].after,'Revenue 180 won');assert.equal(edits[0].text_assessment,'inferred');assert.ok(edits[0].evidence.every(e=>e.method==='vision_ocr'));
+  const clipped=await pdf(d=>{d.addContent('7 Tr');text(d,'120');}),[clip]=await extractPdf(clipped,'sha256:'+byteHash(clipped),{ocr:'off'});assert.equal(clip.elements[0].visibility,'hidden_render_mode');
+  const mixed=await pdf(d=>{d.font('Times-Roman').fontSize(32).addContent('3 Tr');d.text('Revenue ',50,120,{continued:true});d.addContent('0 Tr');d.text('120 won',{lineBreak:false});}),[partly]=await extractPdf(mixed,'sha256:'+byteHash(mixed),{ocr:'off'});assert.ok(partly.elements.some(e=>e.text.includes('120')&&e.visibility==='unverified'));assert.ok(!partly.elements.filter(e=>e.text.includes('120')).some(e=>e.visibility==='hidden_render_mode'));
+});
+
+test('ambiguous repeated text and Type3 character programs cannot establish a nonpainting source run',async()=>{
+  const repeated=await pdf(d=>{d.addContent('3 Tr');text(d,'120');d.addContent('0 Tr');d.font('Times-Roman').fontSize(32).text('Revenue 120 won',50,230,{lineBreak:false});}),[duplicate]=await extractPdf(repeated,'sha256:'+byteHash(repeated),{ocr:'off'});assert.equal(duplicate.elements.filter(e=>e.text==='Revenue 120 won').length,2);assert.ok(duplicate.elements.every(e=>e.visibility==='unverified'));
+  const bytes=await pdf(d=>{const char=d.ref({});char.end('600 0 0 0 600 700 d1\n0 0 600 700 re f');const font=d.ref({Type:'Font',Subtype:'Type3',FontBBox:[0,0,600,700],FontMatrix:[.001,0,0,.001,0,0],CharProcs:{A:char},Encoding:{Type:'Encoding',Differences:[65,'A']},FirstChar:65,LastChar:65,Widths:[600],Resources:{}});font.end('');d.page.fonts.T3=font;d.addContent('BT /T3 40 Tf 3 Tr 50 200 Td (A) Tj ET');}),[type3]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'off'});assert.equal(type3.elements[0].text,'A');assert.notEqual(type3.elements[0].visibility,'hidden_render_mode');assert.ok(!type3.elements[0].visibility_evidence?.some(v=>v.method==='explicit_nonpainting_text_mode'));Page.parse(type3);
 });
 
 test('page annotation intent uses actual regions without promoting carrier or estimated glyph geometry',async()=>{

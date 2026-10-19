@@ -2,7 +2,7 @@ import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } fr
 import { OPS, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, type Box } from '../schema/index.js';
 import {pdfFontMetrics} from './pdf-text-geometry.js';
-export interface PaintedGlyph {text:string;bbox:Box;order:number;hidden:boolean;reliable:boolean;run:number;color:string;clip_ink?:Box;geometry_unverified?:boolean}
+export interface PaintedGlyph {text:string;bbox:Box;order:number;hidden:boolean;nonpainting_mode:boolean;reliable:boolean;run:number;color:string;clip_ink?:Box;geometry_unverified?:boolean}
 const inkBounds=new WeakMap<object,Map<string,number[]|null>>();
 function outlineBounds(font:any,objects:any,glyph:any):number[]|undefined{
   if(font.docverEmbeddedFontProgram!==true||font.missingFile||font.isType3Font||font.remeasure||font.isInvalidPDFjsFont||glyph.isInFont!==true||glyph.accent||typeof glyph.fontChar!=='string'||typeof font.getPathGenerator!=='function')return;
@@ -68,7 +68,8 @@ export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Rec
       const points=[[base,s.rise+descent*s.size],[base+w,s.rise+descent*s.size],[base,s.rise+ascent*s.size],[base+w,s.rise+ascent*s.size]].map(p=>{Util.applyTransform(p,m);return p;});
       const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
       const finite=xs.concat(ys).every(Number.isFinite),bbox=finite?box(Math.min(...xs)/viewport.width,Math.min(...ys)/viewport.height,(Math.max(...xs)-Math.min(...xs))/viewport.width,(Math.max(...ys)-Math.min(...ys))/viewport.height):box(0,0,0,0);
-      const hidden=s.mode===3||s.mode===7||([0,4].includes(s.mode)&&s.alpha===0)||([2,6].includes(s.mode)&&s.alpha===0&&s.strokeAlpha===0);
+      const nonpaintingMode=!!font&&!font.isType3Font&&!s.unsupportedState&&(s.mode===3||s.mode===7);
+      const hidden=nonpaintingMode||!!font&&!font.isType3Font&&!s.unsupportedState&&(([0,4].includes(s.mode)&&s.alpha===0)||([2,6].includes(s.mode)&&s.alpha===0&&s.strokeAlpha===0));
       let clipOK=insideClip(s.clip,bbox),clipInk:Box|undefined;
       // Metric ascenders/descenders are not painted ink. A known rectangular
       // clip may cut that empty margin while preserving the complete outline.
@@ -92,7 +93,7 @@ export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Rec
           }
         }
       }
-      glyphs.push({text:glyph.unicode,bbox,order,run:order,hidden,color:s.color,...(!metricsKnown||!finite?{geometry_unverified:true}:{}),...(clipInk?{clip_ink:clipInk}:{}),reliable:finite&&(s.alpha>=0.999||hidden)&&s.color!=='unknown'&&!!font&&!font.isType3Font&&(s.mode===0||s.mode===3)&&metricsKnown&&standardMatrix&&Number.isFinite(ascent)&&Number.isFinite(descent)&&!font.vertical&&clipOK&&!s.pendingClip&&!s.mask&&!s.unsupportedState&&s.blend==='Normal'&&!optional});
+      glyphs.push({text:glyph.unicode,bbox,order,run:order,hidden,nonpainting_mode:nonpaintingMode,color:s.color,...(!metricsKnown||!finite?{geometry_unverified:true}:{}),...(clipInk?{clip_ink:clipInk}:{}),reliable:finite&&(s.alpha>=0.999||hidden)&&s.color!=='unknown'&&!!font&&!font.isType3Font&&(s.mode===0||s.mode===3)&&metricsKnown&&standardMatrix&&Number.isFinite(ascent)&&Number.isFinite(descent)&&!font.vertical&&clipOK&&!s.pendingClip&&!s.mask&&!s.unsupportedState&&s.blend==='Normal'&&!optional});
       s.x+=advance+s.char+(glyph.isSpace?s.word:0);
     }
   }
