@@ -205,7 +205,7 @@ struct BundlePagePreview:View {
     @State private var failure=""
     var body:some View {
         VStack(alignment:.leading,spacing:5){
-            HStack{Text(title);Spacer();if payload["source"]["origin"].string=="pptx_converted"{Text("LibreOffice 렌더")}else if payload["source"]["kind"].string=="pptx"{Text("구조 보기 · 원본 화면 미검증")}}.font(.caption).foregroundStyle(.secondary)
+            VStack(alignment:.leading,spacing:3){Text(title);if payload["source"]["origin"].string=="pptx_converted"{Text("LibreOffice 렌더")}else if payload["source"]["kind"].string=="pptx"{Text("구조 보기 · 원본 화면 미검증")}}.font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
             if !payload["source"]["warnings"].array.isEmpty {Text(payload["source"]["warnings"].array.map{renderWarningName($0.string)}.joined(separator:" · ")).font(.caption2).foregroundStyle(.orange).lineLimit(2)}
             GeometryReader{geometry in
                 if pageID.isEmpty {ContentUnavailableView("페이지를 선택하세요",systemImage:"doc")}
@@ -214,7 +214,7 @@ struct BundlePagePreview:View {
                 else if payload["source"]["kind"].string=="pdf" {OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["page"]["page"].int,zoom:0,evidence:JSON(),page:payload["display_page"])}
                 else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size) {StructureCanvas(page:payload["page"],evidence:JSON()).frame(width:size.width,height:size.height).frame(maxWidth:.infinity,maxHeight:.infinity)}
                 else {ContentUnavailableView("페이지 크기를 확인할 수 없습니다",systemImage:"exclamationmark.triangle")}
-            }.background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:5))
+            }.background(Color(nsColor:.windowBackgroundColor).overlay(Color.primary.opacity(0.045))).clipShape(RoundedRectangle(cornerRadius:5))
         }.frame(maxWidth:.infinity).task(id:projectID+reportID+pageID+basis){
             payload=JSON();failure="";guard !pageID.isEmpty else{return}
             do{let result=try await model.bridge.call("page",["project_id":projectID,"report_id":reportID,"page_id":pageID,"basis":basis]);if !Task.isCancelled{payload=result}}catch{if !Task.isCancelled{failure=error.localizedDescription}}

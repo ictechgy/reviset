@@ -131,6 +131,9 @@ struct StructureCanvas: NSViewRepresentable {
                     ((e["kind"].string == "image" ? "이미지" : "의미 추출 미지원") as NSString).draw(in: rect, withAttributes: [.font:NSFont.systemFont(ofSize:11),.foregroundColor:NSColor.gray])
                 }
             }
+            let pixel=1/max(1,window?.backingScaleFactor ?? 1)
+            NSColor.gray.withAlphaComponent(0.45).setStroke()
+            let outline=NSBezierPath(rect:bounds.insetBy(dx:pixel/2,dy:pixel/2));outline.lineWidth=pixel;outline.stroke()
             let b = evidence["bbox"].array.map(\.number)
             if canHighlightEvidence(evidence,page:page) { NSColor.systemBlue.setStroke(); let p = NSBezierPath(rect: NSRect(x:b[0]*bounds.width,y:b[1]*bounds.height,width:b[2]*bounds.width,height:b[3]*bounds.height)); p.lineWidth=2;p.stroke() }
         }
@@ -177,7 +180,7 @@ struct PageColumn: View {
                         VStack { Spacer(minLength:0); StructureCanvas(page:payload["page"],evidence:evidence).frame(width:size.width*scale,height:size.height*scale).shadow(color:.black.opacity(0.08),radius:5); Spacer(minLength:0) }.frame(minWidth:geometry.size.width,minHeight:geometry.size.height)
                     }
                 } else {ContentUnavailableView("페이지 크기를 확인할 수 없습니다",systemImage:"exclamationmark.triangle")}
-            }.background(Color(nsColor:.windowBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:5))
+            }.background(Color(nsColor:.windowBackgroundColor).overlay(Color.primary.opacity(0.045))).clipShape(RoundedRectangle(cornerRadius:5))
             DisclosureGroup("추출 내용·표·표시 상태",isExpanded:$rawOpen) {
                 ScrollView { LazyVStack(alignment:.leading,spacing:10) {
                     Text("원문 추출과 OCR 추정을 각각 보존합니다.").font(.caption).foregroundStyle(.secondary)
