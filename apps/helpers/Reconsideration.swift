@@ -32,14 +32,26 @@ extension DocverVision {
         return (normalized as NSString).lowercased
     }
     static func latinCounterScript(_ text:String)->Bool {
-        text.range(of:"^[\\p{script=Latin}"+ocrWhitespaceClass+"\\p{P}\\p{S}]+$",options:.regularExpression) != nil && text.range(of:"\\p{L}",options:.regularExpression) != nil
+        text.range(of:"\\A[\\p{script=Latin}"+ocrWhitespaceClass+"\\p{P}\\p{S}]+\\z",options:.regularExpression) != nil && text.range(of:"\\p{L}",options:.regularExpression) != nil
     }
-    static let reconsiderationPolicy="vision-roi-v5; ECMAScript whitespace ambiguity/script parity; 4 nonnumeric lines/page; weak then borderline then high-score Latin; 8 correction/monoscript borderline contexts, 4 bilingual mixed-script counter-only contexts, or 2 en-US broad high-score contexts; 262144 core pixels; 4M pixels/crop; 12s/page best-effort cancellation; no language correction"
-    static func mixedScriptCounterOnly(_ text:String,_ confidence:Double,_ ambiguous:Bool)->Bool {
+    static func sameRoiKey(_ left:String,_ right:String)->Bool {
+        // JavaScript compares UTF16 keys literally. Swift String equality also
+        // equates canonically equivalent keys newly created by lowercasing.
+        roiCompact(left).utf16.elementsEqual(roiCompact(right).utf16)
+    }
+    static let reconsiderationPolicy="vision-roi-v6; exact UTF16 ambiguity keys and strict whole-string Latin scope; 4 nonnumeric lines/page; weak then borderline then high-score Latin; 8 correction/monoscript borderline contexts, 4 bilingual mixed-script contexts only with exact NFC competitive alternatives, or 2 en-US broad high-score contexts; 262144 core pixels; 4M pixels/crop; 12s/page best-effort cancellation; no language correction"
+    static func mixedScriptCounterOnly(_ text:String,_ confidence:Double,_ ambiguous:Bool,_ alternatives:[[String:Any]]=[])->Bool {
         // At exactly0.5 without ambiguity, positive correction is ineligible.
         // The consumer requires BOTH languages for mixed Hangul/Latin dissent;
         // monolingual contexts contribute neither correction nor counterevidence.
-        confidence==0.5 && !ambiguous && text.range(of:"\\p{script=Hangul}",options:.regularExpression) != nil && text.range(of:"\\p{script=Latin}",options:.regularExpression) != nil
+        guard confidence==0.5 && !ambiguous && text.range(of:"\\p{script=Hangul}",options:.regularExpression) != nil && text.range(of:"\\p{script=Latin}",options:.regularExpression) != nil else{return false}
+        // Equal NFC inputs guarantee equal consumer keys independently of case
+        // mapping/Unicode-version differences. Harmless case/spacing variants
+        // conservatively retain8 contexts rather than risk pruning correction.
+        return alternatives.allSatisfy {candidate in
+            guard let value=candidate["text"] as? String,let score=candidate["confidence"] as? Double else{return false}
+            return score<confidence-0.15 || value.precomposedStringWithCanonicalMapping.utf16.elementsEqual(text.precomposedStringWithCanonicalMapping.utf16)
+        }
     }
     static func reconsideredLines(_ image:CGImage,_ bitmap:NSBitmapImageRep,_ lines:[[String:Any]],_ observations:[VNRecognizedTextObservation]=[])->[[String:Any]] {
         let deadline=DispatchTime.now()+12.0
@@ -53,11 +65,11 @@ extension DocverVision {
             let alternatives=line["alternatives"] as? [[String:Any]] ?? []
             let ambiguous=alternatives.contains{candidate in
                 guard let value=candidate["text"] as? String,let score=candidate["confidence"] as? Double else{return false}
-                return roiCompact(value) != roiCompact(text) && score>=confidence-0.15
+                return !sameRoiKey(value,text) && score>=confidence-0.15
             }
             let highLatin=confidence>0.5 && !ambiguous && latinCounterScript(text)
             guard confidence<=0.5 || ambiguous || highLatin else{return nil}
-            return (index,confidence<0.5 || ambiguous ? 0:highLatin ? 2:1,CGRect(x:b[0],y:b[1],width:b[2],height:b[3]),text,highLatin,mixedScriptCounterOnly(text,confidence,ambiguous))
+            return (index,confidence<0.5 || ambiguous ? 0:highLatin ? 2:1,CGRect(x:b[0],y:b[1],width:b[2],height:b[3]),text,highLatin,mixedScriptCounterOnly(text,confidence,ambiguous,alternatives))
         }.sorted {a,b in a.priority==b.priority ? a.index<b.index:a.priority<b.priority}
         var output=lines
         for (position,entry) in eligible.enumerated() {

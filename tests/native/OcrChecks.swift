@@ -5,7 +5,7 @@ import Vision
 @main struct OcrChecks {
     static func main() throws {
         let normalization=try JSONSerialization.jsonObject(with:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[2]))) as! [[String:Any]]
-        for item in normalization {let text=item["text"] as! String;precondition(DocverVision.roiCompact(text)==item["compact"] as! String,"Shared OCR whitespace/NFC/case contract");precondition(DocverVision.latinCounterScript(text)==item["latin"] as! Bool,"Shared Latin counter-script contract")}
+        for item in normalization {let text=item["text"] as! String;precondition(DocverVision.roiCompact(text).utf16.elementsEqual((item["compact"] as! String).utf16),"Shared OCR exact UTF16 whitespace/NFC/case contract");precondition(DocverVision.latinCounterScript(text)==item["latin"] as! Bool,"Shared Latin counter-script contract");if let other=item["other_text"] as? String{precondition(DocverVision.sameRoiKey(text,other)==item["equal"] as! Bool,"Shared ambiguity-key equality contract")}}
         let whitespacePrimary="계익 Contract",whitespaceAlternative="계익\u{0085}Contract"
         let whitespaceAmbiguous=DocverVision.roiCompact(whitespacePrimary) != DocverVision.roiCompact(whitespaceAlternative)
         precondition(whitespaceAmbiguous && !DocverVision.mixedScriptCounterOnly(whitespacePrimary,0.5,whitespaceAmbiguous),"NEL dissent must retain the eight-context ambiguous correction path")
@@ -13,6 +13,9 @@ import Vision
         for text in ["Contract","éÆ","계약 검토","Δ"] {precondition(!DocverVision.mixedScriptCounterOnly(text,0.5,false))}
         for score in [0.0,0.3,0.499,0.501,1.0] {precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",score,false),"Weak and high-score profiles retain their existing evidence contract")}
         precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,true),"Ambiguous positive-correction eligibility still requires all eight contexts")
+        precondition(DocverVision.mixedScriptCounterOnly("계약 é",0.5,false,[["text":"계약 e\u{0301}","confidence":0.5]]),"Exactly equal NFC inputs establish consumer nonambiguity")
+        for alternative in ["계약  Contract","계약 contract","계약\u{0085}Contract"] {precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,false,[["text":alternative,"confidence":0.5]]),"Unproven cross-runtime equality retains all correction contexts")}
+        precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,false,[["text":"계약 Contract"]]))
         typealias Reading=DocverVision.NumericReading
         let a=Reading(text:"100",rect:CGRect(x:0.1,y:0.1,width:0.2,height:0.05),sources:["whole:0"])
         let b=Reading(text:"100",rect:CGRect(x:0.5,y:0.1,width:0.2,height:0.05),sources:["whole:1"])
@@ -230,13 +233,18 @@ import Vision
             if text=="Pineapple 주스" {
                 // Synthetic producer eligibility controls,not measured OCR
                 // confidence or accuracy claims. The raster/box are real.
-                let variants:[(String,Double,Int)]=[(text,0.5,4),("Pineapple\u{0085}주스",0.5,8),("Pineapple\u{0085}주스",0.35,8),("Pineapple\u{0085}주스",0.349,4),("pineapple  주스",0.5,4)]
+                let variants:[(String,Double,Int)]=[(text,0.5,4),("Pineapple\u{0085}주스",0.5,8),("Pineapple\u{0085}주스",0.35,8),("Pineapple\u{0085}주스",0.349,4),("pineapple  주스",0.5,8)]
                 for (alternative,score,count) in variants {
                     let row:[String:Any]=["text":text,"confidence":0.5,"bbox":[CGFloat(b.minX),1-b.maxY,b.width,b.height],"numeric_consensus":true,"strike_candidate":false,"strike_status":"not_detected","alternatives":[["text":text,"confidence":0.5],["text":alternative,"confidence":score]]]
                     let result=DocverVision.reconsideredLines(image,bitmap,[row])[0]
                     precondition((result["reconsideration"] as? [String:Any])?["contexts"] is [[String:Any]])
                     precondition(((result["reconsideration"] as! [String:Any])["contexts"] as! [[String:Any]]).count==count,"Actual producer preserves ambiguity and the competitive-score cutoff")
                     precondition(result["text"] as? String==text && result["confidence"] as? Double==0.5)
+                }
+                for (primary,alternative) in [("계익 J\u{030C}","계익 ǰ"),("계익 H\u{0331}","계익 ẖ"),("계익 T\u{0308}","계익 ẗ"),("계익 W\u{030A}","계익 ẘ"),("계익 Y\u{030A}","계익 ẙ")] {
+                    let row:[String:Any]=["text":primary,"confidence":0.5,"bbox":[CGFloat(b.minX),1-b.maxY,b.width,b.height],"numeric_consensus":true,"strike_candidate":false,"strike_status":"not_detected","alternatives":[["text":primary,"confidence":0.5],["text":alternative,"confidence":0.5]]]
+                    let result=DocverVision.reconsideredLines(image,bitmap,[row])[0]
+                    precondition(((result["reconsideration"] as! [String:Any])["contexts"] as! [[String:Any]]).count==8,"Canonical-equivalent but code-unit-different keys preserve correction eligibility")
                 }
             }
         }

@@ -44,14 +44,21 @@ test('bilingual-only borderline mixed-script evidence retains dissent and cannot
   const weak=structuredClone(before);weak.ocr!.confidence=.3;assert.equal(admitReconsideration(weak,weak.ocr!.reconsideration_observation!,()=>false),undefined,'A partial annex cannot become an admitted weak-line correction');
 });
 test('shared native OCR normalization retains NEL and uses the same whitespace and Latin scope as the consumer',async()=>{
-  const cases=JSON.parse(await readFile(new URL('../fixtures/ocr-normalization.json',import.meta.url),'utf8')) as {text:string;compact:string;latin:boolean}[];
-  for(const item of cases){assert.equal(item.text.normalize('NFC').replace(/\s/gu,'').toLowerCase(),item.compact);assert.equal(/^[\p{Script=Latin}\s\p{P}\p{S}]+$/u.test(item.text)&&/\p{L}/u.test(item.text),item.latin);}
+  const cases=JSON.parse(await readFile(new URL('../fixtures/ocr-normalization.json',import.meta.url),'utf8')) as {text:string;compact:string;latin:boolean;other_text?:string;equal?:boolean}[];
+  const compact=(text:string)=>text.normalize('NFC').replace(/\s/gu,'').toLowerCase();
+  for(const item of cases){assert.equal(compact(item.text),item.compact);assert.equal(/^[\p{Script=Latin}\s\p{P}\p{S}]+$/u.test(item.text)&&/\p{L}/u.test(item.text),item.latin);if(item.other_text!==undefined)assert.equal(compact(item.text)===compact(item.other_text),item.equal);}
   const native:NativePageResult={version:'normalization-boundary',revision:3,languages:['ko-KR','en-US'],language_correction:false,ocr_performed:true,renderer:'fixture',verification:'fixture',viewport_width:960,viewport_height:540,rotation:0,width:960,height:540,render_sha256:'a'.repeat(64),lines:[{reconsideration_error:undefined,text:'계익 Contract',confidence:.5,bbox,strike_candidate:false,strike_status:'not_detected',strike_bbox:[0,0,0,0],numeric_consensus:true,numeric_readings:[],tokens:[],alternatives:[{text:'계익 Contract',confidence:.5},{text:'계익\u0085Contract',confidence:.5}],reconsideration:observation('계약 Contract')}]};
   native.lines[0].reconsideration!.primary_empty_characters=[];
   const pg=page([]);await supplementPdfOcr(pg,new Uint8Array(),{nativeResult:native});Page.parse(pg);
   assert.equal(pg.elements[0].ocr!.ambiguous,true,'Actual supplementation derives ambiguity from the NEL alternative');assert.equal(pg.elements[0].text,'계익 Contract');assert.equal(comparisonText(pg),'계약 Contract','Eight complete correction contexts remain usable');
   const partial=structuredClone(native);partial.lines[0].reconsideration!.contexts=partial.lines[0].reconsideration!.contexts.filter(c=>c.languages.length===2);
   const withheld=page([]);await supplementPdfOcr(withheld,new Uint8Array(),{nativeResult:partial});assert.equal(comparisonText(withheld),'','A producer that incorrectly omitted contexts would lose this existing correction');
+  for(const [letter,composed]of [['J\u030c','ǰ'],['H\u0331','ẖ'],['T\u0308','ẗ'],['W\u030a','ẘ'],['Y\u030a','ẙ']]){
+    const raw=structuredClone(native),text='계익 '+letter;raw.lines[0].text=text;raw.lines[0].alternatives=[{text,confidence:.5},{text:'계익 '+composed,confidence:.5}];raw.lines[0].reconsideration=observation('계약 '+letter);raw.lines[0].reconsideration.primary_empty_characters=[];
+    for(const context of raw.lines[0].reconsideration.contexts)if(context.languages.length===1)context.languages=['ko-KR'];
+    const p=page([]);await supplementPdfOcr(p,new Uint8Array(),{nativeResult:raw});assert.equal(p.elements[0].ocr!.ambiguous,true);assert.equal(comparisonText(p),'계약 '+letter);assert.equal(p.elements[0].text,text);
+    raw.lines[0].reconsideration.contexts=raw.lines[0].reconsideration.contexts.filter(c=>c.languages.length===2);const incomplete=page([]);await supplementPdfOcr(incomplete,new Uint8Array(),{nativeResult:raw});assert.equal(comparisonText(incomplete),'');
+  }
 });
 test('missing or unusable borderline context evidence withholds selection without changing primary or numeric/source priority',()=>{
   for(const status of ['unsupported_background','unsupported_bitmap','budget_exceeded','failed','empty_ink',undefined] as const){

@@ -524,3 +524,22 @@ counterexample. Shared45fixtures and producer/consumer end-to-end policy
 controls qualify the bounded repair,not every Unicode sequence or OCR accuracy.
 Helper23/ROIpolicyv5 separate observation caches. Current packaged/runtime
 qualification remains a separate gate.
+
+
+### Engine42/helper24: strict scope and literal key equality
+
+ICU dollar can match before one finalNEL;use absolute whole-string anchors for
+native Latin eligibility. JavaScript compares normalized keys as literalUTF16;
+Swift String equality also applies canonical equivalence to the post-lowercase
+result. Compare UTF16 elements to preserve the actual consumer relation.
+Shared61fixtures include end-of-string controls and5canonical-equivalent but
+code-unit-distinct pairs;actual producer/supplement controls preserve8context
+correction. As an additional eligibility proof,the4context mixed optimization
+requires every competitive alternative to have the exact same NFC raw input.
+Unknown/differing alternatives retain8,even if case/space compaction could make
+them appear equivalent. Exact equal NFC inputs necessarily yield equal consumer
+keys,without requiring a universal cross-runtime case-mapping proof. Rawtext,
+confidence,positive-admission semantics and source visibility remain intact.
+Helper24/policyv6 are separate observation identities. Component timings from40
+and ordinary480counts do not certify current42app performance or everyUnicode
+case;current packaged verification remains required.

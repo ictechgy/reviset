@@ -674,3 +674,29 @@ Claude's native manual-relations design discussion completed separately,
 recommending one searchable paired-list sheet with explicit1:1/split/merge/
 unlink cardinality,conflict review and every branch page in history. This is
 proposed UX advice,not implemented/approved source or a new global design.
+
+
+41actual480helper23requalification again retained218full-page literal matches,
+22nonempty not-full-truth,240empty,all480primary/PNGunchanged and0previouslost.
+Nevertheless both full-base41reviews BLOCK: Foundation's dollar anchor accepted
+one terminalNEL outside the declared Latin class,and Swift canonical String
+equality equated distinct post-lowercase UTF16 keys for5standardLatin composition
+pairs. Actual frozen supplementation shows8contexts preserve a one-Hangul-scalar
+correction while4lose it. These are interface boundary controls,not observed
+Vision emissions. The pipeline intentionally withheld41app before build;its
+exit1is that guard,not a native480orbuild failure. Existingrelease remains38.
+
+42uses strict whole-string anchors and exactUTF16 comparison of compact keys.
+The four-context mixed profile additionally requires every competitive
+alternative's NFC raw input to be literally identical to the primary;otherwise
+all eight contexts remain. This makes consumer nonambiguity a direct guarantee
+independent of cross-runtime casing/Unicode-version differences. Harmless case
+or spacing alternatives conservatively retain8.61shared cases now include
+terminalNEL/CRLF/FEFF and two-input literal-key equality,with exactUTF16 expected
+outputs. Five composition-pair native producer8context controls and actualTS
+supplement8positive/4negative controls pass. Initialpurefixtureused the wrong
+monolingual language for a Hangul-dominant line;corrected fixture passes and
+failed log is retained. Focused native guard pass10.618s. Helper24/policyv6
+invalidate caches. Fullserial165/165PASS0fail/skip/cancel,158.408s;runtime fixed
+through suite/commit,only evidence docs follow. Current42native480/app/latency
+and complete original-base reviews follow;no currentpackage/perfection claim.

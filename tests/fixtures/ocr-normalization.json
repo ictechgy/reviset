@@ -223,5 +223,101 @@
     "text": "\u039f\u03a3",
     "compact": "\u03bf\u03c2",
     "latin": false
+  },
+  {
+    "text": "A\u0085",
+    "compact": "a\u0085",
+    "latin": false
+  },
+  {
+    "text": "A\u0085\u0085",
+    "compact": "a\u0085\u0085",
+    "latin": false
+  },
+  {
+    "text": "\u0085A",
+    "compact": "\u0085a",
+    "latin": false
+  },
+  {
+    "text": "A\n",
+    "compact": "a",
+    "latin": true
+  },
+  {
+    "text": "A\r\n",
+    "compact": "a",
+    "latin": true
+  },
+  {
+    "text": "A\ufeff",
+    "compact": "a",
+    "latin": true
+  },
+  {
+    "text": "A\u2028",
+    "compact": "a",
+    "latin": true
+  },
+  {
+    "text": "A\u2029",
+    "compact": "a",
+    "latin": true
+  },
+  {
+    "text": "\uacc4\uc775 J\u030c",
+    "compact": "\uacc4\uc775j\u030c",
+    "latin": false,
+    "other_text": "\uacc4\uc775 \u01f0",
+    "equal": false
+  },
+  {
+    "text": "\uacc4\uc775 H\u0331",
+    "compact": "\uacc4\uc775h\u0331",
+    "latin": false,
+    "other_text": "\uacc4\uc775 \u1e96",
+    "equal": false
+  },
+  {
+    "text": "\uacc4\uc775 T\u0308",
+    "compact": "\uacc4\uc775t\u0308",
+    "latin": false,
+    "other_text": "\uacc4\uc775 \u1e97",
+    "equal": false
+  },
+  {
+    "text": "\uacc4\uc775 W\u030a",
+    "compact": "\uacc4\uc775w\u030a",
+    "latin": false,
+    "other_text": "\uacc4\uc775 \u1e98",
+    "equal": false
+  },
+  {
+    "text": "\uacc4\uc775 Y\u030a",
+    "compact": "\uacc4\uc775y\u030a",
+    "latin": false,
+    "other_text": "\uacc4\uc775 \u1e99",
+    "equal": false
+  },
+  {
+    "text": "\u00e9 Contract",
+    "compact": "\u00e9contract",
+    "latin": true,
+    "other_text": "e\u0301 contract",
+    "equal": true
+  },
+  {
+    "text": "\uacc4\uc775 Contract",
+    "compact": "\uacc4\uc775contract",
+    "latin": false,
+    "other_text": "\uacc4\uc775\u0085Contract",
+    "equal": false
+  },
+  {
+    "text": "\uacc4\uc775 Contract",
+    "compact": "\uacc4\uc775contract",
+    "latin": false,
+    "other_text": "\uacc4\uc775  CONTRACT",
+    "equal": true
   }
 ]
