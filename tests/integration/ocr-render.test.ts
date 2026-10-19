@@ -138,6 +138,36 @@ test('observed PDF strike source retains priority over redundant blocked OCR wit
   }
   const modified=changes(a,b).filter(c=>c.kind==='text_modified');assert.equal(modified.length,1);assert.equal(modified[0].text_assessment,'observed');assert.deepEqual(modified[0].evidence.map(e=>e.quote),['Revenue 100','Revenue 120']);
   const partial=structuredClone(a),source=partial.elements[0];source.visibility='uncertain';source.visibility_spans![0].state='partially_struck_through';selectHybridComparison(partial);assert.equal(partial.elements.find(e=>e.method==='vision_ocr')?.comparison_role,'unresolved');assert.ok(unresolvedComparisonText(partial).includes('100'));
+  // Unrelated uncertainty must not erase an otherwise supported observed strike.
+  const unclear=(p:PageData)=>{const q=structuredClone(p);q.elements.push({...q.elements[0],observation_id:'unknown',text:'Unknown',normalized_text:'Unknown',bbox:[.1,.5,.3,.05],visibility:'unverified',visibility_spans:[]});selectHybridComparison(q);return q;};
+  const regional=changes(unclear(a),unclear(b)).filter(c=>c.kind==='text_modified');assert.equal(regional.length,1);assert.equal(regional[0].text_scope,'region');assert.equal(regional[0].text_assessment,'observed');assert.deepEqual(regional[0].evidence.map(e=>e.quote),['Revenue 100','Revenue 120']);
+  for(const state of ['struck_inferred','partially_struck_through','occluded','uncertain'] as const){const q=unclear(a);q.elements[0].visibility=state;selectHybridComparison(q);assert.equal(changes(q,unclear(b)).filter(c=>c.kind==='text_modified').length,0,'Partial/inferred appearance cannot enter observed strike regional comparison');}
+});
+
+test('source union coverage preserves raster gaps instead of treating enclosing bounds as observed text',async()=>{
+  const make=async(label:string,value:string,key:string)=>{
+    const c=createCanvas(160,45),ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,160,45);ctx.fillStyle='black';ctx.font='24px Helvetica';ctx.fillText(value,0,30);
+    const bytes=await pdf(d=>{d.fontSize(24).text(label,50,80,{lineBreak:false});d.image(c.toBuffer('image/png'),230,76,{width:160,height:45});d.text('USD',400,80,{lineBreak:false});d.addContent('3 Tr');d.text('Prior hidden',50,400,{lineBreak:false});});
+    const [p]=await extractPdf(bytes,key,{ocr:'off'}),raw=p.elements.filter(e=>e.visibility==='visible'),x=Math.min(...raw.map(e=>e.bbox[0])),y=Math.min(...raw.map(e=>e.bbox[1]));assert.equal(raw.length,2);
+    p.elements.push({observation_id:'ocr',kind:'text',text:label+' '+value+' USD',normalized_text:normalize(label+' '+value+' USD'),bbox:[x,y,Math.max(...raw.map(e=>e.bbox[0]+e.bbox[2]))-x,Math.max(...raw.map(e=>e.bbox[1]+e.bbox[3]))-y],reading_order:p.elements.length,availability:'available',method:'vision_ocr',source_ref:'synthetic-whole-line-reading',provenance:'inferred',visibility:'visible'});selectHybridComparison(p);return p;
+  };
+  const a=await make('Revenue Q1','100','a'),b=await make('Revenue Q2','120','b');assert.equal(a.elements.at(-1)?.comparison_role,'unresolved');assert.ok(unresolvedComparisonText(a).includes('100'));assert.ok(a.coverage_gaps.some(g=>g.reason==='ocr_crosses_mixed_or_uncovered_source_regions'));
+  const delta=changes(a,b).filter(c=>c.kind==='text_modified');assert.equal(delta.length,1);assert.equal(delta[0].text_scope,'region');assert.deepEqual(delta[0].evidence.map(e=>e.quote),['Revenue Q1','Revenue Q2']);
+  const fixture=(boxes:PageData['elements'][number]['bbox'][],target:PageData['elements'][number]['bbox'])=>{const p=structuredClone(a),template=p.elements[0];p.elements=boxes.map((bbox,i)=>({...template,observation_id:'raw'+i,text:'Piece'+i,normalized_text:'Piece'+i,bbox,visibility:'visible' as const,visibility_spans:[]}));p.elements.push({...template,observation_id:'ocr',text:'Whole line',normalized_text:'Whole line',bbox:target,method:'vision_ocr',provenance:'inferred',visibility:'visible',visibility_spans:[]});selectHybridComparison(p);return p.elements.at(-1)!;};
+  assert.equal(fixture([[.1,.1,.3,.05],[.4,.1,.3,.05]],[.1,.1,.6,.05]).comparison_role,'shadowed','Adjacent source pieces really cover the line');
+  assert.equal(fixture([[.1,.1,.2,.05],[.3001,.1,.3999,.05]],[.1,.1,.6,.05]).comparison_role,'unresolved','Edge tolerance must never bridge even a tiny internal raster punctuation gap');
+  assert.equal(fixture([[.1,.1,.6,.02],[.1,.12,.3,.03]],[.1,.1,.6,.05]).comparison_role,'unresolved','Vertical slabs must detect L-shaped coverage holes');
+  assert.equal(fixture([[.1,.1,.6,.05]],[.0997,.0997,.6006,.0506]).comparison_role,'shadowed','Outer OCR edge tolerance is retained');
+  assert.equal(fixture(Array.from({length:257},()=>[.1,.1,.6,.05]),[.1,.1,.6,.05]).comparison_reason,'readable_source_coverage_union_budget_exceeded');
+});
+
+test('loaded glyph outlines resolve clipped font margins while clipped ink stays unverified',native,async()=>{
+  const make=(bottom?:number)=>pdf(d=>{if(bottom!==undefined)d.save().rect(40,70,300,bottom-70).clip();d.fontSize(24).text('Revenue 1.5',50,80,{lineBreak:false});if(bottom!==undefined){d.restore();d.rect(40,bottom,300,.05).fill('white');}});
+  const baseline=await make(),margin=await make(100),cut=await make(90),a=(await extractPdf(baseline,'sha256:clip-baseline'))[0],b=(await extractPdf(margin,'sha256:clip-margin'))[0],c=(await extractPdf(cut,'sha256:clip-ink'))[0];
+  assert.equal(a.elements[0].visibility,'visible');assert.equal(b.elements[0].visibility,'visible');assert.ok(b.elements[0].visibility_evidence?.some(e=>e.method==='loaded_glyph_outline_inside_rect_clip'));assert.equal(c.elements[0].visibility,'unverified');assert.ok(c.unresolved_text?.includes('1.5'));
+  assert.equal(a.text,b.text);assert.deepEqual(a.elements[0].bbox,b.elements[0].bbox,'Raw font metric boxes must not be rewritten as ink bounds');
+  const render=async(bytes:Buffer)=>(await captureNativePages(bytes,[1],[])).get(1)!.render_sha256;
+  assert.equal(await render(baseline),await render(margin),'Actual PDFKit pixels confirm the positive clip removes only font margin');assert.notEqual(await render(baseline),await render(cut));
 });
 
 test('native tiled Korean/English OCR retains signs and amounts and caches exact evidence',native,async()=>{

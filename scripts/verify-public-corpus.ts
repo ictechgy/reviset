@@ -12,7 +12,7 @@ import {captureNativePages,type NativePageResult} from '../packages/ingest/ocr.j
 import {preparePptxPreview} from '../packages/render/pptx-preview.js';
 import {validateRenderPackage,renderPdf} from '../packages/render/index.js';
 import {runTool,visionExecutable,visionInfo} from '../packages/runtime/tools.js';
-import {byteHash,normalize,ENGINE_VERSION} from '../packages/schema/index.js';
+import {byteHash,normalize,ENGINE_VERSION,comparisonRegions,type PageData} from '../packages/schema/index.js';
 import {DesktopService} from '../packages/desktop/service.js';
 import {fileSha256} from '../packages/runtime/file-hash.js';
 
@@ -38,6 +38,10 @@ function regionResult(native:NativePageResult,regions:Region[],occluded?:Box){re
   const rows=native.lines.filter(line=>intersects(line.bbox,region.bbox)>0.2*line.bbox[2]*line.bbox[3]),text=rows.map(l=>l.text).join(' '),hidden=occluded&&intersects(occluded,region.bbox)>=0.95*region.bbox[2]*region.bbox[3];
   return {...region,state:hidden?'fully_occluded':occluded&&intersects(occluded,region.bbox)?'partially_occluded':'visible',raw_exact:text.includes(region.text),normalized_found:compact(text).includes(compact(region.text)),readings:rows.map(l=>({text:l.text,bbox:l.bbox,confidence:l.confidence,numeric_consensus:l.numeric_consensus})),scoring:'Selected-region recognition only, not whole-document accuracy; fully occluded regions excluded from recall'};
 });}
+function selectedRegionResult(page:PageData,regions:Region[]){
+  const selected=page.comparison_basis==='hybrid_regions_v1'?comparisonRegions(page).filter(e=>e.comparison_role==='selected'):page.elements.filter(e=>page.comparison_basis==='raster_ocr'?e.method==='vision_ocr'&&e.visibility==='visible':e.provenance==='observed'&&['visible','struck_through'].includes(e.visibility??''));
+  return regions.map(region=>{const readings=selected.filter(e=>intersects(e.bbox,region.bbox)>.2*e.bbox[2]*e.bbox[3]);return {...region,normalized_found:compact(readings.map(e=>e.text).join(' ')).includes(compact(region.text)),readings:readings.map(e=>({text:e.text,bbox:e.bbox,provenance:e.provenance,method:e.method,visibility:e.visibility,comparison_role:e.comparison_role})),scoring:'Selected comparison evidence only; separate from unchanged primary OCR score and not whole-document accuracy'};});
+}
 async function bytesFor(source:Source){
   assert.match(source.id,/^[a-z0-9-]+$/);assert.equal(source.passive_scan.result,'PASS');
   const path=join(folder,source.id+'.'+source.format);let bytes:Buffer|undefined;try{bytes=await readFile(path);}catch{/* explicit download below */}
@@ -58,7 +62,7 @@ for(const source of manifest.sources){
     const numbers=Array.from({length:source.pages!},(_,i)=>i+1),native=await captureNativePages(bytes,numbers,numbers,{sourceFile:path,cacheRoot:cache,reuseRasterOcr:false});assert.equal(native.size,numbers.length,'Every source page must return a native observation');assert.ok([...native.values()].every(n=>n.ocr_performed&&n.lines.length),'No silent failed/empty native OCR');
     const pages=await extractPdf(bytes,'sha256:'+source.sha256,{ocr:'all',sourceFile:path,cacheRoot:cache,reuseRasterOcr:false});assert.equal(pages.length,source.pages);
     await writeFile(join(out,'native.json'),JSON.stringify([...native],null,2));await writeFile(join(out,'pages.json'),JSON.stringify(pages,null,2));await runTool(visionExecutable()!,[],{input:JSON.stringify({path,page:1,render_only:true,render_path:join(out,'page-1.png')})});
-    const first=native.get(1)!;results.push({id:source.id,source_sha256:source.sha256,pages:pages.length,ocr_lines:pages.map(p=>native.get(p.page)!.lines.length),native_tables:pages.map(p=>native.get(p.page)!.tables?.length??0),raster_grid_tables:pages.map(p=>native.get(p.page)!.grid_tables?.length??0),uncertain_ocr_lines:pages.map(p=>p.elements.filter(e=>e.method==='vision_ocr'&&e.visibility!=='visible').length),regions:regionResult(first,truth.regions[source.id]??[]),seconds:(Date.now()-start)/1000});
+    const first=native.get(1)!;results.push({id:source.id,source_sha256:source.sha256,pages:pages.length,ocr_lines:pages.map(p=>native.get(p.page)!.lines.length),native_tables:pages.map(p=>native.get(p.page)!.tables?.length??0),raster_grid_tables:pages.map(p=>native.get(p.page)!.grid_tables?.length??0),uncertain_ocr_lines:pages.map(p=>p.elements.filter(e=>e.method==='vision_ocr'&&e.visibility!=='visible').length),regions:regionResult(first,truth.regions[source.id]??[]),selected_comparison_regions:selectedRegionResult(pages[0],truth.regions[source.id]??[]),seconds:(Date.now()-start)/1000});
     if(source.id==='azure-layout'){const grids=first.grid_tables??[];assert.ok(grids.some(t=>t.cells.length===9&&t.cells.some(c=>c.row===2&&c.column===1&&c.text==='Microsoft')&&t.cells.filter(c=>!c.text.trim()).length===2),'Downloaded Microsoft3x3 table and two unobserved values must retain structure');}
     if(truth.regions[source.id]){
       const image=await loadImage(join(out,'page-1.png')),page=pages[0];

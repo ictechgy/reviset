@@ -88,7 +88,7 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
       page.ocr_text=good;page.ocr_unresolved_text=uncertain;
       if(rasterComparison)page.comparison_basis='raster_ocr';
       page.coverage_gaps.push({feature:'ocr',reason:'ocr_inferred_text_requires_source_review'});
-      if(uncertain)page.coverage_gaps.push({feature:'ocr',reason:'low_confidence_or_ambiguous_ocr_text_comparison_withheld'});
+      if(uncertain)page.coverage_gaps.push({feature:'ocr',reason:'low_confidence_or_ambiguous_ocr_observation_retained'});
     }
     if(original.length&&lines.length)page.coverage_gaps.push({feature:'ocr_verification',reason:'raster_ocr_does_not_override_raw_visibility_or_prove_absence'});
     if(scanned&&original.some(e=>e.visibility==='hidden_render_mode'))page.coverage_gaps.push({feature:'ocr',reason:'prior_invisible_ocr_layer_preserved_separately'});

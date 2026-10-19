@@ -1,7 +1,18 @@
 import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } from './pdf-geometry.js';
 import { OPS, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, type Box } from '../schema/index.js';
-export interface PaintedGlyph {text:string;bbox:Box;order:number;hidden:boolean;reliable:boolean;run:number;color:string}
+export interface PaintedGlyph {text:string;bbox:Box;order:number;hidden:boolean;reliable:boolean;run:number;color:string;clip_ink?:Box}
+const inkBounds=new WeakMap<object,Map<string,number[]|null>>();
+function outlineBounds(font:any,objects:any,glyph:any):number[]|undefined{
+  if(font.missingFile||font.isType3Font||font.remeasure||font.isInvalidPDFjsFont||glyph.isInFont!==true||glyph.accent||typeof glyph.fontChar!=='string'||typeof font.getPathGenerator!=='function')return;
+  let cache=inkBounds.get(font);if(!cache){cache=new Map();inkBounds.set(font,cache);}
+  const known=cache.get(glyph.fontChar);if(known!==undefined)return known??undefined;
+  if(cache.size>=4096)return;
+  try{const path=font.getPathGenerator(objects,glyph.fontChar),b=path.computeTightBounds?.();
+    if(Array.isArray(b)&&b.length===4&&b.every(Number.isFinite)&&b[2]>b[0]&&b[3]>b[1]){cache.set(glyph.fontChar,b);return b;}
+  }catch{/* Missing/unsupported paths preserve uncertainty; never use an empty path as proof. */}
+  cache.set(glyph.fontChar,null);
+}
 export const supportedGraphicsStateKey=(key:string)=>['LW','LC','LJ','ML','D','RI','FL','ca','CA','BM','SMask'].includes(key);
 export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Record<string,any>={}):PaintedGlyph[]{
   let s={ctm:[1,0,0,1,0,0],tm:[1,0,0,1,0,0],lm:[1,0,0,1,0,0],x:0,size:12,font:'',char:0,word:0,hscale:1,rise:0,leading:0,mode:0,textClipPending:false,alpha:1,strokeAlpha:1,color:'#000000',clip:null as Clip,pendingClip:false,mask:false,blend:'Normal',unsupportedState:false};
@@ -57,7 +68,21 @@ export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Rec
       const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
       const bbox=box(Math.min(...xs)/viewport.width,Math.min(...ys)/viewport.height,(Math.max(...xs)-Math.min(...xs))/viewport.width,(Math.max(...ys)-Math.min(...ys))/viewport.height);
       const hidden=s.mode===3||s.mode===7||([0,4].includes(s.mode)&&s.alpha===0)||([2,6].includes(s.mode)&&s.alpha===0&&s.strokeAlpha===0);
-      glyphs.push({text:glyph.unicode,bbox,order,run:order,hidden,color:s.color,reliable:(s.alpha>=0.999||hidden)&&s.color!=='unknown'&&!!font&&!font.isType3Font&&(s.mode===0||s.mode===3)&&metricsKnown&&standardMatrix&&Number.isFinite(ascent)&&Number.isFinite(descent)&&!font.vertical&&insideClip(s.clip,bbox)&&!s.pendingClip&&!s.mask&&!s.unsupportedState&&s.blend==='Normal'&&!optional});
+      let clipOK=insideClip(s.clip,bbox),clipInk:Box|undefined;
+      // Metric ascenders/descenders are not painted ink. A known rectangular
+      // clip may cut that empty margin while preserving the complete outline.
+      // Use the loaded PDF.js glyph path, never a larger clip or a percent epsilon.
+      if(!clipOK&&Array.isArray(s.clip)&&metricsKnown&&standardMatrix&&font&&!font.vertical&&s.mode===0&&s.size>0&&s.hscale>0){
+        const ink=outlineBounds(font,page.commonObjs,glyph);
+        if(ink){const corners=[[ink[0],ink[1]],[ink[2],ink[1]],[ink[0],ink[3]],[ink[2],ink[3]]].map(([x,y])=>{const p=[base+x*s.size*s.hscale,s.rise+y*s.size];Util.applyTransform(p,m);return p;});
+          const xx=corners.map(p=>p[0]/viewport.width),yy=corners.map(p=>p[1]/viewport.height);
+          if(xx.concat(yy).every(n=>Number.isFinite(n)&&n>=0&&n<=1)){
+            const candidate=box(Math.min(...xx),Math.min(...yy),Math.max(...xx)-Math.min(...xx),Math.max(...yy)-Math.min(...yy));
+            if(insideClip(s.clip,candidate)){clipOK=true;clipInk=candidate;}
+          }
+        }
+      }
+      glyphs.push({text:glyph.unicode,bbox,order,run:order,hidden,color:s.color,...(clipInk?{clip_ink:clipInk}:{}),reliable:(s.alpha>=0.999||hidden)&&s.color!=='unknown'&&!!font&&!font.isType3Font&&(s.mode===0||s.mode===3)&&metricsKnown&&standardMatrix&&Number.isFinite(ascent)&&Number.isFinite(descent)&&!font.vertical&&clipOK&&!s.pendingClip&&!s.mask&&!s.unsupportedState&&s.blend==='Normal'&&!optional});
       s.x+=advance+s.char+(glyph.isSpace?s.word:0);
     }
   }

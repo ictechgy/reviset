@@ -63,15 +63,23 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     const sourcePdfAppearance=formatA==='pdf'&&formatB==='pdf';
     if(textDiffers&&!sameRaster&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){
       const left=regionElements(a),right=regionElements(b),leftText=new Set(left.map(e=>normalize(e.text))),rightText=new Set(right.map(e=>normalize(e.text))),pattern=(s:string)=>normalize(s).replace(/[+−-]?\s*[0-9]+(?:[.,][0-9]+)*/g,'#');
-      const supported=(e:ElementData)=>e.comparison_role!=='unresolved'&&(e.visibility===undefined||e.visibility==='visible')&&e.bbox[2]*e.bbox[3]<0.8;
+      const observedStrike=(e:ElementData)=>e.provenance==='observed'&&e.visibility==='struck_through'&&(e.visibility_spans??[]).every(s=>s.state==='struck_through'&&s.assessment==='observed');
+      const supported=(e:ElementData)=>e.comparison_role!=='unresolved'&&(e.visibility===undefined||e.visibility==='visible'||observedStrike(e))&&e.bbox[2]*e.bbox[3]<0.8;
       // Pair geometry before looking at values, including unchanged and uncertain observations.
       // Repeated/overlapping rows and an unreadable counterpart cannot become a replacement.
       for(const old of left){
         if(!supported(old))continue;
-        const neighbors=right.filter(e=>regionOverlap(old,e)>0.6);if(neighbors.length!==1)continue;
-        const current=neighbors[0];if(!supported(current)||left.filter(e=>regionOverlap(e,current)>0.6).length!==1)continue;
-        if(right.some(e=>!supported(e)&&regionOverlap(old,e)>0.05)||left.some(e=>!supported(e)&&regionOverlap(e,current)>0.05))continue;
-        if(rightText.has(normalize(old.text))||leftText.has(normalize(current.text))||normalize(old.text)===normalize(current.text))continue;
+        // A readable source pair has priority over overlapping OCR hypotheses,
+        // including a withheld whole OCR line crossing raster-only content.
+        // Unresolved SOURCE regions still veto the pair. Inferred/cross-producer
+        // pairing retains the stricter all-observation ambiguity checks.
+        const sourcePair=old.provenance==='observed'&&right.some(e=>e.provenance==='observed'&&supported(e)&&regionOverlap(old,e)>.6);
+        const pairingLeft=sourcePair?left.filter(e=>e.provenance==='observed'):left,pairingRight=sourcePair?right.filter(e=>e.provenance==='observed'):right;
+        const neighbors=pairingRight.filter(e=>regionOverlap(old,e)>0.6);if(neighbors.length!==1)continue;
+        const current=neighbors[0];if(!supported(current)||pairingLeft.filter(e=>regionOverlap(e,current)>0.6).length!==1)continue;
+        if(pairingRight.some(e=>!supported(e)&&regionOverlap(old,e)>0.05)||pairingLeft.some(e=>!supported(e)&&regionOverlap(e,current)>0.05))continue;
+        const oldElsewhere=sourcePair?pairingRight.some(e=>normalize(e.text)===normalize(old.text)):rightText.has(normalize(old.text)),currentElsewhere=sourcePair?pairingLeft.some(e=>normalize(e.text)===normalize(current.text)):leftText.has(normalize(current.text));
+        if(oldElsewhere||currentElsewhere||normalize(old.text)===normalize(current.text))continue;
         if((old.provenance==='inferred'||current.provenance==='inferred')&&(pattern(old.text)!==pattern(current.text)||(old.text.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length!==1||(current.text.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length!==1))continue;
         add('text_modified',a,b,m,'other_page_regions_unresolved');const change=changes.at(-1)!;change.before=old.text;change.after=current.text;change.text_scope='region';change.region_pairing_assessment='inferred';change.text_assessment=old.provenance==='inferred'||current.provenance==='inferred'?'inferred':'observed';
         change.evidence=[evidence(from,a,false,old),evidence(to,b,false,current)];

@@ -13,6 +13,25 @@ function envelope(e:ElementData):Box{
 }
 function intersection(a:Box,b:Box){return Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));}
 function contains(a:Box,b:Box,dx:number,dy:number){return b[0]>=a[0]-dx&&b[1]>=a[1]-dy&&b[0]+b[2]<=a[0]+a[2]+dx&&b[1]+b[3]<=a[1]+a[3]+dy;}
+function coveredByUnion(regions:Box[],target:Box,dx:number,dy:number):boolean{
+  if(regions.length>256)return false;
+  // Tolerate only the OCR line's outer edge error. Expanding each source box
+  // would silently bridge small INTERNAL gaps, including raster punctuation.
+  target=[target[0]+dx,target[1]+dy,target[2]-2*dx,target[3]-2*dy];
+  if(target[2]<=0||target[3]<=0)return false;
+  const clipped=regions.map(b=>[Math.max(target[0],b[0]),Math.max(target[1],b[1]),Math.min(target[0]+target[2],b[0]+b[2]),Math.min(target[1]+target[3],b[1]+b[3])])
+    .filter(([x,y,right,bottom])=>right>x&&bottom>y);
+  const edges=[...new Set([target[0],target[0]+target[2],...clipped.flatMap(b=>[b[0],b[2]])])].sort((a,b)=>a-b);
+  // Every nonempty vertical slab must have complete vertical union coverage.
+  // A bounding envelope alone cannot establish coverage between source runs.
+  for(let i=1;i<edges.length;i++){
+    if(edges[i]<=edges[i-1])continue;
+    const x=(edges[i]+edges[i-1])/2,intervals=clipped.filter(b=>b[0]<=x&&x<=b[2]).sort((a,b)=>a[1]-b[1]);let end=target[1];
+    for(const b of intervals){if(b[1]>end+1e-12)return false;end=Math.max(end,b[3]);}
+    if(end<target[1]+target[3]-1e-12)return false;
+  }
+  return true;
+}
 function corroboratesCompleteText(raw:ElementData,ocr:ElementData,a:Box):boolean{
   // Font-metric boxes include ascender/side-bearing space absent from raster
   // ink. Only an exact full-string reading can bridge that metric difference;
@@ -36,11 +55,10 @@ export function selectHybridComparison(page:PageData):void{
     // inferred, mixed or covered strikes still block the entire OCR line.
     if(raw.some(r=>sourceAppearanceBlocks(r,e.bbox)&&!(r.visibility==='struck_through'&&readable(r)))){e.comparison_reason='source_appearance_blocks_ocr';continue;}
     if(clear.length){
-      const b=clear.map(r=>boxes.get(r)!),x=Math.min(...b.map(r=>r[0])),y=Math.min(...b.map(r=>r[1])),extent:Box=[x,y,Math.max(...b.map(r=>r[0]+r[2]))-x,Math.max(...b.map(r=>r[1]+r[3]))-y];
-      if(!unknown.length&&contains(extent,e.bbox,dx,dy)){
+      if(!unknown.length&&coveredByUnion(clear.map(r=>boxes.get(r)!),e.bbox,dx,dy)){
         e.comparison_role='shadowed';e.comparison_reason='readable_source_priority';
         if(normalize(clear.map(r=>r.text).join(' '))!==normalize(e.text))page.coverage_gaps.push({feature:'ocr_verification',reason:'raw_ocr_region_disagreement_source_priority'});
-      }else{e.comparison_reason='ocr_crosses_mixed_or_uncovered_source_regions';page.coverage_gaps.push({feature:'ocr',reason:e.comparison_reason});}
+      }else{e.comparison_reason=clear.length>256?'readable_source_coverage_union_budget_exceeded':'ocr_crosses_mixed_or_uncovered_source_regions';page.coverage_gaps.push({feature:'ocr',reason:e.comparison_reason});}
       continue;
     }
     if(e.visibility==='visible'&&e.availability==='available'){

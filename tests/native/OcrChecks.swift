@@ -143,9 +143,9 @@ import AppKit
             hp.initialize(repeating:255,count:900*4096)
             for y in (vertical ? [400,800,1200,1600]:[400,800,1600]){for x in 20...880{hp[y*900+x]=0}}
             for x in (vertical ? [20,580,880]:[20,300,580,880]){for y in 400...1600{hp[y*900+x]=0}}
-            //13 pixels is the maximum accepted rule thickness at4096px.
-            if vertical{for x in 294...306{for y in 400...800{hp[y*900+x]=gray}}}
-            else{for y in 1194...1206{for x in 300...880{hp[y*900+x]=gray}}}
+            //14 rows is the inclusive maximum accepted rule thickness at4096px.
+            if vertical{for x in 294...307{for y in 400...800{hp[y*900+x]=gray}}}
+            else{for y in 1194...1207{for x in 300...880{hp[y*900+x]=gray}}}
             // Keep the accepted solid rulings continuous at intersections.
             for y in (vertical ? [400,800,1200,1600]:[400,800,1600]){for x in 20...880{hp[y*900+x]=0}}
             for x in (vertical ? [20,580,880]:[20,300,580,880]){for y in 400...1600{hp[y*900+x]=0}}

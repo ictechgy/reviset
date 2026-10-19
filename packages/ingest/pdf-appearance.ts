@@ -115,11 +115,13 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     if(!selected.every(g=>g.reliable)||selected.some(g=>overlap(g.bbox,e.bbox)<=0)){e.visibility_evidence.push({method:'glyph_geometry_or_paint_state_unresolved',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
     for(const g of selected){
       let state=g.hidden?'hidden_render_mode':'visible',assessment:'observed'|'inferred'=g.hidden?'observed':'inferred';
-      const backgrounds=regions.filter(r=>r.kind==='fill'&&r.opaque&&r.axisAligned&&r.order<g.order&&area(g.bbox)>0&&overlap(g.bbox,r.bbox)/area(g.bbox)>=0.95);
+      if(g.clip_ink)e.visibility_evidence.push({method:'loaded_glyph_outline_inside_rect_clip',bbox:g.clip_ink,assessment:'inferred',coverage:1});
+      const footprint=g.clip_ink??g.bbox;
+      const backgrounds=regions.filter(r=>r.kind==='fill'&&r.opaque&&r.axisAligned&&r.order<g.order&&area(footprint)>0&&overlap(footprint,r.bbox)/area(footprint)>=0.95);
       const background=backgrounds.at(-1)?.color??'#ffffff';
       if(g.color!=='unknown'&&background!=='unknown'&&g.color===background){state='uncertain';e.visibility_evidence.push({method:'text_color_matches_background',bbox:g.bbox,assessment:'inferred',coverage:1});}
       for(const r of regions){
-        const coverage=area(g.bbox)>0?overlap(g.bbox,r.bbox)/area(g.bbox):0;
+        const coverage=area(footprint)>0?overlap(footprint,r.bbox)/area(footprint):0;
         // A decimal point can occupy less than 5% of its font-metric box.
         // Any positive overlap is uncertain unless a stronger assessment applies.
         if(r.kind==='fill'&&r.order>g.order&&coverage>0){

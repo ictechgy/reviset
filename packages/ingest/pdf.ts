@@ -9,7 +9,9 @@ const pdfRoot=dirname(require.resolve('pdfjs-dist/package.json'));
 export const pdfOptions = {isEvalSupported:false,useSystemFonts:false,standardFontDataUrl:join(pdfRoot,'standard_fonts/'),
   cMapUrl:join(pdfRoot,'cmaps/'),cMapPacked:true,wasmUrl:join(pdfRoot,'wasm/'),verbosity:0};
 export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOptions&{ocr?:'off'|'auto'|'all'}={}):Promise<PageData[]> {
-  const task=getDocument({...pdfOptions,data:new Uint8Array(bytes)});
+  // Load outline paths for precise rectangular-clip checks. Source text and
+  // metric boxes remain unchanged; unsupported/missing paths stay unverified.
+  const task=getDocument({...pdfOptions,disableFontFace:true,data:new Uint8Array(bytes)});
   try {
     const document=await task.promise;
     if(document.numPages>1000) throw new DocverError('PAGE_LIMIT','PDF exceeds 1000 pages');
