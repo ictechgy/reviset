@@ -4,12 +4,43 @@ import { posix } from 'node:path';
 import { MAX_PPTX_EXPANDED_BYTES,MAX_PPTX_PART_BYTES,box, byteHash, DocverError, id, normalize, type ElementData, type PageData } from '../schema/index.js';
 
 const MAX_UNCOMPRESSED=MAX_PPTX_EXPANDED_BYTES;
-const parser=new XMLParser({ignoreAttributes:false, removeNSPrefix:false, transformTagName:(name:string)=>name.split(':').at(-1)!, textNodeName:'#text',
-  trimValues:false, parseTagValue:false, parseAttributeValue:false, processEntities:false});
+const MAX_XML_DEPTH=100;
+const parserOptions={ignoreAttributes:false, removeNSPrefix:false, transformTagName:(name:string)=>name.split(':').at(-1)!, textNodeName:'#text',
+  trimValues:false, parseTagValue:false, parseAttributeValue:false, processEntities:false,maxNestedTags:MAX_XML_DEPTH};
+const parser=new XMLParser(parserOptions),orderedParser=new XMLParser({...parserOptions,preserveOrder:true,cdataPropName:'#cdata'});
+export const PPTX_TEXT_POLICY='drawingml-ordered-paragraphs-v2';
 const arr=(v:any):any[] => v == null ? [] : Array.isArray(v) ? v : [v];
-function texts(node:any):string[] {
-  if (!node || typeof node!=='object') return [];
-  return Object.entries(node).flatMap(([key,v])=> key==='t' ? arr(v).map(t=>typeof t==='object'?String(t['#text']??''):String(t)) : texts(v));
+function checkXmlMarkup(source:string){
+  let cursor=0,depth=0;
+  while(cursor<source.length){
+    const open=source.indexOf('<',cursor);if(open<0)break;
+    let delimiter:string|undefined,contentStart=open;
+    if(source.startsWith('<!--',open)){delimiter='-->';contentStart=open+4;}
+    else if(source.startsWith('<![CDATA[',open)){delimiter=']]>';contentStart=open+9;}
+    else if(source.startsWith('<?',open)){delimiter='?>';contentStart=open+2;}
+    if(delimiter){const end=source.indexOf(delimiter,contentStart);if(end<0)throw new DocverError('INVALID_XML','Unterminated XML data');cursor=end+delimiter.length;continue;}
+    if(source.startsWith('<!',open)){
+      const declaration=source.slice(open,open+9).toUpperCase();
+      if(declaration.startsWith('<!DOCTYPE')||declaration.startsWith('<!ENTITY'))throw new DocverError('XML_DTD','DTD/entity declarations are unsupported');
+      throw new DocverError('INVALID_XML','Unsupported XML declaration');
+    }
+    let end=open+1,quote='';
+    for(;end<source.length;end++){
+      const char=source[end];
+      // XMLValidator accepts raw '<' in quoted attributes; XML1.0 does not.
+      // Never rescan that value as a comment, PI, CDATA or another tag.
+      if(char==='<')throw new DocverError('INVALID_XML','Invalid XML attribute or tag');
+      if(quote){if(char===quote)quote='';}
+      else if(char==='"'||char==="'")quote=char;
+      else if(char==='>')break;
+    }
+    if(end===source.length||quote)throw new DocverError('INVALID_XML','Unterminated XML tag');
+    if(source[open+1]==='/')depth--;else if(source[end-1]!=='/')depth++;
+    if(depth<0)throw new DocverError('INVALID_XML','Unbalanced XML tags');
+    if(depth>MAX_XML_DEPTH)throw new DocverError('XML_DEPTH','XML nesting exceeds limit');
+    cursor=end+1;
+  }
+  if(depth!==0)throw new DocverError('INVALID_XML','Unbalanced XML tags');
 }
 // Decode predefined entities only, after parsing. DTDs and custom entities are rejected.
 function decoded(text:string):string {
@@ -19,6 +50,41 @@ function decoded(text:string):string {
   });
 }
 export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
+  const paragraphs=new WeakMap<object,string[]>();
+  const shapes=new WeakMap<object,[string,any][]>();
+  const inlineText=(ordered:any[],depth=0):string[]=>{
+    if(depth>MAX_XML_DEPTH)throw new DocverError('XML_DEPTH','XML nesting exceeds limit');
+    return ordered.flatMap(part=>Object.entries(part).flatMap(([tag,children])=>{
+    if(tag==='t')return arr(children).flatMap(child=>typeof child?.['#text']==='string'?[decoded(child['#text'])]:
+      arr(child?.['#cdata']).flatMap(value=>typeof value?.['#text']==='string'?[value['#text']]:[]));
+    if(tag==='br')return ['\n'];
+    return Array.isArray(children)?inlineText(children,depth+1):[];
+  }));};
+  // The normal object tree groups repeated tag names, losing r/fld/r order.
+  // Correlate by occurrence within each parent, and retain only paragraph text.
+  const bindParagraphs=(plain:any,ordered:any[],depth=0)=>{
+    if(depth>MAX_XML_DEPTH)throw new DocverError('XML_DEPTH','XML nesting exceeds limit');
+    const positions=new Map<string,number>();
+    const drawingChildren:[string,any][]=[];
+    for(const part of ordered)for(const [tag,children]of Object.entries(part)){
+      if(!Array.isArray(children))continue;
+      const index=positions.get(tag)??0;positions.set(tag,index+1);
+      const child=arr(plain?.[tag])[index];
+      if(['sp','pic','graphicFrame','cxnSp','grpSp'].includes(tag)){
+        if(child===undefined)throw new DocverError('PPTX_TEXT_ORDER','DrawingML shape order is unavailable');
+        drawingChildren.push([tag,child]);
+      }
+      if(!child||typeof child!=='object')continue;
+      if(tag==='p')paragraphs.set(child,inlineText(children));else bindParagraphs(child,children,depth+1);
+    }
+    if(drawingChildren.length)shapes.set(plain,drawingChildren);
+  };
+  const bodyText=(body:any)=>arr(body?.p).map(p=>{
+    if(!p||typeof p!=='object')return '';
+    const runs=paragraphs.get(p);
+    if(!runs)throw new DocverError('PPTX_TEXT_ORDER','DrawingML paragraph order is unavailable');
+    return runs.join('');
+  }).join('\n');
   let total=0;
   let zip:Record<string,Uint8Array>;
   try { zip=unzipSync(bytes,{filter:entry=> {
@@ -30,14 +96,14 @@ export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
   function xml(path:string):any {
     if (!zip[path]) throw new DocverError('MISSING_PART',`Missing OOXML part: ${path}`);
     const source=new TextDecoder().decode(zip[path]);
-    if (/<!DOCTYPE|<!ENTITY/i.test(source)) throw new DocverError('XML_DTD','DTD/entity declarations are unsupported');
-    let depth=0;
-    for(const tag of source.matchAll(/<\/?[A-Za-z_][^>]*>/g)) {
-      if(tag[0].startsWith('</')) depth--; else if(!tag[0].endsWith('/>')) depth++;
-      if(depth>100) throw new DocverError('XML_DEPTH','XML nesting exceeds limit');
-    }
+    checkXmlMarkup(source);
     if(XMLValidator.validate(source)!==true) throw new DocverError('INVALID_XML','Malformed OOXML');
-    return parser.parse(source);
+    try{const parsed=parser.parse(source);bindParagraphs(parsed,orderedParser.parse(source));return parsed;}
+    catch(error){
+      if(error instanceof DocverError)throw error;
+      if(error instanceof Error&&error.message==='Maximum nested tags exceeded')throw new DocverError('XML_DEPTH','XML nesting exceeds limit');
+      throw new DocverError('INVALID_XML','OOXML parsing failed');
+    }
   }
   function rels(part:string):any[] {
     const p=posix.join(posix.dirname(part),'_rels',posix.basename(part)+'.rels');
@@ -65,7 +131,7 @@ export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
     const gaps:PageData['coverage_gaps']=[];
     function walk(tree:any, grouped=false) {
       if(!tree) return;
-      for(const [kind,nodes] of Object.entries(tree)) {
+      for(const [kind,nodes] of shapes.get(tree)??Object.entries(tree)) {
         if(kind==='grpSp') { gaps.push({feature:'group_geometry',reason:'unsupported_group_transform'}); for(const n of arr(nodes)) walk(n,true); }
         if(!['sp','pic','graphicFrame','cxnSp'].includes(kind)) continue;
         for(const node of arr(nodes)) {
@@ -84,7 +150,7 @@ export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
               let xx=0;
               const cells=arr(row.tc),compactRow=cells.length<columns.length;let column=0;
               for(const cell of cells){const ci=column;
-                const cellText=arr(cell.txBody?.p).map(p=>texts(p).map(decoded).join('')).join('\n'),cw=columns[ci]??0;
+                const cellText=bodyText(cell.txBody),cw=columns[ci]??0;
                 const colSpan=Math.max(1,Number(cell['@_gridSpan']??1)),rowSpan=Math.max(1,Number(cell['@_rowSpan']??1));
                 const spanWidth=columns.slice(ci,ci+colSpan).reduce((a,b)=>a+b,0),spanHeight=rows.slice(ri,ri+rowSpan).reduce((a,r)=>a+Number(r['@_h']),0);
                 const cellBox=totalW>0&&totalH>0?box(bbox[0]+bbox[2]*xx/totalW,bbox[1]+bbox[3]*yy/totalH,bbox[2]*spanWidth/totalW,bbox[3]*spanHeight/totalH):bbox;
@@ -96,7 +162,7 @@ export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
             }
             continue;
           }
-          const text=arr(shape.txBody?.p).map(p=>texts(p).map(decoded).join('')).join('\n');
+          const text=bodyText(shape.txBody);
           const element:ElementData={observation_id:id('obs',[assetId,path,elements.length]), kind:kind==='pic'?'image':text?'text':kind==='graphicFrame'?'unsupported':'shape',
             text, normalized_text:normalize(text),bbox,reading_order:elements.length,availability:kind==='graphicFrame'?'unsupported':'available',
             method:'ooxml_text',source_ref:path+'#'+String(shape.nvSpPr?.cNvPr?.['@_id']??elements.length),provenance:'observed'};
@@ -114,7 +180,7 @@ export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
     const noteRel=slideRels.find(r=>String(r['@_Type']).endsWith('/notesSlide'));
     // Notes placeholders for slide number/header/footer are not speaker notes.
     let notes='';
-    if(noteRel) { const note=xml(target(path,noteRel)); notes=arr(note.notes?.cSld?.spTree?.sp).filter(s=>s.nvSpPr?.nvPr?.ph?.['@_type']==='body').map(s=>texts(s.txBody).map(decoded).join('')).join('\n'); }
+    if(noteRel) { const note=xml(target(path,noteRel)); notes=arr(note.notes?.cSld?.spTree?.sp).filter(s=>s.nvSpPr?.nvPr?.ph?.['@_type']==='body').map(s=>bodyText(s.txBody)).join('\n'); }
     return { page_id:id('pg',[assetId,index]),asset_id:assetId,page:index+1,width,height,coordinate_system:'ooxml_emu_top_left',source_transform:[1/width,0,0,1/height,0,0],
       hidden:slide['@_show']==='0'||slide['@_show']==='false',text:elements.filter(e=>e.kind==='text'||e.kind==='table_cell').map(e=>e.text).join('\n'), elements, notes,
       capabilities:{text:'available',notes:'available',hidden_slides:'available',animation:'unsupported',structure:'available',preview:'unavailable'},

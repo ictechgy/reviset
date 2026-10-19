@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { MAX_INPUT_BYTES,Manifest, Report, SCHEMA_VERSION, SCHEMA_HASH, ENGINE_VERSION, id, byteHash, DocverError, validBundleDecisionLog, type InputManifest, type RevisionData, type ReportData } from '../schema/index.js';
 import { ingest, type Extracted } from '../ingest/index.js';
+import {PPTX_TEXT_POLICY} from '../ingest/pptx.js';
 import { matchPages, similarity } from '../matching/index.js';
 import {primaryPages,validateMappings} from '../matching/relations.js';
 import { diffRevisions } from '../diff/index.js';
@@ -28,7 +29,7 @@ export interface AnalyzeProgress {analysis_run_id:string;phase:'extract'|'render
 export async function analyze(input:InputManifest,baseDir:string,store:Store,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,options:{persist?:boolean;ocr?:'off'|'auto'|'all';pptxPreview?:boolean}={}):Promise<{report:ReportData,analysis_run_id:string}> {
   const manifest=Manifest.parse(input);
   const environment:Record<string,string>={node:process.version,platform:process.platform,arch:process.arch,engine:ENGINE_VERSION,
-    pdfjs:dependencyVersion('pdfjs-dist'),pdfjs_worker_sha256:await pdfWorkerEnvironment(),xml:dependencyVersion('fast-xml-parser'),fflate:dependencyVersion('fflate'),
+    pdfjs:dependencyVersion('pdfjs-dist'),pdfjs_worker_sha256:await pdfWorkerEnvironment(),xml:dependencyVersion('fast-xml-parser'),fflate:dependencyVersion('fflate'),pptx_text_policy:PPTX_TEXT_POLICY,
     renderer:options.pptxPreview===false?'disabled':manifest.revisions.some(r=>r.files.some(f=>/\.pptx$/i.test(f)))?await officeEnvironment()??'unavailable':'not_used',ocr:options.ocr==='off'?'disabled':await ocrEnvironment(),settings:`ocr:${options.ocr??'auto'};max-input-512MiB;max-pdf-pages-1000`};
   const run=store.beginRun(manifest.project_id,manifest.title);
   try {
@@ -108,7 +109,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
       revisions.push(revision);
     }
     const bundleDecisions=manifest.bundle_decisions??[];
-    if(!validBundleDecisionLog(revisions,bundleDecisions))throw new DocverError('BUNDLE_HISTORY','페이지 연결 이력의 원본·버전·대체된 기존 대응을 확인하세요.');
+    if(!validBundleDecisionLog(revisions,bundleDecisions))throw new DocverError('BUNDLE_HISTORY','페이지 연결 이력을 검증하지 못해 새 보고서를 저장하지 않았습니다. 문서 판독 결과와 이력을 확인하세요. 이전 보고서는 그대로 열 수 있습니다. 같은 원본을 새 프로젝트로 가져오면 연결을 다시 확인해야 합니다.');
     for(const [index,revision]of revisions.entries()){
       signal?.throwIfAborted();
       const pdf=revision.assets.find(a=>a.format==='pdf');

@@ -148,7 +148,7 @@ test('PPTX package order, XML entities, external references, and geometry bounds
   const ids=[...main.matchAll(/<p:sldId\s[^>]*\/>/g)].map(x=>x[0]);
   main=main.replace(ids.join(''),[...ids].reverse().join(''));parts['ppt/presentation.xml']=strToU8(main);
   const reversed=extractPptx(zipSync(parts),'sha256:test');assert.ok(reversed[0].text.includes('운영 위험'));
-  const slide=strFromU8(parts['ppt/slides/slide1.xml']);parts['ppt/slides/slide1.xml']=strToU8('<!DOCTYPE sld [<!ENTITY x SYSTEM "file:///etc/passwd">]>'+slide);
+  const slide=strFromU8(parts['ppt/slides/slide1.xml']);parts['ppt/slides/slide1.xml']=strToU8(slide.replace(/<p:sld\b/,'<!DOCTYPE p:sld [<!ENTITY x SYSTEM "file:///etc/passwd">]><p:sld'));
   assert.throws(()=>extractPptx(zipSync(parts),'sha256:test'),{code:'XML_DTD'});
   const external=unzipSync(raw);
   external['_rels/.rels']=strToU8(strFromU8(external['_rels/.rels']).replace(/Target="ppt\/presentation.xml"/, 'Target="https://invalid.example/forbidden.xml" TargetMode="External"'));
