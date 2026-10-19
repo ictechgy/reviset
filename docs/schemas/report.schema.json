@@ -444,6 +444,9 @@
                             "type": "string",
                             "const": "line"
                           },
+                          "strike_status": {
+                            "type": "string"
+                          },
                           "numeric_consensus": {
                             "type": "boolean"
                           },
@@ -527,6 +530,69 @@
                                 "type": "integer",
                                 "minimum": 0,
                                 "maximum": 240
+                              },
+                              "primary_empty_characters": {
+                                "maxItems": 128,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "offset": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 127
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 128
+                                    },
+                                    "bbox": {
+                                      "type": "array",
+                                      "prefixItems": [
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        },
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        }
+                                      ],
+                                      "items": false,
+                                      "minItems": 4,
+                                      "maxItems": 4
+                                    },
+                                    "ink_pixels": {
+                                      "type": "number",
+                                      "const": 0
+                                    },
+                                    "method": {
+                                      "type": "string",
+                                      "const": "uniform_white_pixels_with_1px_margin"
+                                    }
+                                  },
+                                  "required": [
+                                    "offset",
+                                    "text",
+                                    "bbox",
+                                    "ink_pixels",
+                                    "method"
+                                  ],
+                                  "additionalProperties": false
+                                }
                               },
                               "contexts": {
                                 "maxItems": 8,
@@ -845,6 +911,69 @@
                                     "type": "integer",
                                     "minimum": 0,
                                     "maximum": 240
+                                  },
+                                  "primary_empty_characters": {
+                                    "maxItems": 128,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "offset": {
+                                          "type": "integer",
+                                          "minimum": 0,
+                                          "maximum": 127
+                                        },
+                                        "text": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 128
+                                        },
+                                        "bbox": {
+                                          "type": "array",
+                                          "prefixItems": [
+                                            {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1
+                                            },
+                                            {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1
+                                            },
+                                            {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1
+                                            },
+                                            {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1
+                                            }
+                                          ],
+                                          "items": false,
+                                          "minItems": 4,
+                                          "maxItems": 4
+                                        },
+                                        "ink_pixels": {
+                                          "type": "number",
+                                          "const": 0
+                                        },
+                                        "method": {
+                                          "type": "string",
+                                          "const": "uniform_white_pixels_with_1px_margin"
+                                        }
+                                      },
+                                      "required": [
+                                        "offset",
+                                        "text",
+                                        "bbox",
+                                        "ink_pixels",
+                                        "method"
+                                      ],
+                                      "additionalProperties": false
+                                    }
                                   },
                                   "contexts": {
                                     "maxItems": 8,

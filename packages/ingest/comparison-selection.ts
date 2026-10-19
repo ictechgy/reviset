@@ -80,7 +80,7 @@ export function selectHybridComparison(page:PageData):void{
       const matches=ocr.filter(p=>matchesReconsiderationPrimary(e,p)),primary=matches.length===1?matches[0]:undefined;
       const accepted=primary?admitReconsideration(primary,e.ocr.reconsideration.observation,blocks):undefined;
       if(!geometryOK||roiClaims.get(e.ocr.reconsideration.primary_source_ref)!==1||!e.ocr.numeric_consensus||e.ocr.ambiguous||!accepted||accepted.text!==e.text||accepted.confidence!==e.ocr.confidence||!accepted.bbox.every((n,i)=>Math.abs(n-e.bbox[i])<1e-9)){
-        e.comparison_role='unresolved';e.comparison_reason='roi_evidence_or_primary_relationship_unverified';continue;
+        e.comparison_role='excluded';e.comparison_reason='roi_evidence_or_primary_relationship_unverified';continue;
       }
       verifiedRoi.set(e,primary!);
     }
@@ -118,7 +118,7 @@ export function selectHybridComparison(page:PageData):void{
     if([...verifiedRoi.values()].filter(p=>p===primary).length!==1)continue;
     if(['selected','shadowed'].includes(derived.comparison_role??'')){
       primary.comparison_role='shadowed';primary.comparison_reason='roi_context_primary_superseded';
-    }
+    }else{derived.comparison_role='excluded';derived.comparison_reason='roi_support_does_not_resolve_primary';}
   }
   // Roles persist per observation, so occurrence-ID stamping needs no new
   // cross-reference rewriting and paginated queries retain the exact selection.

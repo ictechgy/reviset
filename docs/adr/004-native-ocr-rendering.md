@@ -274,3 +274,50 @@ bounded queries summarize support and expose one context via
 get_element.ocr_context_index. Helper18 source/policy participates in cache
 identity. Pairwise embedded-ink padding is cached and earlier paint is skipped
 without changing its visibility contract.
+
+Engine30 was blocked despite135 passing regressions: its optional annex could
+invalidate a page/batch, its largest retained context could not be traversed
+through bounded MCP responses, and coarse word envelopes could not justify
+character deletion. Engine31 keeps invalid optional ROI metadata as an
+explicit gap while retaining the primary; each native page is decoded
+independently. Swift uses a conservative128 UTF-16-unit cap and clamps mapped
+boxes, marking clipped contexts. Rejected derived candidates are excluded
+from comparison, with the original primary participating exactly once;
+ingest and replay both veto neighboring raster strike evidence. Admitted
+candidates keep the primary bbox, and all OCR pages use the same hybrid
+selection/order path irrespective of whether a candidate was admitted.
+
+Engine31 permits at most one scalar edit, never a whole whitespace-token
+deletion. A deleted scalar additionally needs the original Vision candidate's
+exact character range/UTF-16 offset and a positive mapped rectangle expanded
+by one native pixel that is uniformly opaque white in EVERY8-bit color
+channel. A single nonwhite or nonopaque pixel, including faint ink or
+antialiasing, withholds that certificate. This is separate from Otsu core-ink
+envelope coverage; neither check alone is presented as character-shape proof.
+Actual W3C phantom-char rectangle contains344 white pixels and no nonwhite
+pixels; genuine native-rendered trailing Hangul/Korean-word controls never
+certify the Korean glyphs as empty. Missing bounds/unsupported layouts or
+budgets withhold deletion. Same-engine recognition/positioning can still be
+correlated; inferred readings never become observed original text.
+
+Context evidence is traversed by context index, reading index, four token
+boxes/page and32-unit text/alternative chunks, including the actual MCP
+transport's smaller payload allowance. Empty-character certificates have a
+separate indexed/chunked query. Canonical JSON/native pages/full export keep
+complete support. Core bands are capped at262144 pixels with about1MiB of
+row-prefix storage; token-union coverage replaces point-array x token scans.
+ROI has a shared12-second/page budget with best-effort VNRequest.cancel,
+weak timer capture and explicit budget statuses. Cancellation is not a hard
+real-time guarantee. The original30-second ruled-grid failure is retained;
+fix qualification includes timing and the actual native/full regression.
+
+The native30-second table failure recurred under parallel test-file execution;
+the same control passed in1.58s alone. A separate instrument-free native probe
+measured24.85s total (process24.74s, document structure0.11s),216.6MB maximum
+RSS, with the ROI contexts available. These observations support contention
+and cold framework cost as factors, without proving a single OS-level cause.
+Native integration test files now run sequentially. The outer helper budget is
+finite60s/page (with existing process-group cancellation), allowing cold
+primary recognition plus bounded ROI; this change does not assert faster OCR
+or a hard latency bound. Initial failures, isolated success and probe timings
+are all retained separately.

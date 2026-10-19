@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "tsx --test tests/integration/*.test.ts",
+    "test": "tsx --test --test-concurrency=1 tests/integration/*.test.ts",
     "fixtures": "tsx scripts/generate-fixtures.ts",
     "schemas": "tsx scripts/generate-schemas.ts",
     "cli": "tsx apps/cli/main.ts",

@@ -255,3 +255,29 @@ canonical SQLite report/native-page reopen and paged evidence/export controls
 pass. Current whole-suite regression is running. This is selected inferred
 evidence recovery, not corrected primary OCR or whole-document perfection.
 PPTX strict pixel fidelity remains an active failure to investigate next.
+
+Engine30 public12source/33page+20variant canonical validation passed with
+selected truth27/27 and unchanged primary24/27; independent code and Claude
+still blocked it for concrete annex/paging/selection-policy defects. Engine31
+repairs those contracts, tightens deletion to an actual opaque-white original
+character footprint and keeps both readings. Five pure/canonical/actual-MCP
+contract tests pass, including8readings x32tokens x3alternatives through the
+real transport and malformed-annex/neighbor-page isolation. Genuine native
+Pineapple한 / Pineapple 주스 / Pineapple한글 controls pass. Initial137-test
+regression retained a30-second ruled-grid timeout (136pass/1fail); shared
+ROI time budget/cancellation and bounded prefix/character work are being
+qualified before a new snapshot/review. Product completion stays active OPEN.
+A hash-verified official office2pdf0.9.1 CLI is in an ignored, sandboxed local
+prototype only; it has not been added as a product dependency or renderer.
+
+The30s ruled-grid failure repeated under parallel test files, while isolated
+actual test passed in1.58s; a separate native probe measured24.85s total and
+216.6MB RSS. Native test files are now sequential, outer process budget60s/page
+and existing cancellation retained; ROI remains12s/page best effort. This is
+failure containment/robustness, not a claim of improved throughput. Final
+137-case serial run is active; no source approval or completion yet.
+
+Engine31 final serial regression137/137 PASS,0fail/skip/cancel,105.253s.
+Runtime source stayed fixed for that run; only these evidence notes followed.
+Fresh frozen native positive/public corpus and independent full-base reviews
+remain required. Product work continues into actual PPTX renderer comparison.

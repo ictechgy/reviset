@@ -12,8 +12,9 @@ import {selectHybridComparison,sourceAppearanceBlocks} from './comparison-select
 
 const Candidate=z.object({text:z.string(),confidence:z.number().min(0).max(1)});
 const NativeTable=z.object({cells:z.array(z.object({row:z.number().int().nonnegative(),column:z.number().int().nonnegative(),row_span:z.number().int().positive(),column_span:z.number().int().positive(),text:z.string(),text_confident:z.boolean().optional(),bbox:Bbox})).max(20000)});
+const NativeLine=Candidate.extend({bbox:Bbox,strike_candidate:z.boolean(),strike_status:z.string().optional(),strike_bbox:Bbox,numeric_consensus:z.boolean(),numeric_status:z.string().optional(),numeric_readings:z.array(z.string()),numeric_observations:z.array(z.object({text:z.string(),bbox:Bbox,sources:z.array(z.string())})).optional(),tokens:z.array(z.object({text:z.string(),bbox:Bbox})),alternatives:z.array(Candidate).max(3),reconsideration:z.unknown().optional(),reconsideration_error:z.literal('invalid_metadata').optional()}).transform(line=>{const checked=line.reconsideration===undefined?undefined:OcrReconsideration.safeParse(line.reconsideration);return {...line,reconsideration:checked?.success?checked.data:undefined,reconsideration_error:checked&&!checked.success?'invalid_metadata' as const:line.reconsideration_error};});
 const Result=z.object({version:z.string(),revision:z.number(),languages:z.array(z.string()),language_correction:z.literal(false),ocr_performed:z.boolean(),renderer:z.string(),verification:z.string(),viewport_width:z.number().positive(),viewport_height:z.number().positive(),rotation:z.number(),width:z.number().int().positive().max(4096),height:z.number().int().positive().max(4096),render_sha256:z.string().regex(/^[a-f0-9]{64}$/),structure_status:z.string().optional(),structure_engine:z.string().optional(),tables:z.array(NativeTable).max(200).optional(),grid_tables:z.array(NativeTable).max(50).optional(),grid_status:GridStatus.optional(),grid_reasons:z.array(z.string()).max(20).optional(),bitmap_format:z.number().int().nonnegative().optional(),bitmap_bits_per_sample:z.number().int().positive().optional(),bitmap_bits_per_pixel:z.number().int().positive().optional(),
-  lines:z.array(Candidate.extend({bbox:Bbox,strike_candidate:z.boolean(),strike_status:z.string().optional(),strike_bbox:Bbox,numeric_consensus:z.boolean(),numeric_status:z.string().optional(),numeric_readings:z.array(z.string()),numeric_observations:z.array(z.object({text:z.string(),bbox:Bbox,sources:z.array(z.string())})).optional(),tokens:z.array(z.object({text:z.string(),bbox:Bbox})),alternatives:z.array(Candidate).max(3),reconsideration:OcrReconsideration.optional()})).max(20000)});
+  lines:z.array(NativeLine).max(20000)});
 export type NativePageResult=z.infer<typeof Result>;
 export type OcrOptions={cacheRoot?:string;signal?:AbortSignal;sourceFile?:string;sourceHash?:string;reuseRasterOcr?:boolean;nativeResult?:NativePageResult;onPage?:(current:number,total:number)=>void};
 export async function ocrEnvironment():Promise<string>{const info=await visionInfo();return info?hash(info):'unavailable';}
@@ -40,11 +41,14 @@ export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPage
       }catch{/* no verified recognition for these pixels */}}
     }
     const pending=missing.filter(n=>!results.has(n));
+    // Cold primary OCR plus bounded ROI can exceed30s (measured24.85s
+    // process/structure on the ruled-table control). Keep cancellation and a
+    // finite60s/page process budget; ROI has its own smaller native budget.
     for(let start=0;start<pending.length;start+=16){
-      options.signal?.throwIfAborted();const chunk=pending.slice(start,start+16);try{const response=z.object({pages:z.array(z.object({page:z.number().int().positive(),result:Result.optional(),error:z.string().optional()}).refine(row=>Boolean(row.result)!==Boolean(row.error))).max(16)}).parse(JSON.parse(await runTool(executable,[],{input:JSON.stringify({path:source,pages:chunk,ocr_pages:chunk.filter(n=>wanted.has(n))}),signal:options.signal,timeout:30_000*chunk.length,maxBytes:32*1024*1024})));
+      options.signal?.throwIfAborted();const chunk=pending.slice(start,start+16);try{const response=z.object({pages:z.array(z.object({page:z.number().int().positive(),result:z.unknown().optional(),error:z.string().optional()}).refine(row=>Boolean(row.result)!==Boolean(row.error))).max(16)}).parse(JSON.parse(await runTool(executable,[],{input:JSON.stringify({path:source,pages:chunk,ocr_pages:chunk.filter(n=>wanted.has(n))}),signal:options.signal,timeout:60_000*chunk.length,maxBytes:32*1024*1024})));
       if(response.pages.length!==chunk.length||new Set(response.pages.map(p=>p.page)).size!==chunk.length||response.pages.some(p=>!chunk.includes(p.page)))throw new DocverError('OCR_PROTOCOL','Native observation page set mismatch');
-      for(const row of response.pages){if(!row.result)continue;if(row.result.ocr_performed!==wanted.has(row.page))throw new DocverError('OCR_PROTOCOL','Native observation mode mismatch');results.set(row.page,row.result);await save(row.page,row.result);
-        if(cache&&row.result.ocr_performed){const key=hash([environment,row.result.render_sha256]),folder=join(cache,'raster');await mkdir(folder,{recursive:true});const staging=join(folder,key+'-'+randomUUID()+'.tmp');await writeFile(staging,JSON.stringify({key,sha256:hash(row.result),value:row.result}),{flag:'wx'});await rename(staging,join(folder,key+'.json'));}
+      for(const row of response.pages){if(!row.result)continue;const parsed=Result.safeParse(row.result);if(!parsed.success)continue;const result=parsed.data;if(result.ocr_performed!==wanted.has(row.page))continue;results.set(row.page,result);await save(row.page,result);
+        if(cache&&result.ocr_performed){const key=hash([environment,result.render_sha256]),folder=join(cache,'raster');await mkdir(folder,{recursive:true});const staging=join(folder,key+'-'+randomUUID()+'.tmp');await writeFile(staging,JSON.stringify({key,sha256:hash(result),value:result}),{flag:'wx'});await rename(staging,join(folder,key+'.json'));}
       }
       }catch(e){if(options.signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;}
       options.onPage?.(Math.min(start+16,pending.length),pending.length);
@@ -63,7 +67,7 @@ const compact=(s:string)=>normalize(s).replace(/\s/gu,'').toLowerCase();
 export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:OcrOptions={}):Promise<void>{
   const environment=await ocrEnvironment();
   try{
-    const result=options.nativeResult??await recognizePdf(bytes,page.page,options),original=page.elements.slice();
+    const result=options.nativeResult?Result.parse(options.nativeResult):await recognizePdf(bytes,page.page,options),original=page.elements.slice();
     const lines=result.lines.filter(l=>l.text.trim());
     const scanned=!original.some(e=>e.text.trim()&&e.visibility!=='hidden_render_mode'),rasterComparison=scanned||!!page.unresolved_text;
     const additions:ElementData[]=[],geometryOK=Math.abs((page.width/page.height)/(result.width/result.height)-1)<0.003;
@@ -77,12 +81,13 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
       const confident=geometryOK&&strikeEvaluated&&!appearanceBlocked&&line.confidence>=0.5&&!ambiguous&&line.numeric_consensus;
       additions.push({observation_id:id('obs',[page.asset_id,page.page,'ocr',environment,i]),kind:'text',text:line.text,normalized_text:normalize(line.text),bbox:box(...line.bbox),reading_order:original.length+additions.length,availability:'available',method:'vision_ocr',source_ref:`page:${page.page}/raster/ocr:${i}`,provenance:'inferred',visibility:line.strike_candidate?'struck_inferred':confident?'visible':'uncertain',
         ...(line.strike_candidate?{visibility_evidence:[{method:'raster_horizontal_strike_candidate',bbox:line.strike_bbox,assessment:'inferred' as const,coverage:Math.min(1,line.strike_bbox[2]/Math.max(0.000001,line.bbox[2]))}]}:{}),
-        ocr:{...(line.reconsideration?{reconsideration_observation:line.reconsideration}:{}),confidence:line.confidence,confidence_scope:'line',numeric_consensus:line.numeric_consensus,ambiguous,alternatives:line.alternatives.map(c=>({text:c.text,confidence:c.confidence,truncated:false}))}});
+        ocr:{...(line.reconsideration?{reconsideration_observation:line.reconsideration}:{}),confidence:line.confidence,confidence_scope:'line',strike_status:line.strike_status,numeric_consensus:line.numeric_consensus,ambiguous,alternatives:line.alternatives.map(c=>({text:c.text,confidence:c.confidence,truncated:false}))}});
     }
     const primaryAdditions=additions.slice();
+    const appearanceInputs=[...original,...primaryAdditions];
     for(const [i,primary]of primaryAdditions.entries()){
-      const observation=primary.ocr?.reconsideration_observation;if(!observation||!geometryOK)continue;
-      const accepted=admitReconsideration(primary,observation,b=>original.some(e=>sourceAppearanceBlocks(e,b))||annotationBlocksRegion(original,b));
+      const observation=primary.ocr?.reconsideration_observation;if(!observation||!geometryOK||lines[i].strike_status!=='not_detected'||lines[i].strike_candidate)continue;
+      const accepted=admitReconsideration(primary,observation,b=>appearanceInputs.some(e=>sourceAppearanceBlocks(e,b))||annotationBlocksRegion(appearanceInputs,b));
       if(!accepted)continue;
       additions.push({observation_id:id('obs',[page.asset_id,page.page,'roi',environment,i]),kind:'text',text:accepted.text,normalized_text:normalize(accepted.text),bbox:accepted.bbox,reading_order:original.length+additions.length,availability:'available',method:'vision_ocr',source_ref:`page:${page.page}/raster/roi:${i}`,provenance:'inferred',visibility:'visible',
         ocr:{confidence:accepted.confidence,confidence_scope:'line',numeric_consensus:true,ambiguous:false,alternatives:accepted.alternatives,reconsideration:{method:'vision_multicontext_roi',primary_source_ref:primary.source_ref,primary_text:primary.text,primary_confidence:primary.ocr!.confidence,primary_bbox:primary.bbox,observation}}});
@@ -117,8 +122,9 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
     page.coverage_gaps=page.coverage_gaps.filter(g=>g.reason!=='no_text_layer_ocr_not_run');
     for(const status of new Set(lines.map(l=>l.strike_status).filter(s=>s&&!['detected','not_detected'].includes(s))))page.coverage_gaps.push({feature:'strike_ocr',reason:'raster_strike_'+status});
     if(lines.some(l=>l.numeric_status==='unsupported_notation'))page.coverage_gaps.push({feature:'ocr_numeric',reason:'unsupported_numeric_notation_requires_source_review'});
+    if(lines.some(l=>l.reconsideration_error))page.coverage_gaps.push({feature:'ocr_reconsideration',reason:'invalid_optional_roi_metadata_ignored_primary_retained'});
     if(!lines.length)page.coverage_gaps.push({feature:'ocr',reason:'ocr_no_text_detected_not_proof_of_blank_page'});
-    if(additions.some(e=>e.ocr?.reconsideration)||additions.length&&original.some(e=>e.provenance==='observed'&&e.text.trim()&&e.visibility!=='hidden_render_mode')){
+    if(additions.length){
       selectHybridComparison(page);
       if(!rasterComparison&&additions.every(e=>e.comparison_role==='shadowed'))page.ocr.mode='verification';
     }

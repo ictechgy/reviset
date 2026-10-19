@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-18-bounded-roi-observations"
+    static let version = "docver-vision-19-bounded-character-ink-roi"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -198,7 +198,7 @@ struct DocverVision {
                     "numeric_observations":recognized.map{["text":$0.text,"bbox":[$0.rect.minX,$0.rect.minY,$0.rect.width,$0.rect.height],"sources":$0.sources]},
                     "tokens":tokens,"alternatives":candidates.map { ["text":$0.string,"confidence":Double($0.confidence)] }]
         })
-        let lines=reconsideredLines(cg,bitmap,primaryLines)
+        let lines=reconsideredLines(cg,bitmap,primaryLines,r.results ?? [])
         let grid=gridObservation(bitmap,lines)
         return metadata.merging(["ocr_performed":true,"verification":"overlapping-1600px-tiles","lines":lines,
                                  "grid_tables":grid.tables,"grid_status":grid.status,"grid_reasons":grid.reasons,

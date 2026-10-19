@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Vision
 
 @main struct OcrChecks {
     static func main() throws {
@@ -181,6 +182,40 @@ import AppKit
         let ineligible:[[String:Any]]=["F00","A 123","Name"].enumerated().map{i,text in ["text":text,"confidence":0.3,"bbox":[CGFloat(0.1),0.1,0.5,0.3],"numeric_consensus":true,"strike_candidate":i==2,"strike_status":i==2 ? "detected":"not_detected","alternatives":[["text":text,"confidence":0.3]]]}
         let untouched=DocverVision.reconsideredLines(white.cgImage!,white,ineligible)
         precondition(NSDictionary(dictionary:untouched[0]).isEqual(to:ineligible[0]) && NSDictionary(dictionary:untouched[1]).isEqual(to:ineligible[1]) && NSDictionary(dictionary:untouched[2]).isEqual(to:ineligible[2]))
+        white.bitmapData!.initialize(repeating:255,count:240*160)
+        precondition(DocverVision.uniformWhitePixels(white,CGRect(x:49,y:49,width:3,height:3)))
+        white.bitmapData![50*240+50]=254
+        precondition(!DocverVision.uniformWhitePixels(white,CGRect(x:49,y:49,width:3,height:3)),"One faint nonwhite pixel must veto empty-character proof")
+        precondition(!DocverVision.uniformWhitePixels(unsupported,CGRect(x:49,y:49,width:3,height:3)))
+        let expired=DocverVision.reconsider(white.cgImage!,white,CGRect(x:0.1,y:0.1,width:0.5,height:0.3),"weak",nil,DispatchTime.now())
+        precondition(expired["status"] as? String == "budget_exceeded")
+        let pageBounds=CGRect(x:0,y:0,width:100,height:100)
+        let inside=DocverVision.clippedRoiRect(CGRect(x:0.1,y:0.3,width:25.123456789,height:18.123456789),pageBounds)!
+        precondition(!inside.edge,"Floating intersection reconstruction cannot mark an interior box as clipped")
+        let outside=DocverVision.clippedRoiRect(CGRect(x:-0.5,y:2,width:20,height:10),pageBounds)!
+        precondition(outside.edge && outside.rect.minX==0)
+        precondition(DocverVision.clippedRoiRect(CGRect(x:101,y:0,width:1,height:1),pageBounds)==nil)
+        precondition(DocverVision.clippedRoiRect(CGRect(x:CGFloat.nan,y:0,width:1,height:1),pageBounds)==nil)
+        let combining=String(repeating:"e\u{301}",count:70)
+        precondition(combining.count==70 && combining.utf16.count==140)
+        let overBudget:[[String:Any]]=[["text":combining,"confidence":0.3,"bbox":[CGFloat(0.1),0.1,0.5,0.3],"numeric_consensus":true,"strike_candidate":false,"strike_status":"not_detected","alternatives":[]]]
+        precondition(DocverVision.reconsideredLines(white.cgImage!,white,overBudget)[0]["reconsideration"]==nil)
+        precondition(DocverVision.reconsider(high.cgImage!,high,CGRect(x:0,y:0,width:1,height:0.1),"weak")["status"] as? String == "budget_exceeded")
+        for text in ["Pineapple한","Pineapple 주스","Pineapple한글"] {
+            let bitmap=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:1000,pixelsHigh:300,bitsPerSample:8,samplesPerPixel:4,hasAlpha:true,isPlanar:false,colorSpaceName:.deviceRGB,bytesPerRow:4000,bitsPerPixel:32)!
+            bitmap.bitmapData!.initialize(repeating:255,count:4000*300)
+            NSGraphicsContext.saveGraphicsState();NSGraphicsContext.current=NSGraphicsContext(bitmapImageRep:bitmap)
+            (text as NSString).draw(at:NSPoint(x:80,y:120),withAttributes:[.font:NSFont.systemFont(ofSize:32),.foregroundColor:NSColor.black])
+            NSGraphicsContext.restoreGraphicsState()
+            let image=bitmap.cgImage!,request=try DocverVision.request()
+            try VNImageRequestHandler(cgImage:image,orientation:.up,options:[:]).perform([request])
+            guard let original=request.results?.first(where:{$0.topCandidates(1).first?.string==text}),let candidate=original.topCandidates(1).first else{preconditionFailure("Genuine Hangul native control not read exactly: \(text), got \(request.results?.compactMap{$0.topCandidates(1).first?.string} ?? [])")}
+            let b=original.boundingBox,observed=DocverVision.reconsider(image,bitmap,CGRect(x:b.minX,y:1-b.maxY,width:b.width,height:b.height),text,candidate)
+            let empty=observed["primary_empty_characters"] as? [[String:Any]] ?? []
+            precondition(!empty.contains{entry in (entry["text"] as? String)?.range(of:"\\p{script=Hangul}",options:.regularExpression) != nil},"Actual Hangul ink cannot become an empty-character deletion certificate")
+            precondition((observed["contexts"] as? [[String:Any]])?.count==8,"All native contexts were exercised")
+        }
+        print("PASS genuine trailing Hangul and Korean word raster ink never certifies empty-character deletion")
         print("PASS numeric position/multiplicity/conflict and lexical controls; grayscale strike/underline; ruled grid empty cells/partial-border/negative controls")
     }
 }
