@@ -93,11 +93,13 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       gaps.push({feature:'pdf_visibility',reason:'image_opacity_or_mask_requires_review'});
     }
   }
-  const textRuns=new Map<number,Box>(),unknownTextOrders=new Set<number>();
-  for(const g of glyphs){if(g.hidden)continue;if(g.geometry_unverified){unknownTextOrders.add(g.order);continue;}const footprint=g.reliable&&g.clip_ink?g.clip_ink:g.bbox,b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],footprint[0]),Math.min(b[1],footprint[1]),Math.max(b[0]+b[2],footprint[0]+footprint[2])-Math.min(b[0],footprint[0]),Math.max(b[1]+b[3],footprint[1]+footprint[3])-Math.min(b[1],footprint[1])):footprint);}
+  const textRuns=new Map<number,Box>();let lastUnknownTextOrder=-1;
+  for(const g of glyphs){if(g.hidden)continue;if(g.geometry_unverified){lastUnknownTextOrder=Math.max(lastUnknownTextOrder,g.order);continue;}const footprint=g.reliable&&g.clip_ink?g.clip_ink:g.bbox,b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],footprint[0]),Math.min(b[1],footprint[1]),Math.max(b[0]+b[2],footprint[0]+footprint[2])-Math.min(b[0],footprint[0]),Math.max(b[1]+b[3],footprint[1]+footprint[3])-Math.min(b[1],footprint[1])):footprint);}
   // An estimate is not a maximum painted extent. It can only withhold
   // visibility of earlier paint, never certify occlusion.
-  for(const order of unknownTextOrders)regions.push({bbox:box(0,0,1,1),order,kind:'unknown_text',opaque:false,axisAligned:false});
+  // All such extents are the same full page: only the last visible unknown
+  // order matters. Avoid per-operator duplicate evidence/region work.
+  if(lastUnknownTextOrder>=0)regions.push({bbox:box(0,0,1,1),order:lastUnknownTextOrder,kind:'unknown_text',opaque:false,axisAligned:false});
   for(const [order,bbox] of textRuns)regions.push({bbox,order,kind:'text',opaque:false,axisAligned:false});
   const verticalBuckets=new Map<number,Region[]>(),connectedCache=new Map<Region,boolean>();
   for(const v of regions.filter(v=>v.kind==='line'&&v.bbox[2]<0.002&&v.bbox[3]>0.02)){const key=Math.floor(v.bbox[0]*100);verticalBuckets.set(key,[...(verticalBuckets.get(key)??[]),v]);}

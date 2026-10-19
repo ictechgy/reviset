@@ -87,3 +87,16 @@ page mixing unknown-metric fonts can require OCR for every reliable run painted
 before the last unknown-metric run; this conservative recall cost is explicit.
 Paint, annotation overlay and strikeout coverage share one [0,1] ratio helper,
 so fractional-coordinate roundoff cannot invalidate an otherwise supported page.
+
+Engine23 permits a reciprocal unique selected OCR-to-OCR numeric regional edit
+without using marked estimated source boxes as geometry candidates or vetoes.
+Raw source remains unresolved and the page gap stays visible; the edit cites
+only inferred OCR quotes and adds
+`estimated_source_geometry_not_used_for_raster_pairing`. Localized uncertain
+source, uncertain OCR, duplicate regions, numeric grammar/one-slot checks and
+equal native raster suppression remain blockers. This is independent raster
+comparison, not recovery or verification of the source extent. The actual
+Times-Roman32 Revenue100→120 native control exercises this boundary through
+coordinator commit and reopened report/native-page storage. Identical unknown
+paint extents are aggregated at the last visible unknown order; earlier and
+intermediate paint stays uncertain, later reliable paint retains its checks.
