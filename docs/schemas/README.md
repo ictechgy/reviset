@@ -1,4 +1,4 @@
-# 스키마와 AI 조회 계약 · 0.2.0
+# 스키마와 AI 조회 계약 · 0.3.0
 
 모델 원본은 `packages/schema/index.ts`, 도구 입력·출력은 `packages/query/index.ts`다. `npm run schemas`로 이 폴더의 draft-2020-12 JSON Schema를 재생성한다. `report.schema.json`은 전체 report, `manifest.schema.json`은 사용자 입력, `fixture_manifest.schema.json`은 합성 fixture의 seed/hash/정답 metadata다.
 
@@ -22,6 +22,7 @@
 | `get_page` | revision_id, page_id | 순서대로 분할된 원문 요소 |
 | `get_element` | observation_id | 원문·bbox·추출법; text_offset/text_length, span_offset/span_limit, appearance_evidence_offset/appearance_evidence_limit |
 | `list_changes` | mode, from/to, kind, entity_id, change_id, text | 관측 delta와 근거 |
+| `list_page_relations` | relation_id/page_id, from/to_occurrence, reachable_from/to_page_id, reason_offset/reason_length | 실제 방향 연결과 이유의 분할 원문 |
 | `get_entity_history` | entity_id | 각 버전의 페이지 원문·변경 ID |
 | `get_evidence` | change_id 또는 observation_id 하나 | 페이지·인용·좌표; text_offset/text_length |
 
@@ -35,6 +36,7 @@
 docver://projects/{project_id}/reports/{report_id}/manifest
 docver://projects/{project_id}/reports/{report_id}/revisions/{revision_id}/pages/{page_id}
 docver://projects/{project_id}/reports/{report_id}/changes/{change_id}
+docver://projects/{project_id}/reports/{report_id}/pages/{page_id}/relations
 docver://projects/{project_id}/reports/{report_id}/entities/{entity_id}
 docver://projects/{project_id}/reports/{report_id}/evidence/{observation_id}
 ```
@@ -83,3 +85,14 @@ OOXML 표의 `ooxml_table/observed`와 PDF 격자에서 추정한 `pdf_grid_infe
 관측 취소선은 여전히 화면에서 읽을 수 있으므로 `visible_text`에 포함하고 `text_struck_through`로 표시 변경을 표현한다. 숨김 OC paint나 글자 clipping 모드는 확정 가림으로 쓰지 않는다. 보이는 내용이 같더라도 억제된 원문층이 바뀌면 `raw_text_changed_in_suppressed_layer` 관측 공백을 기록한다.
 
 신규 report/change와 조회 envelope는 0.2.0을 생산한다. 기존 0.1.0 snapshot은 읽기/내보내기에서 원래 버전을 보존하며, range 재계산은 지원되는 archived engine에만 허용한다. 새 Change enum/provenance를 해석하는 소비자는 schema_version과 schema_hash를 함께 확인한다. text_scope=region의 값은 원문 관측일 수 있지만 region_pairing_assessment=inferred는 영역 대응 자체가 추정임을 명시한다.
+
+
+## 수동 페이지 분할·병합과 호환성
+
+manifest의 `mapping_relations`는 선택적이다. 각 관계는 kind(continuation/split/merge), 인접한 from_occurrence/to_occurrence, from_page_ids/to_page_ids, reason을 받는다. 주 문서 페이지로 1:1/1:N/N:1만 허용하며 한쪽 최대32페이지, 새 관계의 이유는 공백만으로 구성할 수 없고 최대2000UTF16단위다. 엔진이 페이지 순서와 결정적 relation_id를 정규화한다. 기존 mapping_decisions는 계속 받으며 과거의 긴 이유도 보존한다.
+
+page_split/page_merged 이벤트는 구성 변경이며 문구의 삭제·수정을 확정하지 않는다. range_net의 page_lineage_changed는 방향 경로를 가진 계보 묶음이다. topology.semantics=directed_reachability는 모든 양쪽 조합의 직접 대응을 뜻하지 않는다. 실제 경로는 list_page_relations의 reachable_from_page_id/reachable_to_page_id로 조회한다. 이유는 next_reason_offset을 따라 이어 읽는다.
+
+구간에서 계산한 이벤트의 근거는 get_evidence에 change_id와 동일한 from/to occurrence ID를 함께 전달해 복구한다. 큰 이벤트/계보도 cursor와 개별 페이지·요소 도구로 순회한다. 전체 export에는 page-relations.jsonl과 mapping-relations.json이 포함된다.
+
+저장된0.1/0.2 보고서는 변환하지 않고 읽는다. range_net은 native1/ocr9/ocr42/ocr43의 보관된 kernel 또는 현재 엔진만 지원한다. 다른 과거 엔진의 재계산은 ENGINE_VERSION_UNAVAILABLE로 명시하며 저장된 history/export는 계속 조회한다. 앱-백엔드 통신 envelope는0.3.0이고 과거 보고서 본문의 schema_version은 유지한다.

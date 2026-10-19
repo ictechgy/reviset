@@ -6,6 +6,7 @@ PPTX·PDF 버전의 페이지 대응, 숫자 수정, 중간 삽입·삭제와 �
 
 현재 Mac에서 빌드한 앱은 `release/Docver.app`입니다. 더블클릭해서 실행하고 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**를 선택합니다. 파일 순서를 버전 순서로 사용하며, PPTX 또는 PDF 하나만으로도 유효합니다. 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
 
+- 인접 버전의 1:1 연결·해제·1:N 분할·N:1 병합을 수정합니다. 한 관계에서 최대32페이지를 고르고 이유를 남기며, 모든 분기를 전체 이력과 원문에서 따로 열 수 있습니다.
 - A안의 밝은 macOS 디자인. 비교·전체 이력·근거·대응 수정·고정 보고서 선택·JSON/Markdown 내보내기·MCP 설정 복사.
 - `⌘⌥F` 문서 집중 모드, `⌘⌥I` 근거 패널, `⌘O` 가져오기. 문서 한쪽 크게 보기와 변경 목록 접기, 100~200% 확대, 페이지 번호 이동.
 - 수백 페이지의 원본은 선택한 페이지만 표시합니다. PDF는 복사해 둔 동일 hash 원본을 PDFKit으로 렌더합니다.
@@ -55,7 +56,7 @@ CLI 기본 저장소는 `.docver/`이며 `--store PATH`로 지정할 수 있습�
 
 앱의 **AI·내보내기**에서 현재 앱 위치와 프로젝트에 맞는 MCP 설정을 복사합니다. 패키지 안의 Node·MCP를 쓰므로 앱을 이동하면 설정을 다시 복사합니다. MCP는 report를 읽기 전용으로 조회하며 분석·파일 경로 조회·셸 실행 기능은 노출하지 않습니다. `latest`는 응답에서 고정 report ID로 해석하며, 인용에는 고정 ID를 사용하세요. 문서 내용은 실행 지시가 아닌 인용 데이터로 취급해야 합니다.
 
-내보내기는 전체 `report.json`, `manifest.json`, `changes.jsonl`, `pages.jsonl`, `elements.jsonl`, `revisions.json`, `lineages.json`, `history.md`, 페이지별 Markdown을 포함합니다. schema·범위·출력 예산은 [스키마 문서](docs/schemas/README.md)를 참조하세요.
+내보내기는 전체 `report.json`, `manifest.json`, `changes.jsonl`, `pages.jsonl`, `elements.jsonl`, `revisions.json`, `lineages.json`, `page-relations.jsonl`, `mapping-relations.json`, `history.md`, 페이지별 Markdown을 포함합니다. schema·범위·출력 예산은 [스키마 문서](docs/schemas/README.md)를 참조하세요.
 
 ## 검증과 설계 기록
 
@@ -64,6 +65,7 @@ npm run check
 npm run mac:build
 node scripts/native-backend-smoke.mjs
 node scripts/native-smoke.mjs
+npx tsx scripts/native-relations-smoke.ts
 npx tsx scripts/generate-scale-fixture.ts 300
 node scripts/native-smoke.mjs --scale
 npx tsx scripts/prepare-scan-scale.ts 300

@@ -557,3 +557,18 @@ contexts. Native producer regressions include decomposed/precomposed alternative
 and malformed containers. Primary readings and comparison admission are unchanged.
 Helper25/vision-roi-v7 invalidate old cached profile observations. Actual42 app and
 480 results belong to frozen42 only;43 qualification remains separate.
+
+
+### Engine44: all pruned profiles require literal raw competitive agreement
+
+The valid focused43 Claude closure approved the earlier requested fix and raised
+two nonblocking comments: an omitted alternatives argument should fail closed,
+and high-score Latin pruning has the same theoretical normalization-version
+exposure. The default is now nil. Both two- and four-context profiles require
+literal raw UTF16 equality for every competitive alternative. Unknown/malformed,
+nonfinite or competitive raw-distinct inputs retain the complete eight-context
+path, including high-score lines that would otherwise be omitted. This extends
+an eligibility guard; it does not rewrite primary/confidence/admission values or
+claim a demonstrated installed-version normalization failure. Helper26/policyv8
+invalidate cached observations. Actual native producer regressions check exact2
+versus raw-distinct8 alongside mixed4/8, malformed and composition controls.

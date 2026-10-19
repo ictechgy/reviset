@@ -1,5 +1,6 @@
+import {type StructuralComparison} from '../matching/lineage.js';
 import {annotationBlocksRegion} from '../ingest/pdf-annotation-regions.js';
-import { SCHEMA_VERSION, normalize,comparisonText,unresolvedComparisonText,comparisonRegions, type ElementData,type RevisionData, type MatchData, type ChangeData, type PageData } from '../schema/index.js';
+import { SCHEMA_VERSION,textChunk, normalize,comparisonText,unresolvedComparisonText,comparisonRegions, type ElementData,type RevisionData, type MatchData, type ChangeData, type PageData } from '../schema/index.js';
 import {numericSlots,numericPattern,numericShape,numericNotationSupported} from '../ingest/numeric-slots.js';
 import {isEstimatedPdfSource} from '../ingest/pdf-text-geometry.js';
 import {reviewEstimatedSource} from './estimated-source-review.js';
@@ -64,7 +65,7 @@ export function evidence(revision:RevisionData,page:PageData,focusText=false,foc
   return {revision_id:revision.revision_id,revision_occurrence_id:revision.revision_occurrence_id,asset_id:page.asset_id,page_id:page.page_id,page:page.page,
     bbox:element?.bbox??[0,0,1,1],quote:element?.text??(focusText?comparisonText(page):page.text||page.ocr_text||''),method:element?.method??textSource?.method??'page_observation',provenance:element?.provenance??textSource?.provenance??(page.comparison_basis==='raster_ocr'?'inferred':'observed'),...(element?{observation_id:element.observation_id}:{})};
 }
-export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchData[],candidates:MatchData[],entityFor:(pageId:string)=>string):ChangeData[] {
+export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchData[],candidates:MatchData[],entityFor:(pageId:string)=>string,structural?:StructuralComparison[]):ChangeData[] {
   const changes:ChangeData[]=[];let renderIntervalGap=false;
   function add(kind:ChangeData['kind'],a?:PageData,b?:PageData,match?:MatchData,reason?:string) {
     const gaps=reason?[{feature:kind==='coverage_gap'?'comparison':'text',reason}]:[];
@@ -80,8 +81,18 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
   }
   const comparisonIncomplete=uncertain(from)||uncertain(to);
   const paired=matches.filter(m=>from.pages.some(p=>p.page_id===m.from_page_id)&&to.pages.some(p=>p.page_id===m.to_page_id));
+  const groups:StructuralComparison[]=structural??[...new Set(paired.filter(m=>m.relation_id&&m.relation_kind!=='continuation').map(m=>m.relation_id!))].map(relation_id=>{
+    const edges=paired.filter(m=>m.relation_id===relation_id);
+    return {relation_id,kind:edges[0].relation_kind as 'split'|'merge',from_page_ids:[...new Set(edges.map(m=>m.from_page_id))],to_page_ids:[...new Set(edges.map(m=>m.to_page_id))],status:'human_confirmed',score:1,reasons:edges[0].reasons,semantics:'direct_edges'};
+  });
+  const structuralFrom=new Set(groups.flatMap(g=>g.from_page_ids)),structuralTo=new Set(groups.flatMap(g=>g.to_page_ids));
+  for(const g of groups){
+    const before=from.pages.filter(p=>g.from_page_ids.includes(p.page_id)),after=to.pages.filter(p=>g.to_page_ids.includes(p.page_id));
+    changes.push({schema_version:SCHEMA_VERSION,report_id:'',change_id:'',entity_id:entityFor((after[0]??before[0]).page_id),from_revision:from.revision_id,to_revision:to.revision_id,from_occurrence:from.revision_occurrence_id,to_occurrence:to.revision_occurrence_id,kind:g.kind==='split'?'page_split':g.kind==='merge'?'page_merged':'page_lineage_changed',before:`이전 ${before.length}페이지`,after:`이후 ${after.length}페이지`,topology:{relation_id:g.relation_id,kind:g.kind,from_page_ids:g.from_page_ids,to_page_ids:g.to_page_ids,semantics:g.semantics},
+      evidence:[...before.map(p=>evidence(from,p,false,p.elements.find(e=>e.text.trim()))),...after.map(p=>evidence(to,p,false,p.elements.find(e=>e.text.trim())))].map(e=>({...e,quote:textChunk(e.quote,0,160)})),lineage:{status:g.status,score:g.score,reasons:g.reasons},coverage_gaps:[{feature:'comparison',reason:'split_merge_text_comparison_withheld'},...before.concat(after).flatMap(p=>p.coverage_gaps.map(g=>({...g,page_id:p.page_id})))],evidence_uri:''});
+  }
   // A relative-order inversion is a move; insertions alone do not mark every later page moved.
-  const order=paired.map(m=>({m,a:from.pages.findIndex(p=>p.page_id===m.from_page_id),b:to.pages.findIndex(p=>p.page_id===m.to_page_id)}));
+  const order=paired.filter(m=>!structuralFrom.has(m.from_page_id)&&!structuralTo.has(m.to_page_id)).map(m=>({m,a:from.pages.findIndex(p=>p.page_id===m.from_page_id),b:to.pages.findIndex(p=>p.page_id===m.to_page_id)}));
   for(const {m,a:ai,b:bi} of order) {
     const a=from.pages[ai],b=to.pages[bi];
     if(order.some(o=>(o.a-ai)*(o.b-bi)<0)) add('page_moved',a,b,m);
@@ -189,11 +200,11 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     const gaps=features.filter(f=>a.capabilities[f]!==b.capabilities[f]&&(a.capabilities[f]!=='available'||b.capabilities[f]!=='available'));
     if(gaps.length) add('coverage_gap',a,b,m,'incomparable_capabilities:'+gaps.join(','));
   }
-  for(const a of from.pages.filter(p=>!paired.some(m=>m.from_page_id===p.page_id))) {
+  for(const a of from.pages.filter(p=>!paired.some(m=>m.from_page_id===p.page_id)&&!structuralFrom.has(p.page_id))) {
     const reason=a.hidden&&to.assets.some(s=>s.format==='pdf')?'not_observed_in_export':!comparisonText(a).trim()?'nontext_page_lineage_unresolved':comparisonIncomplete?'comparison_observation_incomplete':candidates.some(c=>c.from_page_id===a.page_id)?'unresolved_mapping':undefined;
     add(reason?'coverage_gap':'page_deleted',a,undefined,undefined,reason);
   }
-  for(const b of to.pages.filter(p=>!paired.some(m=>m.to_page_id===p.page_id))) {
+  for(const b of to.pages.filter(p=>!paired.some(m=>m.to_page_id===p.page_id)&&!structuralTo.has(p.page_id))) {
     const reason=b.hidden&&from.assets.some(s=>s.format==='pdf')?'not_observed_in_export':!comparisonText(b).trim()?'nontext_page_lineage_unresolved':comparisonIncomplete?'comparison_observation_incomplete':candidates.some(c=>c.to_page_id===b.page_id)?'unresolved_mapping':undefined;
     add(reason?'coverage_gap':'page_added',undefined,b,undefined,reason);
   }

@@ -39,8 +39,15 @@ extension DocverVision {
         // equates canonically equivalent keys newly created by lowercasing.
         roiCompact(left).utf16.elementsEqual(roiCompact(right).utf16)
     }
-    static let reconsiderationPolicy="vision-roi-v7; exact UTF16 ambiguity keys and strict whole-string Latin scope; 4 nonnumeric lines/page; weak then borderline then high-score Latin; 8 correction/monoscript borderline contexts, 4 bilingual mixed-script contexts only with literal raw competitive alternatives, or 2 en-US broad high-score contexts; 262144 core pixels; 4M pixels/crop; 12s/page best-effort cancellation; no language correction"
-    static func mixedScriptCounterOnly(_ text:String,_ confidence:Double,_ ambiguous:Bool,_ alternatives:[[String:Any]]?=[])->Bool {
+    static let reconsiderationPolicy="vision-roi-v8; exact UTF16 ambiguity keys and strict whole-string Latin scope; all pruned profiles require literal raw competitive alternatives; 4 nonnumeric lines/page; weak then borderline then high-score Latin; 8 correction/monoscript borderline contexts, 4 bilingual mixed-script contexts only with literal raw competitive alternatives, or 2 en-US broad high-score contexts; 262144 core pixels; 4M pixels/crop; 12s/page best-effort cancellation; no language correction"
+    static func identicalCompetitiveReadings(_ text:String,_ confidence:Double,_ alternatives:[[String:Any]]?)->Bool {
+        guard let alternatives else{return false}
+        return alternatives.allSatisfy {candidate in
+            guard let value=candidate["text"] as? String,let score=candidate["confidence"] as? Double,score.isFinite else{return false}
+            return score<confidence-0.15 || value.utf16.elementsEqual(text.utf16)
+        }
+    }
+    static func mixedScriptCounterOnly(_ text:String,_ confidence:Double,_ ambiguous:Bool,_ alternatives:[[String:Any]]?=nil)->Bool {
         // At exactly0.5 without ambiguity, positive correction is ineligible.
         // The consumer requires BOTH languages for mixed Hangul/Latin dissent;
         // monolingual contexts contribute neither correction nor counterevidence.
@@ -48,11 +55,9 @@ extension DocverVision {
         // Literally identical raw UTF16 inputs have identical consumer keys even
         // when platform Unicode normalization/casing tables differ. All other
         // competitive readings conservatively retain all8 contexts.
-        return alternatives.allSatisfy {candidate in
-            guard let value=candidate["text"] as? String,let score=candidate["confidence"] as? Double else{return false}
-            return score<confidence-0.15 || value.utf16.elementsEqual(text.utf16)
-        }
+        return identicalCompetitiveReadings(text,confidence,alternatives)
     }
+
     static func reconsideredLines(_ image:CGImage,_ bitmap:NSBitmapImageRep,_ lines:[[String:Any]],_ observations:[VNRecognizedTextObservation]=[])->[[String:Any]] {
         let deadline=DispatchTime.now()+12.0
         let eligible=lines.enumerated().compactMap { (index,line)->(index:Int,priority:Int,rect:CGRect,text:String,highLatin:Bool,mixedCounter:Bool)? in
@@ -68,9 +73,10 @@ extension DocverVision {
                 guard let value=candidate["text"] as? String,let score=candidate["confidence"] as? Double else{return false}
                 return !sameRoiKey(value,text) && score>=confidence-0.15
             }
-            let highLatin=confidence>0.5 && !ambiguous && latinCounterScript(text)
-            guard confidence<=0.5 || ambiguous || highLatin else{return nil}
-            return (index,confidence<0.5 || ambiguous ? 0:highLatin ? 2:1,CGRect(x:b[0],y:b[1],width:b[2],height:b[3]),text,highLatin,mixedScriptCounterOnly(text,confidence,ambiguous,alternativeContainer))
+            let identical=identicalCompetitiveReadings(text,confidence,alternativeContainer)
+            let highLatin=confidence>0.5 && !ambiguous && identical && latinCounterScript(text)
+            guard confidence<=0.5 || ambiguous || !identical || highLatin else{return nil}
+            return (index,confidence<0.5 || ambiguous || !identical ? 0:highLatin ? 2:1,CGRect(x:b[0],y:b[1],width:b[2],height:b[3]),text,highLatin,mixedScriptCounterOnly(text,confidence,ambiguous,alternativeContainer))
         }.sorted {a,b in a.priority==b.priority ? a.index<b.index:a.priority<b.priority}
         var output=lines
         for (position,entry) in eligible.enumerated() {

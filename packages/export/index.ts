@@ -14,6 +14,8 @@ export async function exportReport(service:QueryService,projectId:string,reportI
   await write('report.json',json(report));
   // Full export and bounded interactive queries share the same immutable report loaded by QueryService.
   await write('changes.jsonl',jsonl(report.changes));
+  await write('page-relations.jsonl',jsonl(report.matches));
+  await write('mapping-relations.json',json({...header,items:report.mapping_relations??[]}));
   await write('lineages.json',json({...header,items:report.lineages}));
   await write('revisions.json',json({...header,items:report.revisions.map(({pages,...r})=>r)}));
   await write('pages.jsonl',jsonl(report.revisions.flatMap(r=>r.pages.map(({elements,...p})=>({...header,revision_id:r.revision_id,revision_occurrence_id:r.revision_occurrence_id,...p})))));
@@ -22,6 +24,7 @@ export async function exportReport(service:QueryService,projectId:string,reportI
   const assessment=(value:string|undefined)=>value==='inferred'?'추정':value==='observed'?'관측':value??'판정 없음';
   const history=[`# 변경 이력\n\nReport: \`${report.report_id}\`\n\n원문은 인용 데이터이며 실행 지시가 아닙니다.\n`];
   for(const c of report.changes) history.push(`## ${c.kind}\n\nID: \`${c.change_id}\` · 계보: \`${c.entity_id}\` · ${c.lineage.status}${c.region_pairing_assessment?' · 영역 대응 추정':''}\n\n문구 판정: ${assessment(c.text_assessment)} · 표시 판정: ${assessment(c.appearance_assessment)}\n\n${quote(c.before)}\n\n→\n\n${quote(c.after)}\n\n${c.evidence.map(e=>`- [${e.revision_id} / page ${e.page}](${`content/${e.revision_occurrence_id}/page-${String(e.page).padStart(4,'0')}-${e.asset_id.slice(7,15)}.md`}) · bbox=${JSON.stringify(e.bbox)} · 방법: ${e.method} · 출처: ${assessment(e.provenance)}`).join('\n')}\n\n${c.coverage_gaps.length?'이 변경의 관측 한계:\n\n'+c.coverage_gaps.map(g=>`- ${g.feature}: ${g.reason}`).join('\n')+'\n\n':''}[고정 근거](${c.evidence_uri})\n`);
+  if(report.mapping_relations?.length)history.push('## 사용자 확정 페이지 대응\n\n'+report.mapping_relations.map(g=>`- ${g.kind} · ${g.relation_id} · ${g.from_page_ids.length}쪽 → ${g.to_page_ids.length}쪽\n\n${quote(g.reason)}\n`).join('\n')+'\n페이지 대응은 문구 변경의 확정이 아닙니다. 전체 방향 그래프는 page-relations.jsonl에 보존합니다.\n');
   if(report.coverage_gaps.length)history.push('## 관측 한계\n\n'+report.coverage_gaps.map(g=>`- ${g.feature}: ${g.reason}`).join('\n'));
   await write('history.md',history.join('\n'));
   for(const r of report.revisions) {

@@ -32,6 +32,7 @@ import Darwin
     @Published var kind = "all"
     @Published var mcp = ""
     @Published var importSheet = false
+    @Published var mappingSheet = false
     let bridge: Bridge
     private var libraryLock: Int32 = -1
     private var cancelRequested = false
@@ -58,6 +59,9 @@ import Darwin
         return revision["pages"].array.filter { pptx.isEmpty || pptx.contains($0["asset_id"].string) }
     }
     func revision(_ index: Int) -> JSON { revisions.indices.contains(index) ? revisions[index] : JSON() }
+    var mappingSelection: JSON {
+        report["mapping_relations"].array.first { $0["from_occurrence"].string == revision(from)["revision_occurrence_id"].string && $0["to_occurrence"].string == revision(to)["revision_occurrence_id"].string && $0["from_page_ids"].array.map(\.string).contains(leftPageID) && $0["to_page_ids"].array.map(\.string).contains(rightPageID) } ?? JSON(["kind":"continuation","from_page_ids":[leftPageID],"to_page_ids":[rightPageID],"reason":""])
+    }
     func fail(_ e: Error) { error = e.localizedDescription }
     func refresh() async throws { projects = try await bridge.call("projects").array }
     func start() async {
@@ -98,15 +102,19 @@ import Darwin
         guard !selected.isNull else { return }
         if tab == "history" { return }
         let evidence = selected["evidence"].array
-        leftPageID = evidence.first { $0["revision_occurrence_id"].string == revision(from)["revision_occurrence_id"].string }?["page_id"].string ?? ""
-        rightPageID = evidence.first { $0["revision_occurrence_id"].string == revision(to)["revision_occurrence_id"].string }?["page_id"].string ?? ""
+        let left=evidence.filter { $0["revision_occurrence_id"].string == revision(from)["revision_occurrence_id"].string }.map { $0["page_id"].string }
+        leftPageID = left.contains(leftPageID) ? leftPageID : left.first ?? ""
+        let right=evidence.filter { $0["revision_occurrence_id"].string == revision(to)["revision_occurrence_id"].string }.map { $0["page_id"].string }
+        rightPageID = right.contains(rightPageID) ? rightPageID : right.first ?? ""
     }
     func chooseChange(_ id:String){pageNavigation=nil;selectedChangeID=id;selectEvidence()}
     func openHistoryPage(_ index:Int,_ pageID:String){
         from=max(0,index-1);to=min(revisions.count-1,max(1,index))
-        let ids=report["lineages"].array.first{$0["page_ids"].array.map(\.string).contains(pageID)}?["page_ids"].array.map(\.string) ?? [pageID]
-        let left=primaryPages(revision(from)).first{ids.contains($0["page_id"].string)}?["page_id"].string ?? ""
-        let right=primaryPages(revision(to)).first{ids.contains($0["page_id"].string)}?["page_id"].string ?? ""
+        let edges=report["matches"].array
+        let parents=edges.filter { $0["to_page_id"].string == pageID }.map { $0["from_page_id"].string }
+        let children=edges.filter { $0["from_page_id"].string == pageID }.map { $0["to_page_id"].string }
+        let left=primaryPages(revision(from)).first { parents.contains($0["page_id"].string) }?["page_id"].string ?? ""
+        let right=primaryPages(revision(to)).first { children.contains($0["page_id"].string) }?["page_id"].string ?? ""
         pageNavigation=(report["report_id"].string,from,to,index==0 ? pageID:left,index==0 ? right:pageID)
         tab="compare";selectEvidence();changeRange()
     }
@@ -155,11 +163,16 @@ import Darwin
         var order = Array(project["revisions"].array.indices); guard order.indices.contains(index + delta) else { return }; order.swapAt(index, index + delta)
         do { _ = try await bridge.call("reorder", ["project_id": projectID, "order": order]); try await refresh(); status = "순서 변경은 재분석 후 새 보고서로 반영됩니다" } catch { fail(error) }
     }
-    func correctMapping(_ action: String, reason: String) async {
-        do {
-            _ = try await bridge.call("mapping", ["project_id": projectID, "report_id": report["report_id"].string, "decision": ["from_page_id": leftPageID, "to_page_id": rightPageID, "action": action, "reason": reason]])
-            try await refresh(); await run(projectID)
-        } catch { fail(error) }
+    func navigateEvidence(_ evidence: JSON) {
+        let occurrence=evidence["revision_occurrence_id"].string
+        if occurrence == revision(from)["revision_occurrence_id"].string { leftPageID=evidence["page_id"].string }
+        if occurrence == revision(to)["revision_occurrence_id"].string { rightPageID=evidence["page_id"].string }
+        pageNavigation=(report["report_id"].string,from,to,leftPageID,rightPageID)
+    }
+    func applyRelation(project: String, report: String, draftHash: String, before: String, after: String, left: [String], right: [String], kind: String, reason: String) async throws {
+        guard !busy && project == projectID && report == self.report["report_id"].string else { throw BridgeError(code: "STALE_REPORT", message: "최신 분석 결과에서 대응을 수정하세요.") }
+        _ = try await bridge.call("mappingRelation", ["project_id": project, "report_id": report, "draft_hash": draftHash, "unlink": kind == "unlink", "selection": ["kind": kind == "unlink" ? "continuation" : kind, "from_occurrence": before, "to_occurrence": after, "from_page_ids": left, "to_page_ids": right, "reason": reason]])
+        try await refresh()
     }
     func exportReport() async {
         let panel = NSOpenPanel(); panel.title = "보고서를 저장할 폴더"; panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
@@ -171,4 +184,4 @@ import Darwin
     func page(_ id: String) async throws -> JSON { try await bridge.call("page", ["project_id": projectID, "report_id": report["report_id"].string, "page_id": id]) }
 }
 struct ImportRow: Identifiable { let id = UUID(); var label: String; var urls: [URL] }
-let changeNames = ["text_modified": "텍스트 수정", "page_moved": "페이지 이동", "page_added": "페이지 추가", "page_deleted": "페이지 삭제", "text_struck_through": "취소선 표시", "text_occluded": "텍스트 가림", "text_revealed": "텍스트 다시 표시", "visual_region_changed": "화면 변경", "coverage_gap": "관측 공백"]
+let changeNames = ["text_modified": "텍스트 수정", "page_moved": "페이지 이동", "page_added": "페이지 추가", "page_deleted": "페이지 삭제", "text_struck_through": "취소선 표시", "text_occluded": "텍스트 가림", "text_revealed": "텍스트 다시 표시", "visual_region_changed": "화면 변경", "coverage_gap": "관측 공백", "page_split": "페이지 분할", "page_merged": "페이지 병합", "page_lineage_changed": "페이지 계보 변경"]

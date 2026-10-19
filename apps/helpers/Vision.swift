@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-25-literal-raw-profile-guard"
+    static let version = "docver-vision-26-all-profile-raw-guard"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?

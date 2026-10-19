@@ -41,6 +41,8 @@ export class Store {
     const body=canonical(Report.parse(report));
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      const run=this.db.prepare('SELECT project_id,status FROM runs WHERE id=?').get(runId);
+      if(run?.project_id!==report.project_id||run.status!=='running')throw new DocverError('INVALID_RUN','Only an active run in this project may commit');
       const existing=this.db.prepare('SELECT body FROM reports WHERE id=?').get(report.report_id);
       if(existing&&existing.body!==body) throw new DocverError('SNAPSHOT_CONFLICT','Immutable report ID already has different content');
       this.db.prepare('INSERT OR IGNORE INTO reports VALUES (?,?,?,?)').run(report.report_id,report.project_id,new Date().toISOString(),body);

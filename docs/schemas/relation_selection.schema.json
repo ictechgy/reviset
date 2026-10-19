@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "continuation",
+        "split",
+        "merge"
+      ]
+    },
+    "from_occurrence": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "to_occurrence": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "from_page_ids": {
+      "minItems": 1,
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      }
+    },
+    "to_page_ids": {
+      "minItems": 1,
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160
+      }
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 2000
+    }
+  },
+  "required": [
+    "kind",
+    "from_occurrence",
+    "to_occurrence",
+    "from_page_ids",
+    "to_page_ids",
+    "reason"
+  ],
+  "additionalProperties": false
+}

@@ -81,3 +81,11 @@
 ## Open questions
 - [x] A 선택 / 사용자 / 중앙 문서 크게 보기와 수백 페이지 지원을 추가 조건으로 확정.
 - [ ] Developer ID 및 공증 / 사용자 / 다른 Mac 공개 배포 시 필요. 로컬 앱 사용은 먼저 진행.
+
+
+## Manual page relations — engine44 implementation contract
+- Claude's local UI discussion recommends a single paired native searchable List sheet for continuation1:1/split1:N/mergeN:1/unlink. Keep lightA and document preview dominant. Scope is design discussion, not implementation approval.
+- Reuse current before/after pages as initial selections. Each side supports native multiple selection and 번호·요약 검색 (current compact180-character summaries, not full-text search). Hundreds-page lists stay lazy; any pages can be chosen, at most32 members per relation.
+- Show selected counts, cardinality, exact displaced pairs and residual-branch behavior before one Apply action. Reason is required, max2000UTF16 units, preserved verbatim. Cancel before apply writes nothing; apply atomically modifies the draft and starts analysis. Cancelling analysis leaves a pending dirty draft and prior report available.
+- Every branch remains a separately labelled page button in history and structural-event evidence. Preserve a selected branch across delayed range updates. Counterparts follow directed accepted edges; undirected family membership must not invent ancestry.
+- Split/merge events describe topology, not confirmed text deletion/replacement. Mark text comparison withheld and preserve each member's actual source/OCR provenance. Range family summaries explicitly use directed reachability, not complete bipartite correspondence. Full edge graph is available in JSON/export/read-onlyMCP.

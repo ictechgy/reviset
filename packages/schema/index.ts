@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 
-export const SCHEMA_VERSION = '0.2.0';
-const StoredSchemaVersion=z.enum(['0.1.0','0.2.0']);
-export const ENGINE_VERSION = '0.2.0-native.ocr-render.43';
+export const SCHEMA_VERSION = '0.3.0';
+const StoredSchemaVersion=z.enum(['0.1.0','0.2.0','0.3.0']);
+export const ENGINE_VERSION = '0.3.0-native.lineage.44';
 export const MAX_INPUT_BYTES=512*1024*1024;
 export const MAX_PPTX_EXPANDED_BYTES=512*1024*1024;
 export const MAX_PPTX_PART_BYTES=64*1024*1024;
@@ -65,19 +65,25 @@ export const Evidence = z.object({ revision_id: z.string(), revision_occurrence_
   page_id: z.string(), page: z.number().int().positive(), observation_id: z.string().optional(),
   bbox: Bbox, quote: z.string(), method: z.string(),provenance:z.enum(['observed','inferred']).optional(),render_sha256:z.string().regex(/^[a-f0-9]{64}$/).optional() });
 export const Match = z.object({ from_page_id: z.string(), to_page_id: z.string(), score: z.number().min(0).max(1),
-  status: z.enum(['inferred','human_confirmed','needs_review']), reasons: z.array(z.string()) });
-export const Decision = z.object({ from_page_id: z.string(), to_page_id: z.string(), action: z.enum(['link','unlink']), reason: z.string().min(1) });
+  status: z.enum(['inferred','human_confirmed','needs_review']), reasons: z.array(z.string()),relation_id:z.string().optional(),relation_kind:z.enum(['continuation','split','merge']).optional() });
+export const StoredDecision = z.object({ from_page_id: z.string(), to_page_id: z.string(), action: z.enum(['link','unlink']), reason:z.string().min(1) });
+export const Decision = z.object({ from_page_id: z.string(), to_page_id: z.string(), action: z.enum(['link','unlink']), reason: z.string().max(2000).refine(s=>s.length<=2000,'Reason exceeds2000UTF16 units').refine(s=>s.trim().length>0,'Reason cannot be blank') });
 export type MappingDecision = z.infer<typeof Decision>;
+export const RelationSelection=z.object({kind:z.enum(['continuation','split','merge']),from_occurrence:z.string().min(1).max(160),to_occurrence:z.string().min(1).max(160),from_page_ids:z.array(z.string().min(1).max(160)).min(1).max(32),to_page_ids:z.array(z.string().min(1).max(160)).min(1).max(32),reason:z.string().max(2000).refine(s=>s.length<=2000,'Reason exceeds2000UTF16 units').refine(s=>s.trim().length>0,'Reason cannot be blank')});
+export const MappingRelation=RelationSelection.extend({relation_id:z.string()});
+export type RelationSelectionData=z.infer<typeof RelationSelection>;
+export type MappingRelationData=z.infer<typeof MappingRelation>;
+
 export const Change = z.object({ schema_version: StoredSchemaVersion, report_id: z.string(), change_id: z.string(), entity_id: z.string(),
   from_revision: z.string(), to_revision: z.string(), from_occurrence: z.string(), to_occurrence: z.string(),
-  kind: z.enum(['page_added','page_deleted','page_moved','text_modified','text_struck_through','text_occluded','text_revealed','visual_region_changed','coverage_gap']),
-  before: z.string().nullable(), after: z.string().nullable(), appearance_assessment:z.enum(['observed','inferred']).optional(),text_assessment:z.enum(['observed','inferred']).optional(),text_scope:z.enum(['page','region']).optional(),region_pairing_assessment:z.literal('inferred').optional(), evidence: z.array(Evidence),
+  kind: z.enum(['page_added','page_deleted','page_moved','text_modified','text_struck_through','text_occluded','text_revealed','visual_region_changed','coverage_gap','page_split','page_merged','page_lineage_changed']),
+  topology:z.object({relation_id:z.string(),kind:z.enum(['split','merge','range_lineage']),from_page_ids:z.array(z.string()).min(1),to_page_ids:z.array(z.string()).min(1),semantics:z.enum(['direct_edges','directed_reachability'])}).optional(),before: z.string().nullable(), after: z.string().nullable(), appearance_assessment:z.enum(['observed','inferred']).optional(),text_assessment:z.enum(['observed','inferred']).optional(),text_scope:z.enum(['page','region']).optional(),region_pairing_assessment:z.literal('inferred').optional(), evidence: z.array(Evidence),
   lineage: z.object({ status: z.enum(['inferred','human_confirmed','needs_review']), score: z.number(), reasons: z.array(z.string()) }),
   coverage_gaps: z.array(Gap), evidence_uri: z.string() });
 export const Lineage = z.object({ entity_id: z.string(), page_ids: z.array(z.string()), status: z.enum(['inferred','needs_review','human_confirmed']) });
 export const Report = z.object({ schema_version: StoredSchemaVersion, engine_version: z.string(), report_id: z.string(), project_id: z.string(),
   timeline_revision_id: z.string(), mapping_revision_id: z.string(), schema_hash: z.string(), observation_environment: z.record(z.string(), z.string()),
-  revisions: z.array(Revision), matches: z.array(Match), candidates: z.array(Match), mapping_decisions: z.array(Decision),
+  revisions: z.array(Revision), matches: z.array(Match), candidates: z.array(Match), mapping_decisions: z.array(StoredDecision),mapping_relations:z.array(MappingRelation).optional(),
   lineages: z.array(Lineage), changes: z.array(Change), coverage_gaps: z.array(Gap) }).refine(r=>r.changes.every(c=>c.schema_version===r.schema_version),'Change schema version differs from report');
 export const SCHEMA_HASH=hash(z.toJSONSchema(Report));
 export type ReportData = z.infer<typeof Report>;
@@ -91,7 +97,7 @@ export const comparisonText=(p:PageData):string=>p.comparison_basis==='hybrid_re
 export const unresolvedComparisonText=(p:PageData):string=>p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p).filter(e=>e.comparison_role==='unresolved').map(e=>e.text).join('\n'):p.comparison_basis==='raster_ocr'?p.ocr_unresolved_text??'':p.unresolved_text??'';
 export const Manifest = z.object({ project_id: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/), title: z.string(),
   revisions: z.array(z.object({ label: z.string(), files: z.array(z.string().min(1)).min(1).max(2) })).min(1),
-  mapping_decisions: z.array(Decision).default([]) });
+  mapping_decisions: z.array(StoredDecision).default([]),mapping_relations:z.array(RelationSelection).optional() });
 export const FixtureMetadata=z.object({seed:z.number().int(),generator_version:z.string(),generators:z.record(z.string(),z.string()),
   assets:z.record(z.string(),z.string().regex(/^sha256:[a-f0-9]{64}$/)),
   expected:z.object({revenue:z.array(z.string()),temporary:z.object({added:z.number().int(),deleted:z.number().int()}).optional(),ambiguity:z.boolean().optional(),hidden:z.boolean().optional(),scan:z.boolean().optional(),inconsistent:z.boolean().optional()}),

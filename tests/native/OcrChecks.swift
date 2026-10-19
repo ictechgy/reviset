@@ -9,13 +9,13 @@ import Vision
         let whitespacePrimary="계익 Contract",whitespaceAlternative="계익\u{0085}Contract"
         let whitespaceAmbiguous=DocverVision.roiCompact(whitespacePrimary) != DocverVision.roiCompact(whitespaceAlternative)
         precondition(whitespaceAmbiguous && !DocverVision.mixedScriptCounterOnly(whitespacePrimary,0.5,whitespaceAmbiguous),"NEL dissent must retain the eight-context ambiguous correction path")
-        for text in ["계약 Contract","한 éÆ"] {precondition(DocverVision.mixedScriptCounterOnly(text,0.5,false))}
-        for text in ["Contract","éÆ","계약 검토","Δ"] {precondition(!DocverVision.mixedScriptCounterOnly(text,0.5,false))}
+        for text in ["계약 Contract","한 éÆ"] {precondition(DocverVision.mixedScriptCounterOnly(text,0.5,false,[]))}
+        for text in ["Contract","éÆ","계약 검토","Δ"] {precondition(!DocverVision.mixedScriptCounterOnly(text,0.5,false,[]))}
         for score in [0.0,0.3,0.499,0.501,1.0] {precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",score,false),"Weak and high-score profiles retain their existing evidence contract")}
         precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,true),"Ambiguous positive-correction eligibility still requires all eight contexts")
         precondition(!DocverVision.mixedScriptCounterOnly("계약 é",0.5,false,[["text":"계약 e\u{0301}","confidence":0.5]]),"NFC-equivalent but raw-distinct alternatives retain8 across Unicode table versions")
         precondition(DocverVision.mixedScriptCounterOnly("계약 é",0.5,false,[["text":"계약 é","confidence":0.5]]))
-        precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,false,nil),"Unknown alternatives container retains8 contexts")
+        precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,false),"Unknown alternatives container retains8 contexts")
         for alternative in ["계약  Contract","계약 contract","계약\u{0085}Contract"] {precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,false,[["text":alternative,"confidence":0.5]]),"Unproven cross-runtime equality retains all correction contexts")}
         precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,false,[["text":"계약 Contract"]]))
         typealias Reading=DocverVision.NumericReading
@@ -242,6 +242,11 @@ import Vision
                     precondition((result["reconsideration"] as? [String:Any])?["contexts"] is [[String:Any]])
                     precondition(((result["reconsideration"] as! [String:Any])["contexts"] as! [[String:Any]]).count==count,"Actual producer preserves ambiguity and the competitive-score cutoff")
                     precondition(result["text"] as? String==text && result["confidence"] as? Double==0.5)
+                }
+                for (alternative,count) in [("Delivery pending",2),("DELIVERY pending",8),("Delivery e\u{0301}",8)] {
+                    let row:[String:Any]=["text":"Delivery pending","confidence":0.8,"bbox":[CGFloat(b.minX),1-b.maxY,b.width,b.height],"numeric_consensus":true,"strike_candidate":false,"strike_status":"not_detected","alternatives":[["text":alternative,"confidence":0.8]]]
+                    let result=DocverVision.reconsideredLines(image,bitmap,[row])[0]
+                    precondition(((result["reconsideration"] as! [String:Any])["contexts"] as! [[String:Any]]).count==count,"High-score pruning requires literal raw competitive agreement; uncertain readings retain8 instead of losing eligibility")
                 }
                 for container:Any in [NSNull(),[NSNull(),["text":"Pineapple\u{0085}주스","confidence":0.5]] as [Any]] {
                     let row:[String:Any]=["text":text,"confidence":0.5,"bbox":[CGFloat(b.minX),1-b.maxY,b.width,b.height],"numeric_consensus":true,"strike_candidate":false,"strike_status":"not_detected","alternatives":container]

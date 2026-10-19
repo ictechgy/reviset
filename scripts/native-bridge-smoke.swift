@@ -12,14 +12,14 @@ import Foundation
         try install("#!/bin/sh\ncat >/dev/null\nexec /bin/sleep 30\n")
         let pending=Task{try await bridge.call("analyze",analysis:true)};try await Task.sleep(nanoseconds:150_000_000);bridge.cancel()
         do{_=try await pending.value;fatalError("cancel accepted")}catch let e as BridgeError{guard e.code=="CANCELLED"else{throw e}}
-        try install("#!/bin/sh\ncat >/dev/null\necho '{\"protocol_version\":\"0.1.0\",\"schema_version\":\"0.2.0\",\"ok\":true,\"value\":{\"status\":\"ok\"}}'\n")
+        try install("#!/bin/sh\ncat >/dev/null\necho '{\"protocol_version\":\"0.1.0\",\"schema_version\":\"0.3.0\",\"ok\":true,\"value\":{\"status\":\"ok\"}}'\n")
         let success=try await bridge.call("projects");guard success["status"].string=="ok"else{fatalError("current schema response rejected")}
         try install("#!/bin/sh\ncat >/dev/null\necho '{\"protocol_version\":\"0.1.0\",\"schema_version\":\"0.1.0\",\"ok\":true,\"value\":[]}'\n")
         do{_=try await bridge.call("projects");fatalError("old backend envelope accepted")}catch let e as BridgeError{guard e.code=="PROTOCOL_MISMATCH"else{throw e}}
         if let path=ProcessInfo.processInfo.environment["DOCVER_BRIDGE_BACKEND_RESOURCES"]{
             let real=Bridge(resources:URL(fileURLWithPath:path),library:base.appendingPathComponent("real-library"))
             _=try await real.call("recover");let projects=try await real.call("projects");guard projects.array.isEmpty else{fatalError("unexpected real backend projects")}
-            print("PASS native Swift Bridge accepts actual bundled backend schema0.2 responses")
+            print("PASS native Swift Bridge accepts actual bundled backend schema0.3 responses")
         }
         print("PASS native bridge: unexpected crash != user cancel; bounded stderr log preserved; current-schema success and incompatible-envelope rejection")
     }

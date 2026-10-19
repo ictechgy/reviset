@@ -170,7 +170,8 @@ test('real MCP stdio handshake, schemas, fixed reports, resources, read-only sto
   const client=new Client({name:'checkpoint-tests',version:'1.0.0'});
   try {
     await client.connect(transport);
-    const tools=await client.listTools();assert.deepEqual(tools.tools.map(t=>t.name).sort(),['list_projects','list_reports','get_report','list_revisions','list_pages','get_page','get_element','list_changes','get_entity_history','get_evidence'].sort());for(const t of tools.tools){assert.equal(t.annotations?.readOnlyHint,true);assert.ok(t.inputSchema);assert.ok(t.outputSchema);}
+    const tools=await client.listTools();assert.deepEqual(tools.tools.map(t=>t.name).sort(),['list_projects','list_reports','get_report','list_revisions','list_pages','get_page','get_element','list_changes','get_entity_history','get_evidence','list_page_relations'].sort());for(const t of tools.tools){assert.equal(t.annotations?.readOnlyHint,true);assert.ok(t.inputSchema);assert.ok(t.outputSchema);}
+    const relations=await client.callTool({name:'list_page_relations',arguments:{project_id:r.project_id,report_id:r.report_id,max_output_tokens:4000,limit:1}});assert.notEqual(relations.isError,true);assert.ok(Buffer.byteLength(JSON.stringify(relations))<=4000);
     const bounded=await client.callTool({name:'list_changes',arguments:{project_id:r.project_id,report_id:r.report_id,max_output_tokens:4000}});
     assert.notEqual(bounded.isError,true);assert.ok(Buffer.byteLength(JSON.stringify(bounded))<=4000);
     const results:any[]=[];let cursor:string|undefined;
@@ -180,8 +181,12 @@ test('real MCP stdio handshake, schemas, fixed reports, resources, read-only sto
     } while(cursor);
     assert.deepEqual(results.map(c=>c.change_id),r.changes.filter(c=>c.kind==='text_modified').map(c=>c.change_id));
     const entityId=results[0].entity_id;
-    const history=await client.callTool({name:'get_entity_history',arguments:{project_id:r.project_id,report_id:r.report_id,entity_id:entityId,max_output_tokens:8000}});
-    assert.equal((history.structuredContent as QueryResult).items.length,3);
+    const historyRows:any[]=[];let historyCursor:string|undefined;
+    do {
+      const history=await client.callTool({name:'get_entity_history',arguments:{project_id:r.project_id,report_id:r.report_id,entity_id:entityId,limit:1,max_output_tokens:8000,...(historyCursor?{cursor:historyCursor}:{})}});assert.notEqual(history.isError,true);assert.ok(Buffer.byteLength(JSON.stringify(history))<=8000);
+      const page=history.structuredContent as QueryResult;historyRows.push(...page.items);historyCursor=page.next_cursor??undefined;
+    }while(historyCursor);
+    assert.equal(historyRows.length,3);assert.deepEqual(historyRows.map(p=>p.revision_occurrence_id),r.revisions.map(v=>v.revision_occurrence_id));
     const resource=await client.readResource({uri:`docver://projects/${r.project_id}/reports/${r.report_id}/manifest`});assert.ok(resource.contents.length);
     const changeResource=await client.readResource({uri:r.changes[0].evidence_uri});assert.ok(JSON.parse(String('text' in changeResource.contents[0]?changeResource.contents[0].text:'')).items[0].change_id);
     const denied=await client.callTool({name:'get_report',arguments:{project_id:'prj_other',report_id:r.report_id}});assert.equal(denied.isError,true);

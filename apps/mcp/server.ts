@@ -26,6 +26,7 @@ export function createMcpServer(service:QueryService):McpServer {
     ['manifest',prefix+'/manifest','get_report',()=>({})],
     ['page',prefix+'/revisions/{revision_id}/pages/{page_id}','get_page',v=>({revision_id:v.revision_id,page_id:v.page_id})],
     ['change',prefix+'/changes/{change_id}','list_changes',v=>({change_id:v.change_id})],
+    ['page-relations',prefix+'/pages/{page_id}/relations','list_page_relations',v=>({page_id:v.page_id})],
     ['entity',prefix+'/entities/{entity_id}','get_entity_history',v=>({entity_id:v.entity_id})],
     ['evidence',prefix+'/evidence/{observation_id}','get_evidence',v=>({observation_id:v.observation_id})]
   ];

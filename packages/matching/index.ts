@@ -1,4 +1,5 @@
-import { normalize,comparisonRegions, type PageData, type MatchData, type MappingDecision, DocverError } from '../schema/index.js';
+import { normalize,comparisonRegions, type PageData, type MatchData, type MappingDecision, type MappingRelationData, DocverError } from '../schema/index.js';
+import {relationEdges} from './relations.js';
 function grams(text:string):Set<string> {
   const s=normalize(text).toLowerCase().replace(/[+−-]?\d+(?:[.,]\d+)*/gu,'#').replace(/\s/gu,'');
   return new Set(Array.from({length:Math.max(0,s.length-1)},(_,i)=>s.slice(i,i+2)));
@@ -36,15 +37,21 @@ function assignment(weights:number[][]):number[] {
   for(let j=1;j<=m;j++) if(p[j]) out[p[j]-1]=j-1;
   return out;
 }
-export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecision[]=[]):{matches:MatchData[],candidates:MatchData[]} {
+export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecision[]=[],relations:MappingRelationData[]=[]):{matches:MatchData[],candidates:MatchData[]} {
+  const fromIds=new Set(from.map(p=>p.page_id)),toIds=new Set(to.map(p=>p.page_id)),groups=relations.filter(r=>r.from_page_ids.some(p=>fromIds.has(p))||r.to_page_ids.some(p=>toIds.has(p)));
+  if(groups.some(r=>r.from_page_ids.some(p=>!fromIds.has(p))||r.to_page_ids.some(p=>!toIds.has(p))))throw new DocverError('MAPPING_INTERVAL','Relation is outside this primary comparison interval');
+  const groupEdges=groups.flatMap(relationEdges);
   const relevant=decisions.filter(d=>from.some(p=>p.page_id===d.from_page_id)&&to.some(p=>p.page_id===d.to_page_id));
   const links=relevant.filter(d=>d.action==='link');
   if(new Set(links.map(d=>d.from_page_id)).size!==links.length||new Set(links.map(d=>d.to_page_id)).size!==links.length)
-    throw new DocverError('MAPPING_CONFLICT','Only one-to-one manual links are supported at this checkpoint');
+    throw new DocverError('MAPPING_CONFLICT','Manual pair links must be one-to-one; use a typed split/merge relation');
   const blocked=new Set(relevant.filter(d=>d.action==='unlink').map(d=>d.from_page_id+'|'+d.to_page_id));
   if(links.some(d=>blocked.has(d.from_page_id+'|'+d.to_page_id))) throw new DocverError('MAPPING_CONFLICT','Same pair is linked and unlinked');
-  const left=from.filter(p=>!links.some(d=>d.from_page_id===p.page_id));
-  const right=to.filter(p=>!links.some(d=>d.to_page_id===p.page_id));
+  const manual=[...links,...groupEdges];
+  const occupiedFrom=groups.flatMap(r=>r.from_page_ids).concat(links.map(d=>d.from_page_id)),occupiedTo=groups.flatMap(r=>r.to_page_ids).concat(links.map(d=>d.to_page_id));
+  if(new Set(occupiedFrom).size!==occupiedFrom.length||new Set(occupiedTo).size!==occupiedTo.length||groupEdges.some(e=>blocked.has(e.from_page_id+'|'+e.to_page_id)))throw new DocverError('MAPPING_CONFLICT','Overlapping manual relations or excluded pairs');
+  const left=from.filter(p=>!manual.some(d=>d.from_page_id===p.page_id));
+  const right=to.filter(p=>!manual.some(d=>d.to_page_id===p.page_id));
   const sourceKey=(p:PageData)=>JSON.stringify([p.asset_id,p.page]);
   function counts(pages:PageData[],key:(p:PageData)=>string|undefined){const out=new Map<string,number>();for(const p of pages){const k=key(p);if(k!==undefined)out.set(k,(out.get(k)??0)+1);}return out;}
   const sourceLeft=counts(left,sourceKey),sourceRight=counts(right,sourceKey);
@@ -54,7 +61,7 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
   const uniqueRaster=(i:number,j:number)=>sameSourceRaster(left[i],right[j])&&rasterLeft.get(left[i].raster!.sha256)===1&&rasterRight.get(right[j].raster!.sha256)===1;
   const leftGrams=left.map(p=>grams(matchingText(p))),rightGrams=right.map(p=>grams(matchingText(p)));
   const weights=left.map((a,i)=>right.map((b,j)=>blocked.has(a.page_id+'|'+b.page_id)?0:sameOriginalPage(a,b)||sameSourceRaster(a,b)?1:dice(leftGrams[i],rightGrams[j])));
-  const candidates:MatchData[]=[],matches:MatchData[]=links.map(d=>({from_page_id:d.from_page_id,to_page_id:d.to_page_id,score:1,status:'human_confirmed',reasons:[d.reason]}));
+  const candidates:MatchData[]=[],matches:MatchData[]=[...links.map<MatchData>(d=>({from_page_id:d.from_page_id,to_page_id:d.to_page_id,score:1,status:'human_confirmed' as const,reasons:[d.reason]})),...groupEdges];
   const topRow=weights.map(row=>row.map((score,j)=>({score,j})).sort((a,b)=>b.score-a.score||a.j-b.j));
   const topCol=right.map((_,j)=>weights.map((row,i)=>({score:row[j],i})).sort((a,b)=>b.score-a.score||a.i-b.i));
   function candidate(i:number,j:number):MatchData {

@@ -6,7 +6,8 @@
       "type": "string",
       "enum": [
         "0.1.0",
-        "0.2.0"
+        "0.2.0",
+        "0.3.0"
       ]
     },
     "report_id": {
@@ -41,8 +42,56 @@
         "text_occluded",
         "text_revealed",
         "visual_region_changed",
-        "coverage_gap"
+        "coverage_gap",
+        "page_split",
+        "page_merged",
+        "page_lineage_changed"
       ]
+    },
+    "topology": {
+      "type": "object",
+      "properties": {
+        "relation_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "split",
+            "merge",
+            "range_lineage"
+          ]
+        },
+        "from_page_ids": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "to_page_ids": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "semantics": {
+          "type": "string",
+          "enum": [
+            "direct_edges",
+            "directed_reachability"
+          ]
+        }
+      },
+      "required": [
+        "relation_id",
+        "kind",
+        "from_page_ids",
+        "to_page_ids",
+        "semantics"
+      ],
+      "additionalProperties": false
     },
     "before": {
       "type": [

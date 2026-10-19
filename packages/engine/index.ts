@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { MAX_INPUT_BYTES,Manifest, Report, SCHEMA_VERSION, SCHEMA_HASH, ENGINE_VERSION, id, byteHash, DocverError, type InputManifest, type RevisionData, type ReportData } from '../schema/index.js';
 import { ingest, type Extracted } from '../ingest/index.js';
 import { matchPages, similarity } from '../matching/index.js';
+import {primaryPages,validateMappings} from '../matching/relations.js';
 import { diffRevisions } from '../diff/index.js';
 import { Store } from '../storage/index.js';
 import { fileSha256 } from '../runtime/file-hash.js';
@@ -93,18 +94,11 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     onProgress?.({analysis_run_id:run,phase:'match',current:revisions.length,total:revisions.length});
     signal?.throwIfAborted();
     const decisions=manifest.mapping_decisions;
-    const allPageIds=new Set(revisions.flatMap(r=>r.pages.map(p=>p.page_id)));
-    for(const d of decisions) {
-      if(!allPageIds.has(d.from_page_id)||!allPageIds.has(d.to_page_id)) throw new DocverError('MAPPING_NOT_FOUND','Decision references a page outside this timeline');
-      const a=revisions.findIndex(r=>r.pages.some(p=>p.page_id===d.from_page_id));
-      const b=revisions.findIndex(r=>r.pages.some(p=>p.page_id===d.to_page_id));
-      if(b!==a+1) throw new DocverError('MAPPING_INTERVAL','Manual decisions currently require adjacent revisions');
-    }
+    const relations=validateMappings(revisions,decisions,manifest.mapping_relations??[]);
     const matches:ReportData['matches']=[],candidates:ReportData['candidates']=[];
-    const primaryPages=(r:RevisionData)=> r.assets.some(a=>a.format==='pptx')?r.pages.filter(p=>r.assets.find(a=>a.asset_id===p.asset_id)?.format==='pptx'):r.pages;
     for(let i=1;i<revisions.length;i++) {
       if(revisions[i-1].status==='failed'||revisions[i].status==='failed') continue;
-      const pairing=matchPages(primaryPages(revisions[i-1]),primaryPages(revisions[i]),decisions);
+      const pairing=matchPages(primaryPages(revisions[i-1]),primaryPages(revisions[i]),decisions,relations.filter(r=>r.from_occurrence===revisions[i-1].revision_occurrence_id&&r.to_occurrence===revisions[i].revision_occurrence_id));
       matches.push(...pairing.matches);candidates.push(...pairing.candidates);
     }
     // A known hidden slide can bridge an intermediate PDF visibility gap; no fictional delete/add.
@@ -112,7 +106,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
       if(!revisions[i-1].assets.every(a=>a.format==='pdf')||revisions[i-1].status!=='success') continue;
       for(const a of primaryPages(revisions[i-2]).filter(p=>p.hidden)) {
         const possible=primaryPages(revisions[i]).filter(b=>b.hidden&&similarity(a,b)>0.95);
-        if(possible.length===1) matches.push({from_page_id:a.page_id,to_page_id:possible[0].page_id,score:similarity(a,possible[0]),status:'inferred',reasons:['hidden_slide_observation_gap']});
+        if(possible.length===1&&!matches.some(m=>m.from_page_id===a.page_id||m.to_page_id===possible[0].page_id)&&!decisions.some(d=>d.action==='unlink'&&(d.from_page_id===a.page_id||d.to_page_id===possible[0].page_id))) matches.push({from_page_id:a.page_id,to_page_id:possible[0].page_id,score:similarity(a,possible[0]),status:'inferred',reasons:['hidden_slide_observation_gap']});
       }
     }
     const parent=new Map<string,string>();
@@ -133,7 +127,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     const changes=comparisons.slice(1).flatMap((r,i)=>diffRevisions(comparisons[i],r,matches,candidates,entityFor));
     const coverage=revisions.flatMap(r=>r.coverage_gaps);
     const base={schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION,project_id:manifest.project_id,timeline_revision_id:timelineId,
-      mapping_revision_id:id('mapping',decisions),schema_hash:SCHEMA_HASH,observation_environment:environment,revisions,matches,candidates,mapping_decisions:decisions,lineages,changes,coverage_gaps:coverage};
+      mapping_revision_id:id('mapping',[decisions,relations]),schema_hash:SCHEMA_HASH,observation_environment:environment,revisions,matches,candidates,mapping_decisions:decisions,mapping_relations:relations,lineages,changes,coverage_gaps:coverage};
     const reportId=id('rpt',base);
     changes.forEach((c,i)=>{c.report_id=reportId;c.change_id=id('chg',[reportId,i,c]);c.evidence_uri=`docver://projects/${manifest.project_id}/reports/${reportId}/changes/${c.change_id}`;});
     const report=Report.parse({...base,report_id:reportId});

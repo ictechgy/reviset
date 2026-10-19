@@ -84,7 +84,7 @@ final class Bridge: @unchecked Sendable {
                     }
                     guard let object=try? JSONSerialization.jsonObject(with:data) else {throw failure("HELPER_PROTOCOL","분석 엔진 응답을 읽지 못했습니다 (exit \(process.terminationStatus)).")}
                     let reply = JSON(object)
-                    guard reply["protocol_version"].string == "0.1.0" && reply["schema_version"].string == "0.2.0" else { throw BridgeError(code:"PROTOCOL_MISMATCH",message:"앱과 분석 엔진의 계약 버전이 다릅니다.") }
+                    guard reply["protocol_version"].string == "0.1.0" && reply["schema_version"].string == "0.3.0" else { throw BridgeError(code:"PROTOCOL_MISMATCH",message:"앱과 분석 엔진의 계약 버전이 다릅니다.") }
                     guard reply["ok"].bool else { throw BridgeError(code: reply["error"]["code"].string, message: reply["error"]["message"].string) }
                     continuation.resume(returning: reply["value"])
                 } catch {
