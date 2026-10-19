@@ -573,3 +573,39 @@ Ten old32cases lack the designated native crop and remain explicit skips. This
 does not prove absence of learned language priors or qualify a product engine.
 No Tesseract dependency/models are bundled. Claude/Grok discussions are valid
 discussions, not source/product approval; Agy's quota failure is not review.
+
+
+Engine38 actual frozen qualification completed:480prospective correlated fixture
+conditions retain218full-page literal matches,22nonempty not-full-truth and240
+empty selected pages;all480primary non-ROI fields/native PNG hashes unchanged
+from20,and no previously full-correct page lost. This is a bounded count,not
+universal accuracy. Actual signed38app5versions13.685s/900mixed55.704s/
+600scanpages324.002s/backend8checksPASS. The scan set has300distinct page labels
+across two versions and301unique native image hashes,not300 identical pages.
+Earlier continuation shorthand calling it repeated scans referred to version
+repetition and must not imply an identical-page throughput result. Its slow
+borderline mixed-script ROI path remains performance work.
+
+Complete original-base38reviews codeREQUEST_CHANGES (UnicodeLatin presence
+gate) and architectureWATCH are preserved separately. ScopedClaude38APPROVE
+is not full-base/product approval;Grok timeout and Agyquota are invalid reviews.
+39aligns the consumer's Latin presence predicate with UnicodeLatin producer
+eligibility;nonASCII-only lower/upper/ligature cases preserve primary/source
+priority. Negative-only reflow guards cover terminal Unicode Dash_Punctuation,
+soft hyphen and minus marks;raw evidence remains exact.
+
+39also reuses one normalized native image observation for equal-hash/equal-pixel-
+dimension pages already rendered by warm-cache lookup. This adds no render
+pass to cold/no-reuse paths. Actual representative mismatches and individual
+failures trigger independent peer OCR. Nested observations are deep-cloned;
+viewport/rotation and operational cache warnings remain page-local. Raster disk
+keys/validation include dimensions. Optional-annex availability may be shared
+like existing image-cache reuse;no equivalence to every independent stochastic
+retry or600scan speedup is claimed. Five deterministic subprocess cases and
+actual native three-page numeric/strike/token/raster preservation pass. Initial
+fake-test dimension-key collision expectation failure is retained;corrected
+5/5pass. Fullserial162/162PASS,0fail/skip/cancel,133.829s;runtime source fixed
+through suite and commit,only evidence docs follow. The ignored uniform-tile
+prototype preserves88primary/raster pairs but its8.18%median component gain
+fails the preregistered10%gate;not adopted. Product remains OPEN for remaining
+OCR errors,strict PPTX fidelity,performance and missing manual split/merge.

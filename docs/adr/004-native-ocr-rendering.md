@@ -468,3 +468,25 @@ contracts remain intact. Positive correction still requires its original weak
 primary and8complete contexts.480prospective correlated conditions support a
 bounded risk reduction, not full OCR correctness. Current production qualification
 and unique-page latency remain separate gates.
+
+
+### Engine39: Unicode scope and same-image work within one capture
+
+The consumer's Latin presence test uses Script=Latin,matching the native
+high-score eligibility profile. Terminal Unicode dash punctuation/soft/minus
+normalization remains only a conservative possible-reflow veto;source strings
+are never normalized in place.
+
+When the existing warm raster-cache lookup already rendered pending pages,
+equal native PNG SHA and pixel dimensions may reuse one current-environment
+NativePageResult. Clone before per-page supplementation/selection,retain own
+viewport/rotation,strip representative cache-write warnings and apply own I/O
+warnings. Validate actual OCR hash/dimensions against the pre-render;otherwise
+keep the representative's own actual observation and independently process its
+peers. Failed/missing render evidence never prevents ordinary OCR. Fixed
+original-work progress,cancellation,16page/32MiB/60s-per-page process budgets
+remain. Cold/no-reuse paths add no render calls. The disk key includes dimensions
+as well as environment and image SHA. Optional annex availability can be shared;
+this optimization does not promise independent retry equivalence or accuracy
+improvement. Actual native primary/numeric/strike/token/raster preservation is
+covered separately from deterministic subprocess failure/cache controls.

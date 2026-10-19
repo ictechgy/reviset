@@ -185,3 +185,13 @@ test('actual MCP transport traverses retained components using their own Unicode
     assert.ok(invalidPrimary.isError);assert.match(JSON.stringify(invalidPrimary),/TEXT_OFFSET/,'A cursor that actually splits the selected primary must still fail');
   }finally{await client.close();store.close();await rm(folder,{recursive:true,force:true});}
 });
+
+test('entirely nonASCII Latin words share producer scope while raw text and source priority remain intact',()=>{
+ for(const [before,after]of [['éé','éè'],['É','È'],['Æ','Œ'],['ø','ö']])for(const score of [.5,1]){
+  const p=primary(before);p.visibility='visible';p.ocr!.confidence=score;p.ocr!.reconsideration_observation=observation(after);if(score===1)p.ocr!.reconsideration_observation.contexts=p.ocr!.reconsideration_observation.contexts.filter(c=>c.padding===.75&&c.languages.join(',')==='en-US');
+  const original=structuredClone(p),pg=page([p]);assert.equal(contextualAssessment(p,()=>false),'disagrees');selectHybridComparison(pg);Page.parse(pg);assert.equal(p.comparison_role,'unresolved');assert.equal(p.text,before);assert.deepEqual(p.ocr,original.ocr);
+  const matching=structuredClone(original);matching.ocr!.reconsideration_observation=observation(before);assert.equal(contextualAssessment(matching,()=>false),'consistent');
+  const missing=structuredClone(original);missing.ocr!.reconsideration_observation=undefined;assert.equal(contextualAssessment(missing,()=>false),score===1?'not_applicable':'unverified');
+  const source:ElementData={...structuredClone(original),observation_id:'source',method:'pdf_text',provenance:'observed',source_ref:'source',ocr:undefined};const sourcePage=page([source,structuredClone(original)]);selectHybridComparison(sourcePage);assert.equal(sourcePage.elements[0].comparison_role,'selected');assert.equal(sourcePage.elements[1].comparison_role,'shadowed');
+ }
+});

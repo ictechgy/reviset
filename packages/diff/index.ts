@@ -19,7 +19,7 @@ function fragmentReflow(longer:string,shorter:string,short:ElementData,peers:Ele
   const a=normalize(longer).trim().split(/\s+/u),b=normalize(shorter).trim().split(/\s+/u);
   if(a.length!==b.length)return false;
   const changed=a.map((word,i)=>word===b[i]?-1:i).filter(i=>i>=0);if(changed.length!==1)return false;
-  const lineFragment=(word:string)=>word.replace(/[-\u00ad\u2010]$/u,'');
+  const lineFragment=(word:string)=>word.replace(/[\p{Dash_Punctuation}\u00ad\u2212]$/u,'');
   const index=changed[0],complete=a[index],fragment=lineFragment(b[index]);
   if(!fragment||fragment===complete)return false;
   // Repeated boundaries can admit both directions (murmur -> mur). Neither

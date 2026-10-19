@@ -69,7 +69,7 @@ test('a token shortening without a nearby matching continuation remains a region
 });
 
 test('continuation fragments preserve hyphens only in raw evidence and search repeated boundaries both ways',()=>{
- for(const reverse of [false,true])for(const hyphen of ['-','\u00ad','\u2010'])for(const preceding of [false,true]){
+ for(const reverse of [false,true])for(const hyphen of ['-','\u00ad','\u2010','\u2011','\u2012','\u2013','\u2014','\u2212'])for(const preceding of [false,true]){
   const a=page('a','Customer approved'),b=page('b',preceding?'Customer proved':'Customer appro');b.elements[1].bbox=[.1,.3,.3,.05];
   if(preceding)b.elements.push(line('head','earlier ap'+hyphen,.24));
   else b.elements.push(line('tail1','v'+hyphen,.36),line('tail2','ed immediately',.42));

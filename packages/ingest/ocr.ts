@@ -56,29 +56,58 @@ export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPage
       try{await write();}catch(error){if(options.signal?.aborted||(error instanceof DocverError&&error.code==='CANCELLED'))throw error;value.cache_write_failed=true;}
     };
     const save=async(page:number,value:NativePageResult)=>{if(cache)await writeCache(cache,keyFor(page),value);};
+    const sameRaster=(a:NativePageResult,b:NativePageResult)=>a.render_sha256===b.render_sha256&&a.width===b.width&&a.height===b.height;
+    const rasterKey=(value:NativePageResult)=>hash([environment,value.render_sha256,value.width,value.height]);
+    const forPage=(known:NativePageResult,raster:NativePageResult)=>{
+      const value=structuredClone(known);delete value.cache_write_failed;
+      value.viewport_width=raster.viewport_width;value.viewport_height=raster.viewport_height;value.rotation=raster.rotation;
+      if(raster.cache_write_failed)value.cache_write_failed=true;
+      return value;
+    };
+    let rendered=new NativePageObservations();
     // OCR is an image observation: identical native pixels reuse recognition across versions.
     if(cache&&options.reuseRasterOcr!==false&&existsSync(join(cache,'raster'))&&missing.some(n=>wanted.has(n))){
-      const rendered=await captureNativePages(bytes,missing.filter(n=>wanted.has(n)),[],{...options,sourceFile:source,sourceHash,onPage:undefined});
-      for(const [page,raster] of rendered){const key=hash([environment,raster.render_sha256]),path=join(cache,'raster',key+'.json');try{const saved=JSON.parse(await readFile(path,'utf8'));if(saved.key!==key||saved.sha256!==hash(saved.value))continue;const known=Result.parse(saved.value);if(!known.ocr_performed||known.render_sha256!==raster.render_sha256)continue;
-        const value={...known,viewport_width:raster.viewport_width,viewport_height:raster.viewport_height,rotation:raster.rotation,...(raster.cache_write_failed?{cache_write_failed:true as const}:{})};results.set(page,value);await persist(value,()=>save(page,value));
+      rendered=await captureNativePages(bytes,missing.filter(n=>wanted.has(n)),[],{...options,sourceFile:source,sourceHash,onPage:undefined});
+      for(const [page,raster] of rendered){options.signal?.throwIfAborted();const key=rasterKey(raster),path=join(cache,'raster',key+'.json');try{const saved=JSON.parse(await readFile(path,'utf8'));if(saved.key!==key||saved.sha256!==hash(saved.value))continue;const known=Result.parse(saved.value);if(!known.ocr_performed||!sameRaster(known,raster))continue;
+        const value=forPage(known,raster);results.set(page,value);await persist(value,()=>save(page,value));
       }catch(error){if(options.signal?.aborted||(error instanceof DocverError&&error.code==='CANCELLED'))throw error;/* no verified recognition for these pixels */}}
     }
     const pending=missing.filter(n=>!results.has(n));
+    // Reuse the render pass already required for raster-cache lookup. New images
+    // repeated within this call need one observation, not one OCR per page. No
+    // extra rendering is introduced for a cold cache or when reuse is disabled.
+    const groups=new Map<string,{representative:number;duplicates:number[]}>(),duplicates=new Set<number>();
+    for(const page of pending){const raster=rendered.get(page);if(!wanted.has(page)||!raster)continue;
+      const key=hash([raster.render_sha256,raster.width,raster.height]),group=groups.get(key);
+      if(group){group.duplicates.push(page);duplicates.add(page);}else groups.set(key,{representative:page,duplicates:[]});
+    }
+    let completed=0;
+    const progress=()=>options.onPage?.(completed,pending.length);
     // Cold primary OCR plus bounded ROI can exceed30s (measured24.85s
     // process/structure on the ruled-table control). Keep cancellation and a
     // finite60s/page process budget; ROI has its own smaller native budget.
-    for(let start=0;start<pending.length;start+=16){
-      options.signal?.throwIfAborted();const chunk=pending.slice(start,start+16);try{const response=z.object({pages:z.array(z.object({page:z.number().int().positive(),result:z.unknown().optional(),error:z.string().optional()}).refine(row=>Boolean(row.result)!==Boolean(row.error))).max(16)}).parse(JSON.parse(await runTool(executable,[],{input:JSON.stringify({path:source,pages:chunk,ocr_pages:chunk.filter(n=>wanted.has(n))}),signal:options.signal,timeout:60_000*chunk.length,maxBytes:32*1024*1024})));
+    const observeBatches=async(queue:number[])=>{for(let start=0;start<queue.length;start+=16){
+      options.signal?.throwIfAborted();const chunk=queue.slice(start,start+16);try{const response=z.object({pages:z.array(z.object({page:z.number().int().positive(),result:z.unknown().optional(),error:z.string().optional()}).refine(row=>Boolean(row.result)!==Boolean(row.error))).max(16)}).parse(JSON.parse(await runTool(executable,[],{input:JSON.stringify({path:source,pages:chunk,ocr_pages:chunk.filter(n=>wanted.has(n))}),signal:options.signal,timeout:60_000*chunk.length,maxBytes:32*1024*1024})));
       if(response.pages.length!==chunk.length||new Set(response.pages.map(p=>p.page)).size!==chunk.length||response.pages.some(p=>!chunk.includes(p.page)))throw new DocverError('OCR_PROTOCOL','Native observation page set mismatch');
       for(const row of response.pages){if(!row.result){results.failures.set(row.page,'NATIVE_PAGE_HELPER_ERROR');continue;}const parsed=Result.safeParse(row.result);if(!parsed.success){results.failures.set(row.page,'NATIVE_RESULT_SCHEMA_INVALID');continue;}const result=parsed.data;delete result.cache_write_failed;if(result.ocr_performed!==wanted.has(row.page)){results.failures.set(row.page,'NATIVE_OCR_MODE_MISMATCH');continue;}results.set(row.page,result);
-        await persist(result,async()=>{await save(row.page,result);if(cache&&result.ocr_performed)await writeCache(join(cache,'raster'),hash([environment,result.render_sha256]),result);});
+        await persist(result,async()=>{await save(row.page,result);if(cache&&result.ocr_performed)await writeCache(join(cache,'raster'),rasterKey(result),result);});
       }
       }catch(e){if(options.signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;
         const reason=e instanceof DocverError&&['TOOL_TIMEOUT','TOOL_OUTPUT_LIMIT','TOOL_FAILED','OCR_PROTOCOL'].includes(e.code)?e.code:e instanceof SyntaxError||e instanceof z.ZodError?'OCR_PROTOCOL':'NATIVE_BATCH_FAILED';
         for(const page of chunk)if(!results.has(page)&&!results.failures.has(page))results.failures.set(page,reason);
       }
-      options.onPage?.(Math.min(start+16,pending.length),pending.length);
+      completed+=chunk.length;progress();
+    }};
+    await observeBatches(pending.filter(page=>!duplicates.has(page)));
+    const fallback:number[]=[];
+    for(const {representative,duplicates:peers} of groups.values()){
+      options.signal?.throwIfAborted();const known=results.get(representative),raster=rendered.get(representative)!;
+      // An individual helper failure or changed render cannot certify its peers.
+      if(!known?.ocr_performed||!sameRaster(known,raster)){fallback.push(...peers);continue;}
+      for(const page of peers){options.signal?.throwIfAborted();const value=forPage(known,rendered.get(page)!);results.set(page,value);await persist(value,()=>save(page,value));completed++;}
+      if(peers.length)progress();
     }
+    await observeBatches(fallback);
     options.signal?.throwIfAborted();return results;
   }finally{if(folder)await rm(folder,{recursive:true,force:true});}
 }

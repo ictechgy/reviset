@@ -24,7 +24,7 @@ export function contextualAssessment(primary:ElementData,blocked:(bbox:Box)=>boo
   const ocr=primary.ocr,highLatin=!!ocr&&ocr.confidence>.5&&!ocr.ambiguous&&/^[\p{Script=Latin}\s\p{P}\p{S}]+$/u.test(primary.text)&&/\p{L}/u.test(primary.text);
   const unavailable=highLatin?'not_applicable':'unverified';
   if(primary.method!=='vision_ocr'||primary.provenance!=='inferred'||primary.availability!=='available'||ocr?.reconsideration||!ocr||ocr.confidence>.5&&!highLatin||!ocr.numeric_consensus||ocr.strike_status!=='not_detected'||primary.text.length>128||/[\p{N}]/u.test(primary.text))return 'not_applicable';
-  const hangul=/\p{Script=Hangul}/u.test(primary.text),latin=/[A-Za-z]/u.test(primary.text);
+  const hangul=/\p{Script=Hangul}/u.test(primary.text),latin=/\p{Script=Latin}/u.test(primary.text);
   if(!hangul&&!latin)return 'not_applicable';
   const parsed=OcrReconsideration.safeParse(ocr.reconsideration_observation);
   if(!parsed.success)return unavailable;
