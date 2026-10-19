@@ -28,7 +28,7 @@ import { DesktopService } from '../../packages/desktop/service.js';
 import { Store } from '../../packages/storage/index.js';
 import { QueryService,type QueryResult } from '../../packages/query/index.js';
 import {preparePdfjs} from '../../scripts/prepare-pdfjs.js';
-import {numericSlots,numericPattern} from '../../packages/ingest/numeric-slots.js';
+import {numericSlots,numericPattern,numericShape,numericNotationSupported} from '../../packages/ingest/numeric-slots.js';
 
 await preparePdfjs();
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -181,6 +181,18 @@ test('hybrid source agreement uses target glyphs for neighboring lines and split
   const malformed=structuredClone(split);malformed.elements[0].visibility_spans!.pop();selectHybridComparison(malformed);assert.equal(malformed.elements.at(-1)!.comparison_reason,'readable_source_glyph_text_correlation_unverified');
   const budget=structuredClone(split);budget.elements[0].visibility_spans=Array.from({length:8193},()=>({...spans[0]}));selectHybridComparison(budget);assert.equal(budget.elements.at(-1)!.comparison_reason,'readable_source_glyph_agreement_budget_exceeded');
   const reordered=structuredClone(split);reordered.elements[0].visibility_spans!.reverse();selectHybridComparison(reordered);assert.ok(reordered.elements.filter(e=>e.method==='vision_ocr').every(e=>e.comparison_role==='unresolved'),'Incorrect source correlation is not repaired from the OCR hypothesis');
+  const logical=(text:string,spans:NonNullable<PageData['elements'][number]['visibility_spans']>)=>{const p=structuredClone(split);p.elements=[{...raw,text,normalized_text:text,bbox:[.1,.1,.3,.064],visibility_spans:spans},{...raw,observation_id:'ocr-logical',text,normalized_text:text,bbox:[.1,.1,.3,.064],method:'vision_ocr',provenance:'inferred',visibility_spans:[]}];selectHybridComparison(p);return p.elements[1].comparison_role;};
+  const span=(text:string,bbox:PageData['elements'][number]['bbox'])=>({text,bbox,state:'visible',paint_index:0,assessment:'inferred' as const});
+  assert.equal(logical('$12',[span('$',[.1,.145,.01,.019]),span('1',[.12,.1,.02,.064]),span('2',[.14,.1,.02,.064])]),'shadowed','Mixed glyph sizes retain correlated source order');
+  assert.equal(logical('אבג',[span('א',[.3,.1,.03,.05]),span('ב',[.2,.1,.03,.05]),span('ג',[.1,.1,.03,.05])]),'shadowed','RTL glyphs retain logical source order');
+});
+
+test('UserUnit outline proof preserves at least one actual native pixel of clearance',native,async()=>{
+  for(const unit of [.5,1,2,10]){
+    const make=(margin?:number)=>new Promise<Buffer>(done=>{const d=new PDFDocument({size:[100,100],margin:0}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));d.on('end',()=>done(Buffer.concat(chunks)));(d.page as any).dictionary.data.UserUnit=unit;d.font(resolve('node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf')).fontSize(12);if(margin!==undefined)d.save().rect(5,5,80,10+905.2734375/1000*12+margin-5).clip();d.text('H',10,10,{lineBreak:false});if(margin!==undefined)d.restore();d.end();});
+    const positive=await make(.6),[p]=await extractPdf(positive,'sha256:unit'+unit,{ocr:'off'}),[near]=await extractPdf(await make(.18),'sha256:unit-near'+unit,{ocr:'off'});assert.equal(p.elements[0].visibility,'visible');assert.equal(near.elements[0].visibility,'unverified','A native subpixel margin cannot qualify under a scaled PDF.js viewport');
+    const native=(await captureNativePages(positive,[1],[])).get(1)!,base=(await captureNativePages(await make(),[1],[])).get(1)!;assert.equal(native.render_sha256,base.render_sha256);const ink=p.elements[0].visibility_evidence!.find(e=>e.method==='loaded_glyph_outline_inside_rect_clip')!.bbox;assert.ok(((10+905.2734375/1000*12+.6)/100-ink[1]-ink[3])*native.height>=1,'Claimed proof retains actual native-pixel clearance');
+  }
 });
 
 test('disjoint proven text clips do not occlude each other through empty metric margins',native,async()=>{
@@ -213,6 +225,10 @@ test('fraction slot boundaries retain mixed numbers, units and ambiguity in regi
   const page=(key:string,text:string,uncertain=false):PageData=>({page_id:key,asset_id:key,page:1,width:960,height:540,coordinate_system:'normalized',source_transform:[],hidden:false,text:'',comparison_basis:'raster_ocr',ocr_text:text,ocr_unresolved_text:uncertain?'Unknown region':'',raster:{sha256:key.repeat(64),width:960,height:540,renderer:'fixture',environment:'fixture'},elements:[{observation_id:key,kind:'text',text,normalized_text:text,bbox:[.1,.1,.4,.05],reading_order:0,availability:'available',method:'vision_ocr',source_ref:key,provenance:'inferred',visibility:'visible'},...(uncertain?[{observation_id:key+'u',kind:'text' as const,text:'Unknown region',normalized_text:'Unknown region',bbox:[.1,.5,.4,.05] as [number,number,number,number],reading_order:1,availability:'available' as const,method:'vision_ocr',source_ref:key+'u',provenance:'inferred' as const,visibility:'uncertain' as const}]:[])],notes:null,capabilities:{text:'available',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},coverage_gaps:[]});
   const a=page('a','½ cup olives',true),b=page('b','1/4 cup olives',true),regional=changes(a,b).filter(c=>c.kind==='text_modified');assert.equal(regional.length,1);assert.equal(regional[0].text_scope,'region');assert.equal(regional[0].text_assessment,'inferred');assert.deepEqual(regional[0].evidence.map(e=>e.quote),['½ cup olives','1/4 cup olives']);
   assert.equal(changes(a,page('c','1 4 cup olives',true)).filter(c=>c.kind==='text_modified').length,0,'Separate digits cannot verify one fractional slot');assert.equal(changes(a,page('d','¼ kg olives',true)).filter(c=>c.kind==='text_modified').length,0,'Regional numeric matching must preserve units');
+  for(const [fraction,integer,key]of [['1/2 cup olives','12 cup olives','e'],['½ cup olives','14 cup olives','f']]){assert.equal(changes(page('a',fraction,true),page(key,integer,true)).filter(c=>c.kind==='text_modified').length,0,'A dropped fraction slash cannot become a regional value edit');const full=changes(page('a',fraction),page(key,integer));assert.ok(!full.some(c=>c.kind==='text_modified'));assert.ok(full.some(c=>c.coverage_gaps.some(g=>g.reason==='ocr_region_missing_or_numeric_ambiguity_withheld')));}
+  for(const text of ['1/','/2','Amount /2 cup','1 /','／２','1//2','1/-2']){assert.equal(numericNotationSupported(text),false);assert.equal(numericShape(text),null);assert.equal(changes(page('a',text,true),page('g','2 cup olives',true)).filter(c=>c.kind==='text_modified').length,0);}
+  for(const text of ['1 / 2','１ ／ ２','10/19/2026','100원/월','1/day','km/h','금액 -1,234.50 / +1.25% / 120억','100 USD / +120 USD'])assert.equal(numericNotationSupported(text),true,text);
+  assert.equal(numericShape('1½'),'decimal,fraction');assert.equal(numericPattern('1½'),'##/#');assert.equal(numericPattern('1 1/2'),'# #/#');
 });
 
 test('native fractional scan changes retain original readings and inferred evidence',native,async()=>{

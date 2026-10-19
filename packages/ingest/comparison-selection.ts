@@ -46,7 +46,10 @@ function sourceTextInside(regions:ElementData[],target:Box):{text?:string;reason
     // centers remain outside. Conversely a source run may cover several OCR
     // pieces: compare only source glyphs centered in this target, never a
     // substring guessed from OCR text. Raw source remains selected in full.
-    units.push(...spans.filter(s=>{const b=s.bbox,x=b[0]+b[2]/2,y=b[1]+b[3]/2;return x>=target[0]&&x<=target[0]+target[2]&&y>=target[1]&&y<=target[1]+target[3];}));
+    const selected=spans.filter(s=>{const b=s.bbox,x=b[0]+b[2]/2,y=b[1]+b[3]/2;return x>=target[0]&&x<=target[0]+target[2]&&y>=target[1]&&y<=target[1]+target[3];});
+    // Correlation proves a logical subsequence within the source element.
+    // Preserve it for mixed sizes/RTL; apply row ordering only across elements.
+    if(selected.length){const x=Math.min(...selected.map(s=>s.bbox[0])),y=Math.min(...selected.map(s=>s.bbox[1]));units.push({text:selected.map(s=>s.text).join(''),bbox:[x,y,Math.max(...selected.map(s=>s.bbox[0]+s.bbox[2]))-x,Math.max(...selected.map(s=>s.bbox[1]+s.bbox[3]))-y]});}
   }
   return {text:rowOrderedRegions(units).map(s=>s.text).join('')};
 }

@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-11-fraction-slots"
+    static let version = "docver-vision-13-fraction-separators"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -24,7 +24,25 @@ struct DocverVision {
         // Complete vulgar/slash fractions are one spatial slot, never a loose
         // agreement on numerator/denominator digits. Other numeric scripts,
         // superscripts, Roman and incomplete fraction numerators stay unsupported.
-        text.replacingOccurrences(of:vulgarFractions,with:"",options:.regularExpression).range(of:"(?=\\p{N})[^0-9０-９]",options:.regularExpression)==nil
+        if text.replacingOccurrences(of:vulgarFractions,with:"",options:.regularExpression).range(of:"(?=\\p{N})[^0-9０-９]",options:.regularExpression) != nil{return false}
+        if !text.contains(where:{"/⁄／".contains($0)}){return true}
+        let slots=(try? numericExpression().matches(in:text,range:NSRange(text.startIndex...,in:text))) ?? [],ns=text as NSString
+        var nextSlot=0
+        for index in text.indices where "/⁄／".contains(text[index]) {
+            let position=index.utf16Offset(in:text),after=text.index(after:index)
+            while nextSlot<slots.count && NSMaxRange(slots[nextSlot].range)<=position{nextSlot+=1}
+            // A spaced separator between two complete numeric observations is
+            // a list delimiter, including signed values and literal units.
+            if index>text.startIndex && after<text.endIndex && text[text.index(before:index)].isWhitespace && text[after].isWhitespace && nextSlot>0 && nextSlot<slots.count && slots[nextSlot].range.location>position {
+                let end=NSMaxRange(slots[nextSlot-1].range),suffix=ns.substring(with:NSRange(location:end,length:position-end)),prefix=ns.substring(with:NSRange(location:position+1,length:slots[nextSlot].range.location-position-1))
+                if suffix.range(of:"^[\\p{L}\\p{Sc}%％\\s]*$",options:.regularExpression) != nil && prefix.range(of:"^\\s*$",options:.regularExpression) != nil{continue}
+            }
+            let left=text[..<index].last(where:{!$0.isWhitespace}),right=text[text.index(after:index)...].first(where:{!$0.isWhitespace})
+            func digit(_ c:Character?)->Bool{c.map{"0123456789０１２３４５６７８９".contains($0)} ?? false}
+            if digit(right) && !digit(left){return false}
+            if left?.isNumber == true && !(right.map{$0.isLetter || $0.isNumber} ?? false){return false}
+        }
+        return true
     }
     static func supportedPixels(_ image:NSBitmapImageRep)->Bool {
         !image.isPlanar && image.bitsPerSample==8 && image.bitsPerPixel==image.samplesPerPixel*8 && !image.bitmapFormat.contains(.sixteenBitLittleEndian) && !image.bitmapFormat.contains(.thirtyTwoBitLittleEndian) && ((image.colorSpace.colorSpaceModel == .rgb && [3,4].contains(image.samplesPerPixel)) || (image.colorSpace.colorSpaceModel == .gray && [1,2].contains(image.samplesPerPixel)))
