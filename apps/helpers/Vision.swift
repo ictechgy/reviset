@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-7-qualified-grid"
+    static let version = "docver-vision-8-qualified-grid"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -62,8 +62,8 @@ struct DocverVision {
         var bands:[[Int]]=[]
         for i in order {
             let b=rect(i)
-            if let anchor=bands.last?.first {let a=rect(anchor),overlap=min(a.maxY,b.maxY)-max(a.minY,b.minY)
-                if overlap>0.5*max(a.height,b.height){bands[bands.count-1].append(i);continue}
+            if let anchor=bands.last?.first {let a=rect(anchor)
+                if a.minY<=b.midY && b.midY<=a.maxY && b.minY<=a.midY && a.midY<=b.maxY {bands[bands.count-1].append(i);continue}
             }
             bands.append([i])
         }

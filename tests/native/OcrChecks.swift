@@ -24,6 +24,10 @@ import AppKit
             ["text":"L1","bbox":[CGFloat(0.31),CGFloat(0.1),CGFloat(0.2),CGFloat(0.02)]],
             ["text":"L2","bbox":[CGFloat(0.30),CGFloat(0.13),CGFloat(0.2),CGFloat(0.02)]]]
         precondition(DocverVision.orderedLines(tall).map{$0["text"] as! String} == ["tall","L1","L2"],"Tall anchors must not absorb stacked neighboring lines")
+        let kpi:[[String:Any]]=[
+            ["text":"Revenue","bbox":[CGFloat(0.1),CGFloat(0.10),CGFloat(0.2),CGFloat(0.02)]],
+            ["text":"₩12,000","bbox":[CGFloat(0.4),CGFloat(0.09),CGFloat(0.15),CGFloat(0.05)]]]
+        precondition(DocverVision.orderedLines(kpi).map{$0["text"] as! String} == ["Revenue","₩12,000"],"A larger KPI value shares the label's row when their vertical centers lie inside each other")
         let jitter:[[String:Any]]=[
             ["text":"right","bbox":[CGFloat(0.7),CGFloat(0.100),CGFloat(0.2),CGFloat(0.02)]],
             ["text":"left","bbox":[CGFloat(0.1),CGFloat(0.101),CGFloat(0.2),CGFloat(0.02)]],
