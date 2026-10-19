@@ -522,5 +522,161 @@
   {
     "text": "100만원 / +120만원",
     "supported": true
+  },
+  {
+    "text": "1/2.3",
+    "supported": false
+  },
+  {
+    "text": "1/2,000",
+    "supported": false
+  },
+  {
+    "text": "1/234.5",
+    "supported": false
+  },
+  {
+    "text": "1/234,567",
+    "supported": false
+  },
+  {
+    "text": ".5/2",
+    "supported": false
+  },
+  {
+    "text": ",5/2",
+    "supported": false
+  },
+  {
+    "text": "．５／２",
+    "supported": false
+  },
+  {
+    "text": "，５／２",
+    "supported": false
+  },
+  {
+    "text": "1/２．３",
+    "supported": false
+  },
+  {
+    "text": "1/２，０００",
+    "supported": false
+  },
+  {
+    "text": "Ratio.5/2",
+    "supported": false
+  },
+  {
+    "text": "-.5/2",
+    "supported": false
+  },
+  {
+    "text": "−.5/2",
+    "supported": false
+  },
+  {
+    "text": "－．５／２",
+    "supported": false
+  },
+  {
+    "text": ".5 / 2",
+    "supported": true
+  },
+  {
+    "text": "1 / 2.3",
+    "supported": true
+  },
+  {
+    "text": "1 / 2,000",
+    "supported": true
+  },
+  {
+    "text": "1/2½",
+    "supported": false
+  },
+  {
+    "text": "½1/2",
+    "supported": false
+  },
+  {
+    "text": "10/19/2026.5",
+    "supported": false
+  },
+  {
+    "text": "10/19/2026,5",
+    "supported": false
+  },
+  {
+    "text": "1/2. Next sentence",
+    "supported": true
+  },
+  {
+    "text": "1/2, next item",
+    "supported": true
+  },
+  {
+    "text": "1/2, 3/4",
+    "supported": true
+  },
+  {
+    "text": "1/2; 3/4",
+    "supported": true
+  },
+  {
+    "text": "Updated 10/19/2026.",
+    "supported": true
+  },
+  {
+    "text": "10/19/2026, next item",
+    "supported": true
+  },
+  {
+    "text": "1/2 ½",
+    "supported": true
+  },
+  {
+    "text": "½ 1/2",
+    "supported": true
+  },
+  {
+    "text": ".5",
+    "supported": true
+  },
+  {
+    "text": "-.5",
+    "supported": true
+  },
+  {
+    "text": "−．５",
+    "supported": true
+  },
+  {
+    "text": "+.5%",
+    "supported": true
+  },
+  {
+    "text": ".5 / +.6",
+    "supported": true
+  },
+  {
+    "text": ".5 / 2원",
+    "supported": true
+  },
+  {
+    "text": ".5 /2",
+    "supported": false
+  },
+  {
+    "text": ".5/ 2",
+    "supported": false
+  },
+  {
+    "text": "Revenue / Cost 2026",
+    "supported": false
+  },
+  {
+    "text": "Q&A / Notes 3",
+    "supported": false
   }
 ]

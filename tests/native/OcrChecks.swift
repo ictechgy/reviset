@@ -38,6 +38,8 @@ import AppKit
         let expr=try DocverVision.numericExpression()
         func numbers(_ text:String)->[String]{expr.matches(in:text,range:NSRange(text.startIndex...,in:text)).map{DocverVision.canonicalNumber(String(text[Range($0.range,in:text)!]))}}
         precondition(numbers("1\u{0085}/\u{0085}2 －５００")==["1/2","-500"],"Unicode whitespace/sign canonicalization matches TypeScript")
+        precondition(numbers(".5 -.5 −．５")==[".5","-.5","-.5"],"A leading decimal point remains inside its verified token")
+        precondition(DocverVision.numericStatus([Reading(text:".5",rect:a.rect,sources:["whole"])],[Reading(text:"5",rect:a.rect,sources:["tile"])])=="conflicted","An independently dropped decimal point is a contradiction")
         precondition(numbers("1, 2, 3")==["1","2","3"],"List commas cannot fuse separate values")
         precondition(numbers("2026-10-19")==["2026","10","19"],"Date separators cannot become negative signs")
         precondition(numbers("−５００원 ＋１０％")==["-500원","+10%"],"Full width digits and signed units")

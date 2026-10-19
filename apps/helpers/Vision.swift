@@ -10,14 +10,14 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-16-explicit-slash-grammar"
+    static let version = "docver-vision-17-complete-fraction-operands"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
     static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format:"%02x", $0) }.joined() }
     static let vulgarFractions="[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞↉]"
     static func numericExpression() throws->NSRegularExpression {
-        try NSRegularExpression(pattern:"(?:(?<![\\p{L}\\p{N}])[+＋−－-]\\p{White_Space}*)?(?:[0-9０-９]+\\p{White_Space}*[/⁄／]\\p{White_Space}*[0-9０-９]+|\(vulgarFractions)|[0-9０-９]+(?:[.,，．][0-9０-９]+)*)(?:\\p{White_Space}*(?:[%％]|억|만|원))?")
+        try NSRegularExpression(pattern:"(?:(?<![\\p{L}\\p{N}])[+＋−－-]\\p{White_Space}*)?(?:(?<![\\p{N}.,，．])[0-9０-９]+\\p{White_Space}*[/⁄／]\\p{White_Space}*[0-9０-９]+(?!\\p{N}|[.,，．][0-9０-９])|\(vulgarFractions)|(?:[0-9０-９]*(?:[.,，．][0-9０-９]+)+|[0-9０-９]+))(?:\\p{White_Space}*(?:[%％]|억|만|원))?")
     }
     static func canonicalNumber(_ text:String)->String{text.precomposedStringWithCompatibilityMapping.replacingOccurrences(of:"−",with:"-").replacingOccurrences(of:"⁄",with:"/").replacingOccurrences(of:"\\p{White_Space}",with:"",options:.regularExpression)}
     static func numericFormatSupported(_ text:String)->Bool {
@@ -30,7 +30,7 @@ struct DocverVision {
         let slashes=try! NSRegularExpression(pattern:"[/⁄／]").matches(in:text,range:range)
         if slashes.isEmpty{return true}
         let slots=(try? numericExpression().matches(in:text,range:range)) ?? []
-        let dates=try! NSRegularExpression(pattern:"(?<![0-9０-９.,，．/⁄／])[0-9０-９]{1,4}\\p{White_Space}*[/⁄／]\\p{White_Space}*[0-9０-９]{1,2}\\p{White_Space}*[/⁄／]\\p{White_Space}*[0-9０-９]{1,4}(?![0-9０-９.,，．/⁄／])").matches(in:text,range:range)
+        let dates=try! NSRegularExpression(pattern:"(?<![0-9０-９.,，．/⁄／])[0-9０-９]{1,4}\\p{White_Space}*[/⁄／]\\p{White_Space}*[0-9０-９]{1,2}\\p{White_Space}*[/⁄／]\\p{White_Space}*[0-9０-９]{1,4}(?![0-9０-９/⁄／]|[.,，．][0-9０-９])").matches(in:text,range:range)
         var next=0,date=0
         for slash in slashes {
             let at=slash.range.location

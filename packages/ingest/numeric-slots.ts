@@ -2,7 +2,7 @@ import {normalize} from '../schema/index.js';
 // Keep numeric slot boundaries aligned with Vision.swift. Complete fractions
 // are one slot; mixed integer + vulgar fraction stays two. Units remain literal
 // in the masked pattern so an inferred amount cannot silently change its unit.
-const token=/(?:(?<![\p{L}\p{N}])[+＋−－-]\p{White_Space}*)?(?:[0-9０-９]+\p{White_Space}*[/⁄／]\p{White_Space}*[0-9０-９]+|[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞↉]|[0-9０-９]+(?:[.,，．][0-9０-９]+)*)/gu;
+const token=/(?:(?<![\p{L}\p{N}])[+＋−－-]\p{White_Space}*)?(?:(?<![\p{N}.,，．])[0-9０-９]+\p{White_Space}*[/⁄／]\p{White_Space}*[0-9０-９]+(?!\p{N}|[.,，．][0-9０-９])|[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞↉]|(?:[0-9０-９]*(?:[.,，．][0-9０-９]+)+|[0-9０-９]+))/gu;
 function tokens(text:string){return Array.from(text.matchAll(token),m=>{const value=m[0].normalize('NFKC').replace(/−/gu,'-').replace(/⁄/gu,'/').replace(/\p{White_Space}/gu,'');return {value,kind:value.includes('/')?'fraction':'decimal',start:m.index,end:m.index+m[0].length};});}
 export const numericSlots=(text:string)=>tokens(text).map(t=>t.value);
 export function numericNotationSupported(text:string):boolean{
@@ -11,7 +11,7 @@ export function numericNotationSupported(text:string):boolean{
   // cannot be verified as a different collection of independent digit slots.
   if(/\p{N}/u.test(text)&&(/\p{Default_Ignorable_Code_Point}|(?=\p{Cc})[^\p{White_Space}]|[∕⧸╱⟋]/u.test(text)||/[\p{N}/⁄／]\p{M}|\p{M}[/⁄／\p{N}]/u.test(text)))return false;
   if(!/[/⁄／]/u.test(text))return true;
-  const values=tokens(text),dates=Array.from(text.matchAll(/(?<![0-9０-９.,，．/⁄／])[0-9０-９]{1,4}\p{White_Space}*[/⁄／]\p{White_Space}*[0-9０-９]{1,2}\p{White_Space}*[/⁄／]\p{White_Space}*[0-9０-９]{1,4}(?![0-9０-９.,，．/⁄／])/gu),m=>({start:m.index,end:m.index+m[0].length}));
+  const values=tokens(text),dates=Array.from(text.matchAll(/(?<![0-9０-９.,，．/⁄／])[0-9０-９]{1,4}\p{White_Space}*[/⁄／]\p{White_Space}*[0-9０-９]{1,2}\p{White_Space}*[/⁄／]\p{White_Space}*[0-9０-９]{1,4}(?![0-9０-９/⁄／]|[.,，．][0-9０-９])/gu),m=>({start:m.index,end:m.index+m[0].length}));
   let next=0,date=0;
   for(const match of text.matchAll(/[/⁄／]/gu)){
     const at=match.index;
