@@ -60,6 +60,15 @@ test('bounded read-only bundle history recovers Unicode reasons and snapshot-sco
  assert.equal(restored,reason);assert.equal(q.query('get_report',base).items[0].bundle_decision_count,3);assert.throws(()=>q.query('list_bundle_decisions',{...base,project_id:'foreign'}));assert.throws(()=>q.query('list_bundle_decisions',{...base,revision_id:'foreign'}));assert.equal(canonical(r),frozen);
 });
 
+test('bundle history rejects ambiguous revision aliases and preserves exact occurrence filters',()=>{
+ const original=fixture(),second=structuredClone(original.revisions[0]);second.revision_occurrence_id='occ_bundle_second';
+ const ids=new Map(second.pages.map(p=>[p.page_id,p.page_id+'_second']));for(const p of second.pages){p.page_id=ids.get(p.page_id)!;for(const e of p.elements)e.observation_id+='_second';if(p.appearance)p.appearance.source_page_id=ids.get(p.appearance.source_page_id)!;}
+ for(const pairs of [second.bundle_mapping,second.bundle_mapping_basis!])for(const pair of pairs){pair.source_page_id=ids.get(pair.source_page_id)!;pair.rendered_page_id=ids.get(pair.rendered_page_id)!;}
+ original.revisions.push(second);const first=edited(original,selection()).report,secondChoice={...selection('source_a_second','pdf_b_second'),revision_occurrence_id:second.revision_occurrence_id},entry=createBundleDecision(first,first.bundle_decisions!,secondChoice);first.bundle_decisions!.push(entry);applyBundleDecisions(first.revisions[1],first.bundle_decisions!,false);const report=Report.parse(first),q=new QueryService({} as Store,new Set([report.project_id]),()=>report),base={project_id:report.project_id,report_id:report.report_id,max_output_tokens:8000};
+ assert.equal(q.query('list_bundle_decisions',base).items.length,2);assert.throws(()=>q.query('list_bundle_decisions',{...base,revision_id:second.revision_id}),{code:'AMBIGUOUS_REVISION'});assert.deepEqual(q.query('list_bundle_decisions',{...base,revision_id:'occ_bundle'}).items.map(d=>d.decision_id),[report.bundle_decisions![0].decision_id]);assert.deepEqual(q.query('list_bundle_decisions',{...base,revision_id:'occ_bundle_second'}).items.map(d=>d.decision_id),[entry.decision_id]);
+ const unique=fixture();assert.deepEqual(new QueryService({} as Store,new Set([unique.project_id]),()=>unique).query('list_bundle_decisions',{...base,report_id:unique.report_id,revision_id:'rev_bundle'}).items,[]);
+});
+
 test('real ingest, desktop CAS, cancellation, immutable reopen and full export preserve human bundle history',async()=>{
  const root=await mkdtemp(join(tmpdir(),'docver-bundle-history-')),library=join(root,'library');let service=new DesktopService(library);let peer:DesktopService|undefined;
  try{

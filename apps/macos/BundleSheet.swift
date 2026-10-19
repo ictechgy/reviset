@@ -200,7 +200,11 @@ struct BundlePagePreview:View {
                 else if !failure.isEmpty {Text(failure).foregroundStyle(.red).font(.caption)}
                 else if payload.isNull {ProgressView().frame(maxWidth:.infinity,maxHeight:.infinity)}
                 else if payload["source"]["kind"].string=="pdf" {OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["page"]["page"].int,zoom:0,evidence:JSON(),page:payload["display_page"])}
-                else {StructureCanvas(page:payload["page"],evidence:JSON()).frame(width:geometry.size.width,height:min(geometry.size.height,geometry.size.width*payload["page"]["height"].number/max(1,payload["page"]["width"].number)))}
+                else {
+                    let aspect=max(0.1,payload["page"]["width"].number/max(1,payload["page"]["height"].number))
+                    let width=min(geometry.size.width,geometry.size.height*aspect)
+                    StructureCanvas(page:payload["page"],evidence:JSON()).frame(width:width,height:width/aspect).frame(maxWidth:.infinity,maxHeight:.infinity)
+                }
             }.background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:5))
         }.frame(maxWidth:.infinity).task(id:projectID+reportID+pageID+basis){
             payload=JSON();failure="";guard !pageID.isEmpty else{return}

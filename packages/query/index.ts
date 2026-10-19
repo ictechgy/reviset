@@ -91,7 +91,12 @@ export class QueryService {
         observation_environment:r.observation_environment,revision_count:r.revisions.length,change_count:r.changes.length,relation_count:r.mapping_relations?.length??0,bundle_decision_count:r.bundle_decisions?.length??0,relation_edge_count:r.matches.length,unresolved_candidates:r.candidates.filter(c=>c.status==='needs_review').length,resource_uri:resource(r,'manifest')}];
       case 'list_revisions':return r.revisions.map(({pages,...v})=>({...v,page_count:pages.length,coverage_gaps:undefined}));
       case 'list_bundle_decisions': {
-        const occurrence=args.revision_id?revision().revision_occurrence_id:undefined;
+        let occurrence:string|undefined;
+        if(args.revision_id){
+          const exact=r.revisions.find(v=>v.revision_occurrence_id===args.revision_id),aliases=r.revisions.filter(v=>v.revision_id===args.revision_id);
+          if(!exact&&aliases.length>1)throw new DocverError('AMBIGUOUS_REVISION','동일한 원본이 여러 버전에 있습니다. 연결 이력은 revision_occurrence_id로 조회하세요.');
+          occurrence=(exact??revision()).revision_occurrence_id;
+        }
         return (r.bundle_decisions??[]).filter(d=>(!occurrence||d.revision_occurrence_id===occurrence)&&(!args.source_page_id||d.source_page_id===args.source_page_id)&&(!args.decision_id||d.decision_id===args.decision_id)).map(d=>{
           const reason=textChunk(d.reason,args.reason_offset,args.reason_length);
           return {...d,reason,reason_offset:args.reason_offset,reason_length:d.reason.length,next_reason_offset:args.reason_offset+reason.length<d.reason.length?args.reason_offset+reason.length:null,source_page:pageFor(d.source_page_id)?.p.page,rendered_page:d.rendered_page_id?pageFor(d.rendered_page_id)?.p.page:null};
