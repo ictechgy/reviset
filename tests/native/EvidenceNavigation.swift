@@ -8,7 +8,7 @@ import SwiftUI
  @MainActor static func exercise() async throws {
   let model=AppModel()
   let revisions:[[String:Any]]=[
-   ["revision_occurrence_id":"occ_before","assets":[["asset_id":"pptx_before","format":"pptx"],["asset_id":"pdf_before","format":"pdf"]],"pages":[["page_id":"source_before","asset_id":"pptx_before","appearance":["source_page_id":"reference_before"]],["page_id":"reference_before","asset_id":"pdf_before"]]],
+   ["revision_occurrence_id":"occ_before","assets":[["asset_id":"pptx_before","format":"pptx"],["asset_id":"pdf_before","format":"pdf"]],"pages":[["page_id":"source_before","asset_id":"pptx_before","appearance":["source_page_id":"reference_before"]],["page_id":"reference_before","asset_id":"pdf_before"],["page_id":"source_before_b","asset_id":"pptx_before"]]],
    ["revision_occurrence_id":"occ_after","assets":[["asset_id":"pptx_after","format":"pptx"],["asset_id":"pdf_after","format":"pdf"]],"pages":[["page_id":"source_after","asset_id":"pptx_after","appearance":["source_page_id":"reference_after"]],["page_id":"reference_after","asset_id":"pdf_after"]]]]
   model.report=JSON(["report_id":"report_navigation","revisions":revisions]);model.from=0;model.to=1;model.tab="compare";model.loadingChanges=false
   let left=JSON(["revision_occurrence_id":"occ_before","page_id":"reference_before"]),right=JSON(["revision_occurrence_id":"occ_after","page_id":"reference_after"])
@@ -28,6 +28,13 @@ import SwiftUI
   model.changes=[JSON(["change_id":"mixed","evidence":[["revision_occurrence_id":"occ_before","page_id":"unmapped_secondary"],["revision_occurrence_id":"occ_before","page_id":"reference_before"],["revision_occurrence_id":"occ_after","page_id":"reference_after"]]])]
   model.leftPageID="";model.rightPageID="";model.chooseChange("mixed")
   guard model.leftPageID=="source_before",model.rightPageID=="source_after",model.evidenceWarning.isEmpty,model.status=="분석 완료" else{throw NSError(domain:"AutomaticMixedEvidenceSelectedSecondary",code:8)}
+  model.navigateEvidence(left);model.navigatePage("source_before_b",in:"occ_before");model.selectEvidence()
+  guard model.leftPageID=="source_before_b",model.rightPageID=="source_after" else{throw NSError(domain:"ManualPageChoiceLostToOlderPin",code:11)}
+  model.navigatePage("reference_before",in:"occ_before")
+  guard model.leftPageID=="source_before_b" else{throw NSError(domain:"ManualPickerAcceptedSecondaryPage",code:12)}
+  model.navigatePage("source_before",in:"occ_before")
+  let split=JSON(["from_occurrence":"a","to_occurrence":"b","evidence":[["revision_occurrence_id":"a","page":1],["revision_occurrence_id":"b","page":2],["revision_occurrence_id":"b","page":1],["revision_occurrence_id":"b","page":1]]])
+  guard evidencePageSummary(split)=="p.1 → p.1, p.2",versionDisplayName(0,JSON(["label":"v1"]))=="v1",versionDisplayName(1,JSON(["label":"검토본"]))=="v2 검토본" else{throw NSError(domain:"PageSetsOrVersionLabelsAmbiguous",code:13)}
   model.changes=[JSON(["change_id":"before_only","evidence":[["revision_occurrence_id":"occ_before","page_id":"source_before"]]])];model.chooseChange("before_only")
   guard model.leftPageID=="source_before",model.rightPageID.isEmpty else{throw NSError(domain:"AbsentSideRetainedUnrelatedPage",code:9)}
   model.report=JSON(["report_id":"report_pdf_only","revisions":[["revision_occurrence_id":"occ_pdf","assets":[["asset_id":"pdf_only","format":"pdf"]],"pages":[["page_id":"pdf_page","asset_id":"pdf_only"]]]]]);model.from=0;model.to=0;model.leftPageID="";model.rightPageID="";model.navigateEvidence(JSON(["revision_occurrence_id":"occ_pdf","page_id":"pdf_page"]))

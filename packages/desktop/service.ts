@@ -7,28 +7,33 @@ import { QueryService } from '../query/index.js';
 import { analyze, type AnalyzeProgress } from '../engine/index.js';
 import { exportReport } from '../export/index.js';
 import { renderPdf } from '../render/index.js';
-import { byteHash,MAX_INPUT_BYTES, DocverError, Report, Decision, StoredDecision, MappingRelation,hash,type RelationSelectionData, type InputManifest, type ReportData } from '../schema/index.js';
+import { byteHash,MAX_INPUT_BYTES, DocverError, Report, Decision, StoredDecision, MappingRelation,hash,canonical,BundleDecision,type BundleSelectionData,type RelationSelectionData, type InputManifest, type ReportData } from '../schema/index.js';
 
+import {createBundleDecision} from '../bundle/index.js';
 import {rewriteMappings} from '../matching/relations.js';
 const FileRef=z.object({blob:z.string().regex(/^[a-f0-9]{64}\.(pptx|pdf)$/),name:z.string(),bytes:z.number().int().nonnegative()});
-const Draft=z.object({project_id:z.string(),title:z.string().min(1).max(200),revisions:z.array(z.object({label:z.string().min(1).max(200),files:z.array(FileRef).min(1).max(2)})).min(1).max(100),mapping_decisions:z.array(StoredDecision),mapping_relations:z.array(MappingRelation).default([]),last_report_id:z.string().nullable(),dirty:z.boolean()});
+export const DESKTOP_PROJECTS_TABLE='desktop_projects_v4';
+const Draft=z.object({project_id:z.string(),title:z.string().min(1).max(200),revisions:z.array(z.object({label:z.string().min(1).max(200),files:z.array(FileRef).min(1).max(2)})).min(1).max(100),mapping_decisions:z.array(StoredDecision),mapping_relations:z.array(MappingRelation).default([]),bundle_decisions:z.array(BundleDecision).max(10000).default([]),last_report_id:z.string().nullable(),dirty:z.boolean()});
 export type DesktopDraft=z.infer<typeof Draft>;
 export class DesktopService {
   readonly store:Store;
   private snapshots=new Map<string,ReportData>();
   constructor(readonly root:string) {
     this.store=new Store(root);
-    this.store.db.exec('PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS desktop_projects (id TEXT PRIMARY KEY,body TEXT NOT NULL,updated_at TEXT NOT NULL)');
+    this.store.db.exec(`PRAGMA busy_timeout=5000;
+      CREATE TABLE IF NOT EXISTS desktop_projects (id TEXT PRIMARY KEY,body TEXT NOT NULL,updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS ${DESKTOP_PROJECTS_TABLE} (id TEXT PRIMARY KEY,body TEXT NOT NULL,updated_at TEXT NOT NULL);
+      INSERT OR IGNORE INTO ${DESKTOP_PROJECTS_TABLE} SELECT legacy.id,legacy.body,legacy.updated_at FROM desktop_projects legacy WHERE NOT EXISTS (SELECT 1 FROM ${DESKTOP_PROJECTS_TABLE} current_draft WHERE current_draft.id=legacy.id);`);
   }
-  projects():DesktopDraft[]{return this.store.db.prepare('SELECT body FROM desktop_projects ORDER BY updated_at DESC,id').all().map(r=>Draft.parse(JSON.parse(String(r.body))));}
+  projects():DesktopDraft[]{return this.store.db.prepare(`SELECT body FROM ${DESKTOP_PROJECTS_TABLE} ORDER BY updated_at DESC,id`).all().map(r=>Draft.parse(JSON.parse(String(r.body))));}
   project(projectId:string):DesktopDraft {
-    const row=this.store.db.prepare('SELECT body FROM desktop_projects WHERE id=?').get(projectId);
+    const row=this.store.db.prepare(`SELECT body FROM ${DESKTOP_PROJECTS_TABLE} WHERE id=?`).get(projectId);
     if(!row)throw new DocverError('PROJECT_NOT_FOUND','프로젝트를 찾을 수 없습니다.');return Draft.parse(JSON.parse(String(row.body)));
   }
-  private save(project:DesktopDraft){this.store.db.prepare('INSERT INTO desktop_projects VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at').run(project.project_id,JSON.stringify(Draft.parse(project)),new Date().toISOString());return project;}
+  private save(project:DesktopDraft){this.store.db.prepare(`INSERT INTO ${DESKTOP_PROJECTS_TABLE} VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at`).run(project.project_id,JSON.stringify(Draft.parse(project)),new Date().toISOString());return project;}
   recover(runId?:string) {
     if(runId)this.store.db.prepare("UPDATE runs SET status='interrupted',finished_at=? WHERE id=? AND status='running'").run(new Date().toISOString(),runId);
-    else this.store.db.prepare("UPDATE runs SET status='interrupted',finished_at=? WHERE status='running' AND project_id IN (SELECT id FROM desktop_projects)").run(new Date().toISOString());
+    else this.store.db.prepare(`UPDATE runs SET status='interrupted',finished_at=? WHERE status='running' AND project_id IN (SELECT id FROM ${DESKTOP_PROJECTS_TABLE})`).run(new Date().toISOString());
     return this.projects();
   }
   async create(title:string,revisions:{label:string;files:string[];expected_sha256?:(string|null)[]}[]):Promise<DesktopDraft> {
@@ -53,7 +58,7 @@ export class DesktopService {
     return this.save(Draft.parse({project_id:'prj_'+randomUUID().replaceAll('-',''),title,revisions:imported,mapping_decisions:[],last_report_id:null,dirty:true}));
   }
   manifest(projectId:string):InputManifest {
-    const p=this.project(projectId);return {project_id:p.project_id,title:p.title,revisions:p.revisions.map(r=>({label:r.label,files:r.files.map(f=>join(this.root,'imports',f.blob))})),mapping_decisions:p.mapping_decisions,mapping_relations:p.mapping_relations};
+    const p=this.project(projectId);return {project_id:p.project_id,title:p.title,revisions:p.revisions.map(r=>({label:r.label,files:r.files.map(f=>join(this.root,'imports',f.blob))})),mapping_decisions:p.mapping_decisions,mapping_relations:p.mapping_relations,bundle_decisions:p.bundle_decisions};
   }
   async run(projectId:string,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,persist=true) {
     const input=this.manifest(projectId),draft_hash=hash(input);
@@ -77,8 +82,9 @@ export class DesktopService {
   reorder(projectId:string,order:number[]) {
     return this.mutate(()=>{
       const p=this.project(projectId);
+      if(p.dirty&&p.bundle_decisions.length&&canonical(p.bundle_decisions)!==canonical(p.last_report_id?this.snapshot(projectId,p.last_report_id).bundle_decisions??[]:[]))throw new DocverError('PENDING_BUNDLE_DECISIONS','페이지 연결 변경을 먼저 분석한 뒤 버전 순서를 바꾸세요. 기존 보고서는 그대로 보존됩니다.');
       if(order.length!==p.revisions.length||new Set(order).size!==order.length||order.some(n=>!Number.isInteger(n)||n<0||n>=order.length))throw new DocverError('INVALID_ORDER','버전 순서를 확인하세요.');
-      return this.save({...p,revisions:order.map(n=>p.revisions[n]),mapping_decisions:[],mapping_relations:[],dirty:true});
+      return this.save({...p,revisions:order.map(n=>p.revisions[n]),mapping_decisions:[],mapping_relations:[],bundle_decisions:[],dirty:true});
     });
   }
   mapping(projectId:string,reportId:string,decision:z.infer<typeof Decision>) {
@@ -92,6 +98,14 @@ export class DesktopService {
       if(p.dirty||p.last_report_id!==reportId||expectedDraftHash!==undefined&&expectedDraftHash!==hash(this.manifest(projectId)))throw new DocverError('STALE_REPORT','최신 분석 결과에서 대응을 수정하세요.');
       const r=this.snapshot(projectId,reportId),next=rewriteMappings(r,p.mapping_decisions,p.mapping_relations,selection,unlink);
       return this.save({...p,...next,dirty:true});
+    });
+  }
+  bundleMapping(projectId:string,reportId:string,selection:BundleSelectionData,expectedDraftHash:string){
+    return this.mutate(()=>{
+      const project=this.project(projectId);
+      if(project.dirty||project.last_report_id!==reportId||expectedDraftHash!==hash(this.manifest(projectId)))throw new DocverError('STALE_REPORT','최신 분석 결과에서 제공 PDF 페이지 연결을 수정하세요. 입력한 사유는 닫기 전까지 유지됩니다.');
+      const report=this.snapshot(projectId,reportId),decision=createBundleDecision(report,project.bundle_decisions,selection);
+      this.save({...project,bundle_decisions:[...project.bundle_decisions,decision],dirty:true});return {project_id:projectId,decision_id:decision.decision_id,dirty:true,last_report_id:project.last_report_id};
     });
   }
   queryService(projectId:string){this.project(projectId);return new QueryService(this.store,new Set([projectId]),(p,r)=>{const key=p+'|'+r;if(r!=='latest'&&this.snapshots.has(key))return this.snapshots.get(key)!;const report=this.store.report(p,r);if(this.snapshots.size>=2)this.snapshots.delete(this.snapshots.keys().next().value!);this.snapshots.set(p+'|'+report.report_id,report);return report;});}

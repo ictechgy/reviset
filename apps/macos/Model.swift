@@ -36,6 +36,11 @@ import CryptoKit
     @Published var mcp = ""
     @Published var importSheet = false
     @Published var mappingSheet = false
+    @Published var bundleSheet = false
+    @Published var bundleOccurrence = ""
+    @Published var bundleSourceID = ""
+    @Published var bundleProjectID = ""
+    @Published var bundleReportID = ""
     let bridge: Bridge
     private var libraryLock: Int32 = -1
     private var cancelRequested = false
@@ -146,6 +151,15 @@ import CryptoKit
     func displayPageID(_ sourcePageID:String,in revision:JSON)->String {
         primaryPages(revision).first { $0["appearance"]["source_page_id"].string == sourcePageID }?["page_id"].string ?? sourcePageID
     }
+    func navigatePage(_ id:String,in occurrence:String) {
+        let before=revision(from),after=revision(to)
+        guard occurrence==before["revision_occurrence_id"].string || occurrence==after["revision_occurrence_id"].string else{return}
+        let target=occurrence==before["revision_occurrence_id"].string ? before:after
+        guard id.isEmpty || primaryPages(target).contains(where:{$0["page_id"].string==id}) else{evidenceWarning="선택한 원문 페이지를 확인할 수 없습니다.";return}
+        if occurrence==before["revision_occurrence_id"].string{leftPageID=id}
+        if occurrence==after["revision_occurrence_id"].string{rightPageID=id}
+        evidenceWarning="";pageNavigation=(report["report_id"].string,from,to,leftPageID,rightPageID)
+    }
     func chooseChange(_ id:String){guard !loadingChanges else{return};evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence()}
     func openHistoryPage(_ index:Int,_ pageID:String){
         evidenceWarning=""
@@ -163,7 +177,7 @@ import CryptoKit
         guard libraryAvailable && !initializing && !busy else { return };evidenceWarning="";let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
         do {
             let result = try await bridge.call("analyze", ["project_id": id], analysis: true) { [weak self] p in
-                Task { @MainActor in guard let self,self.busy,!self.committing,self.analysisToken==token else{return}; self.progress = p; self.status = p["phase"].string == "match" ? "페이지 대응과 변경을 계산합니다" : p["label"].string.isEmpty ? "원본을 추출합니다" : p["label"].string + " 추출 중" }
+                Task { @MainActor in guard let self,self.busy,!self.committing,self.analysisToken==token else{return}; self.progress = p; self.status = p["phase"].string == "match" ? "페이지 대응과 변경을 계산합니다" : p["phase"].string == "render" ? p["label"].string+" 화면 준비 중" : p["label"].string.isEmpty ? "원본을 추출합니다" : p["label"].string + " 추출 중" }
             }
             if cancelRequested { throw BridgeError(code: "CANCELLED", message: "분석을 취소했습니다.") }
             committing = true; status = "고정 보고서를 저장합니다"
@@ -176,7 +190,7 @@ import CryptoKit
             if quality["ocr_failed_pages"].int>0{summary.append("OCR 실패 \(quality["ocr_failed_pages"].int)쪽")}
             if quality["unresolved_comparison_pages"].int>0{summary.append("판독 보류 \(quality["unresolved_comparison_pages"].int)쪽")}
             if quality["pptx_without_render"].int>0{summary.append("PPTX 렌더 없음 \(quality["pptx_without_render"].int)쪽")}
-            if quality["reference_pdf_pages"].int>0{summary.append("제공 PDF 화면 \(quality["reference_pdf_pages"].int)쪽 · 대응 추정")}
+            if quality["reference_pdf_pages"].int>0{summary.append("제공 PDF 화면 \(quality["reference_pdf_pages"].int)쪽 · 사용자 연결 \(quality["human_reference_pdf_pages"].int)쪽 · 자동 추정 \(quality["inferred_reference_pdf_pages"].int)쪽")}
             status=summary.joined(separator:" · ")
         } catch {
             analysisToken=nil;committing = false
@@ -222,6 +236,28 @@ import CryptoKit
     func applyRelation(project: String, report: String, draftHash: String, before: String, after: String, left: [String], right: [String], kind: String, reason: String) async throws {
         guard !busy && project == projectID && report == self.report["report_id"].string else { throw BridgeError(code: "STALE_REPORT", message: "최신 분석 결과에서 대응을 수정하세요.") }
         _ = try await bridge.call("mappingRelation", ["project_id": project, "report_id": report, "draft_hash": draftHash, "unlink": kind == "unlink", "selection": ["kind": kind == "unlink" ? "continuation" : kind, "from_occurrence": before, "to_occurrence": after, "from_page_ids": left, "to_page_ids": right, "reason": reason]])
+        try await refresh()
+    }
+    func isBundle(_ revision:JSON)->Bool {
+        revision["assets"].array.count == 2 && Set(revision["assets"].array.map{$0["format"].string}) == Set(["pptx","pdf"])
+    }
+    var bundleEditingUnavailable: String? {
+        if busy || loading || initializing {return "분석과 페이지 로딩이 끝난 뒤 수정하세요."}
+        if project["dirty"].bool {return "입력·대응 변경을 먼저 분석하세요."}
+        if report["report_id"].string.isEmpty || project["last_report_id"].string != report["report_id"].string {return "최신 고정 보고서에서 수정하세요."}
+        return nil
+    }
+    func openBundle(_ revision:JSON,source:String="") {
+        guard !busy && !loading && !initializing,isBundle(revision),revisions.contains(where:{$0["revision_occurrence_id"].string==revision["revision_occurrence_id"].string}) else{return}
+        bundleProjectID=projectID;bundleReportID=report["report_id"].string;bundleOccurrence=revision["revision_occurrence_id"].string;bundleSourceID=source;bundleSheet=true
+    }
+    func bundleContext(project:String,report:String,occurrence:String) async throws -> JSON {
+        try await bridge.call("bundle",["project_id":project,"report_id":report,"revision_occurrence_id":occurrence])
+    }
+    func applyBundle(project:String,report:String,draftHash:String,occurrence:String,sourceAsset:String,pdfAsset:String,source:String,pdf:String?,action:String,reason:String) async throws {
+        guard project == projectID,report == self.report["report_id"].string,bundleEditingUnavailable == nil else{throw BridgeError(code:"STALE_REPORT",message:"최신 분석 결과에서 제공 PDF 연결을 수정하세요. 입력 내용은 닫기 전까지 유지됩니다.")}
+        let target:Any=pdf.map{$0 as Any} ?? NSNull()
+        _ = try await bridge.call("bundleMapping",["project_id":project,"report_id":report,"draft_hash":draftHash,"selection":["revision_occurrence_id":occurrence,"source_asset_id":sourceAsset,"rendered_asset_id":pdfAsset,"source_page_id":source,"rendered_page_id":target,"action":action,"reason":reason]])
         try await refresh()
     }
     func exportReport() async {
@@ -303,4 +339,15 @@ func isReferenceAppearanceChange(_ change:JSON)->Bool {
 func changeDisplayName(_ change:JSON)->String {
     if isReferenceAppearanceChange(change) { return "제공 PDF 화면 차이" }
     return changeNames[change["kind"].string] ?? "변경을 선택하세요"
+}
+func versionDisplayName(_ index:Int,_ revision:JSON)->String {
+    let prefix="v\(index+1)",label=revision["label"].string
+    return label.trimmingCharacters(in:.whitespacesAndNewlines).caseInsensitiveCompare(prefix) == .orderedSame ? prefix:prefix+" "+label
+}
+func evidencePageSummary(_ change:JSON)->String {
+    func pages(_ occurrence:String)->String {
+        let numbers=Set(change["evidence"].array.filter{$0["revision_occurrence_id"].string==occurrence}.map{$0["page"].int}.filter{$0>0}).sorted()
+        return numbers.isEmpty ? "—":numbers.map{"p.\($0)"}.joined(separator:", ")
+    }
+    return pages(change["from_occurrence"].string)+" → "+pages(change["to_occurrence"].string)
 }

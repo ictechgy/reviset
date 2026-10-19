@@ -33,16 +33,26 @@ import PDFKit
             } else if request["files"].array.isEmpty{await model.demo()}
             else{let rows=request["files"].array.map{ImportRow(label:URL(fileURLWithPath:$0.string).deletingPathExtension().lastPathComponent,urls:[URL(fileURLWithPath:$0.string)])};let p=try await model.create(title:"수백 페이지 합성 검증",rows:rows);model.projectID=p["project_id"].string;await model.run(model.projectID)}
             guard !model.report.isNull else{throw BridgeError(code:"SMOKE_NO_REPORT",message:model.error)}
+            if request["bundle_sheet_page"].int>0 {
+                let revision=model.revision(0),number=request["bundle_sheet_page"].int
+                guard let selected=model.primaryPages(revision).first(where:{$0["page"].int==number}) else{throw BridgeError(code:"BUNDLE_LARGE_PAGE",message:"수백 페이지 묶음의 선택 페이지를 찾지 못했습니다.")}
+                let context=try await model.bundleContext(project:model.projectID,report:model.report["report_id"].string,occurrence:revision["revision_occurrence_id"].string)
+                guard context["revision"]["pages"].array.count>=600,context["mapping"].array.contains(where:{$0["source_page_id"].string==selected["page_id"].string}) else{throw BridgeError(code:"BUNDLE_LARGE_CONTEXT",message:"수백 페이지 묶음의 연결 정보가 다릅니다.")}
+                model.openBundle(revision,source:selected["page_id"].string);try await Task.sleep(nanoseconds:850_000_000)
+                guard model.bundleSourceID==selected["page_id"].string,let sheet=NSApp.windows.compactMap({$0.sheets.first}).first else{throw BridgeError(code:"BUNDLE_LARGE_SHEET",message:"선택한 페이지의 묶음 수정 창을 열지 못했습니다.")}
+                try captureView(sheet,output.appendingPathComponent("native-bundle-page240.png"));model.bundleSheet=false;try await Task.sleep(nanoseconds:200_000_000)
+            }
             let manualChecks=request["manual_relations"].bool ? try await exerciseManualRelations(model,output):[]
             let layoutChecks=request["layout_checks"].bool ? try await exerciseLayout(model):[:]
             let referenceChecks=request["reference_appearance_checks"].bool ? try await exerciseReferenceAppearance(model):[:]
             let importChecks=request["import_draft_files"].array.isEmpty ? [:]:try await exerciseImportDraft(model,output,request["import_draft_files"].array.map{URL(fileURLWithPath:$0.string)})
+            let bundleChecks=request["bundle_mapping_checks"].bool ? try await exerciseBundleMapping(model,output):[:]
             model.inspector=true
             try await Task.sleep(nanoseconds:700_000_000);try capture(output.appendingPathComponent("native-compare.png"))
             model.inspector=false;model.focus=true;model.showChanges=false;model.pageMode="after"
             if model.primaryPages(model.revision(model.to)).count>=300{model.rightPageID=model.primaryPages(model.revision(model.to))[299]["page_id"].string}
             try await Task.sleep(nanoseconds:700_000_000);try capture(output.appendingPathComponent("native-focus.png"))
-            if model.primaryPages(model.revision(model.from)).count>=300 && model.primaryPages(model.revision(model.to)).count>=300 {
+            if model.from != model.to && model.primaryPages(model.revision(model.from)).count>=300 && model.primaryPages(model.revision(model.to)).count>=300 {
                 model.focus=false;model.pageMode="both";model.inspector=true
                 model.leftPageID=model.primaryPages(model.revision(model.from))[239]["page_id"].string;model.rightPageID=model.primaryPages(model.revision(model.to))[239]["page_id"].string
                 try await Task.sleep(nanoseconds:250_000_000);model.mappingSheet=true;try await Task.sleep(nanoseconds:500_000_000)
@@ -60,9 +70,46 @@ import PDFKit
             model.tab="history";try await model.updateChanges()
             await model.loadMCP()
             let numeric=model.changes.filter{$0["kind"].string=="text_modified"}
-            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"reference_appearance_checks":referenceChecks,"import_draft_checks":importChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
+            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"reference_appearance_checks":referenceChecks,"import_draft_checks":importChecks,"bundle_mapping_checks":bundleChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
             try JSON(result).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
         }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Docver native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
+    }
+    static func exerciseBundleMapping(_ model:AppModel,_ output:URL) async throws->[String:Any] {
+        let project=model.projectID,original=model.report["report_id"].string,revision=model.revision(0),occurrence=revision["revision_occurrence_id"].string,sources=model.primaryPages(revision)
+        guard sources.count>=2,model.isBundle(revision),let pdfAsset=revision["assets"].array.first(where:{$0["format"].string=="pdf"}) else{throw BridgeError(code:"BUNDLE_FIXTURE",message:"슬라이드 두 장 이상의 PPTX·PDF 묶음이 필요합니다.")}
+        let source=sources[0]["page_id"].string,wrong=sources[1]["appearance"]["source_page_id"].string,correct=sources[0]["appearance"]["source_page_id"].string,reason="  사용자 확인 🧭\n문구가 다른 PDF 페이지도 사유와 경고를 보존  "
+        guard !wrong.isEmpty,!correct.isEmpty else{throw BridgeError(code:"BUNDLE_AUTO_FIXTURE",message:"최초 자동 연결 두 쌍을 확인하지 못했습니다.")}
+        let first=try await model.bundleContext(project:project,report:original,occurrence:occurrence)
+        guard first["current_snapshot"].bool,first["mapping"].array.count>=2,first["revision"]["pages"].array.count>=4 else{throw BridgeError(code:"BUNDLE_CONTEXT",message:"실제 수정 화면의 연결 정보를 불러오지 못했습니다.")}
+        model.openBundle(revision,source:source);try await Task.sleep(nanoseconds:700_000_000)
+        guard model.bundleSheet,let sheet=NSApp.windows.compactMap({$0.sheets.first}).first else{throw BridgeError(code:"BUNDLE_NATIVE_SHEET",message:"제공 PDF 연결 창을 표시하지 못했습니다.")}
+        try captureView(sheet,output.appendingPathComponent("native-bundle-before.png"));model.bundleSheet=false;try await Task.sleep(nanoseconds:200_000_000)
+        let untouched=try await model.bundleContext(project:project,report:original,occurrence:occurrence)
+        guard untouched["decision_count"].int==0,!model.project["dirty"].bool else{throw BridgeError(code:"BUNDLE_CANCEL_WRITE",message:"적용 전 닫은 창에서 이력이 바뀌었습니다.")}
+        try await model.applyBundle(project:project,report:original,draftHash:first["draft_hash"].string,occurrence:occurrence,sourceAsset:sources[0]["asset_id"].string,pdfAsset:pdfAsset["asset_id"].string,source:source,pdf:wrong,action:"link",reason:reason)
+        do{try await model.applyBundle(project:project,report:original,draftHash:first["draft_hash"].string,occurrence:occurrence,sourceAsset:sources[0]["asset_id"].string,pdfAsset:pdfAsset["asset_id"].string,source:source,pdf:correct,action:"link",reason:"오래된 요청 거부");throw BridgeError(code:"BUNDLE_STALE_ACCEPTED",message:"오래된 연결 변경을 허용했습니다.")}catch let e as BridgeError where e.code=="STALE_REPORT"{}
+        await model.run(project);guard model.error.isEmpty else{throw BridgeError(code:"BUNDLE_LINK_ANALYSIS",message:model.error)}
+        var currentReport=model.report["report_id"].string
+        let linked=try await model.page(source),independent=try await model.bridge.call("page",["project_id":project,"report_id":currentReport,"page_id":source,"basis":"source"])
+        guard linked["source"]["origin"].string=="reference_pdf",linked["page"]["appearance"]["association"].string=="human_confirmed",linked["page"]["appearance"]["reason"].string==reason,linked["display_page_number"].int==first["revision"]["pages"].array.first(where:{$0["page_id"].string==wrong})?["page"].int,independent["source"]["kind"].string=="pptx" else{throw BridgeError(code:"BUNDLE_SOURCE_AUTHORITY",message:"사용자 연결의 PDF 출처·원본 구분이 일치하지 않습니다.")}
+        let context=try await model.bundleContext(project:project,report:currentReport,occurrence:occurrence)
+        guard context["decision_count"].int==1,context["manual_states"].array.contains(where:{$0["source_page_id"].string==sources[1]["page_id"].string && $0["displaced"].bool}) else{throw BridgeError(code:"BUNDLE_DISPLACEMENT",message:"기존 연결의 해제 이력을 확인하지 못했습니다.")}
+        model.openBundle(model.revision(0),source:source);try await Task.sleep(nanoseconds:650_000_000)
+        guard let changedSheet=NSApp.windows.compactMap({$0.sheets.first}).first else{throw BridgeError(code:"BUNDLE_CHANGED_SHEET",message:"수정 후 연결 창을 표시하지 못했습니다.")};try captureView(changedSheet,output.appendingPathComponent("native-bundle-human.png"));model.bundleSheet=false;try await Task.sleep(nanoseconds:150_000_000)
+        for (action,target,why) in [("unlink",Optional<String>.none,"사용자가 제공 PDF 연결 해제"),("link",Optional(correct),"올바른 PDF 페이지로 재연결")]{
+            let state=try await model.bundleContext(project:project,report:currentReport,occurrence:occurrence)
+            try await model.applyBundle(project:project,report:currentReport,draftHash:state["draft_hash"].string,occurrence:occurrence,sourceAsset:sources[0]["asset_id"].string,pdfAsset:pdfAsset["asset_id"].string,source:source,pdf:target,action:action,reason:why)
+            await model.run(project);guard model.error.isEmpty else{throw BridgeError(code:"BUNDLE_REANALYSIS",message:model.error)};currentReport=model.report["report_id"].string
+            let payload=try await model.page(source);guard action=="unlink" ? payload["source"]["origin"].string != "reference_pdf":payload["page"]["appearance"]["source_page_id"].string==correct else{throw BridgeError(code:"BUNDLE_UNLINK_RELINK",message:"연결 해제·재연결 결과가 다릅니다.")}
+        }
+        let history=try await model.bridge.call("bundleDecisions",["project_id":project,"report_id":currentReport,"revision_id":occurrence,"max_output_tokens":8000])
+        guard history["items"].array.count==3,history["items"].array[0]["reason"].string==reason else{throw BridgeError(code:"BUNDLE_HISTORY",message:"연결 이유와 세 개의 이력을 확인하지 못했습니다.")}
+        let old=try await model.bridge.call("view",["project_id":project,"report_id":original]);guard old["bundle_decision_count"].int==0 else{throw BridgeError(code:"BUNDLE_OLD_CHANGED",message:"이전 보고서의 이력이 변경되었습니다.")}
+        let displaced=try await model.page(sources[1]["page_id"].string);guard displaced["source"]["origin"].string != "reference_pdf" else{throw BridgeError(code:"BUNDLE_DISPLACED_REFILLED",message:"해제된 슬라이드에 PDF가 자동으로 다시 연결되었습니다.")}
+        await model.selectProject(project,snapshot:currentReport);guard model.report["bundle_decision_count"].int==3 else{throw BridgeError(code:"BUNDLE_REOPEN",message:"재조회 후 연결 이력이 다릅니다.")}
+        guard let parent=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}) else{throw BridgeError(code:"BUNDLE_HISTORY_WINDOW",message:"연결 이력 창을 표시하지 못했습니다.")}
+        let historyWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:800,height:580),styleMask:[.titled,.closable],backing:.buffered,defer:false);historyWindow.contentView=NSHostingView(rootView:BundleHistorySheet(projectID:project,reportID:currentReport,occurrence:occurrence).environmentObject(model));parent.beginSheet(historyWindow,completionHandler:{_ in});try await Task.sleep(nanoseconds:500_000_000);try captureView(historyWindow,output.appendingPathComponent("native-bundle-history.png"));parent.endSheet(historyWindow);historyWindow.orderOut(nil)
+        return ["original_report_id":original,"revision_occurrence_id":occurrence,"verbatim_first_reason":reason,"native_context_contract":true,"native_sheet_cancel_no_write":true,"stale_write_rejected":true,"source_and_pdf_preview_authority":true,"displaced_source_stays_unlinked":true,"append_only_link_unlink_relink":true,"old_snapshot_unchanged":true,"reopen_history_count":3,"interaction_scope":"production model/actions and rendered native sheets; no OS mouse/keyboard input automation"]
     }
     static func exerciseImportDraft(_ model:AppModel,_ output:URL,_ files:[URL]) async throws->[String:Any] {
         guard files.count==2 else{throw BridgeError(code:"IMPORT_FIXTURE",message:"가져오기 묶음 검증 파일이 필요합니다.")}

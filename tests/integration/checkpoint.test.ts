@@ -170,7 +170,7 @@ test('real MCP stdio handshake, schemas, fixed reports, resources, read-only sto
   const client=new Client({name:'checkpoint-tests',version:'1.0.0'});
   try {
     await client.connect(transport);
-    const tools=await client.listTools();assert.deepEqual(tools.tools.map(t=>t.name).sort(),['list_projects','list_reports','get_report','list_revisions','list_pages','get_page','get_element','list_changes','get_entity_history','get_evidence','list_page_relations'].sort());for(const t of tools.tools){assert.equal(t.annotations?.readOnlyHint,true);assert.ok(t.inputSchema);assert.ok(t.outputSchema);}
+    const tools=await client.listTools();assert.deepEqual(tools.tools.map(t=>t.name).sort(),['list_projects','list_reports','get_report','list_revisions','list_pages','get_page','get_element','list_changes','get_entity_history','get_evidence','list_page_relations','list_bundle_decisions'].sort());for(const t of tools.tools){assert.equal(t.annotations?.readOnlyHint,true);assert.ok(t.inputSchema);assert.ok(t.outputSchema);}
     const relations=await client.callTool({name:'list_page_relations',arguments:{project_id:r.project_id,report_id:r.report_id,max_output_tokens:4000,limit:1}});assert.notEqual(relations.isError,true);assert.ok(Buffer.byteLength(JSON.stringify(relations))<=4000);
     const bounded=await client.callTool({name:'list_changes',arguments:{project_id:r.project_id,report_id:r.report_id,max_output_tokens:4000}});
     assert.notEqual(bounded.isError,true);assert.ok(Buffer.byteLength(JSON.stringify(bounded))<=4000);

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "revision_occurrence_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{1,160}$"
+    },
+    "source_asset_id": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "rendered_asset_id": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "source_page_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{1,160}$"
+    },
+    "rendered_page_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{1,160}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "link",
+        "unlink"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 2000
+    }
+  },
+  "required": [
+    "revision_occurrence_id",
+    "source_asset_id",
+    "rendered_asset_id",
+    "source_page_id",
+    "rendered_page_id",
+    "action",
+    "reason"
+  ],
+  "additionalProperties": false
+}

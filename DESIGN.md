@@ -114,3 +114,11 @@ Actual48fivecaptureClaude review confirms largerdocumentcanvas/pageedges/compact
 - Same-version page correction will use a separate fixed-scope sheet, preserving the current adjacent-version sheet's guards and the central canvas. That feature remains open;52 only handles pre-create grouping/ungrouping.
 
 - Evidence-navigation warnings have separate state from analysis/export status, clear on a valid new selection, new analysis or deliberate page navigation, and never overwrite progress. A mixed internal legacy/selected import row preserves positional verification for every selected member; missing per-file identities are explicit null slots rather than dropping checks for the whole bundle.
+
+## Native53 same-version page correction
+- Dedicated native sheet: one frozen project/report/revision, separate from adjacent-version split/merge. Open from the document column link button. Latest clean reports can Apply; older/dirty snapshots support inspection only.
+- Searchable native lists keep one source slide and one supplied PDF page selected, with a selected-page jump outside filtered results. Only selected previews load. PPTX preview requests its independent source basis and labels structure or LibreOffice conversion; the supplied PDF remains a separate original.
+- Show current inferred/human association, source-wide unlink/block, exact replacement pairs and prior human reasons, persisted and proposed mismatch/geometry/reuse/hidden/missing-raster warnings. Reason is required, preserved verbatim, limited to2000UTF16 units, and applied by an explicit button without Return as a default action to protect Hangul composition.
+- Failed CAS retains sheet edits; cancellation before Apply writes nothing. Applied dirty history remains pending if analysis is cancelled. History entries page through the read-only query and expand complete Unicode reasons. Human links say 사용자 연결 · 참고용 and never certify PowerPoint fidelity.
+- Page Picker/go supersedes an older evidence pin. Split/merge captions show page sets on each side of one arrow; generated vN prefixes are not duplicated. Import introduction states that PPTX+PDF bundling is optional.
+- Actual53 app captures and Claude visual review are pending; earlier52 visual REQUEST_CHANGES stays open until new evidence closes its scope.

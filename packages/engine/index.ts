@@ -2,17 +2,18 @@ import { resolve, dirname, join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { MAX_INPUT_BYTES,Manifest, Report, SCHEMA_VERSION, SCHEMA_HASH, ENGINE_VERSION, id, byteHash, DocverError, type InputManifest, type RevisionData, type ReportData } from '../schema/index.js';
+import { MAX_INPUT_BYTES,Manifest, Report, SCHEMA_VERSION, SCHEMA_HASH, ENGINE_VERSION, id, byteHash, DocverError, validBundleDecisionLog, type InputManifest, type RevisionData, type ReportData } from '../schema/index.js';
 import { ingest, type Extracted } from '../ingest/index.js';
 import { matchPages, similarity } from '../matching/index.js';
 import {primaryPages,validateMappings} from '../matching/relations.js';
 import { diffRevisions } from '../diff/index.js';
+import {applyBundleDecisions} from '../bundle/index.js';
 import { Store } from '../storage/index.js';
 import { fileSha256 } from '../runtime/file-hash.js';
 import {pdfWorkerEnvironment} from '../runtime/pdfjs-environment.js';
 import { ocrEnvironment } from '../ingest/ocr.js';
 import { officeEnvironment,preparePptxPreview } from '../render/pptx-preview.js';
-import {qualifyReferenceAppearance,attachReferenceAppearance,referenceAppearancePolicy} from '../render/reference-appearance.js';
+import {qualifyReferenceAppearance,attachReferenceAppearance} from '../render/reference-appearance.js';
 const require=createRequire(import.meta.url);
 function dependencyVersion(name:string):string {
   let folder=dirname(require.resolve(name));
@@ -23,7 +24,7 @@ function dependencyVersion(name:string):string {
   }
   throw new Error('Dependency metadata not found: '+name);
 }
-export interface AnalyzeProgress {analysis_run_id:string;phase:'extract'|'match'|'save'|'complete';current:number;total:number;label?:string}
+export interface AnalyzeProgress {analysis_run_id:string;phase:'extract'|'render'|'match'|'save'|'complete';current:number;total:number;label?:string}
 export async function analyze(input:InputManifest,baseDir:string,store:Store,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,options:{persist?:boolean;ocr?:'off'|'auto'|'all';pptxPreview?:boolean}={}):Promise<{report:ReportData,analysis_run_id:string}> {
   const manifest=Manifest.parse(input);
   const environment:Record<string,string>={node:process.version,platform:process.platform,arch:process.arch,engine:ENGINE_VERSION,
@@ -101,18 +102,31 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
         pages.push(...rendered);
       }
       signal?.throwIfAborted();
-      if(primary?.asset.format==='pptx'&&options.pptxPreview!==false&&!referenceQualified){
-        const source=entry.files.find(file=>/\.pptx$/i.test(file))!,sourcePages=pages.filter(p=>p.asset_id===primary.asset.asset_id);
-        try{
-          const bytes=readFileSync(join(store.root,'assets',primary.asset.asset_id.slice(7)));
-          if('sha256:'+byteHash(bytes)!==primary.asset.asset_id)throw new DocverError('ASSET_CORRUPT','Stored source hash mismatch');
-          const pdf=await preparePptxPreview(resolve(baseDir,source),bytes,sourcePages,join(store.root,'cache'),signal);if(pdf)store.putAsset('sha256:'+byteHash(pdf),pdf);
-        }catch(e){if(signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;for(const p of sourcePages){p.preview=undefined;p.raster=undefined;p.capabilities.preview='unavailable';p.coverage_gaps=p.coverage_gaps.filter(g=>g.feature!=='render_fidelity');p.coverage_gaps.push({feature:'preview',reason:e instanceof DocverError?e.code:'CONVERSION_FAILED'});}}
-      }
       const revision:RevisionData={revision_id:revisionId,revision_occurrence_id:occurrence,label:entry.label,assets:extracted.map(e=>e.asset),status:errors.length?(extracted.length?'partial':'failed'):'success',pages,
-        reference_appearance_policy:referenceAppearancePolicy,
-        coverage_gaps:[...gaps,...(errors.length?[{feature:'input',reason:'input_extraction_failed'}]:[]),...pages.flatMap(p=>p.coverage_gaps.map(g=>({...g,page_id:p.page_id,revision_id:revisionId})))],errors,bundle_mapping:bundleMapping};
+        reference_appearance_policy:'bundle-reference-v2',
+        coverage_gaps:[...gaps,...(errors.length?[{feature:'input',reason:'input_extraction_failed'}]:[]),...pages.flatMap(p=>p.coverage_gaps.map(g=>({...g,page_id:p.page_id,revision_id:revisionId})))],errors,bundle_mapping:bundleMapping,bundle_mapping_basis:structuredClone(bundleMapping)};
       revisions.push(revision);
+    }
+    const bundleDecisions=manifest.bundle_decisions??[];
+    if(!validBundleDecisionLog(revisions,bundleDecisions))throw new DocverError('BUNDLE_HISTORY','페이지 연결 이력의 원본·버전·대체된 기존 대응을 확인하세요.');
+    for(const [index,revision]of revisions.entries()){
+      signal?.throwIfAborted();
+      const pdf=revision.assets.find(a=>a.format==='pdf');
+      applyBundleDecisions(revision,bundleDecisions,!!pdf&&(referenceSources.get(pdf.asset_id)?.size??0)>1);
+      const source=revision.assets.find(a=>a.format==='pptx'),sourcePages=revision.pages.filter(p=>p.asset_id===source?.asset_id),visible=sourcePages.filter(p=>!p.hidden);
+      const allDisplayed=visible.length>0?visible.every(p=>!!p.appearance):sourcePages.length>0&&sourcePages.every(p=>!!p.appearance);
+      if(source&&options.pptxPreview!==false&&!allDisplayed){
+        onProgress?.({analysis_run_id:run,phase:'render',current:index,total:revisions.length,label:revision.label});
+        try{
+          const bytes=readFileSync(join(store.root,'assets',source.asset_id.slice(7)));
+          if('sha256:'+byteHash(bytes)!==source.asset_id)throw new DocverError('ASSET_CORRUPT','Stored source hash mismatch');
+          const derived=structuredClone(sourcePages);for(const page of derived)page.appearance=undefined;
+          const sourcePath=manifest.revisions[index].files.find(file=>/\.pptx$/i.test(file))!;
+          const converted=await preparePptxPreview(resolve(baseDir,sourcePath),bytes,derived,join(store.root,'cache'),signal);if(converted)store.putAsset('sha256:'+byteHash(converted),converted);
+          for(const [i,page]of sourcePages.entries())if(!page.appearance){page.preview=derived[i].preview;page.raster=derived[i].raster;page.capabilities.preview=derived[i].capabilities.preview;page.coverage_gaps=derived[i].coverage_gaps;}
+        }catch(e){if(signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;for(const page of sourcePages.filter(p=>!p.appearance)){page.preview=undefined;page.raster=undefined;page.capabilities.preview='unavailable';page.coverage_gaps=page.coverage_gaps.filter(g=>g.feature!=='render_fidelity');page.coverage_gaps.push({feature:'preview',reason:e instanceof DocverError?e.code:'CONVERSION_FAILED'});}}
+      }
+      revision.coverage_gaps=[...revision.coverage_gaps.filter(g=>!g.page_id),...revision.pages.flatMap(p=>p.coverage_gaps.map(g=>({...g,page_id:p.page_id,revision_id:revision.revision_id})))];
     }
     onProgress?.({analysis_run_id:run,phase:'match',current:revisions.length,total:revisions.length});
     signal?.throwIfAborted();
@@ -150,7 +164,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     const changes=comparisons.slice(1).flatMap((r,i)=>diffRevisions(comparisons[i],r,matches,candidates,entityFor));
     const coverage=revisions.flatMap(r=>r.coverage_gaps);
     const base={schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION,project_id:manifest.project_id,timeline_revision_id:timelineId,
-      mapping_revision_id:id('mapping',[decisions,relations]),schema_hash:SCHEMA_HASH,observation_environment:environment,revisions,matches,candidates,mapping_decisions:decisions,mapping_relations:relations,lineages,changes,coverage_gaps:coverage};
+      mapping_revision_id:id('mapping',[decisions,relations,bundleDecisions]),schema_hash:SCHEMA_HASH,observation_environment:environment,revisions,matches,candidates,mapping_decisions:decisions,mapping_relations:relations,bundle_decisions:bundleDecisions,lineages,changes,coverage_gaps:coverage};
     const reportId=id('rpt',base);
     changes.forEach((c,i)=>{c.report_id=reportId;c.change_id=id('chg',[reportId,i,c]);c.evidence_uri=`docver://projects/${manifest.project_id}/reports/${reportId}/changes/${c.change_id}`;});
     const report=Report.parse({...base,report_id:reportId});

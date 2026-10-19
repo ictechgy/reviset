@@ -72,6 +72,15 @@ func coverageReasonName(_ value:String)->String {
     case "reference_pdf_reused_for_different_pptx": return "하나의 PDF가 서로 다른 PPTX 원본에 묶여 있어 자동 화면 대응을 보류했습니다."
     case "reference_rotation_requires_review": return "회전된 PDF의 자동 화면 대응을 보류했습니다. 원문 방향을 확인하세요."
     case "reference_geometry_mismatch": return "PPTX와 제공된 PDF의 페이지 비율이 달라 자동 화면 대응을 보류했습니다."
+    case "manual_reference_not_powerpoint_equivalence": return "사용자가 연결한 PDF 화면입니다. 연결은 PowerPoint 원본 화면의 충실도를 보증하지 않습니다."
+    case "manual_reference_text_unresolved_or_different": return "연결한 PPTX와 PDF의 문구가 다르거나 판독이 불확실합니다. 원문을 확인하세요."
+    case "manual_reference_geometry_mismatch": return "연결한 PPTX와 PDF의 페이지 비율이 다릅니다."
+    case "manual_reference_pdf_reused_for_different_pptx": return "이 PDF는 다른 PPTX 원본에도 사용되었습니다. 연결한 버전이 맞는지 확인하세요."
+    case "manual_reference_linked_hidden_source_slide": return "숨김 슬라이드에 PDF 페이지를 연결했습니다. 내보내기 범위를 확인하세요."
+    case "manual_reference_native_raster_unavailable": return "연결한 PDF의 화면 비교 근거를 확보하지 못했습니다."
+    case "manual_reference_transform_unavailable": return "PDF 페이지의 좌표 변환을 확인하지 못해 연결 화면을 사용하지 않았습니다."
+    case "manual_reference_explicitly_unlinked": return "사용자가 이 슬라이드의 PDF 연결을 해제하고 자동 연결을 차단했습니다."
+    case "manual_reference_displaced_by_another_source": return "다른 슬라이드가 같은 PDF 페이지를 사용하도록 연결되어 기존 연결이 해제되었습니다."
     case "native_raster_difference_is_not_semantic_deletion": return "화면 차이는 관측했지만 내용의 삭제 여부는 확정하지 않았습니다."
     case "render_difference_may_include_renderer_substitution": return "화면 차이에 글꼴이나 변환기의 대체 결과가 포함될 수 있습니다."
     case "failed_revision_no_comparison": return "버전 처리에 실패해 비교하지 못했습니다."
@@ -128,6 +137,7 @@ struct MainView: View {
             }
         }.onChange(of:model.tab){if model.tab=="export"{Task{await model.loadMCP()}}else{model.changeRange()}}
         .sheet(isPresented:$model.importSheet){ImportView()}
+        .sheet(isPresented:$model.bundleSheet){BundleSheet(projectID:model.bundleProjectID,reportID:model.bundleReportID,occurrence:model.bundleOccurrence,initialSource:model.bundleSourceID).environmentObject(model)}
         .task {await model.start()}
     }
 }
@@ -140,7 +150,7 @@ struct SidebarView: View {
             if !model.project.isNull {
                 Text("가져오기 순서").font(.caption).foregroundStyle(.secondary).padding(.horizontal,14)
                 ScrollView { LazyVStack(spacing:0){ForEach(Array(model.project["revisions"].array.enumerated()),id:\.offset){i,r in HStack(spacing:8){Text(String(format:"%02d",i+1)).foregroundStyle(.secondary).font(.caption2);VStack(alignment:.leading,spacing:4){Text(r["label"].string).lineLimit(1).font(.caption);Text(r["files"].array.map{$0["blob"].string.hasSuffix("pdf") ? "PDF":"PPTX"}.joined(separator:" + ")).font(.caption2).foregroundStyle(.secondary)};Spacer();VStack(spacing:3){Button{Task{await model.reorder(i,delta:-1)}}label:{Image(systemName:"chevron.up")}.disabled(i==0||model.busy);Button{Task{await model.reorder(i,delta:1)}}label:{Image(systemName:"chevron.down")}.disabled(i==model.project["revisions"].array.count-1||model.busy)}.buttonStyle(.borderless).font(.caption2)}.padding(.horizontal,14).padding(.vertical,9);Divider()}} }
-                Button(model.project["dirty"].bool ? "변경한 순서로 분석":"다시 분석"){Task{await model.run(model.projectID)}}.disabled(model.busy).frame(maxWidth:.infinity).padding(.horizontal,14)
+                Button(model.project["dirty"].bool ? "입력·대응 변경 분석":"다시 분석"){Task{await model.run(model.projectID)}}.disabled(model.busy).frame(maxWidth:.infinity).padding(.horizontal,14)
             }
             Spacer(minLength:5)
             Button{model.importSheet=true}label:{Label("문서 버전 가져오기",systemImage:"plus")}.disabled(model.busy).frame(maxWidth:.infinity).padding(14)
@@ -157,7 +167,7 @@ struct ReportBar: View {
 }
 struct VersionBar: View {
     @EnvironmentObject var model: AppModel
-    var body: some View {ScrollView(.horizontal,showsIndicators:false){HStack(spacing:12){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in Button{model.from=min(i,max(0,model.revisions.count-2));model.to=min(model.revisions.count-1,model.from+1);model.changeRange()}label:{VStack(spacing:5){Circle().fill(i==model.from||i==model.to ? Color.blue:Color.gray.opacity(0.3)).frame(width:11,height:11);Text("v\(i+1) "+r["label"].string).font(.caption.weight(.semibold));Text("\(model.primaryPages(r).count)쪽 · "+r["assets"].array.map{$0["format"].string.uppercased()}.joined(separator:"+")).font(.caption2).foregroundStyle(.secondary);if r["status"].string != "success"{Text("부분 실패 · 확인 필요").font(.caption2).foregroundStyle(.orange)}}.frame(minWidth:135).padding(7)}.buttonStyle(.plain)}}.padding(.horizontal,15).padding(.vertical,9)}}
+    var body: some View {ScrollView(.horizontal,showsIndicators:false){HStack(spacing:12){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in Button{model.from=min(i,max(0,model.revisions.count-2));model.to=min(model.revisions.count-1,model.from+1);model.changeRange()}label:{VStack(spacing:5){Circle().fill(i==model.from||i==model.to ? Color.blue:Color.gray.opacity(0.3)).frame(width:11,height:11);Text(versionDisplayName(i,r)).font(.caption.weight(.semibold));Text("\(model.primaryPages(r).count)쪽 · "+r["assets"].array.map{$0["format"].string.uppercased()}.joined(separator:"+")).font(.caption2).foregroundStyle(.secondary);if r["status"].string != "success"{Text("부분 실패 · 확인 필요").font(.caption2).foregroundStyle(.orange)}}.frame(minWidth:135).padding(7)}.buttonStyle(.plain)}}.padding(.horizontal,15).padding(.vertical,9)}}
 }
 struct ComparePagesView:View {
     @EnvironmentObject var model:AppModel
@@ -174,9 +184,9 @@ struct CompareWorkspace: View {
     var body: some View {
         VStack(spacing:0){
             HStack(spacing:10){
-                Picker("이전",selection:$model.from){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i<model.to{Text("v\(i+1) "+r["label"].string).tag(i)}}}.frame(maxWidth:220)
+                Picker("이전",selection:$model.from){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i<model.to{Text(versionDisplayName(i,r)).tag(i)}}}.frame(maxWidth:220)
                 Image(systemName:"arrow.right").foregroundStyle(.secondary)
-                Picker("이후",selection:$model.to){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i>model.from{Text("v\(i+1) "+r["label"].string).tag(i)}}}.frame(maxWidth:220)
+                Picker("이후",selection:$model.to){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i>model.from{Text(versionDisplayName(i,r)).tag(i)}}}.frame(maxWidth:220)
                 Text(model.to==model.from+1 ? "인접 비교":"선택 구간의 순변경").font(.caption).foregroundStyle(.secondary);Spacer()
                 Button{model.inspector.toggle()}label:{Label("근거",systemImage:"sidebar.right")}
             }.padding(.horizontal,16).padding(.top,12).onChange(of:model.from){model.changeRange()}.onChange(of:model.to){model.changeRange()}
@@ -212,7 +222,7 @@ struct ChangeRow: View {
     var kindName: String {changeDisplayName(change)}
     var text: String {(change["after"].isNull ? change["before"].string:change["after"].string).replacingOccurrences(of:"\n",with:" ")}
     var status: String {let value=change["lineage"]["status"].string;return value=="human_confirmed" ? "사용자 확정":value=="needs_review" ? "검토 필요":"추정 대응"}
-    var body: some View {HStack(spacing:10){Text(kindName).font(.caption).foregroundStyle(change["kind"].string=="coverage_gap" ? Color.secondary:Color.blue).frame(width:85,alignment:.leading);VStack(alignment:.leading,spacing:3){Text(text).lineLimit(1).font(.caption);Text(change["evidence"].array.map{"p.\($0["page"].int)"}.joined(separator:" → ")).font(.caption2).foregroundStyle(.secondary)};Spacer();if change["region_pairing_assessment"].string == "inferred"{Text("영역 대응 추정").font(.caption2).foregroundStyle(.orange)};if change["text_assessment"].string == "inferred"{Text("OCR 추정 · 원문 확인").font(.caption2).foregroundStyle(.orange)};if !change["appearance_assessment"].string.isEmpty{Text(change["appearance_assessment"].string=="observed" ? "표시 관측":"표시 추정").font(.caption2).foregroundStyle(.orange)};Text(status).font(.caption2).foregroundStyle(.secondary)}.padding(.vertical,3)}
+    var body: some View {HStack(spacing:10){Text(kindName).font(.caption).foregroundStyle(change["kind"].string=="coverage_gap" ? Color.secondary:Color.blue).frame(width:85,alignment:.leading);VStack(alignment:.leading,spacing:3){Text(text).lineLimit(1).font(.caption);Text(evidencePageSummary(change)).font(.caption2).foregroundStyle(.secondary)};Spacer();if change["region_pairing_assessment"].string == "inferred"{Text("영역 대응 추정").font(.caption2).foregroundStyle(.orange)};if change["text_assessment"].string == "inferred"{Text("OCR 추정 · 원문 확인").font(.caption2).foregroundStyle(.orange)};if !change["appearance_assessment"].string.isEmpty{Text(change["appearance_assessment"].string=="observed" ? "표시 관측":"표시 추정").font(.caption2).foregroundStyle(.orange)};Text(status).font(.caption2).foregroundStyle(.secondary)}.padding(.vertical,3)}
 }
 
 struct InspectorView: View {
@@ -275,7 +285,7 @@ struct HistoryView: View {
 struct HistoryGraphView:View {
     @EnvironmentObject var model:AppModel
     var body:some View {VStack(alignment:.leading,spacing:14){HStack{VStack(alignment:.leading){Text("전체 버전 이력").font(.title2.weight(.semibold));Text("중간에 생겼다가 사라진 페이지와 관측 공백을 함께 보존합니다.").font(.caption).foregroundStyle(.secondary);Text("— 관측 없음 · 실제 삭제 여부는 변경 이벤트와 원문 근거에서 확인하세요.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)};Spacer()}.padding(.horizontal,18).padding(.top,20)
-        ScrollView([.vertical,.horizontal]){LazyVStack(alignment:.leading,spacing:1){HStack{Text("페이지 계보").frame(width:180,alignment:.leading);ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in Text("v\(i+1) "+r["label"].string).frame(width:130)}}.font(.caption.weight(.semibold)).padding(9)
+        ScrollView([.vertical,.horizontal]){LazyVStack(alignment:.leading,spacing:1){HStack{Text("페이지 계보").frame(width:180,alignment:.leading);ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in Text(versionDisplayName(i,r)).frame(width:130)}}.font(.caption.weight(.semibold)).padding(9)
             ForEach(model.report["lineages"].array){lineage in
                 let all=model.revisions.flatMap{model.primaryPages($0)},ids=lineage["page_ids"].array.map(\.string)
                 if let first=all.first(where:{ids.contains($0["page_id"].string)}){
@@ -317,7 +327,7 @@ struct ImportView: View {
     var body: some View {
         VStack(alignment:.leading,spacing:17){
             HStack{Text("문서 버전 가져오기").font(.title2.weight(.semibold));Spacer();Button("닫기"){dismiss()}.keyboardShortcut(.cancelAction).disabled(locked)}
-            Text("각 버전은 PPTX 또는 PDF 하나로 유효합니다. 수백 페이지 문서는 선택한 페이지부터 지연 표시합니다.").font(.callout).foregroundStyle(.secondary)
+            Text("PPTX 또는 PDF 하나로 시작하고, 같은 버전의 PPTX + PDF를 묶을 수도 있습니다. 수백 페이지 문서는 선택한 페이지부터 지연 표시합니다.").font(.callout).foregroundStyle(.secondary)
             TextField("프로젝트 이름",text:$title).textFieldStyle(.roundedBorder).disabled(locked)
             Button{choose()}label:{Label("PPTX·PDF 파일 선택",systemImage:"plus")}.disabled(locked)
             List{

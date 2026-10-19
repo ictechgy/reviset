@@ -1,0 +1,955 @@
+{
+  "source_head": "9a766aa64b6ada9d1e04aacc9eba07779a0ecdd1",
+  "scope": "Actual immutable52 source tree running canonicalengine51 query; full events, IDs and evidence for all four revision/occurrence selector combinations. Synthetic independent source notes and supplied PDF pixels; no native render fidelity claim.",
+  "report": {
+    "schema_version": "0.3.0",
+    "engine_version": "0.3.0-native.bundle.51",
+    "report_id": "report_bundle51_golden",
+    "project_id": "project_bundle51_golden",
+    "timeline_revision_id": "timeline_bundle51",
+    "mapping_revision_id": "mapping_bundle51",
+    "schema_hash": "eed0f6b1996a00d9a2295d6db4c39fdb562d6d1740971d21adcbfccba9e114c5",
+    "observation_environment": {
+      "fixture": "immutable51golden"
+    },
+    "revisions": [
+      {
+        "revision_id": "rev_before",
+        "revision_occurrence_id": "occ_before",
+        "label": "before",
+        "assets": [
+          {
+            "asset_id": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "format": "pptx",
+            "bytes": 0
+          },
+          {
+            "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "format": "pdf",
+            "bytes": 0
+          }
+        ],
+        "status": "success",
+        "pages": [
+          {
+            "page_id": "source_before",
+            "asset_id": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "page": 1,
+            "width": 960,
+            "height": 540,
+            "coordinate_system": "normalized_top_left",
+            "source_transform": [
+              1,
+              0,
+              0,
+              -1,
+              0,
+              540
+            ],
+            "hidden": false,
+            "text": "Same visible source",
+            "appearance": {
+              "kind": "reference_pdf",
+              "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "source_page_id": "reference_before",
+              "page": 1,
+              "width": 960,
+              "height": 540,
+              "source_transform": [
+                1,
+                0,
+                0,
+                -1,
+                0,
+                540
+              ],
+              "raster": {
+                "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "width": 4000,
+                "height": 2250,
+                "renderer": "PDFKit.thumbnail.cropBox",
+                "environment": "golden-helper-os-fonts",
+                "page_box": "cropBox",
+                "rotation": 0,
+                "render_policy": "pdfkit-300dpi-max4096-source-color-profile-v1"
+              },
+              "association": "inferred",
+              "score": 1,
+              "policy": "qualified-full-bundle-v1"
+            },
+            "elements": [
+              {
+                "observation_id": "obs_source_before",
+                "kind": "text",
+                "text": "Same visible source",
+                "normalized_text": "Same visible source",
+                "bbox": [
+                  0.1,
+                  0.1,
+                  0.5,
+                  0.1
+                ],
+                "reading_order": 0,
+                "availability": "available",
+                "method": "ooxml_text",
+                "source_ref": "source_before",
+                "provenance": "observed"
+              }
+            ],
+            "notes": "Source notes source_before",
+            "capabilities": {
+              "text": "available",
+              "notes": "available",
+              "hidden_slides": "available",
+              "animation": "unavailable",
+              "structure": "available",
+              "preview": "available"
+            },
+            "coverage_gaps": [
+              {
+                "feature": "render_fidelity",
+                "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+              }
+            ]
+          },
+          {
+            "page_id": "reference_before",
+            "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "page": 1,
+            "width": 960,
+            "height": 540,
+            "coordinate_system": "normalized_top_left",
+            "source_transform": [
+              1,
+              0,
+              0,
+              -1,
+              0,
+              540
+            ],
+            "hidden": false,
+            "text": "Same visible source",
+            "raster": {
+              "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "width": 4000,
+              "height": 2250,
+              "renderer": "PDFKit.thumbnail.cropBox",
+              "environment": "golden-helper-os-fonts",
+              "page_box": "cropBox",
+              "rotation": 0,
+              "render_policy": "pdfkit-300dpi-max4096-source-color-profile-v1"
+            },
+            "elements": [
+              {
+                "observation_id": "obs_reference_before",
+                "kind": "text",
+                "text": "Same visible source",
+                "normalized_text": "Same visible source",
+                "bbox": [
+                  0.1,
+                  0.1,
+                  0.5,
+                  0.1
+                ],
+                "reading_order": 0,
+                "availability": "available",
+                "method": "ooxml_text",
+                "source_ref": "reference_before",
+                "provenance": "observed"
+              }
+            ],
+            "notes": null,
+            "capabilities": {
+              "text": "available",
+              "notes": "available",
+              "hidden_slides": "available",
+              "animation": "unavailable",
+              "structure": "available",
+              "preview": "unavailable"
+            },
+            "coverage_gaps": []
+          }
+        ],
+        "reference_appearance_policy": "qualified-full-bundle-v1",
+        "coverage_gaps": [
+          {
+            "feature": "render_fidelity",
+            "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+          }
+        ],
+        "errors": [],
+        "bundle_mapping": [
+          {
+            "source_page_id": "source_before",
+            "rendered_page_id": "reference_before",
+            "score": 1
+          }
+        ]
+      },
+      {
+        "revision_id": "rev_after",
+        "revision_occurrence_id": "occ_after",
+        "label": "after",
+        "assets": [
+          {
+            "asset_id": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "format": "pptx",
+            "bytes": 0
+          },
+          {
+            "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "format": "pdf",
+            "bytes": 0
+          }
+        ],
+        "status": "success",
+        "pages": [
+          {
+            "page_id": "source_after",
+            "asset_id": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "page": 1,
+            "width": 960,
+            "height": 540,
+            "coordinate_system": "normalized_top_left",
+            "source_transform": [
+              1,
+              0,
+              0,
+              -1,
+              0,
+              540
+            ],
+            "hidden": false,
+            "text": "Same visible source",
+            "appearance": {
+              "kind": "reference_pdf",
+              "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "source_page_id": "reference_after",
+              "page": 1,
+              "width": 960,
+              "height": 540,
+              "source_transform": [
+                1,
+                0,
+                0,
+                -1,
+                0,
+                540
+              ],
+              "raster": {
+                "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                "width": 4000,
+                "height": 2250,
+                "renderer": "PDFKit.thumbnail.cropBox",
+                "environment": "golden-helper-os-fonts",
+                "page_box": "cropBox",
+                "rotation": 0,
+                "render_policy": "pdfkit-300dpi-max4096-source-color-profile-v1"
+              },
+              "association": "inferred",
+              "score": 1,
+              "policy": "qualified-full-bundle-v1"
+            },
+            "elements": [
+              {
+                "observation_id": "obs_source_after",
+                "kind": "text",
+                "text": "Same visible source",
+                "normalized_text": "Same visible source",
+                "bbox": [
+                  0.1,
+                  0.1,
+                  0.5,
+                  0.1
+                ],
+                "reading_order": 0,
+                "availability": "available",
+                "method": "ooxml_text",
+                "source_ref": "source_after",
+                "provenance": "observed"
+              }
+            ],
+            "notes": "Source notes source_after",
+            "capabilities": {
+              "text": "available",
+              "notes": "available",
+              "hidden_slides": "available",
+              "animation": "unavailable",
+              "structure": "available",
+              "preview": "available"
+            },
+            "coverage_gaps": [
+              {
+                "feature": "render_fidelity",
+                "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+              }
+            ]
+          },
+          {
+            "page_id": "reference_after",
+            "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "page": 1,
+            "width": 960,
+            "height": 540,
+            "coordinate_system": "normalized_top_left",
+            "source_transform": [
+              1,
+              0,
+              0,
+              -1,
+              0,
+              540
+            ],
+            "hidden": false,
+            "text": "Same visible source",
+            "raster": {
+              "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+              "width": 4000,
+              "height": 2250,
+              "renderer": "PDFKit.thumbnail.cropBox",
+              "environment": "golden-helper-os-fonts",
+              "page_box": "cropBox",
+              "rotation": 0,
+              "render_policy": "pdfkit-300dpi-max4096-source-color-profile-v1"
+            },
+            "elements": [
+              {
+                "observation_id": "obs_reference_after",
+                "kind": "text",
+                "text": "Same visible source",
+                "normalized_text": "Same visible source",
+                "bbox": [
+                  0.1,
+                  0.1,
+                  0.5,
+                  0.1
+                ],
+                "reading_order": 0,
+                "availability": "available",
+                "method": "ooxml_text",
+                "source_ref": "reference_after",
+                "provenance": "observed"
+              }
+            ],
+            "notes": null,
+            "capabilities": {
+              "text": "available",
+              "notes": "available",
+              "hidden_slides": "available",
+              "animation": "unavailable",
+              "structure": "available",
+              "preview": "unavailable"
+            },
+            "coverage_gaps": []
+          }
+        ],
+        "reference_appearance_policy": "qualified-full-bundle-v1",
+        "coverage_gaps": [
+          {
+            "feature": "render_fidelity",
+            "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+          }
+        ],
+        "errors": [],
+        "bundle_mapping": [
+          {
+            "source_page_id": "source_after",
+            "rendered_page_id": "reference_after",
+            "score": 1
+          }
+        ]
+      }
+    ],
+    "matches": [
+      {
+        "from_page_id": "source_before",
+        "to_page_id": "source_after",
+        "score": 1,
+        "status": "human_confirmed",
+        "reasons": [
+          "synthetic_primary_relation"
+        ]
+      }
+    ],
+    "candidates": [],
+    "mapping_decisions": [],
+    "mapping_relations": [],
+    "lineages": [
+      {
+        "entity_id": "family_source",
+        "page_ids": [
+          "source_before",
+          "source_after"
+        ],
+        "status": "human_confirmed"
+      },
+      {
+        "entity_id": "family_pdf_before",
+        "page_ids": [
+          "reference_before"
+        ],
+        "status": "inferred"
+      },
+      {
+        "entity_id": "family_pdf_after",
+        "page_ids": [
+          "reference_after"
+        ],
+        "status": "inferred"
+      }
+    ],
+    "changes": [],
+    "coverage_gaps": [
+      {
+        "feature": "render_fidelity",
+        "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+      },
+      {
+        "feature": "render_fidelity",
+        "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+      }
+    ]
+  },
+  "requests": [
+    {
+      "args": {
+        "project_id": "project_bundle51_golden",
+        "report_id": "report_bundle51_golden",
+        "from": "rev_before",
+        "to": "rev_after",
+        "mode": "range_net"
+      },
+      "events": [
+        {
+          "schema_version": "0.3.0",
+          "report_id": "report_bundle51_golden",
+          "change_id": "net_5b2bfe4aa35740730c1d167aaca8df8faf21afe448823c3fa493e541166cafe3",
+          "entity_id": "family_source",
+          "from_revision": "rev_before",
+          "to_revision": "rev_after",
+          "from_occurrence": "occ_before",
+          "to_occurrence": "occ_after",
+          "kind": "visual_region_changed",
+          "before": "Same visible source",
+          "after": "Same visible source",
+          "appearance_assessment": "inferred",
+          "evidence": [
+            {
+              "revision_id": "rev_before",
+              "revision_occurrence_id": "occ_before",
+              "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "page_id": "reference_before",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "revision_id": "rev_after",
+              "revision_occurrence_id": "occ_after",
+              "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "page_id": "reference_after",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+            }
+          ],
+          "lineage": {
+            "status": "human_confirmed",
+            "score": 1,
+            "reasons": [
+              "directed_lineage_range_net"
+            ]
+          },
+          "coverage_gaps": [
+            {
+              "feature": "visual_comparison",
+              "reason": "provided_pdf_visual_difference_with_inferred_source_association"
+            }
+          ],
+          "evidence_uri": "docver://projects/project_bundle51_golden/reports/report_bundle51_golden/manifest"
+        }
+      ],
+      "evidence": [
+        {
+          "schema_version": "0.3.0",
+          "report_id": "report_bundle51_golden",
+          "items": [
+            {
+              "revision_id": "rev_before",
+              "revision_occurrence_id": "occ_before",
+              "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "page_id": "reference_before",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "text_offset": 0,
+              "next_text_offset": null
+            },
+            {
+              "revision_id": "rev_after",
+              "revision_occurrence_id": "occ_after",
+              "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "page_id": "reference_after",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+              "text_offset": 0,
+              "next_text_offset": null
+            }
+          ],
+          "next_cursor": null,
+          "coverage_gaps": [
+            {
+              "feature": "render_fidelity",
+              "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+            },
+            {
+              "feature": "render_fidelity",
+              "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+            }
+          ],
+          "truncated": false,
+          "omitted_fields": [],
+          "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+        }
+      ]
+    },
+    {
+      "args": {
+        "project_id": "project_bundle51_golden",
+        "report_id": "report_bundle51_golden",
+        "from": "rev_before",
+        "to": "occ_after",
+        "mode": "range_net"
+      },
+      "events": [
+        {
+          "schema_version": "0.3.0",
+          "report_id": "report_bundle51_golden",
+          "change_id": "net_5b2bfe4aa35740730c1d167aaca8df8faf21afe448823c3fa493e541166cafe3",
+          "entity_id": "family_source",
+          "from_revision": "rev_before",
+          "to_revision": "rev_after",
+          "from_occurrence": "occ_before",
+          "to_occurrence": "occ_after",
+          "kind": "visual_region_changed",
+          "before": "Same visible source",
+          "after": "Same visible source",
+          "appearance_assessment": "inferred",
+          "evidence": [
+            {
+              "revision_id": "rev_before",
+              "revision_occurrence_id": "occ_before",
+              "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "page_id": "reference_before",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "revision_id": "rev_after",
+              "revision_occurrence_id": "occ_after",
+              "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "page_id": "reference_after",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+            }
+          ],
+          "lineage": {
+            "status": "human_confirmed",
+            "score": 1,
+            "reasons": [
+              "directed_lineage_range_net"
+            ]
+          },
+          "coverage_gaps": [
+            {
+              "feature": "visual_comparison",
+              "reason": "provided_pdf_visual_difference_with_inferred_source_association"
+            }
+          ],
+          "evidence_uri": "docver://projects/project_bundle51_golden/reports/report_bundle51_golden/manifest"
+        }
+      ],
+      "evidence": [
+        {
+          "schema_version": "0.3.0",
+          "report_id": "report_bundle51_golden",
+          "items": [
+            {
+              "revision_id": "rev_before",
+              "revision_occurrence_id": "occ_before",
+              "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "page_id": "reference_before",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "text_offset": 0,
+              "next_text_offset": null
+            },
+            {
+              "revision_id": "rev_after",
+              "revision_occurrence_id": "occ_after",
+              "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "page_id": "reference_after",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+              "text_offset": 0,
+              "next_text_offset": null
+            }
+          ],
+          "next_cursor": null,
+          "coverage_gaps": [
+            {
+              "feature": "render_fidelity",
+              "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+            },
+            {
+              "feature": "render_fidelity",
+              "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+            }
+          ],
+          "truncated": false,
+          "omitted_fields": [],
+          "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+        }
+      ]
+    },
+    {
+      "args": {
+        "project_id": "project_bundle51_golden",
+        "report_id": "report_bundle51_golden",
+        "from": "occ_before",
+        "to": "rev_after",
+        "mode": "range_net"
+      },
+      "events": [
+        {
+          "schema_version": "0.3.0",
+          "report_id": "report_bundle51_golden",
+          "change_id": "net_5b2bfe4aa35740730c1d167aaca8df8faf21afe448823c3fa493e541166cafe3",
+          "entity_id": "family_source",
+          "from_revision": "rev_before",
+          "to_revision": "rev_after",
+          "from_occurrence": "occ_before",
+          "to_occurrence": "occ_after",
+          "kind": "visual_region_changed",
+          "before": "Same visible source",
+          "after": "Same visible source",
+          "appearance_assessment": "inferred",
+          "evidence": [
+            {
+              "revision_id": "rev_before",
+              "revision_occurrence_id": "occ_before",
+              "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "page_id": "reference_before",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "revision_id": "rev_after",
+              "revision_occurrence_id": "occ_after",
+              "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "page_id": "reference_after",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+            }
+          ],
+          "lineage": {
+            "status": "human_confirmed",
+            "score": 1,
+            "reasons": [
+              "directed_lineage_range_net"
+            ]
+          },
+          "coverage_gaps": [
+            {
+              "feature": "visual_comparison",
+              "reason": "provided_pdf_visual_difference_with_inferred_source_association"
+            }
+          ],
+          "evidence_uri": "docver://projects/project_bundle51_golden/reports/report_bundle51_golden/manifest"
+        }
+      ],
+      "evidence": [
+        {
+          "schema_version": "0.3.0",
+          "report_id": "report_bundle51_golden",
+          "items": [
+            {
+              "revision_id": "rev_before",
+              "revision_occurrence_id": "occ_before",
+              "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "page_id": "reference_before",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "text_offset": 0,
+              "next_text_offset": null
+            },
+            {
+              "revision_id": "rev_after",
+              "revision_occurrence_id": "occ_after",
+              "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "page_id": "reference_after",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+              "text_offset": 0,
+              "next_text_offset": null
+            }
+          ],
+          "next_cursor": null,
+          "coverage_gaps": [
+            {
+              "feature": "render_fidelity",
+              "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+            },
+            {
+              "feature": "render_fidelity",
+              "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+            }
+          ],
+          "truncated": false,
+          "omitted_fields": [],
+          "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+        }
+      ]
+    },
+    {
+      "args": {
+        "project_id": "project_bundle51_golden",
+        "report_id": "report_bundle51_golden",
+        "from": "occ_before",
+        "to": "occ_after",
+        "mode": "range_net"
+      },
+      "events": [
+        {
+          "schema_version": "0.3.0",
+          "report_id": "report_bundle51_golden",
+          "change_id": "net_5b2bfe4aa35740730c1d167aaca8df8faf21afe448823c3fa493e541166cafe3",
+          "entity_id": "family_source",
+          "from_revision": "rev_before",
+          "to_revision": "rev_after",
+          "from_occurrence": "occ_before",
+          "to_occurrence": "occ_after",
+          "kind": "visual_region_changed",
+          "before": "Same visible source",
+          "after": "Same visible source",
+          "appearance_assessment": "inferred",
+          "evidence": [
+            {
+              "revision_id": "rev_before",
+              "revision_occurrence_id": "occ_before",
+              "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "page_id": "reference_before",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "revision_id": "rev_after",
+              "revision_occurrence_id": "occ_after",
+              "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "page_id": "reference_after",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+            }
+          ],
+          "lineage": {
+            "status": "human_confirmed",
+            "score": 1,
+            "reasons": [
+              "directed_lineage_range_net"
+            ]
+          },
+          "coverage_gaps": [
+            {
+              "feature": "visual_comparison",
+              "reason": "provided_pdf_visual_difference_with_inferred_source_association"
+            }
+          ],
+          "evidence_uri": "docver://projects/project_bundle51_golden/reports/report_bundle51_golden/manifest"
+        }
+      ],
+      "evidence": [
+        {
+          "schema_version": "0.3.0",
+          "report_id": "report_bundle51_golden",
+          "items": [
+            {
+              "revision_id": "rev_before",
+              "revision_occurrence_id": "occ_before",
+              "asset_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "page_id": "reference_before",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "text_offset": 0,
+              "next_text_offset": null
+            },
+            {
+              "revision_id": "rev_after",
+              "revision_occurrence_id": "occ_after",
+              "asset_id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "page_id": "reference_after",
+              "page": 1,
+              "bbox": [
+                0,
+                0,
+                1,
+                1
+              ],
+              "quote": "",
+              "method": "provided_pdf_native_raster",
+              "provenance": "inferred",
+              "render_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+              "text_offset": 0,
+              "next_text_offset": null
+            }
+          ],
+          "next_cursor": null,
+          "coverage_gaps": [
+            {
+              "feature": "render_fidelity",
+              "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+            },
+            {
+              "feature": "render_fidelity",
+              "reason": "provided_pdf_association_inferred_not_powerpoint_equivalence"
+            }
+          ],
+          "truncated": false,
+          "omitted_fields": [],
+          "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+        }
+      ]
+    }
+  ]
+}

@@ -93,3 +93,13 @@ PowerPoint 글머리표 폰트 실험은 원본/참조를 보존한 파생 사�
 엔진20/helper17은 분자의 소수 일부·분모의 연속 숫자/소수/그룹 일부를 정수 분수로 인정하지 않는다. 공통170사례와 전체·지역 변경 음성 대조군, 정상 분수의 문장부호/목록/날짜 양성 대조군을 유지한다. 부분 숫자만 잘라 검증을 통과시키지 않으며 OCR 원문은 보존한다.
 
 `.5`를 원문 그대로 한 숫자 항목으로 검증하고 독립 `5` 판독은 충돌로 처리한다. `.5/2`는 미지원 비율, `.5 / 2`는 명시적 두 항목 목록이며 실제 수식 의미는 추정하지 않는다. 초기 경계 검사의 목록/비율 기대 오류는 실패 로그로 보존했다.
+
+## native53 working qualification
+
+Canonical0.4.0-native.bundle.53/schema0.4.0 adds same-version manual provided-PDF association without changing helper26 OCR decisions. Raw automatic baseline and exact append-only displaced pair replay reject missing/invented history and resurrected inferred pairs. The actual asset extraction must reproduce the baseline; merely rehashing a forged record does not pass engine validation. Current source/target authority remains independent and inferred with respect to PPTX fidelity.
+
+Focused core/native action/reference18PASS13093.184209ms; additional partial/reused-PDF conversion plus immutable51golden16PASS9553.989375ms. The latter includes real partial-bundle LO conversion on unreferenced source slides and raw target/source preservation. Historical44/45/50/51 complete event/ID/get_evidence bytes stay exact for all recorded selector combinations. Current strict Swift0warnings. Full200check running; actual clean53 app, new visual review and relocation remain pending. Old52 qualification does not qualify new53 runtime.
+
+Early independent WIP reviews caught the context-key failure, missing warning consumer and two decision-history validation counterexamples; fixes have focused tests and separate narrow repair evidence. They are not frozen53 full-base readiness verdicts. Full OS-input/VoiceOver/minimum OS/notarization, universal OCR and PowerPoint equivalence remain open.
+
+- Revised53b strict Swift PASS0warnings2.489189708s and full200/200PASS0fail/skip/cancel151422.553625ms. All runtime/test/fixture sources unchanged during verification. After the suite only App smoke and its driver added p240/large-bundle capture and robust MCP cursor traversal; canonical production/engine/query/schema/desktop/models/tests/fixtures remain byte-identical. Exact delta and strict/type checks are recorded in native53-post-suite-delta.json; the new packaged scenarios still require actual execution.

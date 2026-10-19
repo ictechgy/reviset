@@ -152,17 +152,18 @@ struct PageColumn: View {
     var body: some View {
         VStack(spacing: 9) {
             HStack { Text(side + " · " + revision["label"].string).font(.headline); Spacer()
-                Picker("페이지", selection: Binding(get:{pageID},set:{pageID=$0;model.evidenceWarning=""})) { Text("원문 없음").tag(""); ForEach(pages) { p in Text("p.\(p["page"].int) · \(p["text"].string.prefix(24))").tag(p["page_id"].string) } }.labelsHidden().frame(maxWidth:260)
+                Picker("페이지", selection: Binding(get:{pageID},set:{model.navigatePage($0,in:revision["revision_occurrence_id"].string)})) { Text("원문 없음").tag(""); ForEach(pages) { p in Text("p.\(p["page"].int) · \(p["text"].string.prefix(24))").tag(p["page_id"].string) } }.labelsHidden().frame(maxWidth:260)
             }
             HStack(spacing: 8) {
                 Button { go(current["page"].int-1) } label: { Image(systemName:"chevron.left") }.disabled(current.isNull || current["page"].int <= 1)
                 TextField("페이지", text:$pageInput).frame(width:48).multilineTextAlignment(.center).onSubmit { if let n=Int(pageInput){go(n)} }
                 Text("/ \(pages.count)").foregroundStyle(.secondary).font(.caption)
                 Button { go(current["page"].int+1) } label: { Image(systemName:"chevron.right") }.disabled(current.isNull || current["page"].int>=pages.count)
-                Spacer(); Text(payload["source"]["origin"].string == "reference_pdf" ? "제공 PDF · 페이지 대응 추정" : payload["source"]["origin"].string == "pptx_converted" ? "PPTX 렌더 · LibreOffice" : payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 렌더 없음").font(.caption).foregroundStyle(.secondary)
+                Spacer(); Text(payload["source"]["origin"].string == "reference_pdf" ? (payload["page"]["appearance"]["association"].string == "human_confirmed" ? "제공 PDF · 사용자 연결 · 참고용":"제공 PDF · 페이지 대응 추정") : payload["source"]["origin"].string == "pptx_converted" ? "PPTX 렌더 · LibreOffice" : payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 렌더 없음").font(.caption).foregroundStyle(.secondary)
+                if model.isBundle(revision) {Button{model.openBundle(revision,source:pageID)}label:{Image(systemName:"link")}.help(model.bundleEditingUnavailable == nil ? "이 버전의 PPTX와 제공 PDF 페이지 연결 수정":"이 보고서의 제공 PDF 연결·이력 조회").disabled(model.busy || model.loading).accessibilityLabel("제공 PDF 페이지 연결·이력 확인")}
             }.controlSize(.small)
             if !evidence.isNull && ["reference_pdf","pptx_converted"].contains(payload["source"]["origin"].string) {
-                Text(evidence["method"].string == "provided_pdf_native_raster" ? "제공 PDF의 화면 근거입니다. PPTX와의 페이지 대응은 추정입니다." : "PPTX 근거의 화면 좌표는 미검증입니다. 아래 추출 원문에서 내용을 확인하세요.").font(.caption).foregroundStyle(.orange)
+                Text(evidence["method"].string == "provided_pdf_native_raster" ? (payload["page"]["appearance"]["association"].string == "human_confirmed" ? "제공 PDF의 화면 근거입니다. 사용자가 페이지를 연결했으며 PowerPoint 원본 충실도는 미검증입니다.":"제공 PDF의 화면 근거입니다. PPTX와의 페이지 대응은 추정입니다.") : "PPTX 근거의 화면 좌표는 미검증입니다. 아래 추출 원문에서 내용을 확인하세요.").font(.caption).foregroundStyle(.orange)
             }
             GeometryReader { geometry in
                 if current.isNull { ContentUnavailableView("대응하는 원문 없음", systemImage:"doc", description:Text("관측 부재와 실제 삭제를 변경 근거에서 구분하세요.")) }
@@ -204,5 +205,5 @@ struct PageColumn: View {
             do {let result=try await model.page(pageID);if !Task.isCancelled{payload=result}}catch{if !Task.isCancelled{failure=error.localizedDescription}}
         }
     }
-    func go(_ number: Int) { if let p=pages.first(where:{$0["page"].int==number}){model.evidenceWarning="";pageID=p["page_id"].string;pageInput=String(number)} }
+    func go(_ number: Int) { if let p=pages.first(where:{$0["page"].int==number}){model.navigatePage(p["page_id"].string,in:revision["revision_occurrence_id"].string);pageInput=String(number)} }
 }

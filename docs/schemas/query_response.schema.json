@@ -4,7 +4,10 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "0.3.0"
+      "enum": [
+        "0.3.0",
+        "0.4.0"
+      ]
     },
     "report_id": {
       "type": [

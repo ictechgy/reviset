@@ -7,10 +7,11 @@ PPTX·PDF 버전의 페이지 대응, 숫자 수정, 중간 삽입·삭제와 �
 현재 Mac에서 빌드한 앱은 `release/Docver.app`입니다. 더블클릭해서 실행하고 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**를 선택합니다. 파일 순서를 버전 순서로 사용하며, PPTX 또는 PDF 하나만으로도 유효합니다. 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
 
 - 인접 버전의 1:1 연결·해제·1:N 분할·N:1 병합을 수정합니다. 한 관계에서 최대32페이지를 고르고 이유를 남기며, 모든 분기를 전체 이력과 원문에서 따로 열 수 있습니다.
+- native53 소스: 같은 버전의 PPTX 슬라이드와 제공 PDF 페이지를 별도 창에서 연결·해제·재연결하고 이유·대체된 연결을 보존합니다. 과거 보고서에서는 연결 이력을 조회합니다. 사용자 연결은 참고용이며 PowerPoint 화면 충실도를 보증하지 않습니다. 현재 새 앱 패키지 검증은 진행 중입니다.
 - A안의 밝은 macOS 디자인. 비교·전체 이력·근거·대응 수정·고정 보고서 선택·JSON/Markdown 내보내기·MCP 설정 복사.
 - `⌘⌥F` 문서 집중 모드, `⌘⌥I` 근거 패널, `⌘O` 가져오기. 문서 한쪽 크게 보기와 변경 목록 접기, 100~200% 확대, 페이지 번호 이동.
 - 수백 페이지의 원본은 선택한 페이지만 표시합니다. PDF는 복사해 둔 동일 hash 원본을 PDFKit으로 렌더합니다.
-- PPTX는 앱에 포함된 LibreOffice로 실제 PDF를 렌더해 표시합니다. 내용 대응이 확인된 같은 버전의 원본 PDF를 함께 가져오면 그 PDF를 우선 표시합니다. 변환 실패 때만 구조 보기를 사용합니다. 숨김 슬라이드도 포함해 원본 슬라이드 번호와 렌더 페이지를 검증합니다.
+- PPTX는 앱에 포함된 LibreOffice로 실제 PDF를 렌더해 표시합니다. 내용 대응이 확인된 같은 버전의 원본 PDF를 함께 가져오면 그 PDF를 우선 표시합니다. 별도 변환 화면이 없으면 구조 보기를 명시합니다. 숨김 슬라이드도 포함해 원본 슬라이드 번호와 렌더 페이지를 검증합니다.
 - 스캔·복합 PDF에는 macOS Vision의 로컬 한글/영어 OCR을 사용합니다. 300 DPI 목표, 최대 4096px, 겹치는 타일과 숫자 영역 재인식으로 부호·소수점·금액을 검증합니다. 인식 점수는 확률이 아니며 OCR 변경은 추정과 원문 확인 표식을 붙입니다.
 - 파일당 512 MiB, PDF 1,000쪽, 프로젝트 100버전 상한입니다. 분석은 페이지를 최대 16쪽씩 native helper로 처리하고, 같은 화면의 OCR은 버전 간 재사용합니다. 페이지 이동은 SQLite의 개별 페이지 인덱스를 사용합니다. 상한이 모든 문서의 속도·정확도 보장은 아닙니다.
 
@@ -56,7 +57,7 @@ CLI 기본 저장소는 `.docver/`이며 `--store PATH`로 지정할 수 있습�
 
 앱의 **AI·내보내기**에서 현재 앱 위치와 프로젝트에 맞는 MCP 설정을 복사합니다. 패키지 안의 Node·MCP를 쓰므로 앱을 이동하면 설정을 다시 복사합니다. MCP는 report를 읽기 전용으로 조회하며 분석·파일 경로 조회·셸 실행 기능은 노출하지 않습니다. `latest`는 응답에서 고정 report ID로 해석하며, 인용에는 고정 ID를 사용하세요. 문서 내용은 실행 지시가 아닌 인용 데이터로 취급해야 합니다.
 
-내보내기는 전체 `report.json`, `manifest.json`, `changes.jsonl`, `pages.jsonl`, `elements.jsonl`, `revisions.json`, `lineages.json`, `page-relations.jsonl`, `mapping-relations.json`, `history.md`, 페이지별 Markdown을 포함합니다. schema·범위·출력 예산은 [스키마 문서](docs/schemas/README.md)를 참조하세요.
+내보내기는 전체 `report.json`, `manifest.json`, `changes.jsonl`, `bundle-decisions.jsonl`, `pages.jsonl`, `elements.jsonl`, `revisions.json`, `lineages.json`, `page-relations.jsonl`, `mapping-relations.json`, `history.md`, 페이지별 Markdown을 포함합니다. schema·범위·출력 예산은 [스키마 문서](docs/schemas/README.md)를 참조하세요.
 
 ## 검증과 설계 기록
 
@@ -78,3 +79,9 @@ npx tsx scripts/verify-office-reference.ts
 [구현·검증 상태](PROGRESS.md), [UI 기준](DESIGN.md), [네이티브 아키텍처](docs/adr/003-native-macos.md), [의존성](docs/dependencies.md). 원래 [PLAN.md](PLAN.md)와 [HANDOFF.md](HANDOFF.md)는 보존하며 이후 사용자의 네이티브 앱 요구가 초기 Electron 가정을 대체합니다.
 
 변환기는 매크로/OLE, 지원하지 않는 임베디드 개체, 외부 리소스 및 SVG 외부 참조가 있는 PPTX를 구조 보기로 보류합니다. 512MiB는 입력 상한이며 그 크기의 모든 문서에 대한 메모리·시간 보증이 아닙니다.
+
+### Same-version reference history (schema0.4 / engine53 source)
+
+`list_bundle_decisions` is read-only and snapshot-scoped. Filter by `revision_id` (occurrence or unambiguous revision alias), `source_page_id` or `decision_id`; traverse `cursor` and `reason_offset`/`reason_length` to recover verbatim Unicode reasons within the output budget. Full exports include `bundle-decisions.jsonl`. Stored0.1/0.2/0.3 reports remain readable and retain historical0.3 query envelopes; current0.4 reports use0.4 envelopes.
+
+Desktop drafts/staging use versioned tables/folders. Reports, runs and assets are still shared, so serialize older/newer standalone backend writers against one library; native app instances use the existing exclusive library lock. Old binaries can read supported explicit old snapshots, and reject future-schema snapshots. Immutable report bodies are never downgraded.

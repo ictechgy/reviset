@@ -1,4 +1,4 @@
-# 스키마와 AI 조회 계약 · 0.3.0
+# 스키마와 AI 조회 계약 · 0.4.0
 
 모델 원본은 `packages/schema/index.ts`, 도구 입력·출력은 `packages/query/index.ts`다. `npm run schemas`로 이 폴더의 draft-2020-12 JSON Schema를 재생성한다. `report.schema.json`은 전체 report, `manifest.schema.json`은 사용자 입력, `fixture_manifest.schema.json`은 합성 fixture의 seed/hash/정답 metadata다.
 
@@ -22,6 +22,7 @@
 | `get_page` | revision_id, page_id | 순서대로 분할된 원문 요소 |
 | `get_element` | observation_id | 원문·bbox·추출법; text_offset/text_length, span_offset/span_limit, appearance_evidence_offset/appearance_evidence_limit |
 | `list_changes` | mode, from/to, kind, entity_id, change_id, text | 관측 delta와 근거 |
+| `list_bundle_decisions` | revision_id/source_page_id/decision_id, reason_offset/reason_length | 같은 버전의 제공 PDF 연결 이유·대체된 쌍·이력 |
 | `list_page_relations` | relation_id/page_id, from/to_occurrence, reachable_from/to_page_id, reason_offset/reason_length | 실제 방향 연결과 이유의 분할 원문 |
 | `get_entity_history` | entity_id | 각 버전의 페이지 원문·변경 ID |
 | `get_evidence` | change_id 또는 observation_id 하나 | 페이지·인용·좌표; text_offset/text_length |
@@ -84,7 +85,7 @@ OOXML 표의 `ooxml_table/observed`와 PDF 격자에서 추정한 `pdf_grid_infe
 
 관측 취소선은 여전히 화면에서 읽을 수 있으므로 `visible_text`에 포함하고 `text_struck_through`로 표시 변경을 표현한다. 숨김 OC paint나 글자 clipping 모드는 확정 가림으로 쓰지 않는다. 보이는 내용이 같더라도 억제된 원문층이 바뀌면 `raw_text_changed_in_suppressed_layer` 관측 공백을 기록한다.
 
-신규 report/change와 조회 envelope는 0.3.0을 생산한다. 기존 0.1/0.2 snapshot은 읽기/내보내기에서 원래 버전을 보존하며, range 재계산은 지원되는 archived engine에만 허용한다. 새 Change enum/provenance를 해석하는 소비자는 schema_version과 schema_hash를 함께 확인한다. text_scope=region의 값은 원문 관측일 수 있지만 region_pairing_assessment=inferred는 영역 대응 자체가 추정임을 명시한다.
+신규 report/change와 조회 envelope는 0.4.0을 생산한다. 기존 0.1/0.2 snapshot은 읽기/내보내기에서 원래 버전을 보존하며, range 재계산은 지원되는 archived engine에만 허용한다. 새 Change enum/provenance를 해석하는 소비자는 schema_version과 schema_hash를 함께 확인한다. text_scope=region의 값은 원문 관측일 수 있지만 region_pairing_assessment=inferred는 영역 대응 자체가 추정임을 명시한다.
 
 
 ## 수동 페이지 분할·병합과 호환성
@@ -95,7 +96,15 @@ page_split/page_merged 이벤트는 구성 변경이며 문구의 삭제·수정
 
 구간에서 계산한 이벤트의 근거는 get_evidence에 change_id와 동일한 from/to occurrence ID를 함께 전달해 복구한다. 큰 이벤트/계보도 cursor와 개별 페이지·요소 도구로 순회한다. 전체 export에는 page-relations.jsonl과 mapping-relations.json이 포함된다.
 
-저장된0.1/0.2 보고서는 변환하지 않고 읽는다. range_net은 native1/ocr9/ocr42/ocr43의 보관된 kernel, 동일한 방향 그래프 kernel을 유지한44, 또는 현재 엔진을 지원한다. 다른 과거 엔진의 재계산은 ENGINE_VERSION_UNAVAILABLE로 명시하며 저장된 history/export는 계속 조회한다. 앱-백엔드 통신 envelope는0.3.0이고 과거 보고서 본문의 schema_version은 유지한다.
+저장된0.1/0.2 보고서는 변환하지 않고 읽는다. range_net은 native1/ocr9/ocr42/ocr43의 보관된 kernel, 동일한 방향 그래프 kernel을 유지한44, 또는 현재 엔진을 지원한다. 다른 과거 엔진의 재계산은 ENGINE_VERSION_UNAVAILABLE로 명시하며 저장된 history/export는 계속 조회한다. 앱-백엔드 통신 envelope는0.4.0이고 과거 보고서 본문의 schema_version은 유지한다.
 
 
 현재 엔진의 range_net ID는 별칭 revision_id 입력도 해석된 occurrence ID로 정규화하므로 같은 구간의 ID가 같다. get_evidence에는 이벤트가 반환한 from_occurrence/to_occurrence를 그대로 전달할 수 있다. 보관된44 이하 kernel의 기존 raw-selector ID는 바꾸지 않으며, 근거 조회는 해당 구간의 유효한 revision/occurrence 별칭 조합을 대조해 복구한다.
+
+## Schema0.4 same-version reference decisions
+
+New53 reports use schema0.4.0 and canonical engine0.4.0-native.bundle.53. `bundle_decision.schema.json`, `bundle_selection.schema.json` and `list_bundle_decisions.schema.json` describe typed association history/input/retrieval; the manifest/report include optional `bundle_decisions`. `revision.bundle_mapping_basis` retains immutable raw automatic pairs for strict runtime replay. JSON Schema describes shape; same-source/PDF ownership, exact baseline/displacement/score/hash-chain replay, human appearance authority and final effective-map equality are enforced by runtime validators.
+
+`list_bundle_decisions` accepts project/report scope, optional revision/source/decision filters, cursor/limit/output budget and Unicode-safe `reason_offset`/`reason_length` (1–500). Entries retain decision identity and direct longer-reason retrieval hints if budget summarization is necessary. Read-only MCP exposes this query, with no association write tool. Native `bundleMapping` is a private scoped desktop write action, separate from adjacent-version relation editing.
+
+Historical0.1/0.2/0.3 reports remain readable. Their bounded query envelopes stay0.3.0 for complete historical replay; current0.4 reports use0.4.0. Exact archived44/45/50/51 kernels and immutable golden responses protect old event IDs and evidence rather than recomputing them with new semantics. Full exports add bundle-decisions.jsonl while preserving raw report JSON.

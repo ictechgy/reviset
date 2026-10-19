@@ -5,7 +5,7 @@ import { SCHEMA_VERSION,textChunk, normalize,comparisonText,unresolvedComparison
 import {numericSlots,numericPattern,numericShape,numericNotationSupported} from '../ingest/numeric-slots.js';
 import {isEstimatedPdfSource} from '../ingest/pdf-text-geometry.js';
 import {reviewEstimatedSource} from './estimated-source-review.js';
-import {appearanceRaster,appearanceEnvironment,appearanceEvidence} from '../render/reference-appearance.js';
+import {appearanceRaster,appearanceEnvironment,appearanceEvidence} from '../render/legacy-reference-51.js';
 function regionElements(p:PageData):ElementData[]{return p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p):p.elements.filter(e=>p.comparison_basis==='raster_ocr'?e.method==='vision_ocr':(e.kind==='text'||e.kind==='table_cell')&&e.method!=='vision_document_cell');}
 function comparisonElements(p:PageData):ElementData[]{return regionElements(p).filter(e=>p.comparison_basis==='hybrid_regions_v1'?e.comparison_role==='selected':p.comparison_basis==='raster_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));}
 const selectedRaster=(e:ElementData)=>e.method==='vision_ocr'&&e.provenance==='inferred'&&e.visibility==='visible'&&e.comparison_role==='selected';
