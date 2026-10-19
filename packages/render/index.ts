@@ -12,6 +12,7 @@ import { runTool,officeExecutable } from '../runtime/tools.js';
 import { unzipSync } from 'fflate';
 import { XMLParser,XMLValidator } from 'fast-xml-parser';
 import {prepareOfficeInput} from './office-input.js';
+import {readXml,xmlDecoder,decodeXmlReferences} from '../xml/index.js';
 export const officeFilter='pdf:impress_pdf_Export:'+JSON.stringify({ExportHiddenSlides:{type:'boolean',value:'true'},ExportNotesPages:{type:'boolean',value:'false'}});
 export function validateRenderPackage(bytes:Uint8Array,depth=0,budget={total:0}):void{
   if(depth>2)throw new DocverError('ZIP_LIMIT','Nested render package exceeds limit');
@@ -22,18 +23,38 @@ export function validateRenderPackage(bytes:Uint8Array,depth=0,budget={total:0})
     if(/vbaProject|embeddings\/.*\.bin$/i.test(name))throw new DocverError('ACTIVE_CONTENT','Embedded executable/OLE content is not sent to the renderer');
     if(/embeddings\/.*\.xlsx$/i.test(name)){validateRenderPackage(value,depth+1,budget);continue;}
     if(/embeddings\//i.test(name))throw new DocverError('ACTIVE_CONTENT','Unsupported embedded object is not sent to the renderer');
-    if(/\.svg$/i.test(name)||/(?:^|\/)media\//i.test(name)&&/<(?:[\w.-]+:)?svg\b/i.test(new TextDecoder().decode(value))){
-      const source=new TextDecoder().decode(value);
+    const svgName=/\.svg$/i.test(name),media=/(?:^|\/)media\//i.test(name);
+    // Sniff media using its BOM, then validate any SVG as XML before it reaches
+    // Office. Binary media remain binary; UTF16 SVG cannot hide behind .bin.
+    const xmlLead=(code:number|undefined)=>code!==undefined&&[9,10,13,32,60].includes(code);
+    const encoding=value[0]===0xff&&value[1]===0xfe||xmlLead(value[0])&&value[1]===0?'utf-16le':value[0]===0xfe&&value[1]===0xff||value[0]===0&&xmlLead(value[1])?'utf-16be':'utf-8';
+    const mediaText=svgName||media?xmlDecoder(encoding,false).decode(value):'';
+    if(svgName||media&&/<(?:[\w.-]+:)?svg\b/i.test(mediaText)){
+      let source:string;try{source=readXml(value);}catch(error){if(error instanceof DocverError&&error.code==='XML_ENCODING_UNAVAILABLE')throw error;throw new DocverError('ACTIVE_CONTENT','Unsafe SVG is not sent to the renderer');}
       if(/<!DOCTYPE|<!ENTITY|<\s*(?:[\w.-]+:)?(?:script|foreignObject)\b|\bon[\w.-]+\s*=|@import|<\?xml-stylesheet/i.test(source)||XMLValidator.validate(source)!==true)throw new DocverError('ACTIVE_CONTENT','Unsafe SVG is not sent to the renderer');
-      // SVG can resolve resources independently of OOXML relationships. Permit
-      // local fragment links only; embedded/nested resources need separate proof.
-      for(const m of source.matchAll(/(?:[\w.-]+:)?href\s*=\s*(["'])([\s\S]*?)\1|url\s*\(\s*([^)]*)\)/gi)){
-        const target=(m[2]??m[3]).trim().replace(/^["']|["']$/g,'');if(!/^#[a-z0-9_.:-]+$/i.test(target))throw new DocverError('EXTERNAL_RELATIONSHIP','SVG external resources are not sent to the renderer');
+      // CSS receives XML-decoded text. Inspect that text as well as the raw
+      // resource guard, and refuse CSS escapes rather than interpreting them.
+      const svg=new XMLParser({ignoreAttributes:false,preserveOrder:true,cdataPropName:'#cdata',processEntities:false,parseTagValue:false,trimValues:false}).parse(source);
+      const literal=(value:any):string=>typeof value==='string'?value:Array.isArray(value)?value.map(literal).join(''):value&&typeof value==='object'?Object.values(value).map(literal).join(''):'';
+      const text=(parts:any[]):string=>parts.map(part=>Object.entries(part).map(([key,value])=>key===':@'?'':key==='#text'?decodeXmlReferences(String(value)):key==='#cdata'?literal(value):Array.isArray(value)?text(value):'').join('')).join('');
+      const checkCss=(css:string)=>{if(/\\|@import/i.test(css))throw new DocverError('ACTIVE_CONTENT','Unsupported SVG CSS is not sent to the renderer');
+        const urls=/url/gi;
+        while(urls.exec(css)){let open=urls.lastIndex;while(open<css.length&&/\s/u.test(css[open]))open++;
+          if(css[open]!=='('){urls.lastIndex=open;continue;}
+          let end=open+1,quote='';for(;end<css.length;end++){const char=css[end];if(quote){if(char===quote)quote='';}else if(char==='"'||char==="'")quote=char;else if(char===')')break;else if(char==='(')throw new DocverError('ACTIVE_CONTENT','Unsupported nested SVG resource');}
+          if(end===css.length||quote)throw new DocverError('ACTIVE_CONTENT','Unterminated SVG resource');
+          const target=css.slice(open+1,end).trim().replace(/^["']|["']$/g,'');if(!/^#[a-z0-9_.:-]+$/i.test(target))throw new DocverError('EXTERNAL_RELATIONSHIP','SVG external resources are not sent to the renderer');urls.lastIndex=end+1;
+        }};
+      const styles=(parts:any[]):void=>{for(const part of parts){for(const [key,value]of Object.entries(part[':@']??{})){
+        const decoded=decodeXmlReferences(String(value));checkCss(decoded);
+        if(key.startsWith('@_')&&key.slice(2).split(':').at(-1)!.toLowerCase()==='href'&&!/^#[a-z0-9_.:-]+$/i.test(decoded.trim()))throw new DocverError('EXTERNAL_RELATIONSHIP','SVG external resources are not sent to the renderer');
       }
+        for(const [key,value]of Object.entries(part))if(Array.isArray(value)){if(key.split(':').at(-1)!.toLowerCase()==='style')checkCss(text(value));styles(value);}
+      }};styles(svg);
       continue;
     }
     if(!name.endsWith('.rels'))continue;
-    const source=new TextDecoder().decode(value);if(/<!DOCTYPE|<!ENTITY/i.test(source)||XMLValidator.validate(source)!==true)throw new DocverError('INVALID_XML','Unsafe renderer relationship XML');
+    let source:string;try{source=readXml(value);}catch(error){if(error instanceof DocverError&&error.code==='XML_ENCODING_UNAVAILABLE')throw error;throw new DocverError('INVALID_XML','Unsafe renderer relationship XML');}
     const decoded=(value:unknown)=>String(value??'').replace(/&(amp|lt|gt|quot|apos|#x[0-9a-f]+|#[0-9]+);/gi,(_,entity:string)=>{if(entity[0]==='#'){const code=entity[1].toLowerCase()==='x'?parseInt(entity.slice(2),16):Number(entity.slice(1));if(!code||code>0x10ffff||code>=0xd800&&code<=0xdfff)throw new DocverError('INVALID_XML','Invalid relationship character');return String.fromCodePoint(code);}return {amp:'&',lt:'<',gt:'>',quot:'"',apos:"'"}[entity.toLowerCase()]!;});
     const data=new XMLParser({ignoreAttributes:false,removeNSPrefix:true,processEntities:false}).parse(source),raw=data.Relationships?.Relationship,relationships=raw==null?[]:Array.isArray(raw)?raw:[raw];
     for(const rel of relationships){
@@ -96,7 +117,7 @@ export async function convertPptxDetailed(path:string,executable=officeExecutabl
     return {pdf:normalizeConvertedPdf(await readFile(join(output,'input.pdf'))),input:prepared.metadata};
   } catch(e) {
     const err=e as NodeJS.ErrnoException&{killed?:boolean};
-    if(e instanceof DocverError&&['EXTERNAL_RELATIONSHIP','ACTIVE_CONTENT','ZIP_LIMIT','ZIP_PATH','CANCELLED'].includes(e.code))throw e;
+    if(e instanceof DocverError&&['EXTERNAL_RELATIONSHIP','ACTIVE_CONTENT','ZIP_LIMIT','ZIP_PATH','CANCELLED','XML_ENCODING_UNAVAILABLE'].includes(e.code))throw e;
     const failure=new DocverError(err.code==='ENOENT'?'CONVERTER_UNAVAILABLE':err.code==='TOOL_TIMEOUT'||err.killed?'CONVERTER_TIMEOUT':err.name==='AbortError'?'CANCELLED':'CONVERSION_FAILED',
       'PPTX preview conversion failed; structural observations remain usable');
     failure.cause=e;throw failure;

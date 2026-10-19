@@ -1,8 +1,9 @@
-import {unzipSync,zipSync,strToU8,type Zippable} from 'fflate';
+import {unzipSync,zipSync,type Zippable} from 'fflate';
 import {XMLParser,XMLValidator} from 'fast-xml-parser';
+import {readXml,encodeXml} from '../xml/index.js';
 import {MAX_INPUT_BYTES,MAX_PPTX_EXPANDED_BYTES,MAX_PPTX_PART_BYTES,DocverError} from '../schema/index.js';
 
-export const officeInputPolicy='source-copy-svg-read-allowlist-v7-opc-signature-bounded-insets';
+export const officeInputPolicy='source-copy-svg-read-allowlist-v8-unicode-bounded-insets';
 const presentation=new Set(['http://schemas.openxmlformats.org/presentationml/2006/main','http://purl.oclc.org/ooxml/presentationml/main']);
 const drawing=new Set(['http://schemas.openxmlformats.org/drawingml/2006/main','http://purl.oclc.org/ooxml/drawingml/main']);
 const defaults={lIns:91440,rIns:91440,tIns:45720,bIns:45720};
@@ -14,7 +15,7 @@ type Frame={name:string;namespaces:Map<string,string>;shapeTree:boolean;shape?:S
 // inheritance. Only missing standard margins on ordinary slide shapes change.
 function materializeXml(xml:string):{xml:string;count:number;unsupported?:true}{
   const unsupported=()=>({xml,count:0,unsupported:true as const});
-  if(/<!DOCTYPE|<!ENTITY/i.test(xml)||XMLValidator.validate(xml)!==true)return unsupported();
+  if(XMLValidator.validate(xml)!==true)return unsupported();
   const stack:Frame[]=[],edits:Edit[]=[];let root=false;
   const finish=(frame:Frame|undefined)=>{const shape=frame?.owner;if(shape?.eligible&&!shape.placeholder&&shape.body.length===1)edits.push(shape.body[0]);};
   for(const match of xml.matchAll(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<\/?(?:[^<>"']|"[^"]*"|'[^']*')+>/g)){
@@ -48,7 +49,6 @@ export type OfficeInputSkipReason='signed_package'|'ambiguous_part_names'|'unsup
 type Limits={partBytes?:number;totalBytes?:number;zipBytes?:number};
 const metadataPart=(path:string)=>/\.rels$/i.test(path)||path.toLowerCase()==='[content_types].xml';
 const slidePart=(path:string)=>/^ppt\/slides\/slide[0-9]+\.xml$/.test(path);
-const decoder=()=>new TextDecoder('utf-8',{fatal:true,ignoreBOM:true});
 function signatureMetadata(parts:Record<string,Uint8Array>):'signature'|'unsupported'|undefined{
   const parser=new XMLParser({ignoreAttributes:false,removeNSPrefix:true,processEntities:false}),array=(value:any):any[]=>value==null?[]:Array.isArray(value)?value:[value];
   const decoded=(value:unknown)=>String(value??'').replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos);/gi,(_,entity:string)=>{
@@ -57,8 +57,7 @@ function signatureMetadata(parts:Record<string,Uint8Array>):'signature'|'unsuppo
     if(!code||code>0x10ffff||code>=0xd800&&code<=0xdfff)throw new Error('Invalid XML scalar');return String.fromCodePoint(code);
   });
   for(const [path,bytes]of Object.entries(parts).filter(([path])=>metadataPart(path))){
-    let xml:string;try{xml=decoder().decode(bytes);}catch{return 'unsupported';}
-    if(/<!DOCTYPE|<!ENTITY/i.test(xml)||XMLValidator.validate(xml)!==true)return 'unsupported';
+    let xml:string;try{xml=readXml(bytes);}catch(error){if(error instanceof DocverError&&error.code==='XML_ENCODING_UNAVAILABLE')throw error;return 'unsupported';}
     let depth=0,tags=0;for(const token of xml.matchAll(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<\/?(?:[^<>"']|"[^"]*"|'[^']*')+>/g)){
       const tag=token[0];if(tag.startsWith('<!')||tag.startsWith('<?'))continue;
       if(tag.startsWith('</'))depth--;else{tags++;if(!tag.endsWith('/>'))depth++;}
@@ -96,9 +95,9 @@ export function materializeOfficeInsets(bytes:Uint8Array,limits:Limits={}):{byte
   const signature=signatureMetadata(selected);if(signature)return unchanged(signature==='signature'?'signed_package':'unsupported_package_metadata');
   let count=0,derivedTotal=total;const replacements:Record<string,Uint8Array>={};
   for(const path of Object.keys(selected).filter(slidePart)){
-    let xml:string;try{xml=decoder().decode(selected[path]);}catch{unsupported++;continue;}
+    let xml:string;try{xml=readXml(selected[path]);}catch(error){if(error instanceof DocverError&&error.code==='XML_ENCODING_UNAVAILABLE')throw error;unsupported++;continue;}
     const derived=materializeXml(xml);if(derived.unsupported)unsupported++;if(!derived.count)continue;
-    const data=strToU8(derived.xml);derivedTotal+=data.length-sizes.get(path)!;
+    const data=encodeXml(derived.xml,selected[path]);derivedTotal+=data.length-sizes.get(path)!;
     if(data.length>partLimit||derivedTotal>totalLimit)return unchanged('derivation_budget_exceeded');
     replacements[path]=data;count+=derived.count;
   }

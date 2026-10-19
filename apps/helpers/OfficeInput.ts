@@ -12,6 +12,6 @@ try{
   if(prepared.changed_properties){const staging=join(query.folder,'render-input.tmp');await writeFile(staging,prepared.bytes,{flag:'wx',mode:0o600});await rename(staging,join(query.folder,'render-input.pptx'));}
   process.stdout.write(JSON.stringify({status:'ok',metadata}));
 }catch(error){
-  const code=error instanceof DocverError&&['ZIP_LIMIT','ZIP_PATH'].includes(error.code)?error.code:'OFFICE_INPUT_FAILED';
+  const code=error instanceof DocverError&&['ZIP_LIMIT','ZIP_PATH','XML_ENCODING_UNAVAILABLE'].includes(error.code)?error.code:'OFFICE_INPUT_FAILED';
   process.stdout.write(JSON.stringify({status:'error',code}));
 }

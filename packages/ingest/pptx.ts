@@ -1,75 +1,15 @@
 import { unzipSync } from 'fflate';
-import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import { XMLParser } from 'fast-xml-parser';
+import {MAX_XML_DEPTH,readXml,xmlCharacter} from '../xml/index.js';
 import { posix } from 'node:path';
 import { MAX_PPTX_EXPANDED_BYTES,MAX_PPTX_PART_BYTES,box, byteHash, DocverError, id, normalize, type ElementData, type PageData } from '../schema/index.js';
 
 const MAX_UNCOMPRESSED=MAX_PPTX_EXPANDED_BYTES;
-const MAX_XML_DEPTH=100;
 const parserOptions={ignoreAttributes:false, removeNSPrefix:false, transformTagName:(name:string)=>name.split(':').at(-1)!, textNodeName:'#text',
   trimValues:false, parseTagValue:false, parseAttributeValue:false, processEntities:false,maxNestedTags:MAX_XML_DEPTH};
 const parser=new XMLParser(parserOptions),orderedParser=new XMLParser({...parserOptions,preserveOrder:true,cdataPropName:'#cdata'});
-export const PPTX_TEXT_POLICY='drawingml-ordered-paragraphs-v3-unicode';
+export const PPTX_TEXT_POLICY='drawingml-ordered-paragraphs-v4-shared-xml';
 const arr=(v:any):any[] => v == null ? [] : Array.isArray(v) ? v : [v];
-// OPC XML parts use UTF-8 or BOM-marked UTF-16 (XML1.0 §4.3.3).
-// A malformed byte sequence must never silently change the observed source.
-function decodeXml(bytes:Uint8Array):string {
-  const encoding=bytes[0]===0xff&&bytes[1]===0xfe?'utf-16le':bytes[0]===0xfe&&bytes[1]===0xff?'utf-16be':'utf-8';
-  let source:string;
-  try{source=new TextDecoder(encoding,{fatal:true}).decode(bytes);}
-  catch{throw new DocverError('INVALID_XML','Invalid OOXML character encoding');}
-  if(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/u.test(source))throw new DocverError('INVALID_XML','Forbidden XML character');
-  if(source.startsWith('<?xml')&&/[ \t\r\n]/.test(source[5]??'')){
-    const end=source.indexOf('?>');
-    if(end<0)throw new DocverError('INVALID_XML','Unterminated XML declaration');
-    const declared=source.slice(0,end).match(/\bencoding[ \t\r\n]*=[ \t\r\n]*(['"])([^'"]*)\1/)?.[2].toUpperCase();
-    if(declared&&declared!=='UTF-8'&&declared!=='UTF-16')throw new DocverError('XML_ENCODING_UNSUPPORTED','OOXML encoding must be UTF-8 or UTF-16');
-    if(declared&&((declared==='UTF-8')!==(encoding==='utf-8')))throw new DocverError('INVALID_XML','OOXML encoding declaration does not match its bytes');
-  }
-  return source;
-}
-function xmlCharacter(cp:number):boolean {
-  return cp===0x9||cp===0xa||cp===0xd||cp>=0x20&&cp<=0xd7ff||cp>=0xe000&&cp<=0xfffd||cp>=0x10000&&cp<=0x10ffff;
-}
-function checkXmlReferences(source:string){
-  for(const match of source.matchAll(/&#(?:x([0-9a-fA-F]+)|([0-9]+));/g)){
-    const cp=match[1]===undefined?Number(match[2]):parseInt(match[1],16);
-    if(!xmlCharacter(cp))throw new DocverError('INVALID_XML','Forbidden XML character reference');
-  }
-}
-
-function checkXmlMarkup(source:string){
-  let cursor=0,depth=0;
-  while(cursor<source.length){
-    const open=source.indexOf('<',cursor);checkXmlReferences(source.slice(cursor,open<0?source.length:open));if(open<0)break;
-    let delimiter:string|undefined,contentStart=open;
-    if(source.startsWith('<!--',open)){delimiter='-->';contentStart=open+4;}
-    else if(source.startsWith('<![CDATA[',open)){delimiter=']]>';contentStart=open+9;}
-    else if(source.startsWith('<?',open)){delimiter='?>';contentStart=open+2;}
-    if(delimiter){const end=source.indexOf(delimiter,contentStart);if(end<0)throw new DocverError('INVALID_XML','Unterminated XML data');cursor=end+delimiter.length;continue;}
-    if(source.startsWith('<!',open)){
-      const declaration=source.slice(open,open+9).toUpperCase();
-      if(declaration.startsWith('<!DOCTYPE')||declaration.startsWith('<!ENTITY'))throw new DocverError('XML_DTD','DTD/entity declarations are unsupported');
-      throw new DocverError('INVALID_XML','Unsupported XML declaration');
-    }
-    let end=open+1,quote='';
-    for(;end<source.length;end++){
-      const char=source[end];
-      // XMLValidator accepts raw '<' in quoted attributes; XML1.0 does not.
-      // Never rescan that value as a comment, PI, CDATA or another tag.
-      if(char==='<')throw new DocverError('INVALID_XML','Invalid XML attribute or tag');
-      if(quote){if(char===quote)quote='';}
-      else if(char==='"'||char==="'")quote=char;
-      else if(char==='>')break;
-    }
-    if(end===source.length||quote)throw new DocverError('INVALID_XML','Unterminated XML tag');
-    checkXmlReferences(source.slice(open,end+1));
-    if(source[open+1]==='/')depth--;else if(source[end-1]!=='/')depth++;
-    if(depth<0)throw new DocverError('INVALID_XML','Unbalanced XML tags');
-    if(depth>MAX_XML_DEPTH)throw new DocverError('XML_DEPTH','XML nesting exceeds limit');
-    cursor=end+1;
-  }
-  if(depth!==0)throw new DocverError('INVALID_XML','Unbalanced XML tags');
-}
 // Decode predefined entities only, after parsing. DTDs and custom entities are rejected.
 function decoded(text:string):string {
   return text.replace(/&(amp|lt|gt|quot|apos|#x[0-9a-f]+|#[0-9]+);/gi,(match,k:string)=>{
@@ -123,9 +63,7 @@ export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
   }}); } catch(e) { if(e instanceof DocverError) throw e; throw new DocverError('INVALID_PPTX','Invalid ZIP package'); }
   function xml(path:string):any {
     if (!zip[path]) throw new DocverError('MISSING_PART',`Missing OOXML part: ${path}`);
-    const source=decodeXml(zip[path]);
-    checkXmlMarkup(source);
-    if(XMLValidator.validate(source)!==true) throw new DocverError('INVALID_XML','Malformed OOXML');
+    const source=readXml(zip[path]);
     try{const parsed=parser.parse(source);bindParagraphs(parsed,orderedParser.parse(source));return parsed;}
     catch(error){
       if(error instanceof DocverError)throw error;

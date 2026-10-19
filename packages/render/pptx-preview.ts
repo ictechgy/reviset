@@ -9,6 +9,24 @@ import { hash,byteHash,normalize,DocverError,type PageData,type ElementData,type
 import { captureNativePages,ocrEnvironment } from '../ingest/ocr.js';
 import {officeInputPolicy} from './pptx-default-insets.js';
 import {officeInputEnvironment,parseOfficeInputMetadata} from './office-input.js';
+import {readXml,decodeXmlReferences} from '../xml/index.js';
+import {XMLParser} from 'fast-xml-parser';
+
+export function namedSourceFonts(parts:Uint8Array[]):string[]{
+  const fonts=new Set<string>();
+  const parser=new XMLParser({ignoreAttributes:false,preserveOrder:true,processEntities:false,parseTagValue:false,trimValues:false});
+  const drawing=new Set(['http://schemas.openxmlformats.org/drawingml/2006/main','http://purl.oclc.org/ooxml/drawingml/main']);
+  const walk=(parts:any[],parent:Map<string,string>):void=>{for(const part of parts){const attrs=part[':@']??{},bindings=Object.entries(attrs).filter(([key])=>key==='@_xmlns'||key.startsWith('@_xmlns:'));
+    const namespaces=bindings.length?new Map(parent):parent;for(const [key,value]of bindings)namespaces.set(key==='@_xmlns'?'':key.slice(8),decodeXmlReferences(String(value)));
+    for(const [tag,children]of Object.entries(part))if(Array.isArray(children)&&!tag.startsWith('#')){
+      const colon=tag.indexOf(':'),prefix=colon<0?'':tag.slice(0,colon),local=colon<0?tag:tag.slice(colon+1);
+      if(['latin','ea','cs'].includes(local)&&drawing.has(namespaces.get(prefix)??'')){const family=decodeXmlReferences(String(attrs['@_typeface']??''));if(family&&!family.startsWith('+'))fonts.add(family);}
+      walk(children,namespaces);
+    }
+  }};
+  for(const value of parts)walk(parser.parse(readXml(value)),new Map());
+  return [...fonts].sort();
+}
 
 export function missingRenderedText(elements:ElementData[],fragments:{text:string;bbox:number[]}[]):boolean{
   const compact=(s:string)=>normalize(s).replace(/\s/gu,''),numbers=(s:string):string[]=>compact(s).match(/[+−-]?[0-9]+(?:[.,][0-9]+)*/g)??[];
@@ -22,7 +40,7 @@ let environmentPromise:Promise<string|undefined>|undefined;
 export function officeEnvironment():Promise<string|undefined>{
   if(!environmentPromise){const pending=(async()=>{const executable=officeExecutable();if(!executable)return undefined;
     try{const version=await isolatedOfficeVersion(executable),vision=await visionInfo();if(!vision)return undefined;
-      return JSON.stringify({version,binary_sha256:byteHash(await readFile(executable)),font_inventory_sha256:vision?.font_inventory_sha256??'unavailable',font_policy:'mac-system-and-user-fontconfig-v2',metadata_policy:'xref-scoped-direct-info-and-trailer-v4',input_policy:officeInputPolicy,input_preparation:await officeInputEnvironment(),os:vision?.os??process.platform,filter:officeFilter});
+      return JSON.stringify({version,binary_sha256:byteHash(await readFile(executable)),font_inventory_sha256:vision?.font_inventory_sha256??'unavailable',font_policy:'mac-system-and-user-fontconfig-v2',source_font_policy:'ooxml-shared-xml-v1',metadata_policy:'xref-scoped-direct-info-and-trailer-v4',input_policy:officeInputPolicy,input_preparation:await officeInputEnvironment(),os:vision?.os??process.platform,filter:officeFilter});
     }catch(e){if(e instanceof DocverError&&e.code==='CANCELLED')throw e;return undefined;}})();environmentPromise=pending;
     pending.then(value=>{if(!value&&environmentPromise===pending)environmentPromise=undefined;},()=>{if(environmentPromise===pending)environmentPromise=undefined;});}
   return environmentPromise;
@@ -43,10 +61,9 @@ export async function preparePptxPreview(source:string,bytes:Uint8Array,pages:Pa
   const task=getDocument({...pdfOptions,data:new Uint8Array(pdf)});
   try{
     const doc=await task.promise;if(doc.numPages!==pages.length)throw new DocverError('PREVIEW_PAGE_MAPPING','Converted page count does not equal source slide count');
-    const info=await visionInfo(),known=new Set((info?.font_families??[]).map((f:string)=>f.toLowerCase())),fonts=new Set<string>();
+    const info=await visionInfo(),known=new Set((info?.font_families??[]).map((f:string)=>f.toLowerCase()));
     const zip=unzipSync(bytes,{filter:e=>/^ppt\/(slides|slideLayouts|slideMasters|theme)\/[^/]+\.xml$/.test(e.name)});
-    for(const value of Object.values(zip))for(const m of new TextDecoder().decode(value).matchAll(/<a:(?:latin|ea|cs)\b[^>]*typeface="([^"+][^"]*)"/g))fonts.add(m[1]);
-    const missing=[...fonts].filter(f=>!known.has(f.toLowerCase())).sort();
+    const missing=namedSourceFonts(Object.values(zip)).filter(f=>!known.has(f.toLowerCase()));
     for(const p of pages){
       const rendered=await doc.getPage(p.page),v=rendered.getViewport({scale:1}),warnings=missing.map(f=>'font_substitution_possible:'+f);
       if(Math.abs((p.width/p.height)/(v.width/v.height)-1)>0.001)throw new DocverError('PREVIEW_GEOMETRY','Converted page aspect ratio differs from source slide');

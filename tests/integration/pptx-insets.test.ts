@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,rm,readFile,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
 import {zipSync,unzipSync,strToU8} from 'fflate';
 import pptxgen from 'pptxgenjs';
 import {getDocument} from 'pdfjs-dist/legacy/build/pdf.mjs';
 import {materializeOfficeInsets} from '../../packages/render/pptx-default-insets.js';
-import {convertPptx,convertPptxDetailed,renderPdf} from '../../packages/render/index.js';
+import {convertPptx,convertPptxDetailed,renderPdf,validateRenderPackage} from '../../packages/render/index.js';
+import {readXml} from '../../packages/xml/index.js';
+import {namedSourceFonts} from '../../packages/render/pptx-preview.js';
 import {prepareOfficeInput,officeInputEnvironment} from '../../packages/render/office-input.js';
 import {officeExecutable} from '../../packages/runtime/tools.js';
 import {pdfOptions} from '../../packages/ingest/pdf.js';
@@ -42,7 +44,7 @@ test('ambiguous, signed, malformed and extension-only package content is never r
   for(const extra of extras){
     const bytes=packageXml(slide(shape()),extra);assert.strictEqual(materializeOfficeInsets(bytes).bytes,bytes);
   }
-  const ignored=slide('<!-- <p:sp><p:txBody><a:bodyPr/></p:txBody></p:sp> --><a:extLst><![CDATA[<a:bodyPr/>]]></a:extLst>'+shape());
+  const ignored=slide('<!-- <p:sp><p:txBody><a:bodyPr/></p:txBody></p:sp> --><a:extLst><![CDATA[<a:bodyPr/> <!DOCTYPE html>]]></a:extLst>'+shape());
   assert.equal(materializeOfficeInsets(packageXml(ignored)).changed_properties,4);
   const deep=packageXml(slide(shape()+'<p:extLst>'+'<x>'.repeat(105)+'</x>'.repeat(105)+'</p:extLst>'));assert.strictEqual(materializeOfficeInsets(deep).bytes,deep);
   const nestedExtension=packageXml(slide('<p:extLst><p:ext uri="test"><x:payload xmlns:x="urn:custom"><p:grpSp>'+shape()+'</p:grpSp></x:payload></p:ext></p:extLst>'));
@@ -64,6 +66,68 @@ test('derived UTF8 part, total and ZIP bytes stay within budgets and preserve a 
   const total=materializeOfficeInsets(original,{totalBytes:size+4+51});assert.strictEqual(total.bytes,original);assert.equal(total.skip_reason,'derivation_budget_exceeded');
   const media=packageXml(xml,{'ppt/media/original.bin':new Uint8Array(1000)}),zip=materializeOfficeInsets(media,{zipBytes:media.length+50});assert.strictEqual(zip.bytes,media);assert.equal(zip.skip_reason,'derivation_budget_exceeded');
   const bom=materializeOfficeInsets(packageXml('\ufeff'+xml));assert.equal(bom.changed_properties,4);assert.deepEqual([...unzipSync(bom.bytes)['ppt/slides/slide1.xml'].slice(0,3)],[239,187,191]);
+});
+const utf16=(xml:string,big:boolean)=>{
+  const content=Buffer.from('<?xml version="1.0" encoding="UTF-16"?>'+xml,'utf16le');if(big)content.swap16();
+  return Buffer.concat([Buffer.from(big?[0xfe,0xff]:[0xff,0xfe]),content]);
+};
+test('named-font diagnostics read UTF8 and both UTF16 byte orders consistently',()=>{
+  const xml='<a:theme xmlns:a="'+a+'"><a:latin typeface="Docver Missing Font"/><a:ea typeface="한글 글꼴"/><a:cs typeface="+mn-cs"/><a:latin typeface="Docver Missing Font"/></a:theme>';
+  const expected=['Docver Missing Font','한글 글꼴'];
+  for(const part of [strToU8(xml),strToU8('\ufeff'+xml),utf16(xml,false),utf16(xml,true)])assert.deepEqual(namedSourceFonts([part]),expected);
+  const variants=['<a:latin typeface="Family &amp; Co"/>',"<a:latin typeface='Family &#38; Co'/>",'<x:latin xmlns:x="'+a+'" typeface="Family &amp; Co"/>','<latin xmlns="'+a+'" typeface="Family &amp; Co"/>'];
+  for(const body of variants){const part='<a:theme xmlns:a="'+a+'">'+body+'<!-- <a:latin typeface="False comment"/> --><x:latin xmlns:x="urn:other" typeface="False namespace"/></a:theme>';for(const bytes of [strToU8(part),utf16(part,false),utf16(part,true)])assert.deepEqual(namedSourceFonts([bytes]),['Family & Co']);}
+});
+test('UTF16 renderer guards and private margin copies preserve byte order, declarations, untouched parts and source bytes',()=>{
+  const path='ppt/slides/slide1.xml',xml=slide(shape()).replace('Original &amp; text','한글😀 &amp; original');
+  const rel='<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><!-- literal <!ENTITY own "ok"> --><Relationship Id="slide" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/slides/slide1.xml"/></Relationships>';
+  for(const big of [false,true])for(const metadataUtf16 of [true,false]){
+    const source=zipSync({[path]:utf16(xml,big),'_rels/.rels':metadataUtf16?utf16(rel,big):strToU8(rel),'ppt/media/original.bin':new Uint8Array([1,2,3,4])}),original=new Uint8Array(source);
+    validateRenderPackage(source);const first=materializeOfficeInsets(source),parts=unzipSync(first.bytes);
+    assert.equal(first.changed_properties,4);assert.equal(first.unsupported_parts,0);assert.deepEqual(source,original);
+    assert.deepEqual([...parts[path].slice(0,2)],big?[0xfe,0xff]:[0xff,0xfe]);
+    assert.match(readXml(parts[path]),/^<\?xml version="1.0" encoding="UTF-16"\?>/);
+    assert.match(readXml(parts[path]),/한글😀 &amp; original/);assert.match(readXml(parts[path]),/lIns="91440"/);
+    assert.deepEqual(parts['_rels/.rels'],unzipSync(source)['_rels/.rels']);assert.deepEqual(parts['ppt/media/original.bin'],new Uint8Array([1,2,3,4]));
+    assert.equal(byteHash(first.bytes),byteHash(materializeOfficeInsets(source).bytes));validateRenderPackage(first.bytes);
+    const again=materializeOfficeInsets(first.bytes);assert.equal(again.changed_properties,0);assert.strictEqual(again.bytes,first.bytes);
+    const external=zipSync({[path]:utf16(xml,big),'_rels/.rels':utf16(rel.replace('Target="ppt/slides/slide1.xml"','TargetMode="External" Target="file:///private/source"'),big)});
+    assert.throws(()=>validateRenderPackage(external),{code:'EXTERNAL_RELATIONSHIP'});
+    const malformed=zipSync({[path]:utf16(xml,big),'_rels/.rels':utf16(rel.replace('Id="slide"','Id="&#x;"'),big)});assert.throws(()=>validateRenderPackage(malformed),{code:'INVALID_XML'});
+  }
+});
+test('UTF16 signature and derivation budget guards keep the entire package unchanged',()=>{
+  const path='ppt/slides/slide1.xml',xml=slide(shape());
+  for(const big of [false,true]){
+    const part=utf16(xml,big),source=zipSync({[path]:part,'ppt/media/original.bin':new Uint8Array([1,2,3,4])});
+    for(const limits of [{partBytes:part.length+80},{totalBytes:part.length+4+80}]){
+      const result=materializeOfficeInsets(source,limits);assert.strictEqual(result.bytes,source);assert.equal(result.skip_reason,'derivation_budget_exceeded');
+    }
+    const relationship='<Relationships><Relationship Id="signature" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital&#45;signature/origin" Target="custom/signature"/></Relationships>';
+    const signed=zipSync({[path]:part,'_rels/.rels':utf16(relationship,big)}),result=materializeOfficeInsets(signed);assert.strictEqual(result.bytes,signed);assert.equal(result.skip_reason,'signed_package');
+    const explicit=zipSync({[path]:utf16(slide(shape(' lIns="0" rIns="0" tIns="0" bIns="0"')),big)});assert.strictEqual(materializeOfficeInsets(explicit).bytes,explicit);
+  }
+});
+test('UTF16 SVG media retain external-resource and active-content guards regardless of filename',()=>{
+  for(const big of [false,true])for(const name of ['ppt/media/image.svg','ppt/media/image.bin']){
+    const svg=(body:string)=>utf16('<svg xmlns="http://www.w3.org/2000/svg">'+body+'</svg>',big);
+    validateRenderPackage(zipSync({[name]:svg('<path id="local"/><use href="#local"/>')}));
+    for(const body of ['<image href="file:///private/source"/>','<image href="https://example.invalid/source"/>','<style>path{fill:url(file:///private/source)}</style>','<path fill="u&#114;l(file:///private/source)"/>','<path filter="u&#114;l(https://example.invalid/source#x)"/>']){
+      assert.throws(()=>validateRenderPackage(zipSync({[name]:svg(body)})),{code:'EXTERNAL_RELATIONSHIP'});
+    }
+    for(const body of ['<image xmlns:xlink="http://www.w3.org/1999/xlink" href="file:///private/source" xlink:href="#local"/>','<image xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="file:///private/source" href="#local"/>'])assert.throws(()=>validateRenderPackage(zipSync({[name]:svg(body)})),{code:'EXTERNAL_RELATIONSHIP'});
+    for(const body of ['<script>1</script>','<foreignObject/>','<path onclick="1"/>'])assert.throws(()=>validateRenderPackage(zipSync({[name]:svg(body)})),{code:'ACTIVE_CONTENT'});
+    for(const body of ['<style>&#64;import "https://example.invalid/source";</style>','<style>&#64;<![CDATA[import]]> "https://example.invalid/source";</style>','<style>@\\69mport "https://example.invalid/source";</style>','<path style="fill: \\66ile"/>'])assert.throws(()=>validateRenderPackage(zipSync({[name]:svg(body)})),{code:'ACTIVE_CONTENT'});
+    const noBom=svg('<image href="file:///private/source"/>').subarray(2);assert.throws(()=>validateRenderPackage(zipSync({[name]:noBom})),{code:'ACTIVE_CONTENT'});
+    validateRenderPackage(zipSync({[name]:svg('<style>.local{fill:url(#local)}</style><path id="local" style="fill: red"/>')}));
+    validateRenderPackage(zipSync({[name]:svg('<path id="local" style="fill:url(&quot;#local&quot;)"/><use href="&#35;local"/>')}));
+    validateRenderPackage(zipSync({[name]:svg('<style>&amp;#64;import</style>')}));
+    validateRenderPackage(zipSync({[name]:svg('<style><![CDATA[&#64;import]]></style>')}));
+  }
+});
+test('unterminated 1MB SVG CSS resource input is rejected within an isolated deadline',()=>{
+  const source=`import assert from 'node:assert/strict';import {zipSync,strToU8} from 'fflate';import {validateRenderPackage} from ${JSON.stringify(new URL('../../packages/render/index.ts',import.meta.url).href)};for(const css of ['url('.repeat(250000),'url("'+'x'.repeat(1000000)]){const xml='<svg xmlns="http://www.w3.org/2000/svg"><style>'+css+'</style></svg>';assert.throws(()=>validateRenderPackage(zipSync({'ppt/media/image.svg':strToU8(xml)})),{code:'ACTIVE_CONTENT'});}console.log('Bounded SVG CSS negatives passed');`;
+  const child=spawnSync(process.execPath,['--import','tsx','--input-type=module','-e',source],{encoding:'utf8',timeout:5000,maxBuffer:1024*1024});assert.ifError(child.error);assert.equal(child.status,0,child.stderr);assert.match(child.stdout,/Bounded SVG CSS negatives passed/);
 });
 test('renderer input helper verifies provenance and supports responsive cancellation and timeouts',async()=>{
   const folder=await realpath(await mkdtemp(join(tmpdir(),'docver-input-helper-')));

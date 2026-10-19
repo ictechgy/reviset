@@ -66,6 +66,7 @@ test('BOM-marked UTF-8 and both UTF-16 byte orders preserve text, notes, table c
     const parts=unzipSync(bytes);
     for(const [path,data]of Object.entries(parts))if(/\.(xml|rels)$/.test(path)){
       let xml=strFromU8(data);
+      if(declaration)assert.match(xml,/^<\?xml[^?]*encoding="UTF-8"/,'All fixture XML/rels have an explicit original declaration');
       xml=declaration?xml.replace(/encoding="UTF-8"/,'encoding="'+(encoding==='utf8'?'UTF-8':'UTF-16')+'"'):xml.replace(/^<\?xml[^?]*\?>/,'');
       let encoded=Buffer.from(xml,encoding==='utf8'?'utf8':'utf16le');
       if(encoding==='utf16be')encoded=Buffer.from(encoded).swap16();
@@ -87,8 +88,30 @@ test('invalid encoded bytes and mismatched or unsupported declarations fail with
     {name:'unpaired UTF-16 surrogate',part:Buffer.concat([utf16,Buffer.from([0x00,0xd8])]),code:'INVALID_XML'},
     {name:'UTF-8 bytes declared UTF-16',part:strToU8(xml.replace('UTF-8','UTF-16')),code:'INVALID_XML'},
     {name:'UTF-16 bytes declared UTF-8',part:Buffer.concat([Buffer.from([0xff,0xfe]),Buffer.from(xml,'utf16le')]),code:'INVALID_XML'},
+    {name:'UTF-16LE without BOM',part:utf16.subarray(2),code:'INVALID_XML'},
+    {name:'UTF-16BE without BOM',part:Buffer.from(utf16.subarray(2)).swap16(),code:'INVALID_XML'},
     {name:'unsupported encoding',part:strToU8(xml.replace('UTF-8','ISO-8859-1')),code:'XML_ENCODING_UNSUPPORTED'});
   for(const item of cases){const encoded=zipSync({...base,[path]:item.part}),original=new Uint8Array(encoded);assert.throws(()=>extractPptx(encoded,'sha256:invalid-encoding'),{code:item.code},item.name);assert.deepEqual(encoded,original);}
+});
+
+test('malformed numeric references fail in text and attributes while literal reference spellings stay literal',()=>{
+  const base=unzipSync(bytes),path='ppt/slides/slide1.xml',xml=strFromU8(base[path]);
+  for(const reference of ['&#;','&#x;','&#X41;','&#-1;','&#+1;','&#x1','&#1','&#xG;','&#NaN;','&# 65;'])for(const context of ['text','attribute']){
+    const modified=context==='text'?xml.replace('Before',reference):xml.replace('<p:sld ','<p:sld own="'+reference+'" ');
+    assert.throws(()=>extractPptx(zipSync({...base,[path]:strToU8(modified)}),'sha256:malformed-reference'),{code:'INVALID_XML',message:'Malformed XML character reference'},context+' '+reference);
+  }
+  const positive=xml.replace('Before','&amp;#x;<![CDATA[ literal &#; &#x; ]]>').replace('</p:sld>','<!-- &#x; --><'+ '?own &#;?'+ '></p:sld>');
+  assert.ok(extractPptx(zipSync({...base,[path]:strToU8(positive)}),'sha256:literal-reference')[0].elements[0].text.startsWith('&#x; literal &#; &#x; '));
+});
+
+test('only exact predefined named XML entities are admitted outside literal data',()=>{
+  const base=unzipSync(bytes),path='ppt/slides/slide1.xml',xml=strFromU8(base[path]);
+  for(const reference of ['&bogus;','&AMP;','&Amp;','&amp','A&B','&'])for(const context of ['text','attribute']){
+    const modified=context==='text'?xml.replace('Before',reference):xml.replace('<p:sld ','<p:sld own="'+reference+'" ');
+    assert.throws(()=>extractPptx(zipSync({...base,[path]:strToU8(modified)}),'sha256:invalid-entity'),{code:'INVALID_XML',message:'Malformed XML entity reference'},context+' '+reference);
+  }
+  const positive=xml.replace('Before','&amp;&lt;&gt;&quot;&apos; &amp;bogus;<![CDATA[ &bogus; &AMP; ]]>').replace('</p:sld>','<!-- &bogus; --><'+ '?own &AMP;?'+ '></p:sld>');
+  assert.ok(extractPptx(zipSync({...base,[path]:strToU8(positive)}),'sha256:literal-entity')[0].elements[0].text.startsWith('&<>"\' &bogus; &bogus; &AMP; '));
 });
 
 test('XML1.0 forbidden raw characters and actual references are rejected in consumed parts',()=>{
@@ -112,6 +135,8 @@ test('valid XML character boundaries and literal reference text remain observabl
   assert.ok(page.elements[0].text.startsWith(valid.map(cp=>String.fromCodePoint(cp)).join('')+' literal &#1; &#xFFFF; '));
   assert.ok(page.elements[0].text.includes('literal &#x1F600; actual 😀'));
   const replacement=xml.replace('Before','\uFFFD');const [literalReplacement]=extractPptx(zipSync({...base,[path]:strToU8(replacement)}),'sha256:literal-replacement');assert.ok(literalReplacement.elements[0].text.startsWith('\uFFFD '));
+  const rawBoundaries=String.fromCodePoint(0xd7ff,0xe000,0x10000,0x10ffff,0xfeff),raw=xml.replace('Before',rawBoundaries).replace('UTF-8','UTF-16');
+  const encoded=Buffer.concat([Buffer.from([0xff,0xfe]),Buffer.from(raw,'utf16le')]);assert.ok(extractPptx(zipSync({...base,[path]:encoded}),'sha256:raw-valid-characters')[0].elements[0].text.startsWith(rawBoundaries+' '));
 });
 
 test('PPTX nested groups preserve child source order without claiming supported group geometry',()=>{
