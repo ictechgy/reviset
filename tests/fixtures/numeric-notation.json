@@ -358,5 +358,169 @@
   {
     "text": "2#/",
     "supported": false
+  },
+  {
+    "text": "Amount 2원)/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2원－/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2원–/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2원#/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2원°/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2만)/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2만－/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2만–/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2만#/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2만°/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2억)/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2억－/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2억–/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2억#/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2억°/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2만원)/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2만원－/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2만원–/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2만원#/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2만원°/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2USD)/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2USD－/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2USD–/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2USD#/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2USD°/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2%)/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2%－/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2%–/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2%#/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2%°/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2％)/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2％－/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2％–/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2％#/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 2％°/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "100만/월",
+    "supported": true
+  },
+  {
+    "text": "100억/년",
+    "supported": true
+  },
+  {
+    "text": "100%/day",
+    "supported": true
+  },
+  {
+    "text": "words / words",
+    "supported": true
+  },
+  {
+    "text": "100원 / +120원",
+    "supported": true
+  },
+  {
+    "text": "100만원 / +120만원",
+    "supported": true
   }
 ]

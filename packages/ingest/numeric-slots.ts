@@ -23,10 +23,11 @@ export function numericNotationSupported(text:string):boolean{
     if(date<dates.length&&dates[date].start<at&&at<dates[date].end)continue;
     const left=next>0?text.slice(values[next-1].end,at):null,right=next<values.length?text.slice(at+1,values[next].start):null;
     if(at>0&&/\p{White_Space}/u.test(text[at-1])&&/\p{White_Space}/u.test(text[at+1]??'')&&left!==null&&right!==null&&/^[\p{L}\p{Sc}%％\p{White_Space}]*$/u.test(left)&&/^[\p{White_Space}\p{Sc}]*$/u.test(right))continue;
-    const numericLeft=left!==null&&(/^[\p{L}\p{Sc}%％\p{White_Space}+＋−.,，．-]*$/u.test(left)||!/\p{L}/u.test(left)),numericRight=right!==null&&!/\p{L}/u.test(right);
-    // Labels such as1/day and100원/월 retain their literal denominator.
-    if(numericLeft&&/^\p{L}+(?=$|[^\p{L}\p{N}\p{M}])/u.test(text.slice(at+1)))continue;
-    if(numericLeft||numericRight)return false;
+    if(/^\p{L}+(?=$|[^\p{L}\p{N}\p{M}])/u.test(text.slice(at+1)))continue;
+    // In a numeric line, an unowned slash is unsupported unless one of
+    // the complete fraction/date/list/literal-unit grammars above owns it.
+    // Do not infer arithmetic meaning from partially parsed neighboring text.
+    if(values.length)return false;
   }
   return true;
 }

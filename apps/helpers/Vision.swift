@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-15-unicode-operand-boundaries"
+    static let version = "docver-vision-16-explicit-slash-grammar"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -41,10 +41,10 @@ struct DocverVision {
             let left:String?=next>0 ? ns.substring(with:NSRange(location:NSMaxRange(slots[next-1].range),length:at-NSMaxRange(slots[next-1].range))) : nil
             let right:String?=next<slots.count ? ns.substring(with:NSRange(location:at+1,length:slots[next].range.location-at-1)) : nil
             if at>0 && at+1<ns.length && matches("\\p{White_Space}",ns.substring(with:NSRange(location:at-1,length:1))) && matches("\\p{White_Space}",ns.substring(with:NSRange(location:at+1,length:1))) && left.map({matches("^[\\p{L}\\p{Sc}%％\\p{White_Space}]*$",$0)}) == true && right.map({matches("^[\\p{White_Space}\\p{Sc}]*$",$0)}) == true{continue}
-            let numericLeft=left.map{matches("^[\\p{L}\\p{Sc}%％\\p{White_Space}+＋−.,，．-]*$",$0) || !matches("\\p{L}",$0)} ?? false
-            let numericRight=right.map{!matches("\\p{L}",$0)} ?? false
-            if numericLeft && matches("^\\p{L}+(?=$|[^\\p{L}\\p{N}\\p{M}])",ns.substring(from:at+1)){continue}
-            if numericLeft || numericRight{return false}
+            if matches("^\\p{L}+(?=$|[^\\p{L}\\p{N}\\p{M}])",ns.substring(from:at+1)){continue}
+            // Numeric-line slashes require an explicit supported grammar;
+            // partial operands and unknown unit punctuation cannot verify.
+            if !slots.isEmpty{return false}
         }
         return true
     }
