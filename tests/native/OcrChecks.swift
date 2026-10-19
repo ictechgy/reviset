@@ -20,6 +20,8 @@ import AppKit
         precondition(numbers("1, 2, 3")==["1","2","3"],"List commas cannot fuse separate values")
         precondition(numbers("2026-10-19")==["2026","10","19"],"Date separators cannot become negative signs")
         precondition(numbers("−５００원 ＋１０％")==["-500원","+10%"],"Full width digits and signed units")
+        precondition(DocverVision.numericFormatSupported("−５００원 100 100"))
+        precondition(!DocverVision.numericFormatSupported("⅛ pound ¼ pound x² Ⅲ"),"Unverified fractions/exponents cannot claim decimal consensus")
 
         let image=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:240,pixelsHigh:160,bitsPerSample:8,samplesPerPixel:1,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceWhite,bytesPerRow:0,bitsPerPixel:0)!
         let pixels=image.bitmapData!,stride=image.bytesPerRow

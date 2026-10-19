@@ -19,6 +19,11 @@ struct DocverVision {
         try NSRegularExpression(pattern:"(?:(?<![\\p{L}\\p{N}])[+＋−-]\\s*)?[0-9０-９]+(?:[.,，．][0-9０-９]+)*(?:\\s*(?:[%％]|억|만|원))?")
     }
     static func canonicalNumber(_ text:String)->String{text.precomposedStringWithCompatibilityMapping.replacingOccurrences(of:"−",with:"-").filter{!$0.isWhitespace}}
+    static func numericFormatSupported(_ text:String)->Bool {
+        // Fractions, superscripts and Roman numerals are preserved as text, but
+        // agreement on decimal slots does not verify those other number forms.
+        text.range(of:"(?=\\p{N})[^0-9０-９]",options:.regularExpression)==nil
+    }
     static func supportedPixels(_ image:NSBitmapImageRep)->Bool {
         !image.isPlanar && image.bitsPerSample==8 && ((image.colorSpace.colorSpaceModel == .rgb && [3,4].contains(image.samplesPerPixel)) || (image.colorSpace.colorSpaceModel == .gray && [1,2].contains(image.samplesPerPixel)))
     }
@@ -136,7 +141,8 @@ struct DocverVision {
                 }
             }
             recognized=uniqueNumbers(recognized)
-            let consensus = !missingBounds && numericAgreement(required,recognized)
+            let numericFormatOK=numericFormatSupported(text)
+            let consensus = numericFormatOK && !missingBounds && numericAgreement(required,recognized)
             let tokens:[[String:Any]] = (try? NSRegularExpression(pattern:"\\S+").matches(in:text,range:NSRange(text.startIndex...,in:text)))?.compactMap { match in
                 guard let range=Range(match.range,in:text),let word=try? candidates.first?.boundingBox(for:range) else {return nil}
                 let b=word.boundingBox
@@ -145,6 +151,7 @@ struct DocverVision {
             return ["text":text, "confidence":Double(candidates.first?.confidence ?? 0),
                     "bbox":[b.minX,1-b.maxY,b.width,b.height],
                     "strike_candidate":strike != nil,"strike_status":strikeStatus,"strike_bbox":strike ?? [0,0,0,0],"numeric_consensus":consensus,"numeric_readings":recognized.map{$0.text},
+                    "numeric_status":!numericFormatOK ? "unsupported_notation" : required.isEmpty ? "not_applicable" : consensus ? "verified":"conflicted",
                     "numeric_observations":recognized.map{["text":$0.text,"bbox":[$0.rect.minX,$0.rect.minY,$0.rect.width,$0.rect.height],"sources":$0.sources]},
                     "tokens":tokens,"alternatives":candidates.map { ["text":$0.string,"confidence":Double($0.confidence)] }]
         }.sorted { a,b in
