@@ -6,6 +6,7 @@ func renderWarningName(_ value:String)->String{
     if value.hasPrefix("font_substitution_possible:"){return "대체될 수 있는 글꼴: "+String(value.dropFirst("font_substitution_possible:".count))}
     if value=="rendered_text_differs_from_ooxml_requires_source_review"{return "변환 화면에서 일부 원문 텍스트를 확인하지 못했습니다."}
     if value=="chart_smartart_or_other_object_render_requires_review"{return "차트·SmartArt 등 복합 개체의 변환 결과를 확인하세요."}
+    if value=="standard_text_insets_materialized"{return "텍스트의 기본 여백을 표준값으로 적용한 변환 화면입니다."}
     return value
 }
 
@@ -35,17 +36,20 @@ struct OcrContextEvidence: View {
             DisclosureGroup("문맥 재판독 근거") {
                 VStack(alignment:.leading,spacing:7) {
                     if !reconsideration.isNull {
-                        Text("최초 OCR · \(Int(reconsideration["primary_confidence"].number*100))점").font(.caption2).foregroundStyle(.secondary)
+                        Text((element["comparison_reason"].string == "roi_evidence_or_primary_relationship_unverified" ? "기록된 최초 OCR · 연결 미검증":"최초 OCR")+" · \(Int(reconsideration["primary_confidence"].number*100))점").font(.caption2).foregroundStyle(.secondary)
                         Text(reconsideration["primary_text"].string).textSelection(.enabled)
                     }
                     Text("같은 인식기의 여러 조건에서 얻은 추정입니다. 원본 화면과 대조하세요.").font(.caption2).foregroundStyle(.secondary)
                     ForEach(observation["contexts"].array.indices,id:\.self){i in
                         let context=observation["contexts"].array[i]
                         let names=["available":"인식 완료","not_detected":"판독값 없음","contaminated":"주변 내용 혼입","edge_cut":"경계 잘림","ambiguous":"대안 충돌","failed":"인식 실패","budget_exceeded":"처리 한도 도달"]
+                        let languages=context["languages"].array.map{$0.string == "ko-KR" ? "한국어":"영어"}.joined(separator:"+")
                         VStack(alignment:.leading,spacing:3) {
-                            Text("조건 \(i+1) · "+(names[context["status"].string] ?? "상태 미상")).font(.caption2).foregroundStyle(.secondary)
+                            Text("조건 \(i+1) · "+languages+" · \(Int(context["scale"].number))배 · "+(context["padding"].number>0.5 ? "넓은 주변":"가까운 주변")).font(.caption2).foregroundStyle(.secondary)
+                            Text(names[context["status"].string] ?? "상태 미상").font(.caption2).foregroundStyle(.secondary)
                             ForEach(context["observations"].array.indices,id:\.self){n in
                                 Text(context["observations"].array[n]["text"].string).font(.caption).textSelection(.enabled)
+                                Text("인식 점수 \(Int(context["observations"].array[n]["confidence"].number*100))점").font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                     }

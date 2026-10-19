@@ -355,3 +355,35 @@ SwiftUI typecheck PASS. Runtime sources fixed for this run through snapshot;
 only evidence notes follow. Fresh frozen independent fullbase reviews, actual
 Office/public/native package qualification and weak genuine-Hangul expansion
 remain active. Code checks are not treated as task completion.
+
+
+Engine34 repairs token-local ownership of repeated-character deletion
+certificates. Optional OCR/raster/preview cache write failures retain successful
+observations and expose precise canonical diagnostics; invalid neighboring
+native pages retain their own failure reasons. Focused11 contracts pass,
+including actual Impress rendering with a deterministic native-protocol control
+(the latter is not a native OCR/raster fidelity claim).
+
+PPTX renderer input policyv7 excludes OPC signature indicators at arbitrary
+part paths, keeps extension/MC ancestry opaque, preserves XML BOMs, enforces
+post-derivation UTF8/package budgets, and avoids inflating media for unchanged
+input. Changed input is prepared in a separately cancellable, minimal-environment
+process, with deterministic repacking and source/derived hash, property count
+and skip metadata retained in page preview provenance. Originals remain unchanged.
+Scope remains canonical slide parts and ordinary slide shapes; layout/master
+decorations and nonstandard slide paths are not normalized. Source validation
+still includes synchronous work; no general hard latency bound is claimed.
+
+The native evidence drawer now shows language, crop padding, scale, context
+status and reading scores; an unverified primary relationship is labelled.
+Actual UI/package/runtime qualification remains separate. Genuine low-resolution
+Korean controls also exposed three incorrect primary readings at score0.5;
+independent local-model experiments contradict all three and correctly read two,
+but are not product dependencies or evidence for automatic correction. These
+remaining OCR failures keep product completion open after the34 source fixes.
+
+Engine34 final serial full regression143/143 PASS,0fail/skip/cancel,120.509s;
+SwiftUI typecheck PASS. Runtime source fixed during this run through snapshot;
+only evidence notes followed. Frozen full-base re-review, actual packaged helper
+resolution/UI/runtime, fresh Office/public qualification and measured Korean OCR
+errors remain separate active gates. The product is not marked complete.

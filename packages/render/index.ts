@@ -1,17 +1,17 @@
 import { normalizeConvertedPdf } from './pdf-metadata.js';
 import { createCanvas } from '@napi-rs/canvas';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { mkdtemp, readFile, rm, mkdir,realpath,writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, mkdir,realpath,writeFile,rename } from 'node:fs/promises';
 import { existsSync,realpathSync } from 'node:fs';
 import { tmpdir,homedir } from 'node:os';
 import { join, resolve,dirname,posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pdfOptions } from '../ingest/pdf.js';
-import { DocverError,MAX_PPTX_EXPANDED_BYTES,MAX_PPTX_PART_BYTES } from '../schema/index.js';
+import { DocverError,MAX_PPTX_EXPANDED_BYTES,MAX_PPTX_PART_BYTES,byteHash,type OfficeInputPreparationData } from '../schema/index.js';
 import { runTool,officeExecutable } from '../runtime/tools.js';
 import { unzipSync } from 'fflate';
 import { XMLParser,XMLValidator } from 'fast-xml-parser';
-import {materializeOfficeInsets} from './pptx-default-insets.js';
+import {prepareOfficeInput} from './office-input.js';
 export const officeFilter='pdf:impress_pdf_Export:'+JSON.stringify({ExportHiddenSlides:{type:'boolean',value:'true'},ExportNotesPages:{type:'boolean',value:'false'}});
 export function validateRenderPackage(bytes:Uint8Array,depth=0,budget={total:0}):void{
   if(depth>2)throw new DocverError('ZIP_LIMIT','Nested render package exceeds limit');
@@ -71,11 +71,17 @@ export async function isolatedOfficeVersion(executable:string):Promise<string>{
   finally{await rm(folder,{recursive:true,force:true});}
 }
 export async function convertPptx(path:string,executable=officeExecutable()??'soffice',timeout=120_000,signal?:AbortSignal,sourceBytes?:Uint8Array):Promise<Buffer> {
+  return (await convertPptxDetailed(path,executable,timeout,signal,sourceBytes)).pdf;
+}
+export async function convertPptxDetailed(path:string,executable=officeExecutable()??'soffice',timeout=120_000,signal?:AbortSignal,sourceBytes?:Uint8Array):Promise<{pdf:Buffer;input:OfficeInputPreparationData}> {
   if(executable.includes('/')&&!existsSync(executable))throw new DocverError('CONVERTER_UNAVAILABLE','PPTX renderer executable not found');
   const folder=await realpath(await mkdtemp(join(tmpdir(),'docver-render-')));
   try {
     const output=join(folder,'output'); await mkdir(output);
-    const input=sourceBytes??await readFile(path);validateRenderPackage(input);const copiedSource=join(folder,'input.pptx');await writeFile(copiedSource,materializeOfficeInsets(input).bytes,{mode:0o600});
+    const input=sourceBytes??await readFile(path);validateRenderPackage(input);const copiedSource=join(folder,'input.pptx');await writeFile(copiedSource,input,{mode:0o600});
+    const deadline=performance.now()+timeout,prepared=await prepareOfficeInput(folder,byteHash(input),Math.max(1,Math.min(30_000,deadline-performance.now())),signal);
+    // Replace only the private job copy, retaining a stable converter filename.
+    if(prepared.path!==copiedSource)await rename(prepared.path,copiedSource);
     const profile=join(folder,'profile');await mkdir(join(profile,'user'),{recursive:true});
     const xml=(s:string)=>s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
     const fontConfig=join(folder,'fonts.conf');
@@ -85,11 +91,12 @@ export async function convertPptx(path:string,executable=officeExecutable()??'so
     // Deny document-controlled reads outside the source/job, vendor code and
     // explicit OS/font dependencies, including nested SVG/resource resolution.
     const sandbox=rendererSandbox(folder,executable);
-    await runTool(process.platform==='darwin'?'/usr/bin/sandbox-exec':executable,process.platform==='darwin'?['-p',sandbox,executable,...args]:args,{timeout,signal,maxBytes:1024*1024,env:{HOME:folder,TMPDIR:folder,XDG_CACHE_HOME:join(folder,'cache'),FONTCONFIG_FILE:fontConfig,FONTCONFIG_PATH:folder,PYTHONDONTWRITEBYTECODE:'1'}});
-    return normalizeConvertedPdf(await readFile(join(output,'input.pdf')));
+    const remaining=deadline-performance.now();if(remaining<=0)throw new DocverError('TOOL_TIMEOUT','Renderer preparation exceeded conversion budget');
+    await runTool(process.platform==='darwin'?'/usr/bin/sandbox-exec':executable,process.platform==='darwin'?['-p',sandbox,executable,...args]:args,{timeout:remaining,signal,maxBytes:1024*1024,env:{HOME:folder,TMPDIR:folder,XDG_CACHE_HOME:join(folder,'cache'),FONTCONFIG_FILE:fontConfig,FONTCONFIG_PATH:folder,PYTHONDONTWRITEBYTECODE:'1'}});
+    return {pdf:normalizeConvertedPdf(await readFile(join(output,'input.pdf'))),input:prepared.metadata};
   } catch(e) {
     const err=e as NodeJS.ErrnoException&{killed?:boolean};
-    if(e instanceof DocverError&&['EXTERNAL_RELATIONSHIP','ACTIVE_CONTENT','ZIP_LIMIT','CANCELLED'].includes(e.code))throw e;
+    if(e instanceof DocverError&&['EXTERNAL_RELATIONSHIP','ACTIVE_CONTENT','ZIP_LIMIT','ZIP_PATH','CANCELLED'].includes(e.code))throw e;
     const failure=new DocverError(err.code==='ENOENT'?'CONVERTER_UNAVAILABLE':err.code==='TOOL_TIMEOUT'||err.killed?'CONVERTER_TIMEOUT':err.name==='AbortError'?'CANCELLED':'CONVERSION_FAILED',
       'PPTX preview conversion failed; structural observations remain usable');
     failure.cause=e;throw failure;

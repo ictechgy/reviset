@@ -11,7 +11,7 @@ await import('./build-native-helpers.js');await import('./prepare-office.js');
 // Only this generated bundle is replaced; never reuse stale runtimes or dependencies.
 await rm(app,{recursive:true,force:true});
 await mkdir(join(contents,'MacOS'),{recursive:true});await mkdir(join(resources,'backend'),{recursive:true});await mkdir(join(contents,'Helpers'),{recursive:true});
-await build({entryPoints:{bridge:'apps/bridge/main.ts',mcp:'apps/mcp/main.ts'},outdir:join(resources,'backend'),bundle:true,format:'esm',platform:'node',packages:'external',outExtension:{'.js':'.mjs'},target:'node24'});
+await build({entryPoints:{bridge:'apps/bridge/main.ts',mcp:'apps/mcp/main.ts','office-input':'apps/helpers/OfficeInput.ts'},outdir:join(resources,'backend'),bundle:true,format:'esm',platform:'node',packages:'external',outExtension:{'.js':'.mjs'},target:'node24'});
 await cp('package.json',join(resources,'package.json'));
 await cp('package-lock.json',join(resources,'package-lock.json'));
 execFileSync('npm',['ci','--omit=dev','--ignore-scripts','--no-audit','--no-fund','--prefix',resources],{stdio:'inherit'});

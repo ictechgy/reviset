@@ -364,3 +364,28 @@ review; lower average RGB error is not strict PowerPoint pixel equivalence.
 Primary sources for standard margin defaults:
 https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.bodyproperties.leftinset?view=openxml-3.0.1
 https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.bodyproperties.topinset?view=openxml-3.0.1
+
+
+Engine34 binds deletion edit alignment and UTF16 certificate offsets to the
+single changed original token, preventing repeated characters in another token
+from supplying the certificate. Optional cache writes are diagnostic failures,
+never reasons to discard valid native observations or assign an unrelated page
+failure; native page-specific reasons survive preview projection.
+
+Renderer input policyv7 guards OPC signature relationship/content-type indicators
+regardless of part path, treats extension and MC branches as opaque, preserves
+BOMs and enforces post-derivation UTF8 part/aggregate/ZIP budgets. A first bounded
+slide/metadata scan avoids inflating media on unchanged inputs. Repacking runs
+in a separate process with process-group cancellation, a finite timeout, minimal
+environment and source/derived SHA256 verification. Bundled office-input.mjs
+is required in packaged apps. Source validation remains partly synchronous.
+A per-asset preview input_preparation record retains policy, source/input hashes,
+changed-property count, unsupported-part count and conservative skip reason;
+cache replay validates that record. This does not normalize master/layout
+content, nonstandard slide names, fonts or all PowerPoint rendering behavior.
+
+Native score0.5 low-resolution Korean controls revealed actual incorrect inferred
+selections. Independent sandboxed OCR disagrees with three erroneous primary
+values, reading two correctly; the prototype remains outside the product.
+Neither a higher threshold nor another recognizer score alone establishes truth.
+Broader observed disagreement and preservation qualification remains active.

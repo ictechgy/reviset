@@ -10,10 +10,10 @@ const active=new Map<number,()=>void>();
 function kill(pid:number,signal:NodeJS.Signals='SIGTERM'){try{process.kill(-pid,signal);}catch{/* already exited */}}
 function stop(){for(const cancel of active.values())cancel();}
 const terminate=()=>stop(),interrupt=()=>stop();
-export async function runTool(executable:string,args:string[],options:{input?:string;timeout?:number;signal?:AbortSignal;maxBytes?:number;env?:NodeJS.ProcessEnv}={}):Promise<string>{
+export async function runTool(executable:string,args:string[],options:{input?:string;timeout?:number;signal?:AbortSignal;maxBytes?:number;env?:NodeJS.ProcessEnv;inheritEnv?:boolean}={}):Promise<string>{
   options.signal?.throwIfAborted();
   return new Promise((resolveRun,reject)=>{
-    const child=spawn(executable,args,{detached:true,stdio:['pipe','pipe','pipe'],env:{...process.env, SAL_DISABLE_OPENCL:'1',...options.env}});
+    const child=spawn(executable,args,{detached:true,stdio:['pipe','pipe','pipe'],env:{...(options.inheritEnv===false?{}:process.env),SAL_DISABLE_OPENCL:'1',...options.env}});
     let stdout:Buffer=Buffer.alloc(0),stderr:Buffer=Buffer.alloc(0),failure:Error|undefined;
     const abort=(error:Error)=>{if(failure)return;failure=error;if(child.pid)kill(child.pid,'SIGKILL');};
     const cancelled=()=>abort(new DocverError('CANCELLED','Local document processing cancelled'));

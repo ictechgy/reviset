@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 
 export const SCHEMA_VERSION = '0.2.0';
 const StoredSchemaVersion=z.enum(['0.1.0','0.2.0']);
-export const ENGINE_VERSION = '0.2.0-native.ocr-render.33';
+export const ENGINE_VERSION = '0.2.0-native.ocr-render.34';
 export const MAX_INPUT_BYTES=512*1024*1024;
 export const MAX_PPTX_EXPANDED_BYTES=512*1024*1024;
 export const MAX_PPTX_PART_BYTES=64*1024*1024;
@@ -32,6 +32,8 @@ export type OcrReconsiderationData=z.infer<typeof OcrReconsideration>;
 export const Capability = z.object({ text: Availability, notes: Availability, hidden_slides: Availability,
   animation: Availability, structure: Availability, preview: Availability });
 export const GridStatus=z.enum(['available','not_detected','insufficient_text','unsupported_format','unsupported_dimensions','budget_exceeded','ambiguous_boundaries','partial']);
+export const OfficeInputPreparation=z.object({policy:z.string().min(1).max(128),source_sha256:z.string().regex(/^[a-f0-9]{64}$/),input_sha256:z.string().regex(/^[a-f0-9]{64}$/),changed_properties:z.number().int().min(0).max(40000000),unsupported_parts:z.number().int().min(0).max(100000),skip_reason:z.enum(['signed_package','ambiguous_part_names','unsupported_package_metadata','derivation_budget_exceeded']).optional()});
+export type OfficeInputPreparationData=z.infer<typeof OfficeInputPreparation>;
 export const Gap = z.object({ feature: z.string(), reason: z.string(), revision_id: z.string().optional(), page_id: z.string().optional() });
 export const Element = z.object({ observation_id: z.string(), kind: z.enum(['text', 'table_cell', 'image', 'shape', 'unsupported']),
   text: z.string(), normalized_text: z.string(), bbox: Bbox, reading_order: z.number().int().nonnegative(),
@@ -52,7 +54,7 @@ export const Page = z.object({ page_id: z.string(), asset_id: z.string(), page: 
   ocr_text:z.string().optional(),ocr_unresolved_text:z.string().optional(),comparison_basis:z.enum(['text_layer','raster_ocr','hybrid_regions_v1']).optional(),
   raster:z.object({sha256:z.string().regex(/^[a-f0-9]{64}$/),width:z.number().int().positive(),height:z.number().int().positive(),renderer:z.string(),environment:z.string()}).optional(),
   ocr:z.object({status:z.enum(['available','no_text','unavailable','failed']),mode:z.enum(['scan','supplement','verification']).optional(),engine:z.string(),environment:z.string(),structure_status:z.string().optional(),grid_status:GridStatus.optional(),grid_reasons:z.array(z.string()).max(20).optional(),bitmap_format:z.number().int().nonnegative().optional(),bitmap_bits_per_sample:z.number().int().positive().optional(),bitmap_bits_per_pixel:z.number().int().positive().optional(),table_count:z.number().int().nonnegative().optional(),render_sha256:z.string().optional(),width:z.number().int().positive().optional(),height:z.number().int().positive().optional(),reason:z.string().optional()}).optional(),
-  preview:z.object({asset_id:z.string().regex(/^sha256:[a-f0-9]{64}$/),page:z.number().int().positive(),width:z.number().positive(),height:z.number().positive(),source_transform:z.array(z.number()).length(6),renderer:z.string(),environment:z.string(),assessment:z.literal('inferred'),warnings:z.array(z.string())}).optional(),
+  preview:z.object({asset_id:z.string().regex(/^sha256:[a-f0-9]{64}$/),page:z.number().int().positive(),width:z.number().positive(),height:z.number().positive(),source_transform:z.array(z.number()).length(6),renderer:z.string(),environment:z.string(),assessment:z.literal('inferred'),warnings:z.array(z.string()),input_preparation:OfficeInputPreparation.optional()}).optional(),
   elements: z.array(Element), notes: z.string().nullable(), capabilities: Capability, coverage_gaps: z.array(Gap) });
 export const Asset = z.object({ asset_id: z.string(), format: z.enum(['pptx','pdf']), bytes: z.number().int().nonnegative() });
 export const Revision = z.object({ revision_id: z.string(), revision_occurrence_id: z.string(), label: z.string(),

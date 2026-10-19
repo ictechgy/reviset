@@ -39,14 +39,14 @@ export function admitReconsideration(primary:ElementData,input:OcrReconsideratio
   // One aligned token may carry the edit. Whitespace compaction must not let
   // a character edit silently remove and invent boundaries in other tokens.
   if(before.length!==after.length||before.filter((word,i)=>word!==after[i]).length!==1)return;
-  const {changes,cost,deleted}=altered(primary.text,first.text);if(cost>1)return;
+  const changedToken=before.findIndex((word,i)=>word!==after[i]);
+  const {changes,cost,deleted}=altered(before[changedToken],after[changedToken]);if(cost>1)return;
   if(deleted.length){
     if(primary.text!==primary.text.normalize('NFC'))return;
     const map:{offset:number;text:string;tokenScalars:number}[]=[];
-    for(const token of primary.text.matchAll(/\S+/gu)){
-      const scalars=Array.from(token[0]);let offset=token.index;
-      for(const text of scalars){map.push({offset,text,tokenScalars:scalars.length});offset+=text.length;}
-    }
+    const token=[...primary.text.matchAll(/\S+/gu)][changedToken];if(!token)return;
+    const scalars=Array.from(token[0]);let offset=token.index;
+    for(const text of scalars){map.push({offset,text,tokenScalars:scalars.length});offset+=text.length;}
     // Equal token counts do not prove preservation: deleting a one-scalar
     // token and splitting another word can keep the count unchanged.
     for(const d of deleted){const scalar=map[d.index];if(!scalar||scalar.text!==d.text||scalar.tokenScalars===1||!data.primary_empty_characters?.some(e=>e.offset===scalar.offset&&e.text===scalar.text&&e.ink_pixels===0&&e.bbox[2]>0&&e.bbox[3]>0&&e.bbox[2]<=primary.bbox[2]&&e.bbox[3]<=2*primary.bbox[3]&&e.bbox[0]+e.bbox[2]/2>=primary.bbox[0]&&e.bbox[0]+e.bbox[2]/2<=primary.bbox[0]+primary.bbox[2]&&e.bbox[1]+e.bbox[3]/2>=primary.bbox[1]&&e.bbox[1]+e.bbox[3]/2<=primary.bbox[1]+primary.bbox[3]))return;}
