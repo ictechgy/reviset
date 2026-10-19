@@ -23,4 +23,4 @@
 
 OCR/표 구조는 macOS 시스템 Vision·PDFKit·CoreText를 사용한다. 모델·시스템 글꼴을 저장소나 설치본에 복사하지 않는다. Swift helper는 앱에 포함하며 macOS26+ 구조 API는 availability guard로 분리한다. 개발 검증 자료의 PowerPoint PDF는 upstream의 독립 참조이며 제품 번들에 포함하지 않는다.
 
-PDF.js의 legacy worker는 `scripts/prepare-pdfjs.ts`로 빌드 시에만 수정한다. 문서에 실제 포함된 글꼴 프로그램인지 나타내는 boolean만 전달하며 전체 fontExtraProperties는 켜지 않는다. upstream/수정본 SHA를 고정하고 다른 버전·바이트는 거절한다. worker 변경 고지·재현 소스·라이선스를 앱에 보존하며 서명 후에는 쓰지 않는다. 개발 테스트 준비와 공개 corpus 명령도 같은 준비 함수를 사용한다. 미수정 worker에서는 포함 여부를 확정하지 않으며 실제 worker SHA를 report 관측 환경에 남긴다.
+PDF.js의 legacy worker는 `scripts/prepare-pdfjs.ts`로 빌드 시에만 수정한다. 문서에 실제 포함된 글꼴 프로그램인지 나타내는 boolean과 유한한 실제 ascent/descent 두 값만 추가 전달하며 전체 fontExtraProperties는 켜지 않는다. 공백에만 쓰여 textContent.styles에서 빠진 글꼴도 실제 메트릭으로 처리한다. upstream/수정본 SHA를 고정하고 다른 버전·바이트는 거절한다. 이전 V1 수정본은 정확한 SHA를 확인하고 upstream을 재구성·재검증한 뒤 V2로 이행한다. worker 변경 고지·재현 소스·라이선스를 앱에 보존하며 서명 후에는 쓰지 않는다. 개발 테스트 준비와 공개 corpus 명령도 같은 준비 함수를 사용한다. 미수정 worker에서는 포함 여부를 확정하지 않으며 실제 worker SHA를 report 관측 환경에 남긴다.

@@ -96,7 +96,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     }
   }
   const textRuns=new Map<number,Box>();let lastUnknownTextOrder=-1;
-  for(const g of glyphs){if(g.hidden)continue;if(g.geometry_unverified){lastUnknownTextOrder=Math.max(lastUnknownTextOrder,g.order);continue;}const footprint=g.reliable&&g.clip_ink?g.clip_ink:g.bbox,b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],footprint[0]),Math.min(b[1],footprint[1]),Math.max(b[0]+b[2],footprint[0]+footprint[2])-Math.min(b[0],footprint[0]),Math.max(b[1]+b[3],footprint[1]+footprint[3])-Math.min(b[1],footprint[1])):footprint);}
+  for(const g of glyphs){if(g.hidden)continue;if(g.geometry_unverified){lastUnknownTextOrder=Math.max(lastUnknownTextOrder,g.order);continue;}const footprint=g.reliable&&g.paint_ink?g.paint_ink:g.bbox,b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],footprint[0]),Math.min(b[1],footprint[1]),Math.max(b[0]+b[2],footprint[0]+footprint[2])-Math.min(b[0],footprint[0]),Math.max(b[1]+b[3],footprint[1]+footprint[3])-Math.min(b[1],footprint[1])):footprint);}
   // An estimate is not a maximum painted extent. It can only withhold
   // visibility of earlier paint, never certify occlusion.
   // All such extents are the same full page: only the last visible unknown

@@ -12,6 +12,8 @@ import {validateCorpusPages} from '../../scripts/public-corpus-validation.js';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
+import {resolve} from 'node:path';
+import {paintedGlyphs} from '../../packages/ingest/pdf-glyphs.js';
 async function pdf(draw:(d:PDFKit.PDFDocument)=>void){
   const d=new PDFDocument({size:[300,200],margin:0,compress:false}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(r=>d.on('end',()=>r(Buffer.concat(chunks))));draw(d);d.end();return done;
 }
@@ -40,6 +42,15 @@ test('unknown painted font extent withholds earlier visibility while later relia
   const earlier=page.elements.find(e=>e.text==='Earlier')!,unknown=page.elements.find(e=>e.text==='Unknown')!,later=page.elements.find(e=>e.text==='Later')!;
   assert.equal(earlier.visibility,'uncertain');assert.ok(earlier.visibility_evidence?.some(v=>v.method==='later_text_geometry_unverified'));assert.equal(unknown.visibility,'unverified');assert.equal(page.elements.find(e=>e.text==='Between')!.visibility,'uncertain');assert.equal(later.visibility,'visible');assert.ok(later.visibility_spans?.length);Page.parse(page);
   const hidden=await pdf(d=>{write(d,'Helvetica','Clear');d.addContent('3 Tr');write(d,'Times-Roman','Not painted');}),[control]=await extractPdf(hidden,'sha256:'+byteHash(hidden),{ocr:'off'});assert.equal(control.elements.find(e=>e.text==='Clear')!.visibility,'visible');
+});
+
+test('actual metrics for a whitespace-only embedded font do not withhold unrelated earlier text',async()=>{
+  const bytes=await pdf(d=>{write(d,'Helvetica','Revenue 100');write(d,resolve('node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf'),' ',220,160);});
+  const task=getDocument({...pdfOptions,disableFontFace:true,data:new Uint8Array(bytes)});
+  try{const page=await(await task.promise).getPage(1),content=await page.getTextContent(),ops=await page.getOperatorList(),glyphs=paintedGlyphs(page,page.getViewport({scale:1}),ops,content.styles);const spaces=glyphs.filter(g=>g.text===' ');assert.ok(spaces.length);assert.ok(spaces.every(g=>!g.geometry_unverified));}
+  finally{await task.destroy();}
+  const [page]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'off'}),value=page.elements.find(e=>e.text==='Revenue 100')!;
+  assert.equal(value.visibility,'visible');assert.ok(!value.visibility_evidence?.some(e=>e.method==='later_text_geometry_unverified'));Page.parse(page);
 });
 
 test('standard-font page commits and reloads through actual desktop report and native-page storage',async()=>{

@@ -202,3 +202,23 @@ including engine-like prefixes. Such lists may also contain raw engine reason
 codes; this is a deliberate preservation limit, not a new mapping-review warning.
 Automatic appearance transitions use the exact producer arrow separator; other
 known gap/range reasons are localized and unknown labels remain neutral/deduped.
+
+
+Engine28 repairs two actual public-PDF source-visibility regressions without
+rewriting OCR. Fonts used only by whitespace may be absent from
+`textContent.styles`. Worker patch V2 exports the same finite actual font
+ascent/descent pair alongside the embedded-program origin flag. Missing or
+invalid values remain unavailable; this is not a fontBBox or default estimate.
+The known V1 worker is accepted only at build time, reconstructed to the pinned
+upstream hash, then upgraded to the pinned V2 hash. Runtime remains read-only.
+
+Reliable fill text from a genuine embedded program also uses its loaded glyph
+outline as the maximum later-text ink extent. This avoids withholding an
+earlier number merely because a later parenthesis overlaps its empty metric
+margin. It does not narrow target source boxes, relax annotation/clip
+thresholds, or certify substitute fonts, Type3, accented, remeasured, stroked,
+unsupported or missing paths. The one-native-pixel inward clearance for clip
+rescue remains unchanged. Actual source strings and OCR primaries remain exact.
+A native control compares every baseline digit ink pixel: separated actual ink
+leaves them unchanged, true overlap changes them and remains uncertain; a
+substitute-font negative retains the metric-only uncertainty.

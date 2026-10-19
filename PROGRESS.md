@@ -222,3 +222,16 @@ npm run cli -- export --project prj_forward --out artifacts/forward
 
 
 밀도 검증 추가(481b580 패키지, 현재 장비): PDF 300쪽×2, 쪽당 본문 10줄. 분석 2.488초/최대 RSS 1.123GB, 저장 1.809초/1.486GB, 원문 페이지 요청 0.652초/0.798GB. `output/native-dense/result.json`의 `/usr/bin/time -l` 기록이며 보편적인 자원 상한은 아니다. helper가 요청마다 full report를 파싱하고 원본 hash를 확인하므로 빠른 페이지 이동의 중복 읽기와 메모리 비용은 WATCH로 유지한다. 공개·실문서 성능 보장을 넓히기 전 요청 병합/동시성 제한·page index가 필요하다.
+
+
+2026-10-19 quality loop3 resumed after user rejected stopping with open quality gates.
+Engine28 addresses an actual whitespace-only-font metrics omission and an
+embedded later-parenthesis empty-margin overlap. Public Azure raw Foo is now
+visible/selected while original F00 OCR remains uncertain; public training
+source middle-dot text is visible after exact later-ink footprint accounting.
+Seven focused native/clip/unknown-font controls pass, including actual digit
+ink preservation and true-overlap/substitute negatives. Full suite is running;
+the initial new-test type annotation failure is preserved and corrected. Low-confidence ROI and independent Tesseract experiments are
+local under .omx/artifacts/quality-loop-03; not yet product dependencies.
+Product perfection and PowerPoint fidelity remain active work, not accepted
+residuals or a completion checkpoint.
