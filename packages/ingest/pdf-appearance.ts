@@ -6,6 +6,7 @@ import { box, normalize, type Box, type ElementData } from '../schema/index.js';
 interface Region {bbox:Box;order:number;kind:'fill'|'line'|'stroke'|'image'|'text'|'unknown_text';opaque:boolean;axisAligned:boolean;color?:string;line?:Region}
 const area=(b:Box)=>b[2]*b[3];
 const overlap=(a:Box,b:Box)=>Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
+const coverageOf=(target:Box,region:Box)=>area(target)>0?Math.min(1,overlap(target,region)/area(target)):0;
 const compact=(s:string)=>normalize(s).replace(/\s/gu,'');
 export async function inspectAppearance(page:any,viewport:any,elements:ElementData[],fontStyles:Record<string,any>={}):Promise<{regions:Region[];gaps:{feature:string;reason:string}[]}> {
   const operators=await page.getOperatorList({annotationMode:AnnotationMode.DISABLE}),annotations=await page.getAnnotations({intent:'display'}),regions:Region[]=[],gaps:{feature:string;reason:string}[]=[];
@@ -127,7 +128,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       const background=backgrounds.at(-1)?.color??'#ffffff';
       if(g.color!=='unknown'&&background!=='unknown'&&g.color===background){state='uncertain';e.visibility_evidence.push({method:'text_color_matches_background',bbox:g.bbox,assessment:'inferred',coverage:1});}
       for(const r of regions){
-        const coverage=area(footprint)>0?Math.min(1,overlap(footprint,r.bbox)/area(footprint)):0;
+        const coverage=coverageOf(footprint,r.bbox);
         // A decimal point can occupy less than 5% of its font-metric box.
         // Any positive overlap is uncertain unless a stronger assessment applies.
         if(r.kind==='fill'&&r.order>g.order&&coverage>0){
@@ -144,12 +145,12 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
         if(a.annotationFlags&34)continue;
         if(a.annotationType!==AnnotationType.STRIKEOUT){
           if((a.annotationType===AnnotationType.LINK||a.annotationType===AnnotationType.POPUP)&&!a.hasAppearance)continue;
-          if(a.rect?.length===4){const r=bounds(Array.from(a.rect),[1,0,0,1,0,0]).bbox,coverage=area(g.bbox)>0?overlap(g.bbox,r)/area(g.bbox):0;if(coverage>0){state='uncertain';assessment='inferred';e.visibility_evidence.push({method:a.subtype==='Redact'?'redaction_annotation_intent_unapplied':'annotation_overlay_unverified',bbox:r,assessment:'inferred',coverage});}}
+          if(a.rect?.length===4){const r=bounds(Array.from(a.rect),[1,0,0,1,0,0]).bbox,coverage=coverageOf(g.bbox,r);if(coverage>0){state='uncertain';assessment='inferred';e.visibility_evidence.push({method:a.subtype==='Redact'?'redaction_annotation_intent_unapplied':'annotation_overlay_unverified',bbox:r,assessment:'inferred',coverage});}}
           continue;
         }
         const q=a.quadPoints?Array.from(a.quadPoints) as number[]:[];
         if(q.length<8){if(a.rect?.length===4&&overlap(g.bbox,bounds(Array.from(a.rect),[1,0,0,1,0,0]).bbox)>0){state='uncertain';assessment='inferred';}e.visibility_evidence.push({method:'annotation_quadpoints_missing',bbox:e.bbox,assessment:'inferred',coverage:0});gaps.push({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
-        for(let k=0;k+7<q.length;k+=8){const group=q.slice(k,k+8),xs=group.filter((_,i)=>i%2===0),ys=group.filter((_,i)=>i%2===1),region=bounds([Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)],[1,0,0,1,0,0]).bbox,coverage=area(g.bbox)>0?overlap(region,g.bbox)/area(g.bbox):0;
+        for(let k=0;k+7<q.length;k+=8){const group=q.slice(k,k+8),xs=group.filter((_,i)=>i%2===0),ys=group.filter((_,i)=>i%2===1),region=bounds([Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)],[1,0,0,1,0,0]).bbox,coverage=coverageOf(g.bbox,region);
           if(coverage>0){if(['visible','struck_through','partially_struck_through'].includes(state)){state=coverage<=0.2?'uncertain':coverage>=0.8&&state!=='partially_struck_through'?'struck_through':'partially_struck_through';assessment=state==='struck_through'?'observed':'inferred';}
             e.visibility_evidence.push({method:'strikeout_annotation_quad',bbox:region,assessment,coverage});}
         }

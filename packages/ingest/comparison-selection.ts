@@ -100,7 +100,10 @@ export function selectHybridComparison(page:PageData):void{
   }
   // Roles persist per observation, so occurrence-ID stamping needs no new
   // cross-reference rewriting and paginated queries retain the exact selection.
-  const participants=rowOrderedRegions(page.elements.filter(e=>e.comparison_role==='selected'||e.comparison_role==='unresolved'));
+  const participating=page.elements.filter(e=>e.comparison_role==='selected'||e.comparison_role==='unresolved');
+  // Unlocalized/estimated source cannot establish rows or reorder localized OCR.
+  // Keep those raw observations after localized evidence in original source order.
+  const participants=[...rowOrderedRegions(participating.filter(e=>!hasUnverifiedPdfGeometry(e))),...participating.filter(hasUnverifiedPdfGeometry).sort((a,b)=>a.reading_order-b.reading_order)];
   participants.forEach((e,i)=>{e.comparison_order=i;});
   page.comparison_basis='hybrid_regions_v1';
   page.coverage_gaps=[...new Map(page.coverage_gaps.map(g=>[JSON.stringify([g.feature,g.reason,g.revision_id,g.page_id]),g])).values()];

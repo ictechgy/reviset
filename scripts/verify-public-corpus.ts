@@ -12,10 +12,9 @@ import {captureNativePages,type NativePageResult} from '../packages/ingest/ocr.j
 import {preparePptxPreview} from '../packages/render/pptx-preview.js';
 import {validateRenderPackage,renderPdf} from '../packages/render/index.js';
 import {runTool,visionExecutable,visionInfo} from '../packages/runtime/tools.js';
-import {byteHash,normalize,ENGINE_VERSION,comparisonRegions,type PageData} from '../packages/schema/index.js';
+import {byteHash,normalize,ENGINE_VERSION,comparisonRegions,Report,Page,type PageData} from '../packages/schema/index.js';
 import {DesktopService} from '../packages/desktop/service.js';
 import {validateCorpusPages} from './public-corpus-validation.js';
-import {Report,Page} from '../packages/schema/index.js';
 import {fileSha256} from '../packages/runtime/file-hash.js';
 import {preparePdfjs} from './prepare-pdfjs.js';
 import {pdfWorkerEnvironment} from '../packages/runtime/pdfjs-environment.js';

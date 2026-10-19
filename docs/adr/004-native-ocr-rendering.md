@@ -65,7 +65,7 @@ Leading-decimal scalar observations such as .5 are now complete decimal slots, r
 The explicit spaced-list rule also supports1 / 2.3 and1 / 2,000 as two observations; compact1/2.3 and1/2,000 remain unsupported ratios. Spaces on both sides are an existing lexical list convention, not evidence of author arithmetic intent.
 
 Source PDF font metrics can be unavailable even for ordinary unembedded Times
-or Courier fonts. Engine21 retains their exact observed strings and finite
+or Courier fonts. Engine22 retains their exact observed strings and finite
 estimated display bounds (or an empty box when the transform cannot locate
 text), with `pdf_text_geometry_estimated_or_unavailable` inferred evidence and
 an explicit visibility gap. Original metrics remain unavailable: these runs
@@ -80,3 +80,10 @@ per-file failure path. The public corpus validates source and variant pages
 before JSON serialization and exercises every original and variant through
 DesktopService create/analyze/commit, reopened report and native-page storage.
 This avoids treating successful OCR scoring as successful app ingestion.
+
+Estimated source bounds do not drive hybrid row ordering: marked unresolved
+observations follow localized evidence in original source reading order. A
+page mixing unknown-metric fonts can require OCR for every reliable run painted
+before the last unknown-metric run; this conservative recall cost is explicit.
+Paint, annotation overlay and strikeout coverage share one [0,1] ratio helper,
+so fractional-coordinate roundoff cannot invalidate an otherwise supported page.
