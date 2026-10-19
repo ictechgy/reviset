@@ -458,3 +458,43 @@ OCR-evidence view; posting a mouse event inside its own window opens the group
 and internal bitmap shows all8conditions/languages/scales/statuses/scores. This
 is component rendering/interaction plus separate packaged-payload validation;
 full packaged OS-input interaction and Screen Recording remain unverified.
+
+
+Engine35 full-base original approval was superseded by independently reproduced
+post-blind addenda: N1 stale admitted-ROI withholding diagnostics (code MEDIUM,
+BLOCKED) and N4 page-scoped nonnumeric recall loss from a distant header veto
+(architecture MEDIUM,BLOCK). Original reports remain unchanged. Claude35 requests
+changes; Grok35timed out with empty output and Agy35quota429 is not review evidence.
+Fresh frozen35 public12sources/33pages+20variants canonical/control checks pass,
+with recognition misses retained. Frozen35 Office10decks/26pages cold-cache run
+in a separate clean worktree matches26page geometries but0strictRGBpages;
+max>24changedfraction.0388700,maxanyRGB.651709,meanRGBaverage2.261812.
+This remains an active fidelity failure, not pixel-equivalence qualification.
+
+Engine36 derives contextual withholding gaps only after accepted ROI readings
+settle final roles. Mixed accepted/unresolved regions retain genuine gaps;
+reselection removes only selector-owned stale contextual reasons. Eligible
+borderline OCR with no usable supported-language context is withheld while
+primary text/score/visibility/raw projections remain unchanged. The native drawer
+shows annex-level unavailable/budget/background/empty/failure status even when
+no context rows exist. Reference verification uses a run-local cache.
+
+A bounded nonnumeric regional fallback compares short(<=128UTF16)selected raster
+lines only in matched PDF pages with the same native environment and verified
+geometry/distinctraster. It requires unique bidirectional footprint pairing,
+no other overlapping observation, equal token count, exactly one changed token
+and at least one unchanged letter-bearing anchor. Existing moved/elsewhere-text,
+source/annotation/estimated-source disagreement and numeric guards remain.
+Events are location-level region/inferred evidence, not semantic entity identity.
+Wraps/joins/insertion,unanchored/multi-token edits and unresolved page matches
+remain conservative gaps. Legacy pre-hybrid numeric contracts remain intact.
+Ten focused controls pass; initial annotation negative fixture lacked its actual
+region evidence and initial test type errors were corrected with logs retained.
+Final full-suite/frozen independent review and runtime qualification follow.
+
+Engine36 full serial suite149/149 PASS,0fail/skip/cancel,124.155s. Runtime
+source was fixed throughout this final run; only this evidence note follows.
+Pure replay of32actual frozen35/helper20 heldout observations through current36
+selection retains16correct selected readings and reduces wrong selected3→2.
+The two remaining errors have Vision score1.0; no universal OCR accuracy,
+fresh native latency, packaged36 or current Office fidelity claim is made.

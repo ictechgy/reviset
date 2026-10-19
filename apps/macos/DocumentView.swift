@@ -18,7 +18,9 @@ func comparisonRoleName(_ element:JSON)->String {
     if element["method"].string == "pdf_page_annotation" {return "주석 메타데이터 · 텍스트 비교 제외"}
     switch element["comparison_role"].string {
     case "selected":return "비교에 사용"
-    case "unresolved":return element["comparison_reason"].string == "contextual_ocr_disagreement_primary_retained" ? "판독 충돌 · 비교 보류":"비교 보류"
+    case "unresolved":
+        if element["comparison_reason"].string == "contextual_ocr_disagreement_primary_retained" {return "판독 충돌 · 비교 보류"}
+        return element["comparison_reason"].string == "borderline_ocr_context_unverified_primary_retained" ? "문맥 판독 미완료 · 비교 보류":"비교 보류"
     case "excluded":return element["provenance"].string == "inferred" ? "추정값 보존 · 비교 제외":"숨은 원문 · 비교 제외"
     case "shadowed":
         if element["comparison_reason"].string == "roi_context_primary_superseded" {return "최초 OCR 보존 · 재판독으로 비교"}
@@ -39,7 +41,9 @@ struct OcrContextEvidence: View {
                         Text((element["comparison_reason"].string == "roi_evidence_or_primary_relationship_unverified" ? "기록된 최초 OCR · 연결 미검증":"최초 OCR")+" · \(Int(reconsideration["primary_confidence"].number*100))점").font(.caption2).foregroundStyle(.secondary)
                         Text(reconsideration["primary_text"].string).textSelection(.enabled)
                     }
-                    Text("같은 인식기의 여러 조건에서 얻은 추정입니다. 원본 화면과 대조하세요.").font(.caption2).foregroundStyle(.secondary)
+                    let statuses=["available":"영역 관측 생성","budget_exceeded":"처리 한도 도달","unsupported_bitmap":"영상 형식 미지원","unsupported_background":"배경 판독 미지원","empty_ink":"문자 잉크 미관측","failed":"문맥 판독 실패"]
+                    Text("문맥 판독 상태 · "+(statuses[observation["status"].string] ?? "상태 미상")).font(.caption2).foregroundStyle(.secondary)
+                    Text(observation["contexts"].array.isEmpty ? "문맥 판독을 완료하지 못했습니다. 최초 OCR은 추정값으로 보존합니다.":"같은 인식기의 여러 조건에서 얻은 추정입니다. 원본 화면과 대조하세요.").font(.caption2).foregroundStyle(.secondary)
                     ForEach(observation["contexts"].array.indices,id:\.self){i in
                         let context=observation["contexts"].array[i]
                         let names=["available":"인식 완료","not_detected":"판독값 없음","contaminated":"주변 내용 혼입","edge_cut":"경계 잘림","ambiguous":"대안 충돌","failed":"인식 실패","budget_exceeded":"처리 한도 도달"]

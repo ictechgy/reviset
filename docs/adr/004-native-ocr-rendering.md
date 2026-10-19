@@ -420,3 +420,25 @@ observations, supported numeric notation, an identical pattern and exactly one
 numeric slot on both sides. Overlapping/unknown neighbors and annotation/source
 vetoes remain. The result explicitly carries inferred regional pairing; it is
 not evidence that an entity was semantically modified instead of moved.
+
+
+Engine36 emits contextual selection diagnostics from final unresolved roles,
+after validated derived evidence can supersede its primary. It cannot globally
+remove all gaps when any one region succeeds. Eligible weak/borderline text with
+missing or unusable contextual evidence remains an unresolved observation, not
+agreement. Raw OCR confidence/string/alternatives/visibility/projections survive;
+annex-level failure reasons are visible even for zero contexts. Score1 recognition
+errors remain an independent open qualification issue.
+
+Short selected-raster nonnumeric lines may recover an anchored one-word edit
+when a separate region is unresolved. Qualification requires PDF-to-PDF same
+native environment, reliable normalized geometry and distinct raster hashes,
+confirmed or unambiguous inferred page correspondence, unique bidirectional
+footprints and no additional overlapping observation. Both readings are selected,
+available,nonambiguous with evaluated strike/numeric metadata(or validated derived
+support); zero numeric slots and no Unicode numbers, <=128UTF16,equal token count,
+one altered token and an unchanged letter-bearing anchor are mandatory. Existing
+elsewhere-text/movement, annotation/source and estimated-source disagreement
+vetoes remain. This is inferred change at a location, not semantic entity edit
+rather than motion. Reflow/multi-token/unanchored edits stay explicitly incomplete.
+The prior single-slot numeric fallback and historical schemas remain compatible.

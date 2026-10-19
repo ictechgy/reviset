@@ -518,9 +518,10 @@ test('merged OCR boxes cannot reuse one observation to certify multiple numeric 
 });
 
 
-test('scanned numeric position swaps stay inferred with affected-region evidence',native,async()=>{
+test('scanned numeric position swaps stay inferred with affected-region evidence',native,async t=>{
   const make=(swapped:boolean)=>pdf(d=>{const c=createCanvas(1920,1080),ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1920,1080);ctx.font='48px Arial';ctx.fillStyle='black';ctx.fillText('Contract review',120,140);ctx.fillText('Revenue '+(swapped?'120':'100'),120,300);ctx.fillText('Revenue '+(swapped?'100':'120'),120,500);d.image(c.toBuffer('image/png'),0,0,{width:960,height:540});});
   const a=(await extractPdf(await make(false),'sha256:swap-a',{ocr:'auto'}))[0],b=(await extractPdf(await make(true),'sha256:swap-b',{ocr:'auto'}))[0],deltas=changes(a,b).filter(c=>c.kind==='text_modified');
+  if(unresolvedComparisonText(a)||unresolvedComparisonText(b)){assert.equal(deltas.length,2);assert.ok(deltas.every(c=>c.text_scope==='region'&&c.region_pairing_assessment==='inferred'));t.diagnostic('Two inferred regional swaps; separate OCR uncertainty retained');}else{assert.equal(deltas.length,1);t.diagnostic('One fully readable inferred page swap');}
   assert.ok(deltas.length);for(const delta of deltas){assert.equal(delta.text_assessment,'inferred');assert.ok(delta.coverage_gaps.some(g=>g.reason==='ocr_inferred_text_requires_source_review'));assert.ok(delta.evidence.every(e=>e.provenance==='inferred'&&e.method==='vision_ocr'));}assert.deepEqual(deltas.flatMap(c=>c.evidence.map(e=>e.quote)).sort(),['Revenue 100','Revenue 120','Revenue 120','Revenue 100'].sort());
 });
 

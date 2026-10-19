@@ -6,6 +6,13 @@ import {reviewEstimatedSource} from './estimated-source-review.js';
 function regionElements(p:PageData):ElementData[]{return p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p):p.elements.filter(e=>p.comparison_basis==='raster_ocr'?e.method==='vision_ocr':(e.kind==='text'||e.kind==='table_cell')&&e.method!=='vision_document_cell');}
 function comparisonElements(p:PageData):ElementData[]{return regionElements(p).filter(e=>p.comparison_basis==='hybrid_regions_v1'?e.comparison_role==='selected':p.comparison_basis==='raster_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));}
 const selectedRaster=(e:ElementData)=>e.method==='vision_ocr'&&e.provenance==='inferred'&&e.visibility==='visible'&&e.comparison_role==='selected';
+function oneAnchoredWordChange(a:string,b:string):boolean{
+  if(a.length>128||b.length>128||/[\p{N}]/u.test(a+b))return false;
+  const left=normalize(a).trim().split(/\s+/u),right=normalize(b).trim().split(/\s+/u);
+  return left.length>=2&&left.length===right.length&&left.filter((word,i)=>word!==right[i]).length===1&&left.some((word,i)=>word===right[i]&&/\p{L}/u.test(word));
+}
+const boxesIntersect=(a:ElementData,b:ElementData)=>Math.min(a.bbox[0]+a.bbox[2],b.bbox[0]+b.bbox[2])>Math.max(a.bbox[0],b.bbox[0])&&Math.min(a.bbox[1]+a.bbox[3],b.bbox[1]+b.bbox[3])>Math.max(a.bbox[1],b.bbox[1]);
+function verifiedRasterText(e:ElementData):boolean{return selectedRaster(e)&&e.availability==='available'&&!!e.ocr&&e.ocr.confidence>=.5&&e.ocr.numeric_consensus&&!e.ocr.ambiguous&&(!!e.ocr.reconsideration||e.ocr.strike_status==='not_detected');}
 function regionOverlap(a:ElementData,b:ElementData):number{const x=a.bbox,y=b.bbox;return Math.max(0,Math.min(x[0]+x[2],y[0]+y[2])-Math.max(x[0],y[0]))*Math.max(0,Math.min(x[1]+x[3],y[1]+y[3])-Math.max(x[1],y[1]))/Math.max(0.000001,Math.max(x[2]*x[3],y[2]*y[3]));}
 function ocrRegionsPaired(a:PageData,b:PageData):boolean{
   const all=(p:PageData)=>regionElements(p).filter(e=>p.comparison_basis==='hybrid_regions_v1'||e.method==='vision_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));
@@ -92,13 +99,19 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
         const oldElsewhere=sourcePair?pairingRight.some(e=>normalize(e.text)===normalize(old.text)):rightText.has(normalize(old.text)),currentElsewhere=sourcePair?pairingLeft.some(e=>normalize(e.text)===normalize(current.text)):leftText.has(normalize(current.text));
         // The same amount can occur at another independently readable row.
         // For a unique bidirectional raster pair, compare the numeric value
-        // at this location; do not let a distant occurrence erase a swap.
+        // at this location; do not let another nonoverlapping copy erase a swap.
         // This remains an inferred regional comparison, never entity movement
         // proof. Mixed/overlapping/unreadable pairs still fail the guards above.
-        const numericRasterPair=rasterPair&&selectedRaster(current)&&numericNotationSupported(old.text)&&numericNotationSupported(current.text)&&numericPattern(old.text)===numericPattern(current.text)&&numericSlots(old.text).length===1&&numericSlots(current.text).length===1;
+        const supportedNumericPair=numericNotationSupported(old.text)&&numericNotationSupported(current.text)&&numericPattern(old.text)===numericPattern(current.text)&&numericSlots(old.text).length===1&&numericSlots(current.text).length===1;
+        const numericRasterPair=rasterPair&&selectedRaster(current)&&supportedNumericPair;
+        const nativeGeometry=(p:PageData)=>!!p.ocr?.width&&!!p.ocr.height&&Math.abs((p.width/p.height)/(p.ocr.width/p.ocr.height)-1)<.003;
+        // A short word substitution can be compared at a unique location while
+        // a separate region remains unresolved. Unchanged aligned words anchor
+        // the text; this does not identify an entity or settle wraps/moves.
+        const lexicalRasterPair=sourcePdfAppearance&&!a.preview&&!b.preview&&(m.status==='human_confirmed'||m.status==='inferred')&&!!rasterA&&!!rasterB&&rasterA!==rasterB&&nativeGeometry(a)&&nativeGeometry(b)&&!!a.ocr?.environment&&a.ocr.environment===b.ocr?.environment&&a.raster?.environment===a.ocr.environment&&b.raster?.environment===b.ocr?.environment&&verifiedRasterText(old)&&verifiedRasterText(current)&&numericSlots(old.text).length===0&&numericSlots(current.text).length===0&&oneAnchoredWordChange(old.text,current.text)&&!pairingLeft.some(e=>e!==old&&boxesIntersect(e,current))&&!pairingRight.some(e=>e!==current&&boxesIntersect(old,e));
         if((oldElsewhere||currentElsewhere)&&!numericRasterPair||normalize(old.text)===normalize(current.text))continue;
         if(rasterPair&&(annotationBlocksRegion(a.elements,old.bbox)||annotationBlocksRegion(b.elements,current.bbox))){add('coverage_gap',a,b,m,'page_annotation_prevents_inferred_raster_edit');continue;}
-        if((old.provenance==='inferred'||current.provenance==='inferred')&&(!numericNotationSupported(old.text)||!numericNotationSupported(current.text)||numericPattern(old.text)!==numericPattern(current.text)||numericSlots(old.text).length!==1||numericSlots(current.text).length!==1))continue;
+        if((old.provenance==='inferred'||current.provenance==='inferred')&&!supportedNumericPair&&!lexicalRasterPair)continue;
         const sourceReviews=rasterPair?[{revision:from,page:a,ocr:old,review:reviewEstimatedSource(old,left)},{revision:to,page:b,ocr:current,review:reviewEstimatedSource(current,right)}]:[];
         const disagreement=sourceReviews.some(s=>s.review.disagrees||s.review.numericConflict),budgetExceeded=sourceReviews.some(s=>s.review.budgetExceeded);
         if(disagreement||budgetExceeded){
@@ -106,7 +119,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
           const gap=changes.at(-1)!;gap.before=old.text;gap.after=current.text;
           gap.evidence=sourceReviews.flatMap(s=>[...s.review.runs.slice(0,16).map(e=>evidence(s.revision,s.page,false,e)),evidence(s.revision,s.page,false,s.ocr)]);
         }
-        if(budgetExceeded||sourceReviews.some(s=>s.review.numericConflict))continue;
+        if(budgetExceeded||sourceReviews.some(s=>s.review.numericConflict)||lexicalRasterPair&&disagreement)continue;
         add('text_modified',a,b,m,'other_page_regions_unresolved');const change=changes.at(-1)!;change.before=old.text;change.after=current.text;change.text_scope='region';change.region_pairing_assessment='inferred';change.text_assessment=old.provenance==='inferred'||current.provenance==='inferred'?'inferred':'observed';
         change.evidence=[evidence(from,a,false,old),evidence(to,b,false,current)];
         if(rasterPair&&left.concat(right).some(isEstimatedPdfSource))change.coverage_gaps.push({feature:'pdf_geometry',reason:'estimated_source_geometry_not_used_for_raster_pairing'});

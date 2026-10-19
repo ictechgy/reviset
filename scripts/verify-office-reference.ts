@@ -30,7 +30,7 @@ await writeFile(join(run,'provenance.json'),JSON.stringify({repository:'https://
 for(const item of cases){
   const [source,reference]=await Promise.all([fetchFile(item.source,item.source_sha256),fetchFile(item.expected_pdf,item.expected_sha256)]);
   const output=join(run,item.id);await mkdir(output,{recursive:true});
-  const pages=extractPptx(source,'sha256:'+byteHash(source)),converted=await preparePptxPreview(join(folder,item.source),source,pages,join(folder,'cache'));
+  const pages=extractPptx(source,'sha256:'+byteHash(source)),converted=await preparePptxPreview(join(folder,item.source),source,pages,join(run,'cache'));
   if(!converted)throw new Error('Reference validation requires actual renderer');await writeFile(join(output,'converted.pdf'),converted);
   const actual=await extractPdf(converted,'sha256:'+byteHash(converted)),expected=await extractPdf(reference,'sha256:'+byteHash(reference));
   if(actual.length!==item.expected_pages||expected.length!==item.expected_pages)throw new Error('Reference page-count mismatch: '+item.id);

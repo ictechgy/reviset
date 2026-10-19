@@ -1,4 +1,4 @@
-import {admitReconsideration,matchesReconsiderationPrimary,hasContextualDisagreement} from './ocr-reconsideration.js';
+import {admitReconsideration,matchesReconsiderationPrimary,contextualAssessment} from './ocr-reconsideration.js';
 import {annotationBlocksRegion} from './pdf-annotation-regions.js';
 import {normalize,type PageData,type ElementData,type Box} from '../schema/index.js';
 import {rowOrderedRegions} from './reading-order.js';
@@ -67,6 +67,8 @@ function corroboratesCompleteText(raw:ElementData,ocr:ElementData,a:Box):boolean
 // Comparison selection is an annex on immutable observations. It never edits
 // source text, visibility, OCR primaries, alternatives, or their confidence.
 export function selectHybridComparison(page:PageData):void{
+  const contextualReasons=new Set(['contextual_ocr_disagreement_primary_retained','borderline_ocr_context_unverified_primary_retained']);
+  page.coverage_gaps=page.coverage_gaps.filter(g=>g.feature!=='ocr_reconsideration'||!contextualReasons.has(g.reason));
   const raw=page.elements.filter(e=>e.provenance==='observed'&&['text','table_cell'].includes(e.kind)&&e.text.trim());
   const ocr=page.elements.filter(e=>e.method==='vision_ocr'),boxes=new Map(raw.map(e=>[e,envelope(e)]));
   for(const e of raw){e.comparison_role=e.visibility==='hidden_render_mode'?'excluded':readable(e)?'selected':'unresolved';e.comparison_reason=e.visibility==='hidden_render_mode'?'prior_hidden_layer':readable(e)?'readable_observed_source':'unresolved_source';}
@@ -102,9 +104,9 @@ export function selectHybridComparison(page:PageData):void{
       continue;
     }
     if(annotationBlocksRegion(page.elements,e.bbox)){e.comparison_reason='page_annotation_blocks_independent_raster';page.coverage_gaps.push({feature:'pdf_annotations',reason:'page_annotation_blocks_independent_raster'});continue;}
-    if(geometryOK&&hasContextualDisagreement(e,blocks)){
-      e.comparison_reason='contextual_ocr_disagreement_primary_retained';
-      page.coverage_gaps.push({feature:'ocr_reconsideration',reason:e.comparison_reason});continue;
+    const contextual=contextualAssessment(e,blocks);
+    if(contextual==='disagrees'||contextual==='unverified'){
+      e.comparison_reason=contextual==='disagrees'?'contextual_ocr_disagreement_primary_retained':'borderline_ocr_context_unverified_primary_retained';continue;
     }
     if(e.visibility==='visible'&&e.availability==='available'){
       e.comparison_role='selected';e.comparison_reason='independent_inferred_raster_region';
@@ -124,6 +126,8 @@ export function selectHybridComparison(page:PageData):void{
       primary.comparison_role='shadowed';primary.comparison_reason='roi_context_primary_superseded';
     }else{derived.comparison_role='excluded';derived.comparison_reason='roi_support_does_not_resolve_primary';}
   }
+  // Emit only after admitted derived readings settle their primary's role.
+  for(const e of ocr)if(e.comparison_role==='unresolved'&&contextualReasons.has(e.comparison_reason??''))page.coverage_gaps.push({feature:'ocr_reconsideration',reason:e.comparison_reason!});
   // Roles persist per observation, so occurrence-ID stamping needs no new
   // cross-reference rewriting and paginated queries retain the exact selection.
   const participating=page.elements.filter(e=>e.comparison_role==='selected'||e.comparison_role==='unresolved');
