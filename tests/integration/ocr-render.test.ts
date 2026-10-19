@@ -39,6 +39,13 @@ const office={skip:!officeExecutable()};
 async function pdf(draw:(d:PDFKit.PDFDocument)=>void):Promise<Buffer>{const d=new PDFDocument({size:[960,540],margin:0}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(resolve=>d.on('end',()=>resolve(Buffer.concat(chunks))));draw(d);d.end();return done;}
 function scan(text:string):Buffer{const c=createCanvas(1920,1080),ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,c.width,c.height);ctx.fillStyle='black';ctx.font='48px AppleGothic';ctx.fillText('계약 검토 · Contract review',120,140);ctx.font='40px AppleGothic';ctx.fillText(text,120,300);return c.toBuffer('image/png');}
 const scanned=(text:string)=>pdf(d=>d.image(scan(text),0,0,{width:960,height:540}));
+test('native high-score Latin diagnostics use two broad monolingual contexts without replacing primary text',native,async()=>{
+  const bytes=await pdf(d=>d.font('Helvetica').fontSize(22).text('Delivery status pending',80,100,{lineBreak:false}));
+  const result=await recognizePdf(bytes,1),line=result.lines.find(l=>l.text.includes('Delivery'));
+  assert.ok(line);assert.ok(line.confidence>.5);assert.equal(line.strike_status,'not_detected');assert.equal(line.numeric_consensus,true);assert.equal(line.reconsideration?.status,'available');assert.equal(line.reconsideration?.contexts.length,2);
+  assert.deepEqual(line.reconsideration?.contexts.map(c=>[c.padding,c.scale,c.languages]),[[.75,1,['en-US']],[.75,2,['en-US']]]);
+  assert.equal(line.text,'Delivery status pending');assert.equal(line.alternatives[0].text,line.text);
+});
 test('native numeric slots, grayscale strikes and ruled-grid negative controls',native,async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-native-checks-'));
   try{const executable=join(folder,'checks');execFileSync('swiftc',['-swift-version','5','-O','-parse-as-library','-D','DOCVER_TEST','apps/helpers/Vision.swift','apps/helpers/Reconsideration.swift','tests/native/OcrChecks.swift','-o',executable],{cwd:resolve('.'),timeout:120000});const output=execFileSync(executable,[resolve('tests/fixtures/numeric-notation.json')],{encoding:'utf8',timeout:30000});assert.match(output,/PASS numeric position\/multiplicity\/conflict/);}finally{await rm(folder,{recursive:true,force:true});}

@@ -43,6 +43,20 @@ test('missing or unusable borderline context evidence withholds selection withou
     const confident=structuredClone(p);confident.ocr!.confidence=1;assert.equal(contextualAssessment(confident,()=>false),'not_applicable','High-score independent-model qualification remains a separate open task');
   }
 });
+test('high-score Latin counterevidence only withholds and preserves primary, source and unsupported-scope behavior',()=>{
+  const p=primary('Revised dellivery date');p.visibility='visible';p.ocr!.confidence=1;p.ocr!.alternatives=[{text:p.text,confidence:1,truncated:false}];
+  p.ocr!.reconsideration_observation=observation('Revised delivery date');p.ocr!.reconsideration_observation.contexts=p.ocr!.reconsideration_observation.contexts.filter(c=>c.padding===.75&&c.languages.join(',')==='en-US');
+  const before=structuredClone(p),pg=page([p]);pg.ocr_text=p.text;assert.equal(contextualAssessment(p,()=>false),'disagrees');assert.equal(admitReconsideration(p,p.ocr!.reconsideration_observation!,()=>false),undefined,'Counterevidence cannot authorize correction');
+  selectHybridComparison(pg);Page.parse(pg);assert.equal(comparisonText(pg),'');assert.equal(unresolvedComparisonText(pg),p.text);assert.equal(p.comparison_reason,'contextual_ocr_disagreement_primary_retained');assert.deepEqual(p.ocr,before.ocr);assert.equal(p.visibility,before.visibility);assert.equal(pg.ocr_text,p.text);
+  const q=structuredClone(before);q.ocr!.reconsideration_observation!.contexts[0].status='failed';assert.equal(contextualAssessment(q,()=>false),'disagrees','A single valid counterreading retains uncertainty');
+  for(const mutate of [(q:ElementData)=>{q.ocr!.reconsideration_observation=undefined;},(q:ElementData)=>{q.ocr!.reconsideration_observation!.status='budget_exceeded';},(q:ElementData)=>{q.ocr!.reconsideration_observation!.contexts.forEach(c=>c.status='edge_cut');},(q:ElementData)=>{q.ocr!.reconsideration_observation!.contexts.forEach(c=>c.languages=['ko-KR','en-US']);},(q:ElementData)=>{q.ocr!.reconsideration_observation!.contexts.forEach(c=>c.padding=.25);},(q:ElementData)=>{q.ocr!.reconsideration_observation!.band_bbox=[.6,.6,.2,.1];},(q:ElementData)=>{q.ocr!.reconsideration_observation!.contexts.push(q.ocr!.reconsideration_observation!.contexts[0]);}]){
+    const q=structuredClone(before);mutate(q);assert.equal(contextualAssessment(q,()=>false),'not_applicable');const unverified=page([q]);selectHybridComparison(unverified);assert.equal(q.comparison_role,'selected','No high-score missing-context agreement or automatic blanket veto is introduced');
+  }
+  for(const text of ['Delivery 100','Delivery 변경','Delivery Δ']){const q=structuredClone(before);q.text=text;assert.equal(contextualAssessment(q,()=>false),'not_applicable');}
+  const blocked=structuredClone(before);assert.equal(contextualAssessment(blocked,()=>true),'not_applicable');
+  const source:ElementData={...structuredClone(before),observation_id:'source',method:'pdf_text',provenance:'observed',source_ref:'source',ocr:undefined};const sourcePage=page([source,structuredClone(before)]);selectHybridComparison(sourcePage);assert.equal(sourcePage.elements[0].comparison_role,'selected');assert.equal(sourcePage.elements[1].comparison_role,'shadowed');
+  const same=structuredClone(before);same.ocr!.reconsideration_observation=observation(same.text);assert.equal(contextualAssessment(same,()=>false),'consistent');
+});
 test('ROI admission requires eight distinct complete contexts and preserves numeric, script, punctuation and ink vetoes',()=>{
   const p=primary();assert.equal(admitReconsideration(p,observation(),()=>false)?.text,'Pineapple');
   const reject=(change:(d:OcrReconsiderationData)=>void)=>{const d=observation();change(d);assert.equal(admitReconsideration(p,d,()=>false),undefined);};

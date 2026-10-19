@@ -454,3 +454,17 @@ check; primary/source strings are never rewritten. Search is limited to3fragment
 This is possible reflow, not a positive layout/semantic claim. Unrelated regional
 edits survive. Native change details render the selected change's coverage
 reasons in Korean, including contextual incompleteness and possible reflow.
+
+### Engine38 contextual scope and fragment closure
+Both applicable prefix/suffix continuation orientations share64search nodes;
+terminal ASCII,soft andUnicode hyphens are removed only from negative-check
+boundary tokens, never raw evidence. Node/branch/depth/character budget uncertainty
+withholds the pair. Native21adds natural high-score pure-Latin nonnumeric lines
+after weak/borderline priorities within the existing4line/shared12s cap. Those
+lines request2broadpadding.75 en-US contexts,scales1/2. Spatial supported
+counterevidence can only withhold; failed/missing context does not supply agreement
+or automatic correction. Numeric/mixed-script/Hangul and observed-source
+contracts remain intact. Positive correction still requires its original weak
+primary and8complete contexts.480prospective correlated conditions support a
+bounded risk reduction, not full OCR correctness. Current production qualification
+and unique-page latency remain separate gates.

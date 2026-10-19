@@ -532,3 +532,44 @@ with actual Vision-context pixel and dictionary-off tests being prepared.
 A prospective480page/20newphrase/3hostfont/8samplingcondition set is preregistered;
 no results or accuracy bound claimed. Product completion, high-score OCR,
 PPTX strict fidelity, unique-page performance and manual split/merge remain OPEN.
+
+Engine37 complete original-base reviews remain BLOCKED: adjacent fragment
+terminal hyphens bypassed conservation (code), and repeated-boundary tokens
+like murmur→mur searched only forward despite a valid preceding fragment
+(architecture).38normalizes only terminal line-break hyphen marks for every
+boundary fragment and searches both applicable orientations with a shared64node
+budget; raw strings remain unchanged. Seven regional controls pass, including
+both directions, ASCII/soft/Unicode hyphens and distant independent edits.
+
+Prospective480image-only PDF cases (20new literal phrases,3hostfonts,4source
+pixel sizes,2gray levels) completed through current20process and actual native
+pixel capture. Baseline full-page literal matches218,nonempty not-full-truth79,
+empty183. A prespecified negative-only arm using any positive conflicting broad
+en-US contextual reading retains218matches, reduces not-full-truth79→22,
+raises empty183→240 and withholds0previously full-correct pages. Two-conflict
+arm retains218/reduces79→27. Conditions repeat phrases and are correlated;
+these are fixture counts, not iid accuracy bounds or per-selected-region errors.
+The experiments used8context research calls but evaluated2; no2crop latency
+claim.6missing-primary conditions in the old32set and22remaining480failures
+are not solved. No pixel-identical native hashes were found in48deliberate
+I/l string-pair controls; pixel ambiguity was not established by that probe.
+
+38implements high-score natural pure-Latin nonnumeric counterobservation in the
+existing4line/12s budget, after weak/ambiguous and borderline priorities. It uses
+only broadpadding.75 en-US contexts at1x/2x. Positive spatial disagreement can
+withhold selection; absent/unusable high-score context is not agreement and
+does not introduce a blanket new veto. Numeric, Hangul/mixed scripts, observed
+source priority, annotation/strike/geometry guards and strict positive-correction
+admission remain separate. Primary text/score/visibility are unchanged.
+Helper21/engine38 invalidate observation caches. Current full serial155/155PASS,
+0fail/skip/cancel,129.751s, plus9focused controls and helper build PASS. Runtime
+source fixed throughout final suite; only evidence docs follow. Actual current
+480native qualification, frozen reviews, packaged runtime and latency follow.
+
+Pinned localTesseract6 research on22actual Vision-input crop PNGs verifies input
+SHA; defaults and all6DAWG-off/user-word-pattern-empty initialization each yield
+15correct and identical outputs, including correct29/30but wrong Korean5/7/13/14.
+Ten old32cases lack the designated native crop and remain explicit skips. This
+does not prove absence of learned language priors or qualify a product engine.
+No Tesseract dependency/models are bundled. Claude/Grok discussions are valid
+discussions, not source/product approval; Agy's quota failure is not review.

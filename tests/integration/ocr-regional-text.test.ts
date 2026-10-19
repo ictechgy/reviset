@@ -67,3 +67,20 @@ test('a token shortening without a nearby matching continuation remains a region
   assert.equal(edits(a,b).length,1,mode);
  }
 });
+
+test('continuation fragments preserve hyphens only in raw evidence and search repeated boundaries both ways',()=>{
+ for(const reverse of [false,true])for(const hyphen of ['-','\u00ad','\u2010'])for(const preceding of [false,true]){
+  const a=page('a','Customer approved'),b=page('b',preceding?'Customer proved':'Customer appro');b.elements[1].bbox=[.1,.3,.3,.05];
+  if(preceding)b.elements.push(line('head','earlier ap'+hyphen,.24));
+  else b.elements.push(line('tail1','v'+hyphen,.36),line('tail2','ed immediately',.42));
+  for(const e of b.elements.slice(2))e.bbox[2]=.08;
+  a.elements.push(line('a-manager','Manager accepted',.7));b.elements.push(line('b-manager','Manager rejected',.7));selectHybridComparison(a);selectHybridComparison(b);
+  const result=reverse?edits(b,a):edits(a,b);assert.equal(result.length,1,JSON.stringify({hyphen,preceding,reverse}));assert.match(String(result[0].before),/^Manager /u);
+  assert.ok(b.elements.some(e=>e.text.includes(hyphen)),'raw hyphen remains');
+ }
+ for(const reverse of [false,true])for(const [longer,shorter,prefix] of [['murmur detected','mur detected','mur'],['ababa detected','aba detected','ab']]){
+  const a=page('a',longer),b=page('b',shorter);a.elements.push(line('a-before','Earlier',.24));b.elements.push(line('b-before','Earlier '+prefix,.24));
+  a.elements.push(line('a-manager','Manager accepted',.7));b.elements.push(line('b-manager','Manager rejected',.7));selectHybridComparison(a);selectHybridComparison(b);
+  const result=reverse?edits(b,a):edits(a,b);assert.equal(result.length,1,longer+' '+reverse);assert.match(String(result[0].before),/^Manager /u);
+ }
+});

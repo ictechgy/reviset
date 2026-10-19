@@ -19,28 +19,34 @@ function fragmentReflow(longer:string,shorter:string,short:ElementData,peers:Ele
   const a=normalize(longer).trim().split(/\s+/u),b=normalize(shorter).trim().split(/\s+/u);
   if(a.length!==b.length)return false;
   const changed=a.map((word,i)=>word===b[i]?-1:i).filter(i=>i>=0);if(changed.length!==1)return false;
-  const index=changed[0],complete=a[index],fragment=b[index].replace(/[-\u00ad]$/u,'');
+  const lineFragment=(word:string)=>word.replace(/[-\u00ad\u2010]$/u,'');
+  const index=changed[0],complete=a[index],fragment=lineFragment(b[index]);
   if(!fragment||fragment===complete)return false;
-  const remainder=complete.startsWith(fragment)?{text:complete.slice(fragment.length),forward:true}:complete.endsWith(fragment)?{text:complete.slice(0,-fragment.length),forward:false}:undefined;
-  if(!remainder?.text)return false;
-  function follows(anchor:ElementData,e:ElementData):boolean {
-    const [x,y,w,h]=anchor.bbox,[u,v,s,t]=e.bbox,height=Math.max(h,t),vertical=Math.min(y+h,v+t)-Math.max(y,v),horizontal=Math.min(x+w,u+s)-Math.max(x,u);
-    const near=vertical>0&&Math.max(u-x-w,x-u-s,0)<=2*height||horizontal>0&&Math.max(v-y-h,y-v-t,0)<=2*height;
-    const sameRow=Math.abs(y+h/2-v-t/2)<=height/2;
-    const after=sameRow?u+s/2>x+w/2:v+t/2>y+h/2;
-    return near&&(remainder!.forward?after:!after);
-  }
-  function search(anchor:ElementData,remaining:string,used:Set<ElementData>,depth:number):boolean {
-    const nearby=peers.filter(e=>e!==short&&!used.has(e)&&!!e.text&&follows(anchor,e));
-    if(nearby.some(e=>e.text.length>128))return true;
-    const candidates=nearby.flatMap(e=>{
-      const words=normalize(e.text).trim().split(/\s+/u),word=remainder!.forward?words[0]:words.at(-1)!;
-      return word&&(remainder!.forward?remaining.startsWith(word):remaining.endsWith(word))?[{element:e,word}]:[];
-    });
-    if(candidates.length>8)return true;
-    return candidates.some(({element,word})=>word===remaining||depth>=3||search(element,remainder!.forward?remaining.slice(word.length):remaining.slice(0,-word.length),new Set([...used,element]),depth+1));
-  }
-  return search(short,remainder.text,new Set(),1);
+  // Repeated boundaries can admit both directions (murmur -> mur). Neither
+  // orientation may silently displace the other; both share the search budget.
+  const remainders=[...(complete.startsWith(fragment)?[{text:complete.slice(fragment.length),forward:true}]:[]),...(complete.endsWith(fragment)?[{text:complete.slice(0,-fragment.length),forward:false}]:[])];
+  let visits=64;
+  return remainders.some(remainder=>{
+    function follows(anchor:ElementData,e:ElementData):boolean {
+      const [x,y,w,h]=anchor.bbox,[u,v,s,t]=e.bbox,height=Math.max(h,t),vertical=Math.min(y+h,v+t)-Math.max(y,v),horizontal=Math.min(x+w,u+s)-Math.max(x,u);
+      const near=vertical>0&&Math.max(u-x-w,x-u-s,0)<=2*height||horizontal>0&&Math.max(v-y-h,y-v-t,0)<=2*height;
+      const sameRow=Math.abs(y+h/2-v-t/2)<=height/2;
+      const after=sameRow?u+s/2>x+w/2:v+t/2>y+h/2;
+      return near&&(remainder.forward?after:!after);
+    }
+    function search(anchor:ElementData,remaining:string,used:Set<ElementData>,depth:number):boolean {
+      if(--visits<0)return true;
+      const nearby=peers.filter(e=>e!==short&&!used.has(e)&&!!e.text&&follows(anchor,e));
+      if(nearby.some(e=>e.text.length>128))return true;
+      const candidates=nearby.flatMap(e=>{
+        const words=normalize(e.text).trim().split(/\s+/u),word=lineFragment(remainder.forward?words[0]:words.at(-1)!);
+        return word&&(remainder.forward?remaining.startsWith(word):remaining.endsWith(word))?[{element:e,word}]:[];
+      });
+      if(candidates.length>8)return true;
+      return candidates.some(({element,word})=>word===remaining||depth>=3||search(element,remainder.forward?remaining.slice(word.length):remaining.slice(0,-word.length),new Set([...used,element]),depth+1));
+    }
+    return !!remainder.text&&search(short,remainder.text,new Set(),1);
+  });
 }
 function verifiedRasterText(e:ElementData):boolean{return selectedRaster(e)&&e.availability==='available'&&!!e.ocr&&e.ocr.confidence>=.5&&e.ocr.numeric_consensus&&!e.ocr.ambiguous&&(!!e.ocr.reconsideration||e.ocr.strike_status==='not_detected');}
 function regionOverlap(a:ElementData,b:ElementData):number{const x=a.bbox,y=b.bbox;return Math.max(0,Math.min(x[0]+x[2],y[0]+y[2])-Math.max(x[0],y[0]))*Math.max(0,Math.min(x[1]+x[3],y[1]+y[3])-Math.max(x[1],y[1]))/Math.max(0.000001,Math.max(x[2]*x[3],y[2]*y[3]));}

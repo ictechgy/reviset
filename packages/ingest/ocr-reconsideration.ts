@@ -21,24 +21,26 @@ export type ReconsideredReading={text:string;confidence:number;bbox:Box;alternat
 // never changes the primary, supplies replacement text or proves hidden ink.
 // English-only crops cannot contradict a line containing genuine Hangul.
 export function contextualAssessment(primary:ElementData,blocked:(bbox:Box)=>boolean):'not_applicable'|'unverified'|'consistent'|'disagrees'{
-  const ocr=primary.ocr;
-  if(primary.method!=='vision_ocr'||primary.provenance!=='inferred'||primary.availability!=='available'||ocr?.reconsideration||!ocr||ocr.confidence>.5||!ocr.numeric_consensus||ocr.strike_status!=='not_detected'||primary.text.length>128||/[\p{N}]/u.test(primary.text))return 'not_applicable';
+  const ocr=primary.ocr,highLatin=!!ocr&&ocr.confidence>.5&&!ocr.ambiguous&&/^[\p{Script=Latin}\s\p{P}\p{S}]+$/u.test(primary.text)&&/\p{L}/u.test(primary.text);
+  const unavailable=highLatin?'not_applicable':'unverified';
+  if(primary.method!=='vision_ocr'||primary.provenance!=='inferred'||primary.availability!=='available'||ocr?.reconsideration||!ocr||ocr.confidence>.5&&!highLatin||!ocr.numeric_consensus||ocr.strike_status!=='not_detected'||primary.text.length>128||/[\p{N}]/u.test(primary.text))return 'not_applicable';
   const hangul=/\p{Script=Hangul}/u.test(primary.text),latin=/[A-Za-z]/u.test(primary.text);
   if(!hangul&&!latin)return 'not_applicable';
   const parsed=OcrReconsideration.safeParse(ocr.reconsideration_observation);
-  if(!parsed.success)return 'unverified';
+  if(!parsed.success)return unavailable;
   const data=parsed.data;
-  if(data.status!=='available'||!sameBox(data.band_bbox,primary.bbox)||!data.ink_pixels||data.threshold===undefined||blocked(primary.bbox))return 'unverified';
+  if(data.status!=='available'||!sameBox(data.band_bbox,primary.bbox)||!data.ink_pixels||data.threshold===undefined||blocked(primary.bbox))return unavailable;
   const seen=new Set<string>();
-  for(const context of data.contexts){const key=[context.padding,context.scale,...context.languages].join(':');if(seen.has(key))return 'unverified';seen.add(key);}
+  for(const context of data.contexts){const key=[context.padding,context.scale,...context.languages].join(':');if(seen.has(key))return unavailable;seen.add(key);}
   const readings=data.contexts.flatMap(context=>{
+    if(highLatin&&(context.padding!==.75||context.languages.join(',')!=='en-US'))return [];
     if(context.status!=='available'||context.observations.length!==1||hangul&&!context.languages.includes('ko-KR')||latin&&!context.languages.includes('en-US')||!contains(context.crop_bbox,primary.bbox)||blocked(context.crop_bbox))return [];
     const reading=context.observations[0];
     // Counterevidence need not cover every ink pixel; unlike admission, it can
     // only retain uncertainty. Require a positive, spatially matched reading.
     return reading.confidence>=.5&&reading.ink_coverage>0&&reading.token_bboxes.length>0&&reading.token_bboxes.every(b=>contains(context.crop_bbox,b))&&contains(context.crop_bbox,reading.bbox)&&iou(primary.bbox,reading.bbox)>=.5?[reading]:[];
   });
-  if(!readings.length)return 'unverified';
+  if(!readings.length)return unavailable;
   return readings.some(reading=>tokenText(reading.text)!==tokenText(primary.text))?'disagrees':'consistent';
 }
 export function hasContextualDisagreement(primary:ElementData,blocked:(bbox:Box)=>boolean):boolean{return contextualAssessment(primary,blocked)==='disagrees';}
