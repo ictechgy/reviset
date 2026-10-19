@@ -17,7 +17,7 @@ function ocrRegionsPaired(a:PageData,b:PageData):boolean{
   return paired(left,right)&&paired(right,left);
 }
 export function evidence(revision:RevisionData,page:PageData,focusText=false,focusElement?:ElementData):ChangeData['evidence'][number] {
-  const selected=comparisonElements(page),element=focusElement??(focusText?(selected.find(e=>numericSlots(e.text).length)??selected[0]):undefined),textSource=page.elements.find(e=>e.text.trim());
+  const selected=comparisonElements(page),element=focusElement??(focusText?(selected.find(e=>numericSlots(e.text).length)??selected[0]):undefined),textSource=(page.text||page.ocr_text)?page.elements.find(e=>e.text.trim()):undefined;
   return {revision_id:revision.revision_id,revision_occurrence_id:revision.revision_occurrence_id,asset_id:page.asset_id,page_id:page.page_id,page:page.page,
     bbox:element?.bbox??[0,0,1,1],quote:element?.text??(focusText?comparisonText(page):page.text||page.ocr_text||''),method:element?.method??textSource?.method??'page_observation',provenance:element?.provenance??textSource?.provenance??(page.comparison_basis==='raster_ocr'?'inferred':'observed'),...(element?{observation_id:element.observation_id}:{})};
 }

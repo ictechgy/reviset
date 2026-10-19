@@ -61,7 +61,7 @@ test('supplement OCR under annotations remains an unresolved observation instead
 test('page-level OCR evidence never attributes its quote to annotation metadata',async()=>{
   const {page,ocr}=await sample('120',d=>d.annotate(48,116,245,40,{Subtype:'Redact'} as any));const carrier=page.elements.find(e=>e.method===PDF_ANNOTATION_CARRIER)!;page.elements=[carrier,ocr];page.text='';page.ocr_text=ocr.text;page.comparison_basis='raster_ocr';
   const revision={revision_id:'r',revision_occurrence_id:'o'} as RevisionData,entry=evidence(revision,page);assert.equal(entry.quote,ocr.text);assert.equal(entry.method,'vision_ocr');assert.equal(entry.provenance,'inferred');
-  page.elements=[carrier];page.ocr_text='';assert.equal(evidence(revision,page).method,'page_observation');
+  page.ocr_text='';page.ocr_unresolved_text=ocr.text;assert.equal(evidence(revision,page).method,'page_observation');assert.equal(evidence(revision,page).quote,'');page.elements=[carrier];assert.equal(evidence(revision,page).method,'page_observation');
 });
 
 test('explicit nonpainting source text stays separate from actual native image edits despite unknown metrics',async()=>{
@@ -79,6 +79,23 @@ test('explicit nonpainting source text stays separate from actual native image e
 test('ambiguous repeated text and Type3 character programs cannot establish a nonpainting source run',async()=>{
   const repeated=await pdf(d=>{d.addContent('3 Tr');text(d,'120');d.addContent('0 Tr');d.font('Times-Roman').fontSize(32).text('Revenue 120 won',50,230,{lineBreak:false});}),[duplicate]=await extractPdf(repeated,'sha256:'+byteHash(repeated),{ocr:'off'});assert.equal(duplicate.elements.filter(e=>e.text==='Revenue 120 won').length,2);assert.ok(duplicate.elements.every(e=>e.visibility==='unverified'));
   const bytes=await pdf(d=>{const char=d.ref({});char.end('600 0 0 0 600 700 d1\n0 0 600 700 re f');const font=d.ref({Type:'Font',Subtype:'Type3',FontBBox:[0,0,600,700],FontMatrix:[.001,0,0,.001,0,0],CharProcs:{A:char},Encoding:{Type:'Encoding',Differences:[65,'A']},FirstChar:65,LastChar:65,Widths:[600],Resources:{}});font.end('');d.page.fonts.T3=font;d.addContent('BT /T3 40 Tf 3 Tr 50 200 Td (A) Tj ET');}),[type3]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'off'});assert.equal(type3.elements[0].text,'A');assert.notEqual(type3.elements[0].visibility,'hidden_render_mode');assert.ok(!type3.elements[0].visibility_evidence?.some(v=>v.method==='explicit_nonpainting_text_mode'));Page.parse(type3);
+});
+
+test('disjoint raster edits survive repeated source text and partial OCR lines remain observations',async()=>{
+  const make=async(value:string)=>{const c=createCanvas(1200,200),ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1200,200);ctx.fillStyle='black';ctx.font='64px Arial';ctx.fillText('Revenue '+value+' won',30,130);return pdf(d=>{d.font('Helvetica').fontSize(24).text('Revenue 120 won',50,30,{lineBreak:false});d.image(c.toBuffer('image/png'),50,180,{width:480,height:80});});};
+  const pages:PageData[]=[];
+  for(const value of ['100','120']){const bytes=await make(value),[page]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'auto'});assert.ok(page.elements.some(e=>e.method==='vision_ocr'&&e.bbox[1]>.4&&e.text==='Revenue '+value+' won'&&e.comparison_role==='selected'));assert.ok(page.elements.some(e=>e.method==='pdf_text'&&e.text==='Revenue 120 won'&&e.comparison_role==='selected'));pages.push(page);}
+  const edits=changes(pages[0],pages[1]).filter(c=>c.kind==='text_modified');assert.equal(edits.length,1);assert.ok(edits[0].before?.includes('Revenue 100 won'));assert.ok(edits[0].after?.includes('Revenue 120 won'));assert.deepEqual(edits[0].evidence.map(e=>e.quote),['Revenue 100 won','Revenue 120 won']);assert.ok(edits[0].evidence.every(e=>e.method==='vision_ocr'&&e.bbox[1]>.4));assert.equal(edits[0].text_assessment,'inferred');
+  const bytes=await make('100'),native=await recognizePdf(bytes,1),line=native.lines.find(l=>l.text.includes('Revenue')&&l.bbox[1]>.4)!;assert.ok(line);
+  for(const partial of [false,true]){const [page]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'off'}),raw=page.elements.find(e=>e.method==='pdf_text')!,bbox=partial?[raw.bbox[0],raw.bbox[1],raw.bbox[2]+.3,raw.bbox[3]]as [number,number,number,number]:raw.bbox;
+    await supplementPdfOcr(page,bytes,{nativeResult:{...native,lines:[{...line,text:partial?'Revenue 120 won image 100':raw.text,bbox}],tables:[],grid_tables:[]}});const observed:ElementData|undefined=page.elements.find(e=>e.method==='vision_ocr');assert.ok(observed);assert.equal(observed.comparison_role,partial?'unresolved':'shadowed');assert.equal(observed.text,partial?'Revenue 120 won image 100':raw.text);if(!partial)assert.equal(page.ocr?.mode,'verification');Page.parse(page);
+  }
+});
+
+test('known-metric explicit nonpainting modes stay hidden independently of color and clip geometry',async()=>{
+  for(const mode of ['7 Tr','0 g 3 Tr']){
+    const bytes=await pdf(d=>{d.addContent(mode);text(d,'120','Helvetica');}),[page]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'off'});assert.equal(page.elements[0].visibility,'hidden_render_mode');assert.ok(page.elements[0].visibility_evidence?.some(v=>v.method==='explicit_nonpainting_text_mode'&&v.assessment==='observed'));Page.parse(page);
+  }
 });
 
 test('page annotation intent uses actual regions without promoting carrier or estimated glyph geometry',async()=>{

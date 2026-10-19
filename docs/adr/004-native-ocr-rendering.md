@@ -145,11 +145,26 @@ universal source-to-raster correspondence.
 Uniform explicitly nonpainting text modes3/7 remain observed hidden state even
 when font metrics cannot locate the run. Complete, unique source/operator text correlation
 is required; mixed, repeated or unmatched text stays unverified. Type3 character
-programs and unsupported graphics state cannot establish this nonpainting proof
-(the text rendering mode does not govern Type3 glyph painting; see Adobe PDF1.4
-Reference, section5.2.5: https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/pdfreference1.4.pdf). The geometry marker and
+programs and unsupported graphics state are not relied upon for this nonpainting
+proof (see Adobe PDF1.4 Reference, section5.2.5: https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/pdfreference1.4.pdf). The geometry marker and
 raw text remain, and the hidden-state evidence has zero-area/zero-coverage bounds.
 It neither invents a location nor establishes visibility/coverage. A real native
 image100→180 control with stale hidden Times text100→120 verifies that a prior
 invisible OCR layer cannot veto a new raster edit. Mixed visible text remains a
 source-conflict guard; unsupported geometry does not become readable source.
+
+
+Engine26 retains every nonempty native OCR line before selection. Global text
+containment and mere geometric intersection cannot discard an imaged observation.
+Only the existing complete source-union/content proof shadows a redundant OCR
+line; disjoint repeated text remains independent, and partial-overlap lines stay
+unresolved with their original primary/alternative strings and confidence. A
+same-place fully shadowed verification retains verification mode; this does not
+turn OCR into confirmed source. Actual native repeated-header/image100→120
+controls exercise the prior missed edit, with same-place duplicate and partial
+source/image controls. The unique uniform nonpainting-mode proof also precedes
+metric/color/clip reliability for known-metric fonts (Helvetica7Tr/gray3Tr), so
+an independently known hidden state does not depend on font metrics. Estimated
+hidden-source UI now separates observed nonpainting state from unknown location.
+Empty page quotes use page-observation fallback rather than naming an unquoted
+text layer. Universal OCR recall/precision and renderer fidelity remain open.

@@ -67,9 +67,9 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
     const scanned=!original.some(e=>e.text.trim()&&e.visibility!=='hidden_render_mode'),rasterComparison=scanned||!!page.unresolved_text;
     const additions:ElementData[]=[],geometryOK=Math.abs((page.width/page.height)/(result.width/result.height)-1)<0.003;
     for(const [i,line] of lines.entries()){
-      // An OCR match never clears a raw visibility/strike warning. Add only separately imaged content.
-      const intersects=(e:ElementData)=>Math.max(0,Math.min(e.bbox[0]+e.bbox[2],line.bbox[0]+line.bbox[2])-Math.max(e.bbox[0],line.bbox[0]))*Math.max(0,Math.min(e.bbox[1]+e.bbox[3],line.bbox[1]+line.bbox[3])-Math.max(e.bbox[1],line.bbox[1]));
-      if(!rasterComparison&&original.some(e=>e.text.trim()&&(intersects(e)>0||compact(e.text).includes(compact(line.text)))))continue;
+      // Preserve every raster observation. The selector alone decides whether
+      // matching, fully covered source makes it redundant; text equality or a
+      // partial overlap cannot discard an independently imaged line.
       const ambiguous=line.alternatives.some(c=>compact(c.text)!==compact(line.text)&&c.confidence>=line.confidence-0.15);
       const appearanceBlocked=original.some(e=>sourceAppearanceBlocks(e,line.bbox))||annotationBlocksRegion(original,line.bbox);
       const strikeEvaluated=!line.strike_status||['detected','not_detected'].includes(line.strike_status);
@@ -109,7 +109,10 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
     for(const status of new Set(lines.map(l=>l.strike_status).filter(s=>s&&!['detected','not_detected'].includes(s))))page.coverage_gaps.push({feature:'strike_ocr',reason:'raster_strike_'+status});
     if(lines.some(l=>l.numeric_status==='unsupported_notation'))page.coverage_gaps.push({feature:'ocr_numeric',reason:'unsupported_numeric_notation_requires_source_review'});
     if(!lines.length)page.coverage_gaps.push({feature:'ocr',reason:'ocr_no_text_detected_not_proof_of_blank_page'});
-    if(additions.length&&original.some(e=>e.provenance==='observed'&&e.text.trim()&&e.visibility!=='hidden_render_mode'))selectHybridComparison(page);
+    if(additions.length&&original.some(e=>e.provenance==='observed'&&e.text.trim()&&e.visibility!=='hidden_render_mode')){
+      selectHybridComparison(page);
+      if(!rasterComparison&&additions.every(e=>e.comparison_role==='shadowed'))page.ocr.mode='verification';
+    }
   }catch(e){
     if(options.signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;
     page.ocr={status:e instanceof DocverError&&e.code==='OCR_UNAVAILABLE'?'unavailable':'failed',engine:'native-vision-helper',environment,reason:e instanceof DocverError?e.code:'OCR_FAILED'};

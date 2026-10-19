@@ -136,7 +136,7 @@ struct PageColumn: View {
                     ForEach(payload["page"]["elements"].array) { e in
                         VStack(alignment:.leading,spacing:4) {
                             Text(e["method"].string == "pdf_page_annotation" ? (e["source_ref"].string.hasSuffix("/StrikeOut") ? "취소선 주석 · 표시 상태 미검증" : e["source_ref"].string.hasSuffix("/Redact") ? "삭제 의도 주석 · 적용 여부 확인" : "PDF 주석 영역 · 원본 확인 필요") : e["text"].string).textSelection(.enabled)
-                            if hasEstimatedPDFGeometry(e) { Text("원문 위치·표시 상태 미검증 · 글꼴 좌표는 추정값입니다.").font(.caption).foregroundStyle(.orange) }
+                            if hasEstimatedPDFGeometry(e) { Text(e["visibility"].string == "hidden_render_mode" ? "원문 위치 미검증 · 좌표는 추정값 · 비표시 모드 관측" : "원문 위치·표시 상태 미검증 · 글꼴 좌표는 추정값입니다.").font(.caption).foregroundStyle(.orange) }
                             HStack { Text(e["visibility"].string.isEmpty ? "원본 구조" : e["visibility"].string)
                                 if e["method"].string == "vision_ocr" {Text("OCR 추정 · \(Int(e["ocr"]["confidence"].number*100))점")}
                                 if !e["comparison_role"].string.isEmpty {Text(e["method"].string == "pdf_page_annotation" ? "주석 메타데이터 · 텍스트 비교 제외" : e["comparison_role"].string == "selected" ? "비교에 사용" : e["comparison_role"].string == "unresolved" ? "비교 보류" : e["comparison_role"].string == "excluded" ? "숨은 원문 · 비교 제외" : e["provenance"].string == "inferred" ? "참고 OCR · 원문 우선" : "원문 보존 · OCR로 비교")}
