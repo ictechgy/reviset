@@ -35,12 +35,12 @@ struct BundleSheet: View {
         let source=sources.first{$0["page_id"].string==sourceID} ?? JSON(),target=pdfs.first{$0["page_id"].string==pdfID} ?? JSON()
         var warnings=(source["coverage_gaps"].array+target["coverage_gaps"].array).map{coverageReasonName($0["reason"].string)}
         if mode=="link",!source.isNull,!target.isNull {
-            if source["comparison_text_hash"].string != target["comparison_text_hash"].string || target["comparison_unresolved"].bool {warnings.append("선택한 PPTX와 PDF의 문구가 다르거나 PDF 판독이 불확실합니다.")}
-            if abs((source["width"].number/max(1,source["height"].number))/(target["width"].number/max(1,target["height"].number))-1)>0.001 {warnings.append("선택한 PPTX와 PDF의 페이지 비율이 다릅니다.")}
-            if source["hidden"].bool {warnings.append("숨김 슬라이드를 연결합니다. PDF 내보내기 범위를 확인하세요.")}
-            if !target["native_raster_available"].bool {warnings.append("선택한 PDF의 화면 비교 근거가 없습니다. 연결 후에도 화면 차이는 미확정으로 남습니다.")}
-            if !target["reference_transform_available"].bool {warnings.append("선택한 PDF의 좌표 변환이 없어 연결 화면 대신 구조·별도 변환 화면을 사용합니다.")}
-            if revision["coverage_gaps"].array.contains(where:{$0["reason"].string=="reference_pdf_reused_for_different_pptx"}) {warnings.append("이 PDF를 서로 다른 PPTX 원본에 사용했습니다. 연결한 버전을 확인하세요.")}
+            if source["comparison_text_hash"].string != target["comparison_text_hash"].string || target["comparison_unresolved"].bool {warnings.append(coverageReasonName("manual_reference_text_unresolved_or_different"))}
+            if abs((source["width"].number/max(1,source["height"].number))/(target["width"].number/max(1,target["height"].number))-1)>0.001 {warnings.append(coverageReasonName("manual_reference_geometry_mismatch"))}
+            if source["hidden"].bool {warnings.append(coverageReasonName("manual_reference_linked_hidden_source_slide"))}
+            if !target["native_raster_available"].bool {warnings.append(coverageReasonName("manual_reference_native_raster_unavailable"))}
+            if !target["reference_transform_available"].bool {warnings.append(coverageReasonName("manual_reference_transform_unavailable"))}
+            if revision["coverage_gaps"].array.contains(where:{$0["reason"].string=="reference_pdf_reused_for_different_pptx"}) {warnings.append(coverageReasonName("manual_reference_pdf_reused_for_different_pptx"))}
         }
         var seen=Set<String>();return warnings.filter{seen.insert($0).inserted}
     }
