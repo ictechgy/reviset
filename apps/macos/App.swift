@@ -85,8 +85,13 @@ import PDFKit
         func checks(_ view:NSView)throws->[[String:Any]] {
             try canvases(view).map{canvas in
                 let width=canvas.page["width"].number,height=canvas.page["height"].number,displayWidth=Double(canvas.bounds.width),displayHeight=Double(canvas.bounds.height)
-                guard width>0,height>0,displayWidth>0,displayHeight>0,abs((displayWidth/displayHeight)/(width/height)-1)<0.001 else{throw BridgeError(code:"ASPECT_STRETCHED",message:"실제 구조 보기의 페이지 비율이 원본과 다릅니다.")}
-                return ["source_width":width,"source_height":height,"display_width":displayWidth,"display_height":displayHeight,"page_ratio_preserved":true]
+                // AppKit aligns representable bounds to device pixels. Measure
+                // absolute error in the shorter dimension, not a percentage of
+                // a thin page's width (35.2pt can legitimately snap to35pt).
+                let backingScale=Double(canvas.window?.backingScaleFactor ?? 1),tolerance=1/max(1,backingScale)
+                let error=abs(displayWidth*height-displayHeight*width)/max(width,height)
+                guard width>0,height>0,displayWidth>0,displayHeight>0,error.isFinite,error<=tolerance+0.000001 else{throw BridgeError(code:"ASPECT_STRETCHED",message:"실제 구조 보기의 페이지 비율이 원본과 다릅니다. 원본 \(width)×\(height), 화면 \(displayWidth)×\(displayHeight), 오차 \(error)pt")}
+                return ["source_width":width,"source_height":height,"display_width":displayWidth,"display_height":displayHeight,"backing_scale":backingScale,"aspect_error_points":error,"pixel_rounding_tolerance_points":tolerance,"page_ratio_preserved":true]
             }
         }
         guard let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}),let content=window.contentView else{throw BridgeError(code:"ASPECT_WINDOW",message:"페이지 비율 검증 창을 찾지 못했습니다.")}
