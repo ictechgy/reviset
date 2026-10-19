@@ -12,9 +12,21 @@ import {selectHybridComparison,sourceAppearanceBlocks} from './comparison-select
 
 const Candidate=z.object({text:z.string(),confidence:z.number().min(0).max(1)});
 const NativeTable=z.object({cells:z.array(z.object({row:z.number().int().nonnegative(),column:z.number().int().nonnegative(),row_span:z.number().int().positive(),column_span:z.number().int().positive(),text:z.string(),text_confident:z.boolean().optional(),bbox:Bbox})).max(20000)});
+const DocumentStructure=z.object({structure_status:z.string().max(160).optional(),structure_engine:z.string().max(160).optional(),tables:z.array(NativeTable).max(200).optional()});
+const GridStructure=z.object({grid_tables:z.array(NativeTable).max(50).optional(),grid_status:GridStatus.optional(),grid_reasons:z.array(z.string().max(160)).max(20).optional()});
+const StructureMetadataError=z.enum(['document','grid']);
 const NativeLine=Candidate.extend({bbox:Bbox,strike_candidate:z.boolean(),strike_status:z.string().optional(),strike_bbox:Bbox,numeric_consensus:z.boolean(),numeric_status:z.string().optional(),numeric_readings:z.array(z.string()),numeric_observations:z.array(z.object({text:z.string(),bbox:Bbox,sources:z.array(z.string())})).optional(),tokens:z.array(z.object({text:z.string(),bbox:Bbox})),alternatives:z.array(Candidate).max(3),reconsideration:z.unknown().optional(),reconsideration_error:z.literal('invalid_metadata').optional()}).transform(line=>{const checked=line.reconsideration===undefined?undefined:OcrReconsideration.safeParse(line.reconsideration);return {...line,reconsideration:checked?.success?checked.data:undefined,reconsideration_error:checked&&!checked.success?'invalid_metadata' as const:line.reconsideration_error};});
-const Result=z.object({version:z.string(),revision:z.number(),languages:z.array(z.string()),language_correction:z.literal(false),ocr_performed:z.boolean(),renderer:z.string(),verification:z.string(),viewport_width:z.number().positive(),viewport_height:z.number().positive(),rotation:z.number(),width:z.number().int().positive().max(4096),height:z.number().int().positive().max(4096),render_sha256:z.string().regex(/^[a-f0-9]{64}$/),structure_status:z.string().optional(),structure_engine:z.string().optional(),tables:z.array(NativeTable).max(200).optional(),grid_tables:z.array(NativeTable).max(50).optional(),grid_status:GridStatus.optional(),grid_reasons:z.array(z.string()).max(20).optional(),bitmap_format:z.number().int().nonnegative().optional(),bitmap_bits_per_sample:z.number().int().positive().optional(),bitmap_bits_per_pixel:z.number().int().positive().optional(),
-  lines:z.array(NativeLine).max(20000)});
+const Result=z.object({version:z.string(),revision:z.number(),languages:z.array(z.string()),language_correction:z.literal(false),ocr_performed:z.boolean(),renderer:z.string(),verification:z.string(),viewport_width:z.number().positive(),viewport_height:z.number().positive(),rotation:z.number(),width:z.number().int().positive().max(4096),height:z.number().int().positive().max(4096),render_sha256:z.string().regex(/^[a-f0-9]{64}$/),structure_status:z.unknown().optional(),structure_engine:z.unknown().optional(),tables:z.unknown().optional(),grid_tables:z.unknown().optional(),grid_status:z.unknown().optional(),grid_reasons:z.unknown().optional(),structure_metadata_errors:z.array(StructureMetadataError).max(2).optional().catch([]),bitmap_format:z.number().int().nonnegative().optional(),bitmap_bits_per_sample:z.number().int().positive().optional(),bitmap_bits_per_pixel:z.number().int().positive().optional(),
+  lines:z.array(NativeLine).max(20000)}).transform(result=>{
+    // Supplementary structure has independent failure domains. A malformed
+    // document table cannot erase primary OCR or a valid raster-grid annex.
+    const document=DocumentStructure.safeParse(result),grid=GridStructure.safeParse(result);
+    const errors=new Set(result.structure_metadata_errors??[]);
+    if(!document.success)errors.add('document');if(!grid.success)errors.add('grid');
+    const {structure_status,structure_engine,tables,grid_tables,grid_status,grid_reasons,structure_metadata_errors,...primary}=result;
+    return {...primary,...(document.success?document.data:{structure_status:'invalid_metadata'}),...(grid.success?grid.data:{}),
+      ...(errors.size?{structure_metadata_errors:[...errors]}:{})};
+  });
 export type NativePageResult=z.infer<typeof Result>;
 export type OcrOptions={cacheRoot?:string;signal?:AbortSignal;sourceFile?:string;sourceHash?:string;reuseRasterOcr?:boolean;nativeResult?:NativePageResult;onPage?:(current:number,total:number)=>void};
 export async function ocrEnvironment():Promise<string>{const info=await visionInfo();return info?hash(info):'unavailable';}
@@ -123,6 +135,7 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
     for(const status of new Set(lines.map(l=>l.strike_status).filter(s=>s&&!['detected','not_detected'].includes(s))))page.coverage_gaps.push({feature:'strike_ocr',reason:'raster_strike_'+status});
     if(lines.some(l=>l.numeric_status==='unsupported_notation'))page.coverage_gaps.push({feature:'ocr_numeric',reason:'unsupported_numeric_notation_requires_source_review'});
     if(lines.some(l=>l.reconsideration_error))page.coverage_gaps.push({feature:'ocr_reconsideration',reason:'invalid_optional_roi_metadata_ignored_primary_retained'});
+    for(const annex of result.structure_metadata_errors??[])page.coverage_gaps.push({feature:'table_ocr',reason:'invalid_optional_'+annex+'_metadata_ignored_primary_retained'});
     if(!lines.length)page.coverage_gaps.push({feature:'ocr',reason:'ocr_no_text_detected_not_proof_of_blank_page'});
     if(additions.length){
       selectHybridComparison(page);

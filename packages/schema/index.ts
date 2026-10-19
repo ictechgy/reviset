@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 
 export const SCHEMA_VERSION = '0.2.0';
 const StoredSchemaVersion=z.enum(['0.1.0','0.2.0']);
-export const ENGINE_VERSION = '0.2.0-native.ocr-render.31';
+export const ENGINE_VERSION = '0.2.0-native.ocr-render.32';
 export const MAX_INPUT_BYTES=512*1024*1024;
 export const MAX_PPTX_EXPANDED_BYTES=512*1024*1024;
 export const MAX_PPTX_PART_BYTES=64*1024*1024;

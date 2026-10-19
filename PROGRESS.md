@@ -281,3 +281,39 @@ Engine31 final serial regression137/137 PASS,0fail/skip/cancel,105.253s.
 Runtime source stayed fixed for that run; only these evidence notes followed.
 Fresh frozen native positive/public corpus and independent full-base reviews
 remain required. Product work continues into actual PPTX renderer comparison.
+
+Engine31 frozen public corpus12sources/33pages+20variants passed, including
+final opaque-white character evidence and eight available W3C contexts.
+Claude scoped delta approval is retained separately; Grok timed out and Agy
+was quota-blocked, neither counts as a review. Independent code review found
+a new Unicode component-offset defect and correctly kept31 BLOCKED.
+
+Engine32 dispatches context/empty-character text before validating primary
+text offsets. Its actual MCP regression follows returned32-unit cursors when
+the same offset splits an unrelated primary emoji, reconstructs both selected
+components, and still rejects an invalid primary cursor. Optional document
+tables and raster-grid metadata now decode independently: malformed optional
+geometry/status cannot erase valid primary OCR or the other structure annex.
+Cache replay preserves explicit diagnostics. Five focused contract tests pass;
+whole-suite qualification and full-base re-review follow.
+
+Sandboxed office2pdf0.9.1 prototype completed10decks/26pages. It reduces some
+large pixel differences but regresses other pages and changes broad background
+RGB values on some English pages. No automatic renderer replacement or strict
+fidelity claim is justified. The binary remains outside the product.
+
+Independent architecture review also found an equal-token-count bypass: a
+single-scalar token could disappear while another word split. Engine32 now
+tracks the deleted scalar's actual original token and rejects deleting its
+sole scalar, even with a matching white-footprint certificate. Space, tab,
+nonbreaking-space and newline controls cover that bypass. An earlier32 suite
+passed137/137 before this final policy repair; the final suite is rerun.
+
+Engine32 final serial full regression137/137 PASS,0fail/skip/cancel,106.586s.
+Runtime sources were fixed for this final run. Optional table/grid isolation,
+actual-MCP Unicode component pagination and original-token deletion veto all
+pass. Subsequent native packaging and broader fidelity work remain active.
+The separate explicit-inset prototype lowers mean RGB error on all26 pages,
+but3 gt24 and6 any-difference metrics regress; font-alias prototype regresses
+7/10 Korean pages and is not adopted. Standards/default and text-coordinate
+checks are required before adopting a renderer-only inset materialization.

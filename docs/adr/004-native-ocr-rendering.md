@@ -321,3 +321,21 @@ finite60s/page (with existing process-group cancellation), allowing cold
 primary recognition plus bounded ROI; this change does not assert faster OCR
 or a hard latency bound. Initial failures, isolated success and probe timings
 are all retained separately.
+
+Engine32 isolates the optional document-table and ruled-grid annexes from
+each other and from primary OCR decoding. Invalid geometry, oversized arrays
+or invalid status metadata suppress only that annex and add a persistent
+coverage gap; valid neighboring annexes and primary strings/confidences survive
+both initial decoding and cache replay. Mandatory raster/primary metadata
+remains strict. Component-query cursors are validated against the selected
+component only, including when unrelated primary text has a surrogate pair
+at that numeric offset. The actual MCP transport exercises both positive
+component pagination and invalid selected-primary boundaries.
+
+The exact255 empty-character criterion normally withholds certificates for
+noisy/JPEG/scanned backgrounds. It supports clean rendered empty footprints,
+not universal scan correction. Original character positioning remains Vision
+evidence, correlated with its recognition. Native genuine-Hangul controls
+establish eight retained context slots and no Korean empty certificate; a
+slot may carry a budget status, so slot count alone does not establish eight
+completed Vision requests.

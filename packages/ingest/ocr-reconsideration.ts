@@ -37,9 +37,14 @@ export function admitReconsideration(primary:ElementData,input:OcrReconsideratio
   const {changes,cost,deleted}=altered(primary.text,first.text);if(cost>1)return;
   if(deleted.length){
     if(primary.text!==primary.text.normalize('NFC'))return;
-    const map:{offset:number;text:string}[]=[];let offset=0;
-    for(const c of primary.text){if(!/\s/u.test(c))map.push({offset,text:c});offset+=c.length;}
-    for(const d of deleted){const scalar=map[d.index];if(!scalar||scalar.text!==d.text||!data.primary_empty_characters?.some(e=>e.offset===scalar.offset&&e.text===scalar.text&&e.ink_pixels===0&&e.bbox[2]>0&&e.bbox[3]>0&&e.bbox[2]<=primary.bbox[2]&&e.bbox[3]<=2*primary.bbox[3]&&e.bbox[0]+e.bbox[2]/2>=primary.bbox[0]&&e.bbox[0]+e.bbox[2]/2<=primary.bbox[0]+primary.bbox[2]&&e.bbox[1]+e.bbox[3]/2>=primary.bbox[1]&&e.bbox[1]+e.bbox[3]/2<=primary.bbox[1]+primary.bbox[3]))return;}
+    const map:{offset:number;text:string;tokenScalars:number}[]=[];
+    for(const token of primary.text.matchAll(/\S+/gu)){
+      const scalars=Array.from(token[0]);let offset=token.index;
+      for(const text of scalars){map.push({offset,text,tokenScalars:scalars.length});offset+=text.length;}
+    }
+    // Equal token counts do not prove preservation: deleting a one-scalar
+    // token and splitting another word can keep the count unchanged.
+    for(const d of deleted){const scalar=map[d.index];if(!scalar||scalar.text!==d.text||scalar.tokenScalars===1||!data.primary_empty_characters?.some(e=>e.offset===scalar.offset&&e.text===scalar.text&&e.ink_pixels===0&&e.bbox[2]>0&&e.bbox[3]>0&&e.bbox[2]<=primary.bbox[2]&&e.bbox[3]<=2*primary.bbox[3]&&e.bbox[0]+e.bbox[2]/2>=primary.bbox[0]&&e.bbox[0]+e.bbox[2]/2<=primary.bbox[0]+primary.bbox[2]&&e.bbox[1]+e.bbox[3]/2>=primary.bbox[1]&&e.bbox[1]+e.bbox[3]/2<=primary.bbox[1]+primary.bbox[3]))return;}
   }
   if(!changes.length||changes.some(c=>/[0Oo1Il|5S8B·•∙・‧ㆍ]/u.test(c)||!/[\p{Script=Latin}\p{Script=Hangul}]/u.test(c)))return;
   return {...first,bbox:primary.bbox,confidence:Math.min(...readings.map(r=>r.confidence))};

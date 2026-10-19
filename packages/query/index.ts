@@ -77,7 +77,7 @@ export class QueryService {
           [{page_id:p.page_id,page:p.page,capabilities:p.capabilities,coverage_gaps:p.coverage_gaps,elements:[],text:''}];
       }
       case 'get_element': {
-        const {v,p,e}=element();const text=textChunk(e.text,args.text_offset,args.text_length);
+        const {v,p,e}=element();
         const spans=e.visibility_spans??[],appearance=e.visibility_evidence??[],chunk=spans.slice(args.span_offset,args.span_offset+args.span_limit),evidence=appearance.slice(args.appearance_evidence_offset,args.appearance_evidence_offset+args.appearance_evidence_limit);
         const roi=e.ocr?.reconsideration_observation??e.ocr?.reconsideration?.observation,context=args.ocr_context_index===undefined?undefined:roi?.contexts[args.ocr_context_index];
         if(args.ocr_empty_character_index!==undefined){
@@ -99,6 +99,7 @@ export class QueryService {
               token_bboxes:tokens,token_offset:args.ocr_token_offset,token_count:observed.token_bboxes.length,next_token_offset:args.ocr_token_offset+tokens!.length<observed.token_bboxes.length?args.ocr_token_offset+tokens!.length:null,
               alternative_count:observed.alternatives.length,alternative:alternative?{index:args.ocr_alternative_index,text:alternativeText,confidence:alternative.confidence,text_offset:args.ocr_alternative_offset,text_length:alternative.text.length,next_text_offset:args.ocr_alternative_offset+alternativeText!.length<alternative.text.length?args.ocr_alternative_offset+alternativeText!.length:null}:undefined}:undefined}}];
         }
+        const text=textChunk(e.text,args.text_offset,args.text_length);
         const alternative=e.ocr?.alternatives[args.ocr_alternative_index],alternativeText=alternative?textChunk(alternative.text,args.ocr_alternative_offset,args.ocr_alternative_length):undefined;
         return [{...e,text,normalized_text:undefined,ocr:ocrSummary(e.ocr),ocr_alternative:alternative?{index:args.ocr_alternative_index,confidence:alternative.confidence,text:alternativeText,text_length:alternative.text.length,text_offset:args.ocr_alternative_offset,next_text_offset:args.ocr_alternative_offset+alternativeText!.length<alternative.text.length?args.ocr_alternative_offset+alternativeText!.length:null}:undefined,visibility_spans:args.span_limit?chunk:undefined,visibility_evidence:args.appearance_evidence_limit?evidence:undefined,visibility_span_count:spans.length,visibility_evidence_count:appearance.length,span_offset:args.span_offset,next_span_offset:args.span_offset+chunk.length<spans.length?args.span_offset+chunk.length:null,appearance_evidence_offset:args.appearance_evidence_offset,next_appearance_evidence_offset:args.appearance_evidence_offset+evidence.length<appearance.length?args.appearance_evidence_offset+evidence.length:null,text_offset:args.text_offset,next_text_offset:args.text_offset+text.length<e.text.length?args.text_offset+text.length:null,
           revision_id:v.revision_id,page_id:p.page_id,page:p.page,resource_uri:resource(r,'evidence',e.observation_id)}];

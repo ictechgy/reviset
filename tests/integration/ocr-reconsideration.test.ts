@@ -25,6 +25,10 @@ test('ROI admission requires eight distinct complete contexts and preserves nume
   for(const status of ['edge_cut','failed','contaminated','ambiguous','not_detected','budget_exceeded'] as const)reject(d=>{d.contexts[0].status=status;});
   reject(d=>{d.contexts[0]=structuredClone(d.contexts[1]);});reject(d=>{d.contexts.pop();});reject(d=>{d.contexts[0].observations[0].ink_coverage=.999;});reject(d=>{d.contexts[0].observations[0].token_bboxes=[];});reject(d=>{d.contexts[0].observations[0].bbox=[.7,.7,.1,.1];});reject(d=>{d.contexts[0].observations[0].text='Pineapple옓';});reject(d=>{d.contexts[0].observations[0].alternatives.push({text:'Pineapple한',confidence:.9});});reject(d=>{d.status='unsupported_background';});reject(d=>{d.primary_empty_characters=[];});reject(d=>{d.primary_empty_characters![0].offset=8;});reject(d=>{d.primary_empty_characters![0].bbox=[.8,.8,.01,.01];});
   for(const [before,after]of [['Code F00','Code Foo'],['Invoice 123','Invoice 128'],['A · C','A • C'],['A • C','A · C'],['Hello','Heo'],['Pineapple','Pineapple!'],['Pineapple Juice','Pineapple'],['Pineapple 주스','Pineapple'],['Pineapple한글','Pineapple'],['modern','modem']]){const q=primary(before),d=observation(after);assert.equal(admitReconsideration(q,d,()=>false),undefined,before+' -> '+after);}
+  for(const space of [' ','\t','\u00a0','\n']){
+    const before='Pineapple'+space+'옓',d=observation('Pine apple');d.primary_empty_characters![0].offset=10;
+    assert.equal(admitReconsideration(primary(before),d,()=>false),undefined,'A certified one-scalar token cannot disappear while another word splits');
+  }
   const numeric=primary();numeric.ocr!.numeric_consensus=false;assert.equal(admitReconsideration(numeric,observation(),()=>false),undefined);
   const unevaluated=primary();unevaluated.ocr!.strike_status='unsupported_bitmap';assert.equal(admitReconsideration(unevaluated,observation(),()=>false),undefined);
   const struck=primary();struck.visibility='struck_inferred';assert.equal(admitReconsideration(struck,observation(),()=>false),undefined);
@@ -57,7 +61,7 @@ test('ROI native supplementation keeps primary projections exact and canonical e
   }finally{store.close();await rm(folder,{recursive:true,force:true});}
 });
 
-test('optional invalid ROI cannot discard primary observations or valid neighboring batch pages',async()=>{
+test('invalid optional ROI and table annexes preserve primary OCR, independent tables and cached diagnostics',async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-roi-fault-'));
   try{
     const helper=join(folder,'fake-vision.mjs'),module=new URL('../../packages/ingest/ocr.ts',import.meta.url).href;
@@ -65,20 +69,34 @@ test('optional invalid ROI cannot discard primary observations or valid neighbor
     const valid={version:'roi-fault',revision:3,languages:['ko-KR','en-US'],language_correction:false,ocr_performed:true,renderer:'fixture',verification:'fixture',viewport_width:960,viewport_height:540,rotation:0,width:960,height:540,render_sha256:'a'.repeat(64),lines:[line]};
     const bad=observation();bad.contexts[0].observations[0].bbox=[-.01,0,.1,.1];
     const oversized=observation('e\u0301'.repeat(70));
-    await writeFile(helper,`#!${process.execPath}\nif(process.argv.includes('--info')){console.log(JSON.stringify({version:'fixture',os:'fixture',revision:3,languages:['ko-KR','en-US'],language_correction:false,font_inventory_sha256:'a'.repeat(64),font_families:[]}));}else{let input='';for await(const b of process.stdin)input+=b;const query=JSON.parse(input),valid=${JSON.stringify(valid)},bad=${JSON.stringify(bad)},oversized=${JSON.stringify(oversized)};console.log(JSON.stringify({pages:query.pages.map(page=>({page,result:page===2?{...valid,width:0}:page===1?{...valid,lines:[{...valid.lines[0],reconsideration:bad}]}:page===3?{...valid,lines:[{...valid.lines[0],reconsideration:oversized}]}:valid}))}));}`,{mode:0o755});
-    const child=`import {captureNativePages} from ${JSON.stringify(module)};const result=await captureNativePages(new Uint8Array(),[1,2,3,4],[1,2,3,4]);console.log(JSON.stringify([...result]));`;
+    const cell={row:0,column:0,row_span:1,column_span:1,text:'table stays',text_confident:true,bbox:[.1,.65,.2,.1]},gridCell={...cell,text:'grid stays',bbox:[.6,.65,.2,.1]},badCell={...cell,bbox:[-.1,.65,.2,.1]};
+    const structure={structure_status:'available',tables:[{cells:[cell]}],grid_status:'available',grid_tables:[{cells:[gridCell]}]};
+    const variants={1:{...valid,lines:[{...line,reconsideration:bad}]},2:{...valid,width:0},3:{...valid,lines:[{...line,reconsideration:oversized}]},5:{...valid,...structure,tables:[{cells:[badCell]}]},6:{...valid,...structure,grid_tables:[{cells:[badCell]}]},7:{...valid,...structure,tables:null,grid_reasons:Array(21).fill('invalid')}};
+    await writeFile(helper,`#!${process.execPath}\nif(process.argv.includes('--info')){console.log(JSON.stringify({version:'fixture',os:'fixture',revision:3,languages:['ko-KR','en-US'],language_correction:false,font_inventory_sha256:'a'.repeat(64),font_families:[]}));}else{let input='';for await(const b of process.stdin)input+=b;const query=JSON.parse(input),valid=${JSON.stringify({...valid,...structure})},variants=${JSON.stringify(variants)};console.log(JSON.stringify({pages:query.pages.map(page=>({page,result:variants[page]??valid}))}));}`,{mode:0o755});
+    const child=`import assert from 'node:assert/strict';import {captureNativePages} from ${JSON.stringify(module)};const pages=[1,2,3,4,5,6,7,8],options={cacheRoot:${JSON.stringify(join(folder,'cache'))},reuseRasterOcr:false};const result=await captureNativePages(new Uint8Array(),pages,pages,options),cached=await captureNativePages(new Uint8Array(),pages,pages,options);assert.deepEqual(JSON.parse(JSON.stringify([...cached])),JSON.parse(JSON.stringify([...result])));console.log(JSON.stringify([...result]));`;
     const rows=JSON.parse(execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',child],{encoding:'utf8',env:{...process.env,DOCVER_VISION:helper},timeout:15000}));
-    assert.deepEqual(rows.map((r:any)=>r[0]),[1,3,4]);for(const [number,result]of rows){assert.equal(result.lines[0].text,line.text);if(number<4){assert.equal(result.lines[0].reconsideration,undefined);assert.equal(result.lines[0].reconsideration_error,'invalid_metadata');}}
+    assert.deepEqual(rows.map((r:any)=>r[0]),[1,3,4,5,6,7,8]);for(const [number,result]of rows){assert.equal(result.lines[0].text,line.text);if(number<4){assert.equal(result.lines[0].reconsideration,undefined);assert.equal(result.lines[0].reconsideration_error,'invalid_metadata');}}
+    for(const [number,result]of rows.filter((r:any)=>r[0]>=5)){
+      const p=page([]);await supplementPdfOcr(p,new Uint8Array(),{nativeResult:result});Page.parse(p);assert.equal(p.ocr?.status,'available');assert.equal(p.elements[0].text,line.text);assert.equal(p.elements[0].ocr!.confidence,line.confidence);
+      const texts=p.elements.filter(e=>e.kind==='table_cell').map(e=>e.text).sort();
+      assert.deepEqual(texts,number===5?['grid stays']:number===6?['table stays']:number===7?[]:['grid stays','table stays']);
+      const expected=number===5?['document']:number===6?['grid']:number===7?['document','grid']:[];
+      assert.deepEqual(result.structure_metadata_errors??[],expected);for(const annex of expected)assert.ok(p.coverage_gaps.some(g=>g.reason==='invalid_optional_'+annex+'_metadata_ignored_primary_retained'));
+    }
     const p=page([]);await supplementPdfOcr(p,new Uint8Array(),{nativeResult:rows[0][1]});assert.equal(p.ocr?.status,'available');assert.equal(p.elements[0].text,line.text);assert.ok(p.coverage_gaps.some(g=>g.reason==='invalid_optional_roi_metadata_ignored_primary_retained'));
   }finally{await rm(folder,{recursive:true,force:true});}
 });
 
-test('actual MCP transport traverses worst-case retained context observations, text, alternatives and token geometry',async()=>{
+test('actual MCP transport traverses retained components using their own Unicode offsets and bounded geometry',async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-roi-mcp-')),store=new Store(folder),client=new Client({name:'roi-boundary',version:'1'});
   try{
     const data=observation('\u0001'.repeat(128)),token=[.123456789012345,.234567890123456,.009123456789012,.022345678901234] as [number,number,number,number];
     for(const context of data.contexts){context.status='contaminated';const row={...context.observations[0],token_bboxes:Array.from({length:32},()=>token),alternatives:Array.from({length:3},()=>({text:'한글 😀 '.repeat(20).slice(0,128),confidence:.8}))};context.observations=Array.from({length:8},()=>structuredClone(row));}
-    const p=primary();p.ocr!.reconsideration_observation=data;
+    // The returned context/character offset32 deliberately splits an unrelated
+    // primary surrogate pair. Only the selected component may validate it.
+    const p=primary('x'+'😀'.repeat(50));p.ocr!.reconsideration_observation=data;
+    const emptyText='e'+'\u0301'.repeat(127);
+    data.primary_empty_characters=[{offset:0,text:emptyText,bbox,ink_pixels:0,method:'uniform_white_pixels_with_1px_margin'}];
     const r:ReportData={schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION,report_id:'report_roi_mcp',project_id:'project_roi_mcp',timeline_revision_id:'timeline',mapping_revision_id:'mapping',schema_hash:SCHEMA_HASH,observation_environment:{},revisions:[{revision_id:'revision',revision_occurrence_id:'occurrence',label:'Boundary',assets:[{asset_id:'asset_a',format:'pdf',bytes:0}],status:'success',pages:[page([p])],coverage_gaps:[],errors:[],bundle_mapping:[]}],matches:[],candidates:[],mapping_decisions:[],lineages:[],changes:[],coverage_gaps:[]};Report.parse(r);store.finishRun(store.beginRun(r.project_id,'ROI MCP'),r);
     await client.connect(new StdioClientTransport({command:process.execPath,args:['--import','tsx','apps/mcp/main.ts','--store',folder,'--project',r.project_id],stderr:'pipe'}));
     const read=async(extra:Record<string,unknown>)=>{const response=await client.callTool({name:'get_element',arguments:{project_id:r.project_id,report_id:r.report_id,observation_id:p.observation_id,ocr_context_index:0,text_length:32,ocr_alternative_length:32,max_output_tokens:8000,...extra}});assert.ok(!response.isError,JSON.stringify(response));assert.ok(Buffer.byteLength(JSON.stringify(response))<=8000);const item=(response.structuredContent as any).items[0];assert.ok(item.ocr_context?.reading,JSON.stringify(response));return item.ocr_context.reading;};
@@ -87,5 +105,14 @@ test('actual MCP transport traverses worst-case retained context observations, t
       for(let a=0;a<3;a++){let value='',at:number|null=0;while(at!==null){const reading=await read({ocr_observation_index:index,ocr_alternative_index:a,ocr_alternative_offset:at});value+=reading.alternative.text;at=reading.alternative.next_text_offset;}assert.equal(value,data.contexts[0].observations[index].alternatives[a].text);}
       const boxes:unknown[]=[];let next:number|null=0;while(next!==null){const reading=await read({ocr_observation_index:index,ocr_token_offset:next});boxes.push(...reading.token_bboxes);next=reading.next_token_offset;}assert.deepEqual(boxes,data.contexts[0].observations[index].token_bboxes);
     }
+    let emptyValue='',offset:number|null=0;
+    while(offset!==null){
+      const response=await client.callTool({name:'get_element',arguments:{project_id:r.project_id,report_id:r.report_id,observation_id:p.observation_id,ocr_empty_character_index:0,text_offset:offset,text_length:32,max_output_tokens:8000}});
+      assert.ok(!response.isError,JSON.stringify(response));const character=(response.structuredContent as any).items[0].ocr_empty_character;
+      emptyValue+=character.text;offset=character.next_text_offset;
+    }
+    assert.equal(emptyValue,emptyText);
+    const invalidPrimary=await client.callTool({name:'get_element',arguments:{project_id:r.project_id,report_id:r.report_id,observation_id:p.observation_id,text_offset:32,max_output_tokens:8000}});
+    assert.ok(invalidPrimary.isError);assert.match(JSON.stringify(invalidPrimary),/TEXT_OFFSET/,'A cursor that actually splits the selected primary must still fail');
   }finally{await client.close();store.close();await rm(folder,{recursive:true,force:true});}
 });
