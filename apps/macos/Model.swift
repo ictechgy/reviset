@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import UniformTypeIdentifiers
 import Darwin
+import CryptoKit
 
 @MainActor final class AppModel: ObservableObject {
     @Published var libraryAvailable = true
@@ -21,6 +22,7 @@ import Darwin
     @Published var loadingChanges = false
     @Published var committing = false
     @Published var status = ""
+    @Published var evidenceWarning = ""
     @Published var error = ""
     @Published var progress = JSON()
     @Published var tab = "compare"
@@ -74,7 +76,7 @@ import Darwin
     func selectProject(_ id: String, snapshot: String? = nil) async {
         guard libraryAvailable && !busy else { return }
         selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loadingChanges=false;let generation=selectionGeneration;pageNavigation=nil
-        loading = true; error = ""; projectID = id; report = JSON(); changes = []; selectedChangeID = nil
+        loading = true; error = ""; evidenceWarning = ""; projectID = id; report = JSON(); changes = []; selectedChangeID = nil
         do {
             try await refresh();let loadedReports = try await bridge.call("reports", ["project_id": id]).array
             guard generation==selectionGeneration else{return};reports=loadedReports
@@ -124,19 +126,29 @@ import Darwin
 
     func selectEvidence() {
         if let n=pageNavigation,n.report==report["report_id"].string,n.from==from,n.to==to {leftPageID=n.left;rightPageID=n.right;return}
-        guard !selected.isNull else { return }
+        guard !selected.isNull else { evidenceWarning="";return }
         if tab == "history" { return }
+        evidenceWarning=""
         let evidence = selected["evidence"].array
-        let left=evidence.filter { $0["revision_occurrence_id"].string == revision(from)["revision_occurrence_id"].string }.map { displayPageID($0["page_id"].string, in:revision(from)) }
-        leftPageID = left.contains(leftPageID) ? leftPageID : left.first ?? ""
-        let right=evidence.filter { $0["revision_occurrence_id"].string == revision(to)["revision_occurrence_id"].string }.map { displayPageID($0["page_id"].string, in:revision(to)) }
-        rightPageID = right.contains(rightPageID) ? rightPageID : right.first ?? ""
+        leftPageID = evidenceSelection(evidence, in:revision(from), current:leftPageID)
+        rightPageID = evidenceSelection(evidence, in:revision(to), current:rightPageID)
+    }
+    func evidenceSelection(_ evidence:[JSON],in revision:JSON,current:String)->String {
+        let relevant=evidence.filter { $0["revision_occurrence_id"].string == revision["revision_occurrence_id"].string }
+        let primary=Set(primaryPages(revision).map { $0["page_id"].string })
+        let resolved=relevant.map { displayPageID($0["page_id"].string,in:revision) }.filter { primary.contains($0) }
+        if !relevant.isEmpty && resolved.isEmpty {
+            evidenceWarning="이 근거에 대응하는 원문 페이지를 확인할 수 없습니다."
+            return primary.contains(current) ? current : ""
+        }
+        return resolved.contains(current) ? current : resolved.first ?? ""
     }
     func displayPageID(_ sourcePageID:String,in revision:JSON)->String {
         primaryPages(revision).first { $0["appearance"]["source_page_id"].string == sourcePageID }?["page_id"].string ?? sourcePageID
     }
-    func chooseChange(_ id:String){guard !loadingChanges else{return};pageNavigation=nil;selectedChangeID=id;selectEvidence()}
+    func chooseChange(_ id:String){guard !loadingChanges else{return};evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence()}
     func openHistoryPage(_ index:Int,_ pageID:String){
+        evidenceWarning=""
         from=max(0,index-1);to=min(revisions.count-1,max(1,index))
         let edges=report["matches"].array
         let parents=edges.filter { $0["to_page_id"].string == pageID }.map { $0["from_page_id"].string }
@@ -148,7 +160,7 @@ import Darwin
     }
     func changeRange() { Task { do { try await updateChanges() } catch { fail(error) } } }
     func run(_ id: String) async {
-        guard libraryAvailable && !initializing && !busy else { return };let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
+        guard libraryAvailable && !initializing && !busy else { return };evidenceWarning="";let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
         do {
             let result = try await bridge.call("analyze", ["project_id": id], analysis: true) { [weak self] p in
                 Task { @MainActor in guard let self,self.busy,!self.committing,self.analysisToken==token else{return}; self.progress = p; self.status = p["phase"].string == "match" ? "페이지 대응과 변경을 계산합니다" : p["label"].string.isEmpty ? "원본을 추출합니다" : p["label"].string + " 추출 중" }
@@ -177,7 +189,7 @@ import Darwin
     }
     func cancel() { guard busy && !committing else { return }; cancelRequested = true; bridge.cancel(); status = "분석을 취소하고 있습니다" }
     func create(title: String, rows: [ImportRow]) async throws -> JSON {
-        try await bridge.call("create", ["title": title, "revisions": rows.map { ["label": $0.label, "files": $0.urls.map(\.path)] as [String: Any] }])
+        try await bridge.call("create", ["title": title, "revisions": rows.map(\.createPayload)])
     }
     func demo() async {
         do {
@@ -197,15 +209,15 @@ import Darwin
         let occurrence=evidence["revision_occurrence_id"].string
         if occurrence == revision(from)["revision_occurrence_id"].string {
             let id=displayPageID(evidence["page_id"].string,in:revision(from))
-            guard primaryPages(revision(from)).contains(where:{$0["page_id"].string==id}) else{status="이 근거에 대응하는 원문 페이지를 확인할 수 없습니다.";return}
+            guard primaryPages(revision(from)).contains(where:{$0["page_id"].string==id}) else{evidenceWarning="이 근거에 대응하는 원문 페이지를 확인할 수 없습니다.";return}
             leftPageID=id
         }
         if occurrence == revision(to)["revision_occurrence_id"].string {
             let id=displayPageID(evidence["page_id"].string,in:revision(to))
-            guard primaryPages(revision(to)).contains(where:{$0["page_id"].string==id}) else{status="이 근거에 대응하는 원문 페이지를 확인할 수 없습니다.";return}
+            guard primaryPages(revision(to)).contains(where:{$0["page_id"].string==id}) else{evidenceWarning="이 근거에 대응하는 원문 페이지를 확인할 수 없습니다.";return}
             rightPageID=id
         }
-        pageNavigation=(report["report_id"].string,from,to,leftPageID,rightPageID)
+        evidenceWarning="";pageNavigation=(report["report_id"].string,from,to,leftPageID,rightPageID)
     }
     func applyRelation(project: String, report: String, draftHash: String, before: String, after: String, left: [String], right: [String], kind: String, reason: String) async throws {
         guard !busy && project == projectID && report == self.report["report_id"].string else { throw BridgeError(code: "STALE_REPORT", message: "최신 분석 결과에서 대응을 수정하세요.") }
@@ -221,7 +233,69 @@ import Darwin
     func loadMCP() async { do { mcp = try await bridge.call("mcpConfig", ["project_id": projectID]).string } catch { fail(error) } }
     func page(_ id: String) async throws -> JSON { try await bridge.call("page", ["project_id": projectID, "report_id": report["report_id"].string, "page_id": id]) }
 }
-struct ImportRow: Identifiable { let id = UUID(); var label: String; var urls: [URL] }
+struct ImportFileIdentity: Equatable {
+    let sha256:String
+    let bytes:Int
+    static func capture(_ url:URL)throws->ImportFileIdentity {
+        let handle=try FileHandle(forReadingFrom:url);defer{try? handle.close()}
+        var digest=SHA256(),count=0
+        while let data=try handle.read(upToCount:1024*1024),!data.isEmpty {
+            count += data.count
+            guard count<=512*1024*1024 else{throw BridgeError(code:"FILE_LIMIT",message:"파일당 512 MiB 이하를 지원합니다.")}
+            digest.update(data:data)
+        }
+        return ImportFileIdentity(sha256:digest.finalize().map{String(format:"%02x",$0)}.joined(),bytes:count)
+    }
+}
+struct ImportMember: Identifiable,Equatable {
+    let id:UUID
+    var label:String
+    let url:URL
+    let identity:ImportFileIdentity?
+}
+struct ImportRow: Identifiable,Equatable {
+    let id:UUID
+    var label:String {didSet{if members.count==1{members[0].label=label}}}
+    private(set) var members:[ImportMember]
+    var urls:[URL]{members.map(\.url)}
+    init(label:String,urls:[URL]) {
+        let files=urls.enumerated().map{index,url in ImportMember(id:UUID(),label:index==0 ? label:url.deletingPathExtension().lastPathComponent,url:url,identity:nil)}
+        self.init(id:files.count==1 ? files[0].id:UUID(),label:label,members:files)
+    }
+    init(id:UUID,label:String,members:[ImportMember]){self.id=id;self.label=label;self.members=members;if self.members.count==1{self.members[0].label=label}}
+    static func selected(_ url:URL)throws->ImportRow {
+        let member=ImportMember(id:UUID(),label:url.deletingPathExtension().lastPathComponent,url:url,identity:try ImportFileIdentity.capture(url))
+        return ImportRow(id:member.id,label:member.label,members:[member])
+    }
+    var createPayload:[String:Any] {
+        var payload:[String:Any]=["label":label,"files":urls.map(\.path)]
+        if members.contains(where:{$0.identity != nil}) {payload["expected_sha256"]=members.map{member -> Any in if let identity=member.identity{return identity.sha256};return NSNull()}}
+        return payload
+    }
+    static func groupingUnavailable(_ rows:[ImportRow],at index:Int)->String? {
+        guard rows.indices.contains(index),index>0 else{return "앞 버전이 있을 때 위와 묶을 수 있습니다."}
+        let a=rows[index-1],b=rows[index]
+        guard a.members.count==1,b.members.count==1 else{return "PPTX 1개와 PDF 1개만 묶을 수 있습니다."}
+        guard Set((a.urls+b.urls).map{$0.pathExtension.lowercased()})==Set(["pptx","pdf"]) else{return "서로 다른 형식의 PPTX 1개와 PDF 1개를 선택하세요."}
+        return nil
+    }
+    @discardableResult static func group(_ rows:inout [ImportRow],at index:Int)->Bool {
+        guard groupingUnavailable(rows,at:index)==nil else{return false}
+        let a=rows[index-1],b=rows[index]
+        var first=a.members[0],second=b.members[0];first.label=a.label;second.label=b.label
+        rows.replaceSubrange((index-1)...index,with:[ImportRow(id:UUID(),label:a.label,members:[first,second])]);return true
+    }
+    @discardableResult static func ungroup(_ rows:inout [ImportRow],at index:Int)->Bool {
+        guard rows.indices.contains(index),rows[index].members.count==2 else{return false}
+        let group=rows[index]
+        let restored=group.members.enumerated().map{offset,member in ImportRow(id:member.id,label:offset==0 ? group.label:member.label,members:[member])}
+        rows.replaceSubrange(index...index,with:restored);return true
+    }
+    @discardableResult static func move(_ rows:inout [ImportRow],at index:Int,by delta:Int)->Bool {
+        guard (delta == -1 || delta == 1),rows.indices.contains(index),rows.indices.contains(index+delta) else{return false}
+        rows.swapAt(index,index+delta);return true
+    }
+}
 let changeNames = ["text_modified": "텍스트 수정", "page_moved": "페이지 이동", "page_added": "페이지 추가", "page_deleted": "페이지 삭제", "text_struck_through": "취소선 표시", "text_occluded": "텍스트 가림", "text_revealed": "텍스트 다시 표시", "visual_region_changed": "화면 변경", "coverage_gap": "관측 공백", "page_split": "페이지 분할", "page_merged": "페이지 병합", "page_lineage_changed": "페이지 계보 변경"]
 func isReferenceAppearanceChange(_ change:JSON)->Bool {
     change["kind"].string == "visual_region_changed" && change["evidence"].array.contains { $0["method"].string == "provided_pdf_native_raster" }

@@ -115,7 +115,7 @@ struct MainView: View {
                     }
                 }.frame(maxWidth:.infinity,maxHeight:.infinity)
             }
-            Divider();HStack { Label("내 Mac에만 저장",systemImage:"internaldrive");Spacer();Text(model.status.isEmpty ? "근거 · 추정 · 관측 공백을 구분합니다" : model.status);Spacer();Text("Docver · Native macOS") }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,5)
+            Divider();HStack { Label("내 Mac에만 저장",systemImage:"internaldrive");Spacer();Text(!model.evidenceWarning.isEmpty ? model.evidenceWarning:model.status.isEmpty ? "근거 · 추정 · 관측 공백을 구분합니다" : model.status);Spacer();Text("Docver · Native macOS") }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,5)
         }.disabled(!model.libraryAvailable || model.initializing).preferredColorScheme(.light).background(Color(nsColor:.windowBackgroundColor)).frame(minWidth:1100,minHeight:740)
         .toolbar {
             ToolbarItem(placement:.navigation){Button {model.focus.toggle()} label:{Image(systemName:model.focus ? "sidebar.left" : "arrow.up.left.and.arrow.down.right")}.help(model.focus ? "기본 화면" : "문서 크게 보기")}
@@ -310,12 +310,55 @@ struct ImportView: View {
     @State private var title="새 문서 프로젝트"
     @State private var rows:[ImportRow]=[]
     @State private var saving=false
+    @State private var choosing=false
     @State private var failure=""
-    var body: some View {VStack(alignment:.leading,spacing:17){HStack{Text("문서 버전 가져오기").font(.title2.weight(.semibold));Spacer();Button("닫기"){dismiss()}.keyboardShortcut(.cancelAction).disabled(saving)};Text("각 버전은 PPTX 또는 PDF 하나로 유효합니다. 수백 페이지 문서는 선택한 페이지부터 지연 표시합니다.").font(.callout).foregroundStyle(.secondary);TextField("프로젝트 이름",text:$title).textFieldStyle(.roundedBorder);Button{choose()}label:{Label("PPTX·PDF 파일 선택",systemImage:"plus")}.disabled(saving)
-        List{ForEach(Array(rows.enumerated()),id:\.element.id){i,r in HStack{Text("\(i+1)").foregroundStyle(.secondary);VStack(alignment:.leading){TextField("버전 이름",text:Binding(get:{rows.indices.contains(i) ? rows[i].label:""},set:{if rows.indices.contains(i){rows[i].label=$0}}));Text(r.urls.map(\.lastPathComponent).joined(separator:" + ")).font(.caption2).foregroundStyle(.secondary)};Button{rows.swapAt(i,i-1)}label:{Image(systemName:"chevron.up")}.disabled(i==0||saving);Button{rows.swapAt(i,i+1)}label:{Image(systemName:"chevron.down")}.disabled(i==rows.count-1||saving);Button("위와 묶기"){rows[i-1].urls += rows[i].urls;rows.remove(at:i)}.disabled(saving||i==0||r.urls.count != 1||(i>0 && (rows[i-1].urls.count != 1||rows[i-1].urls.first?.pathExtension.lowercased()==r.urls.first?.pathExtension.lowercased())));Button{rows.remove(at:i)}label:{Image(systemName:"xmark")}.disabled(saving)}}}.frame(minHeight:230,maxHeight:360)
-        if !failure.isEmpty{Text(failure).foregroundStyle(.red).font(.caption)}
-        HStack{Text("원본은 앱 전용 보관소에 복사합니다.").font(.caption).foregroundStyle(.secondary);Spacer();if saving{ProgressView().controlSize(.small)};Button("이 순서로 분석 시작"){Task{await create()}}.buttonStyle(.borderedProminent).disabled(saving||rows.isEmpty||title.trimmingCharacters(in:.whitespaces).isEmpty||rows.contains{$0.label.trimmingCharacters(in:.whitespaces).isEmpty})}
-    }.padding(25).frame(width:860)}
-    func choose(){let panel=NSOpenPanel();panel.allowsMultipleSelection=true;panel.allowedContentTypes=[.pdf,UTType(filenameExtension:"pptx") ?? .data];panel.canChooseDirectories=false;if panel.runModal() == .OK{rows += panel.urls.map{ImportRow(label:$0.deletingPathExtension().lastPathComponent,urls:[$0])}}}
+    init(initialRows:[ImportRow]=[]){_rows=State(initialValue:initialRows)}
+    var locked:Bool{saving || choosing}
+    var body: some View {
+        VStack(alignment:.leading,spacing:17){
+            HStack{Text("문서 버전 가져오기").font(.title2.weight(.semibold));Spacer();Button("닫기"){dismiss()}.keyboardShortcut(.cancelAction).disabled(locked)}
+            Text("각 버전은 PPTX 또는 PDF 하나로 유효합니다. 수백 페이지 문서는 선택한 페이지부터 지연 표시합니다.").font(.callout).foregroundStyle(.secondary)
+            TextField("프로젝트 이름",text:$title).textFieldStyle(.roundedBorder).disabled(locked)
+            Button{choose()}label:{Label("PPTX·PDF 파일 선택",systemImage:"plus")}.disabled(locked)
+            List{
+                ForEach(Array(rows.enumerated()),id:\.element.id){i,r in
+                    HStack{
+                        Text("\(i+1)").foregroundStyle(.secondary)
+                        VStack(alignment:.leading){
+                            TextField("버전 이름",text:Binding(get:{rows.indices.contains(i) ? rows[i].label:""},set:{if rows.indices.contains(i){rows[i].label=$0}})).disabled(locked)
+                            Text(r.urls.map(\.lastPathComponent).joined(separator:" + ")).font(.caption2).foregroundStyle(.secondary)
+                            if r.members.count==2{Label("같은 버전 · PPTX + PDF",systemImage:"link").font(.caption).foregroundStyle(.secondary)}
+                        }
+                        Button{ImportRow.move(&rows,at:i,by:-1)}label:{Image(systemName:"chevron.up")}.disabled(i==0 || locked).accessibilityLabel("버전 위로 이동")
+                        Button{ImportRow.move(&rows,at:i,by:1)}label:{Image(systemName:"chevron.down")}.disabled(i==rows.count-1 || locked).accessibilityLabel("버전 아래로 이동")
+                        if r.members.count==2{
+                            Button("묶음 해제"){ImportRow.ungroup(&rows,at:i)}.disabled(locked).help("파일을 바로 아래 두 버전으로 나눕니다. 수정한 묶음 이름은 첫 파일에 남습니다.")
+                        }else{
+                            Button("위와 묶기"){ImportRow.group(&rows,at:i)}.disabled(locked || ImportRow.groupingUnavailable(rows,at:i) != nil).help(ImportRow.groupingUnavailable(rows,at:i) ?? "두 파일을 같은 버전으로 묶습니다. 파일별 이름과 순서를 보존합니다.")
+                        }
+                        Button{if rows.indices.contains(i){rows.remove(at:i)}}label:{Image(systemName:"xmark")}.disabled(locked).accessibilityLabel("버전 제거")
+                    }
+                }
+            }.frame(minHeight:230,maxHeight:360)
+            if !failure.isEmpty{Text(failure).foregroundStyle(.red).font(.caption)}
+            HStack{
+                Text("선택한 파일의 내용이 바뀌지 않았는지 확인한 뒤 앱 전용 보관소에 복사합니다.").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if locked{ProgressView().controlSize(.small);Text(choosing ? "파일 확인 중…":"가져오는 중…").font(.caption)}
+                Button("이 순서로 분석 시작"){Task{await create()}}.buttonStyle(.borderedProminent).disabled(locked || rows.isEmpty || title.trimmingCharacters(in:.whitespaces).isEmpty || rows.contains{$0.label.trimmingCharacters(in:.whitespaces).isEmpty})
+            }
+        }.padding(25).frame(width:900)
+    }
+    func choose(){
+        let panel=NSOpenPanel();panel.allowsMultipleSelection=true;panel.allowedContentTypes=[.pdf,UTType(filenameExtension:"pptx") ?? .data];panel.canChooseDirectories=false
+        if panel.runModal() == .OK{
+            let urls=panel.urls;choosing=true;failure=""
+            Task{
+                do{let selected=try await Task.detached(priority:.userInitiated){try urls.map{try ImportRow.selected($0)}}.value;rows += selected}
+                catch{failure=error.localizedDescription}
+                choosing=false
+            }
+        }
+    }
     func create() async {saving=true;do{let p=try await model.create(title:title,rows:rows);model.report=JSON();try await model.refresh();model.projectID=p["project_id"].string;dismiss();await model.run(model.projectID)}catch{failure=error.localizedDescription};saving=false}
 }

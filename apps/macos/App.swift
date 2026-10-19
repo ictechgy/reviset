@@ -36,6 +36,7 @@ import PDFKit
             let manualChecks=request["manual_relations"].bool ? try await exerciseManualRelations(model,output):[]
             let layoutChecks=request["layout_checks"].bool ? try await exerciseLayout(model):[:]
             let referenceChecks=request["reference_appearance_checks"].bool ? try await exerciseReferenceAppearance(model):[:]
+            let importChecks=request["import_draft_files"].array.isEmpty ? [:]:try await exerciseImportDraft(model,output,request["import_draft_files"].array.map{URL(fileURLWithPath:$0.string)})
             model.inspector=true
             try await Task.sleep(nanoseconds:700_000_000);try capture(output.appendingPathComponent("native-compare.png"))
             model.inspector=false;model.focus=true;model.showChanges=false;model.pageMode="after"
@@ -59,9 +60,39 @@ import PDFKit
             model.tab="history";try await model.updateChanges()
             await model.loadMCP()
             let numeric=model.changes.filter{$0["kind"].string=="text_modified"}
-            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"reference_appearance_checks":referenceChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
+            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"reference_appearance_checks":referenceChecks,"import_draft_checks":importChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
             try JSON(result).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
         }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Docver native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
+    }
+    static func exerciseImportDraft(_ model:AppModel,_ output:URL,_ files:[URL]) async throws->[String:Any] {
+        guard files.count==2 else{throw BridgeError(code:"IMPORT_FIXTURE",message:"가져오기 묶음 검증 파일이 필요합니다.")}
+        let analysedProject=model.projectID,analysedReport=model.report["report_id"].string
+        var rows=try files.map{try ImportRow.selected($0)}
+        rows[0].label="초안 원본";rows[1].label="검토 화면";let original=rows
+        guard ImportRow.group(&rows,at:1),ImportRow.ungroup(&rows,at:0),rows==original,ImportRow.group(&rows,at:1) else{throw BridgeError(code:"IMPORT_ROUNDTRIP",message:"묶기·해제 후 파일 정보가 달라졌습니다.")}
+        rows[0].label="통합 검토본"
+        guard let parent=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}) else{throw BridgeError(code:"IMPORT_WINDOW",message:"가져오기 창을 표시할 수 없습니다.")}
+        let sheet=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:500),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+        sheet.contentView=NSHostingView(rootView:ImportView(initialRows:rows).environmentObject(model).background(Color(nsColor:.windowBackgroundColor)))
+        parent.beginSheet(sheet,completionHandler:{_ in});try await Task.sleep(nanoseconds:500_000_000)
+        do{try captureView(sheet,output.appendingPathComponent("native-import-bundle.png"))}catch{parent.endSheet(sheet);sheet.orderOut(nil);throw error}
+        parent.endSheet(sheet);sheet.orderOut(nil)
+        guard ImportRow.ungroup(&rows,at:0),rows.map(\.id)==original.map(\.id),rows.map(\.label)==["통합 검토본",original[1].label],ImportRow.group(&rows,at:1) else{throw BridgeError(code:"IMPORT_EDITED_LABEL",message:"묶음 이름과 파일 순서 보존 실패")}
+        let count=try await model.bridge.call("projects").array.count
+        let created=try await model.create(title:"묶음 가져오기 동작 검증",rows:rows)
+        guard created["revisions"].array.count==1,created["revisions"].array[0]["files"].array.count==2 else{throw BridgeError(code:"IMPORT_CREATE",message:"묶은 원본 두 개를 가져오지 못했습니다.")}
+        var mixed=[try ImportRow.selected(files[0]),ImportRow(label:"내부 호환 입력",urls:[files[1]])]
+        guard ImportRow.group(&mixed,at:1) else{throw BridgeError(code:"IMPORT_MIXED_GROUP",message:"검증 정보가 다른 파일 묶기 실패")}
+        let mixedCreated=try await model.create(title:"파일별 검증 전달 확인",rows:mixed)
+        guard mixedCreated["revisions"].array[0]["files"].array.count==2 else{throw BridgeError(code:"IMPORT_MIXED_SERIALIZATION",message:"파일별 검증 정보를 전달하지 못했습니다.")}
+        let changed=output.appendingPathComponent("selected-then-changed.pdf");try Data("abc".utf8).write(to:changed)
+        let picked=try ImportRow.selected(changed);try Data("abd".utf8).write(to:changed)
+        do{_ = try await model.create(title:"변경 파일 거부 검증",rows:[picked]);throw BridgeError(code:"IMPORT_MUTATION_ACCEPTED",message:"선택 후 변경된 파일을 허용했습니다.")}
+        catch let e as BridgeError where e.code=="SOURCE_CHANGED" {}
+        guard try await model.bridge.call("projects").array.count==count+2 else{throw BridgeError(code:"IMPORT_REJECT_WRITE",message:"거절한 가져오기가 프로젝트를 바꿨습니다.")}
+        try await model.refresh()
+        guard model.projectID==analysedProject,model.report["report_id"].string==analysedReport else{throw BridgeError(code:"IMPORT_CHANGED_SELECTION",message:"가져오기 검증이 기존 보고서 선택을 바꿨습니다.")}
+        return ["mixed_nullable_identity_serialized_through_native_bridge":true,"analysed_project_and_report_unchanged":true,"group_ungroup_id_label_order_roundtrip":true,"edited_group_label_retained":true,"selected_sha_bundle_create":true,"changed_source_rejected_without_project":true,"actual_native_sheet_capture":true,"interaction_scope":"production model/actions and rendered native sheet; no OS input automation"]
     }
     static func exerciseReferenceAppearance(_ model:AppModel) async throws->[String:Any] {
         var references=0

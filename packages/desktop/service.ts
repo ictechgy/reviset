@@ -31,16 +31,19 @@ export class DesktopService {
     else this.store.db.prepare("UPDATE runs SET status='interrupted',finished_at=? WHERE status='running' AND project_id IN (SELECT id FROM desktop_projects)").run(new Date().toISOString());
     return this.projects();
   }
-  async create(title:string,revisions:{label:string;files:string[]}[]):Promise<DesktopDraft> {
+  async create(title:string,revisions:{label:string;files:string[];expected_sha256?:(string|null)[]}[]):Promise<DesktopDraft> {
     const imported:DesktopDraft['revisions']=[];await mkdir(join(this.root,'imports'),{recursive:true});
     for(const rev of revisions) {
+      if(rev.expected_sha256&&(rev.expected_sha256.length!==rev.files.length||rev.expected_sha256.some(v=>v!==null&&!/^[a-f0-9]{64}$/.test(v))))throw new DocverError('INPUT_IDENTITY','선택한 파일의 검증 정보를 확인하세요.');
       const files:z.infer<typeof FileRef>[]=[];
-      for(const path of rev.files) {
+      for(const [index,path] of rev.files.entries()) {
         const ext=extname(path).toLowerCase();
         if(!['.pptx','.pdf'].includes(ext))throw new DocverError('UNSUPPORTED_FORMAT','PPTX 또는 PDF 파일을 선택하세요.');
         const size=(await stat(path)).size;if(size>MAX_INPUT_BYTES)throw new DocverError('FILE_LIMIT','파일당 512 MiB 이하를 지원합니다.');
         const bytes=await readFile(path);if(bytes.length>MAX_INPUT_BYTES)throw new DocverError('FILE_LIMIT','파일 크기가 가져오기 한도를 넘었습니다.');
-        const blob=byteHash(bytes)+ext,target=join(this.root,'imports',blob);
+        const digest=byteHash(bytes);
+        if(rev.expected_sha256?.[index]&&rev.expected_sha256[index]!==digest)throw new DocverError('SOURCE_CHANGED',`선택 후 파일 내용이 변경되었습니다: ${basename(path)}. 파일을 다시 선택하세요.`);
+        const blob=digest+ext,target=join(this.root,'imports',blob);
         try{await writeFile(target,bytes,{flag:'wx'});}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;if(byteHash(await readFile(target))!==byteHash(bytes))throw new DocverError('ASSET_CORRUPT','가져온 원본의 검증에 실패했습니다.');}
         files.push({blob,name:basename(path),bytes:bytes.length});
       }

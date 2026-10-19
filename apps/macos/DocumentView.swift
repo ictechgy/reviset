@@ -152,7 +152,7 @@ struct PageColumn: View {
     var body: some View {
         VStack(spacing: 9) {
             HStack { Text(side + " · " + revision["label"].string).font(.headline); Spacer()
-                Picker("페이지", selection: $pageID) { Text("원문 없음").tag(""); ForEach(pages) { p in Text("p.\(p["page"].int) · \(p["text"].string.prefix(24))").tag(p["page_id"].string) } }.labelsHidden().frame(maxWidth:260)
+                Picker("페이지", selection: Binding(get:{pageID},set:{pageID=$0;model.evidenceWarning=""})) { Text("원문 없음").tag(""); ForEach(pages) { p in Text("p.\(p["page"].int) · \(p["text"].string.prefix(24))").tag(p["page_id"].string) } }.labelsHidden().frame(maxWidth:260)
             }
             HStack(spacing: 8) {
                 Button { go(current["page"].int-1) } label: { Image(systemName:"chevron.left") }.disabled(current.isNull || current["page"].int <= 1)
@@ -204,5 +204,5 @@ struct PageColumn: View {
             do {let result=try await model.page(pageID);if !Task.isCancelled{payload=result}}catch{if !Task.isCancelled{failure=error.localizedDescription}}
         }
     }
-    func go(_ number: Int) { if let p=pages.first(where:{$0["page"].int==number}){pageID=p["page_id"].string;pageInput=String(number)} }
+    func go(_ number: Int) { if let p=pages.first(where:{$0["page"].int==number}){model.evidenceWarning="";pageID=p["page_id"].string;pageInput=String(number)} }
 }

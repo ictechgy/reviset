@@ -2,10 +2,10 @@ import Foundation
 import AppKit
 import SwiftUI
 @main struct EvidenceNavigationRegression {
- @MainActor static func main() {
-  do {try exercise()}catch {fputs("FAIL \(error.localizedDescription)\n",stderr);exit(1)}
+ @MainActor static func main() async {
+  do {try await exercise()}catch {fputs("FAIL \(error.localizedDescription)\n",stderr);exit(1)}
  }
- @MainActor static func exercise() throws {
+ @MainActor static func exercise() async throws {
   let model=AppModel()
   let revisions:[[String:Any]]=[
    ["revision_occurrence_id":"occ_before","assets":[["asset_id":"pptx_before","format":"pptx"],["asset_id":"pdf_before","format":"pdf"]],"pages":[["page_id":"source_before","asset_id":"pptx_before","appearance":["source_page_id":"reference_before"]],["page_id":"reference_before","asset_id":"pdf_before"]]],
@@ -22,8 +22,18 @@ import SwiftUI
   guard model.leftPageID=="source_before" else{throw NSError(domain:"UnmappedEvidenceBlankedSourcePicker",code:4)}
   model.navigateEvidence(JSON(["revision_occurrence_id":"occ_before","page_id":"source_before"]))
   guard model.leftPageID=="source_before" else{throw NSError(domain:"OriginalSourceNavigationRegressed",code:5)}
+  model.changes=[JSON(["change_id":"unmapped","evidence":[["revision_occurrence_id":"occ_before","page_id":"unmapped_secondary"],["revision_occurrence_id":"occ_after","page_id":"unmapped_secondary_after"]]])]
+  model.evidenceWarning="";model.status="분석 완료";model.chooseChange("unmapped")
+  guard model.leftPageID=="source_before",model.rightPageID=="source_after",!model.evidenceWarning.isEmpty,model.status=="분석 완료" else{throw NSError(domain:"AutomaticUnmappedEvidenceBlankedPrimaryPicker",code:7,userInfo:[NSLocalizedDescriptionKey:"Automatic evidence selected \(model.leftPageID)/\(model.rightPageID) instead of preserving primary selectors or warning overwrote unrelated status"])}
+  model.changes=[JSON(["change_id":"mixed","evidence":[["revision_occurrence_id":"occ_before","page_id":"unmapped_secondary"],["revision_occurrence_id":"occ_before","page_id":"reference_before"],["revision_occurrence_id":"occ_after","page_id":"reference_after"]]])]
+  model.leftPageID="";model.rightPageID="";model.chooseChange("mixed")
+  guard model.leftPageID=="source_before",model.rightPageID=="source_after",model.evidenceWarning.isEmpty,model.status=="분석 완료" else{throw NSError(domain:"AutomaticMixedEvidenceSelectedSecondary",code:8)}
+  model.changes=[JSON(["change_id":"before_only","evidence":[["revision_occurrence_id":"occ_before","page_id":"source_before"]]])];model.chooseChange("before_only")
+  guard model.leftPageID=="source_before",model.rightPageID.isEmpty else{throw NSError(domain:"AbsentSideRetainedUnrelatedPage",code:9)}
   model.report=JSON(["report_id":"report_pdf_only","revisions":[["revision_occurrence_id":"occ_pdf","assets":[["asset_id":"pdf_only","format":"pdf"]],"pages":[["page_id":"pdf_page","asset_id":"pdf_only"]]]]]);model.from=0;model.to=0;model.leftPageID="";model.rightPageID="";model.navigateEvidence(JSON(["revision_occurrence_id":"occ_pdf","page_id":"pdf_page"]))
   guard model.leftPageID=="pdf_page",model.rightPageID=="pdf_page" else{throw NSError(domain:"PDFOnlyEvidenceNavigationRegressed",code:6)}
-  print("PASS actual AppModel evidence button mapping, pin, unmapped guard, original source and PDF-only navigation")
+  model.initializing=false;model.evidenceWarning="이전 근거 경고";await model.run("prj_no_bundled_backend_in_isolated_probe")
+  guard model.evidenceWarning.isEmpty,!model.busy else{throw NSError(domain:"AnalysisRetainedStaleEvidenceWarning",code:10)}
+  print("PASS actual AppModel evidence button mapping, pin, unmapped automatic/mixed/absent-side guards, original source and PDF-only navigation")
  }
 }
