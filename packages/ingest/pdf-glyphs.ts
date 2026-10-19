@@ -15,6 +15,10 @@ function outlineBounds(font:any,objects:any,glyph:any):number[]|undefined{
   cache.set(glyph.fontChar,null);
 }
 export const supportedGraphicsStateKey=(key:string)=>['LW','LC','LJ','ML','D','RI','FL','ca','CA','BM','SMask'].includes(key);
+export function nativePixelMargins(viewport:any):[number,number]{
+  const pixel=Math.max(72/300*(viewport.scale??1)*Math.max(1,viewport.userUnit??1),Math.max(viewport.width,viewport.height)/4096);
+  return [pixel/viewport.width,pixel/viewport.height];
+}
 export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Record<string,any>={}):PaintedGlyph[]{
   let s={ctm:[1,0,0,1,0,0],tm:[1,0,0,1,0,0],lm:[1,0,0,1,0,0],x:0,size:12,font:'',char:0,word:0,hscale:1,rise:0,leading:0,mode:0,textClipPending:false,alpha:1,strokeAlpha:1,color:'#000000',clip:null as Clip,pendingClip:false,mask:false,blend:'Normal',unsupportedState:false};
   const stack:typeof s[]=[],glyphs:PaintedGlyph[]=[],marked:boolean[]=[];let optional=false;
@@ -91,12 +95,12 @@ export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Rec
             // PDFKit cropBox thumbnails on the tested host ignore UserUnit,
             // while PDF.js scales its viewport. Never shrink native clearance
             // on either renderer interpretation, including UserUnit below1.
-            const pixel=Math.max(72/300*(viewport.scale??1)*Math.max(1,viewport.userUnit??1),Math.max(viewport.width,viewport.height)/4096),px=pixel/viewport.width,py=pixel/viewport.height;
+            const [px,py]=nativePixelMargins(viewport);
             if(!clipOK&&Array.isArray(s.clip)&&candidate[2]>0&&candidate[3]>0&&candidate[0]>=s.clip[0]+px&&candidate[1]>=s.clip[1]+py&&candidate[0]+candidate[2]<=s.clip[0]+s.clip[2]-px&&candidate[1]+candidate[3]<=s.clip[1]+s.clip[3]-py){clipOK=true;clipInk=candidate;}
           }
         }
       }
-      glyphs.push({text:glyph.unicode,bbox,order,run:order,hidden,nonpainting_mode:nonpaintingMode,color:s.color,...(!metricsKnown||!finite?{geometry_unverified:true}:{}),...(clipInk?{clip_ink:clipInk}:{}),...(paintInk?{paint_ink:paintInk}:{}),reliable:finite&&(s.alpha>=0.999||hidden)&&s.color!=='unknown'&&!!font&&!font.isType3Font&&(s.mode===0||s.mode===3)&&metricsKnown&&standardMatrix&&Number.isFinite(ascent)&&Number.isFinite(descent)&&!font.vertical&&clipOK&&!s.pendingClip&&!s.mask&&!s.unsupportedState&&s.blend==='Normal'&&!optional});
+      glyphs.push({text:glyph.unicode,bbox,order,run:order,hidden,nonpainting_mode:nonpaintingMode,color:s.color,...(!metricsKnown||!finite||font?.isType3Font||!standardMatrix?{geometry_unverified:true}:{}),...(clipInk?{clip_ink:clipInk}:{}),...(paintInk?{paint_ink:paintInk}:{}),reliable:finite&&(s.alpha>=0.999||hidden)&&s.color!=='unknown'&&!!font&&!font.isType3Font&&(s.mode===0||s.mode===3)&&metricsKnown&&standardMatrix&&Number.isFinite(ascent)&&Number.isFinite(descent)&&!font.vertical&&clipOK&&!s.pendingClip&&!s.mask&&!s.unsupportedState&&s.blend==='Normal'&&!optional});
       s.x+=advance+s.char+(glyph.isSpace?s.word:0);
     }
   }

@@ -235,3 +235,12 @@ the initial new-test type annotation failure is preserved and corrected. Low-con
 local under .omx/artifacts/quality-loop-03; not yet product dependencies.
 Product perfection and PowerPoint fidelity remain active work, not accepted
 residuals or a completion checkpoint.
+
+Engine28 full regression131/131 and public12sources33pages+20variants passed;
+selected comparison truth improved24/27→26/27 while primary OCR stayed24/27.
+Independent code/architecture and Claude nevertheless blocked engine28 for
+a reproduced target-overhang false visibility (native2/659 altered pixels).
+Engine29 repairs this using complete pairwise embedded ink with both-side
+native-pixel clearance, retaining all other target geometry and raw values.
+Nine focused controls pass; full regression/re-review pending. Work continues
+on the remaining OCR region and PPTX fidelity; no completion checkpoint.

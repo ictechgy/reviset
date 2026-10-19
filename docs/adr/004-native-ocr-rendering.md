@@ -222,3 +222,31 @@ rescue remains unchanged. Actual source strings and OCR primaries remain exact.
 A native control compares every baseline digit ink pixel: separated actual ink
 leaves them unchanged, true overlap changes them and remains uncertain; a
 substitute-font negative retains the metric-only uncertainty.
+
+
+Engine28's first later-ink rule was rejected by independent code and
+architecture review and Claude. Embedded LiberationSans20 `f` has a right
+outline overhang beyond its advance width: a later parenthesis can change
+2 of659 actual native nonwhite baseline pixels while missing the target
+metric box. The failed PDFs, native PNGs, raw reviews and131-pass suite are
+preserved; passing that suite was not sufficient.
+
+Engine29 retains original source/display boxes and every existing
+fill/annotation/unknown-paint target rule. Only text-versus-text uses an
+additional qualified pair: the target must have a reliable actual embedded
+fill outline, and every potentially painting glyph in the later run must
+have one as well. Missing, empty or unsupported paths are not whitespace
+proof. Otherwise the entire old run footprint is retained. Each qualified
+ink envelope is expanded by the shared one-native-pixel floor (including
+UserUnit/cap behavior), requiring clearance on both sides. Thus target
+overhang and near-contact anti-aliasing are withheld as well as true overlap.
+Nonstandard font matrices and Type3 programs cannot acquire a bounded
+painted extent merely from finite metrics. Raw strings and external boxes
+remain exact; the native positive now checks every nonwhite channel value
+including faint anti-aliasing. This is a tested conservative guard, not a
+universal theorem about native font rendering.
+
+The public training example involves `1` followed by Korean `시`, whose
+actual outlines are19.6459 native pixels apart despite slightly overlapping
+metric margins. The parenthesis is the independent synthetic control, not
+the glyph in that public example. Primary OCR remains unchanged in both.

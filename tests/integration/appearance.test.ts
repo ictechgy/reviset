@@ -131,7 +131,8 @@ test('font geometry rejects degenerate metrics and malformed matrices while matc
   const glyph=(font:any,metrics:any)=>paintedGlyphs({commonObjs:{get:()=>font}},viewport,ops,{font:metrics})[0];
   assert.equal(glyph({}, {ascent:0.8,descent:-0.2}).reliable,true);
   for(const metrics of [{ascent:0,descent:-0.2},{ascent:0.1,descent:-0.1},{ascent:0.8,descent:0.2},{descent:-0.2}])assert.equal(glyph({},metrics).reliable,false);
-  for(const fontMatrix of [[],[0.001,0,0,0.001,0],[0.002,0,0,0.002,0,0],[NaN,0,0,0.001,0,0],0])assert.equal(glyph({fontMatrix},{ascent:0.8,descent:-0.2}).reliable,false);
+  for(const fontMatrix of [[],[0.001,0,0,0.001,0],[0.002,0,0,0.002,0,0],[NaN,0,0,0.001,0,0],0]){const g=glyph({fontMatrix},{ascent:0.8,descent:-0.2});assert.equal(g.reliable,false);assert.equal(g.geometry_unverified,true);}
+  const type3=glyph({isType3Font:true,docverFontMetrics:{ascent:.8,descent:-.2}},{ascent:.8,descent:-.2});assert.equal(type3.reliable,false);assert.equal(type3.geometry_unverified,true,'Finite metric values cannot bound a Type3 program');
 });
 test('merged OOXML placeholders do not duplicate text and omitted placeholders keep column geometry',async()=>{
   const deck=new (pptxgen as unknown as typeof pptxgen.default)();deck.layout='LAYOUT_WIDE';deck.addSlide().addTable([['A','B','C'],['D','E','F']].map(row=>row.map(text=>({text}))),{x:1,y:1,w:6,h:2});const raw=await deck.write({outputType:'nodebuffer'}) as Buffer;

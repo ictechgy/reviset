@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import PDFDocument from 'pdfkit';
-import {getDocument} from 'pdfjs-dist/legacy/build/pdf.mjs';
+import {getDocument,OPS} from 'pdfjs-dist/legacy/build/pdf.mjs';
 import {extractPdf,pdfOptions} from '../../packages/ingest/pdf.js';
 import {Page,Report,byteHash,type ElementData,type PageData,type RevisionData} from '../../packages/schema/index.js';
 import {PDF_GEOMETRY_UNVERIFIED} from '../../packages/ingest/pdf-text-geometry.js';
@@ -10,9 +10,8 @@ import {diffRevisions} from '../../packages/diff/index.js';
 import {DesktopService} from '../../packages/desktop/service.js';
 import {validateCorpusPages} from '../../scripts/public-corpus-validation.js';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
-import {resolve} from 'node:path';
 import {paintedGlyphs} from '../../packages/ingest/pdf-glyphs.js';
 async function pdf(draw:(d:PDFKit.PDFDocument)=>void){
   const d=new PDFDocument({size:[300,200],margin:0,compress:false}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(r=>d.on('end',()=>r(Buffer.concat(chunks))));draw(d);d.end();return done;
@@ -47,7 +46,7 @@ test('unknown painted font extent withholds earlier visibility while later relia
 test('actual metrics for a whitespace-only embedded font do not withhold unrelated earlier text',async()=>{
   const bytes=await pdf(d=>{write(d,'Helvetica','Revenue 100');write(d,resolve('node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf'),' ',220,160);});
   const task=getDocument({...pdfOptions,disableFontFace:true,data:new Uint8Array(bytes)});
-  try{const page=await(await task.promise).getPage(1),content=await page.getTextContent(),ops=await page.getOperatorList(),glyphs=paintedGlyphs(page,page.getViewport({scale:1}),ops,content.styles);const spaces=glyphs.filter(g=>g.text===' ');assert.ok(spaces.length);assert.ok(spaces.every(g=>!g.geometry_unverified));}
+  try{const page=await(await task.promise).getPage(1),content=await page.getTextContent(),ops=await page.getOperatorList(),glyphs=paintedGlyphs(page,page.getViewport({scale:1}),ops,content.styles);const spaces=glyphs.filter(g=>g.text===' ');assert.ok(spaces.length);assert.ok(spaces.every(g=>!g.geometry_unverified));const omitted=ops.argsArray.filter((_:unknown,i:number)=>ops.fnArray[i]===OPS.setFont).map((a:any)=>a[0]).filter((key:string)=>!(key in content.styles));assert.ok(omitted.length,'The actual whitespace-only font must be omitted from textContent.styles');assert.ok(omitted.some((key:string)=>(page.commonObjs as any).get(key).docverFontMetrics));}
   finally{await task.destroy();}
   const [page]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'off'}),value=page.elements.find(e=>e.text==='Revenue 100')!;
   assert.equal(value.visibility,'visible');assert.ok(!value.visibility_evidence?.some(e=>e.method==='later_text_geometry_unverified'));Page.parse(page);

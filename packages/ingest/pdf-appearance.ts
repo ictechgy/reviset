@@ -1,10 +1,10 @@
 import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } from './pdf-geometry.js';
-import { paintedGlyphs,supportedGraphicsStateKey } from './pdf-glyphs.js';
+import { paintedGlyphs,supportedGraphicsStateKey,nativePixelMargins } from './pdf-glyphs.js';
 import {annotationCarriers} from './pdf-annotations.js';
 import {hasUnverifiedPdfGeometry,PDF_GEOMETRY_UNVERIFIED} from './pdf-text-geometry.js';
 import { OPS, AnnotationType, AnnotationMode, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, normalize, type Box, type ElementData } from '../schema/index.js';
-interface Region {bbox:Box;order:number;kind:'fill'|'line'|'stroke'|'image'|'text'|'unknown_text';opaque:boolean;axisAligned:boolean;color?:string;line?:Region}
+interface Region {bbox:Box;order:number;kind:'fill'|'line'|'stroke'|'image'|'text'|'unknown_text';opaque:boolean;axisAligned:boolean;color?:string;line?:Region;ink?:Box}
 const area=(b:Box)=>b[2]*b[3];
 const overlap=(a:Box,b:Box)=>Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
 const coverageOf=(target:Box,region:Box)=>area(target)>0?Math.min(1,overlap(target,region)/area(target)):0;
@@ -95,14 +95,21 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       gaps.push({feature:'pdf_visibility',reason:'image_opacity_or_mask_requires_review'});
     }
   }
-  const textRuns=new Map<number,Box>();let lastUnknownTextOrder=-1;
-  for(const g of glyphs){if(g.hidden)continue;if(g.geometry_unverified){lastUnknownTextOrder=Math.max(lastUnknownTextOrder,g.order);continue;}const footprint=g.reliable&&g.paint_ink?g.paint_ink:g.bbox,b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],footprint[0]),Math.min(b[1],footprint[1]),Math.max(b[0]+b[2],footprint[0]+footprint[2])-Math.min(b[0],footprint[0]),Math.max(b[1]+b[3],footprint[1]+footprint[3])-Math.min(b[1],footprint[1])):footprint);}
+  const textRuns=new Map<number,{bbox:Box;ink?:Box;complete:boolean}>(),unknownRuns=new Set<number>();let lastUnknownTextOrder=-1;
+  const envelope=(a:Box,b:Box)=>box(Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0]+a[2],b[0]+b[2])-Math.min(a[0],b[0]),Math.max(a[1]+a[3],b[1]+b[3])-Math.min(a[1],b[1]));
+  for(const g of glyphs){
+    if(g.hidden)continue;
+    if(g.geometry_unverified){lastUnknownTextOrder=Math.max(lastUnknownTextOrder,g.order);unknownRuns.add(g.order);continue;}
+    const footprint=g.reliable&&g.clip_ink?g.clip_ink:g.bbox,ink=g.reliable?g.paint_ink:undefined,run=textRuns.get(g.order);
+    textRuns.set(g.order,{bbox:run?envelope(run.bbox,footprint):footprint,ink:ink?(run?.ink?envelope(run.ink,ink):ink):run?.ink,complete:(run?.complete??true)&&!!ink});
+  }
   // An estimate is not a maximum painted extent. It can only withhold
   // visibility of earlier paint, never certify occlusion.
   // All such extents are the same full page: only the last visible unknown
   // order matters. Avoid per-operator duplicate evidence/region work.
   if(lastUnknownTextOrder>=0)regions.push({bbox:box(0,0,1,1),order:lastUnknownTextOrder,kind:'unknown_text',opaque:false,axisAligned:false});
-  for(const [order,bbox] of textRuns)regions.push({bbox,order,kind:'text',opaque:false,axisAligned:false});
+  for(const [order,run] of textRuns)regions.push({bbox:run.bbox,order,kind:'text',opaque:false,axisAligned:false,...(run.complete&&!unknownRuns.has(order)&&run.ink?{ink:run.ink}:{})});
+  const [px,py]=nativePixelMargins(viewport),paddedInk=(b:Box)=>box(b[0]-px,b[1]-py,b[2]+2*px,b[3]+2*py);
   const verticalBuckets=new Map<number,Region[]>(),connectedCache=new Map<Region,boolean>();
   for(const v of regions.filter(v=>v.kind==='line'&&v.bbox[2]<0.002&&v.bbox[3]>0.02)){const key=Math.floor(v.bbox[0]*100);verticalBuckets.set(key,[...(verticalBuckets.get(key)??[]),v]);}
   function connectedLine(r:Region):boolean{if(connectedCache.has(r))return connectedCache.get(r)!;const lineY=r.bbox[1]+r.bbox[3]/2;let connected=false;
@@ -148,7 +155,14 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
         }
         // Grid membership or a small overlap cannot prove punctuation visibility.
         const shortStroke=r.kind==='stroke'&&r.order>g.order&&coverage>0&&(!r.line||!strikeCandidate(r.line,e));
-        if(((r.kind==='image'||r.kind==='unknown_text')&&coverage>0||shortStroke||r.kind==='text'&&state==='visible'&&coverage>0)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:r.kind==='unknown_text'?'later_text_geometry_unverified':shortStroke?'short_stroke_glyph_overlap_unverified':'later_image_opacity_unverified',bbox:r.bbox,assessment:'inferred',coverage});}
+        // Both sides must have qualified embedded outlines. One-sided ink vs
+        // target advance metrics misses overhangs (f/j/italics). Pad EACH ink
+        // envelope by the existing native-pixel floor before clearing overlap.
+        // Incomplete later runs retain their entire original metric footprint.
+        const inkPair=r.kind==='text'&&g.reliable&&g.paint_ink&&r.ink;
+        const textTarget=inkPair?paddedInk(g.paint_ink!):footprint,textRegion=inkPair?paddedInk(r.ink!):r.bbox;
+        const textCoverage=r.kind==='text'&&state==='visible'?coverageOf(textTarget,textRegion):0;
+        if(((r.kind==='image'||r.kind==='unknown_text')&&coverage>0||shortStroke||r.kind==='text'&&textCoverage>0)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:r.kind==='unknown_text'?'later_text_geometry_unverified':shortStroke?'short_stroke_glyph_overlap_unverified':r.kind==='text'?(inkPair?'later_embedded_text_ink_clearance_unverified':'later_text_glyph_overlap_unverified'):'later_image_opacity_unverified',bbox:r.kind==='text'?textRegion:r.bbox,assessment:'inferred',coverage:r.kind==='text'?textCoverage:coverage});}
       }
       for(const a of annotations){
         // PDF.js displays known annotation types with Invisible (1) set.

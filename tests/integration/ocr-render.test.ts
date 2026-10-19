@@ -207,17 +207,31 @@ test('embedded later text uses actual ink while true overlap and substitute font
     const make=(x?:number,embedded=true)=>pdf(d=>{d.font(embedded?resolve('node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf'):'Helvetica').fontSize(20).text('1',40,80,{lineBreak:false});if(x!==undefined)d.text(')',x,80,{lineBreak:false});});
     const baseline=await make(),separate=await make(51.1),overlap=await make(47),substitute=await make(51.1,false);
     const [clear]=await extractPdf(separate,'sha256:separate-ink',{ocr:'off'}),[blocked]=await extractPdf(overlap,'sha256:overlapping-ink',{ocr:'off'}),[unknown]=await extractPdf(substitute,'sha256:substituted-ink',{ocr:'off'});
-    assert.ok(clear.elements.every(e=>e.visibility==='visible'));assert.ok(blocked.elements.some(e=>!['visible','hidden_render_mode'].includes(e.visibility??'')));assert.ok(unknown.elements.some(e=>!['visible','hidden_render_mode'].includes(e.visibility??'')));
+    assert.equal(clear.elements.find(e=>e.text.includes('1'))!.visibility,'visible');assert.equal(blocked.elements.find(e=>e.text.includes('1'))!.visibility,'uncertain');assert.ok(blocked.elements.find(e=>e.text.includes('1'))!.visibility_evidence?.some(e=>e.method==='later_embedded_text_ink_clearance_unverified'));assert.equal(unknown.elements.find(e=>e.text.includes('1'))!.visibility,'uncertain');assert.ok(unknown.elements.find(e=>e.text.includes('1'))!.visibility_evidence?.some(e=>e.method==='later_text_glyph_overlap_unverified'));
     const pixels:Uint8ClampedArray[]=[];
     for(const [index,bytes]of [baseline,separate,overlap].entries()){
       const source=join(folder,index+'.pdf'),png=join(folder,index+'.png');await writeFile(source,bytes);
       await runTool(visionExecutable()!,[],{input:JSON.stringify({path:source,page:1,render_only:true,render_path:png})});
-      const image=await loadImage(png),canvas=createCanvas(image.width,image.height),ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);pixels.push(ctx.getImageData(0,0,image.width,image.height).data);
+      const image=await loadImage(png),canvas=createCanvas(image.width,image.height),ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,image.width,image.height);ctx.drawImage(image,0,0);pixels.push(ctx.getImageData(0,0,image.width,image.height).data);
     }
     let ink=0,separateChanges=0,overlapChanges=0;
-    for(let i=0;i<pixels[0].length;i+=4){if(Math.min(pixels[0][i],pixels[0][i+1],pixels[0][i+2])>=250)continue;ink++;if([0,1,2].some(c=>pixels[0][i+c]!==pixels[1][i+c]))separateChanges++;if([0,1,2].some(c=>pixels[0][i+c]!==pixels[2][i+c]))overlapChanges++;}
+    for(let i=0;i<pixels[0].length;i+=4){if([0,1,2].every(c=>pixels[0][i+c]===255))continue;ink++;if([0,1,2].some(c=>pixels[0][i+c]!==pixels[1][i+c]))separateChanges++;if([0,1,2].some(c=>pixels[0][i+c]!==pixels[2][i+c]))overlapChanges++;}
     assert.ok(ink>0);assert.equal(separateChanges,0,'Every original native ink pixel remains unchanged despite overlapping metric boxes');assert.ok(overlapChanges>0,'The actual-overlap negative changes native ink and remains withheld');
   }finally{await rm(folder,{recursive:true,force:true});}
+});
+
+test('target outline overhang and native-pixel near contact cannot become visible through later ink bounds',native,async()=>{
+  for(const [size,unit,rotation]of [[20,1,0],[12,.5,0],[24,2,0],[20,1,90]] as const){
+    for(const gap of [-.02,.02]){
+      const d=new PDFDocument({size:[100,100],margin:0}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(r=>d.on('end',()=>r(Buffer.concat(chunks))));(d.page as any).dictionary.data.UserUnit=unit;(d.page as any).dictionary.data.Rotate=rotation;
+      d.font(resolve('node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf')).fontSize(size).text('f',40,30,{lineBreak:false});
+      // Exact embedded f xmax572/2048 and ')' xmin12/2048. The first
+      // case overlaps real ink beyond f's advance569/2048; the second
+      // has an outline gap smaller than the shared native-pixel floor.
+      d.text(')',40+(572-12)/2048*size+gap,30,{lineBreak:false});d.end();const bytes=await done,[p]=await extractPdf(bytes,'sha256:overhang-'+size+'-'+unit+'-'+rotation+'-'+gap,{ocr:'off'}),f=p.elements.find(e=>e.text.includes('f'))!;
+      assert.equal(f.visibility,'uncertain');assert.ok(f.visibility_evidence?.some(e=>e.method==='later_embedded_text_ink_clearance_unverified'));
+    }
+  }
 });
 
 test('loaded glyph outlines resolve clipped font margins while clipped ink stays unverified',native,async()=>{
