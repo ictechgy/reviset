@@ -60,6 +60,60 @@ test('PPTX notes preserve paragraph boundaries, empty lines, fields and literal 
   assert.ok(!page.notes!.includes('Slide number'));assert.equal(page.capabilities.notes,'available');
 });
 
+test('BOM-marked UTF-8 and both UTF-16 byte orders preserve text, notes, table cells and relationships',()=>{
+  const expected=extractPptx(bytes,'sha256:encoding-control');
+  for(const encoding of ['utf8','utf16le','utf16be'] as const)for(const declaration of [true,false]){
+    const parts=unzipSync(bytes);
+    for(const [path,data]of Object.entries(parts))if(/\.(xml|rels)$/.test(path)){
+      let xml=strFromU8(data);
+      xml=declaration?xml.replace(/encoding="UTF-8"/,'encoding="'+(encoding==='utf8'?'UTF-8':'UTF-16')+'"'):xml.replace(/^<\?xml[^?]*\?>/,'');
+      let encoded=Buffer.from(xml,encoding==='utf8'?'utf8':'utf16le');
+      if(encoding==='utf16be')encoded=Buffer.from(encoded).swap16();
+      parts[path]=Buffer.concat([Buffer.from(encoding==='utf8'?[0xef,0xbb,0xbf]:encoding==='utf16le'?[0xff,0xfe]:[0xfe,0xff]),encoded]);
+    }
+    const encoded=zipSync(parts),original=new Uint8Array(encoded);
+    assert.deepEqual(extractPptx(encoded,'sha256:encoding-control'),expected,encoding+' declaration='+declaration);
+    assert.deepEqual(encoded,original);
+  }
+});
+
+test('invalid encoded bytes and mismatched or unsupported declarations fail without replacement text',()=>{
+  const path='ppt/slides/slide1.xml',base=unzipSync(bytes),xml=strFromU8(base[path]);
+  const at=Buffer.from(xml).indexOf('Before');
+  const invalidByteSequences=[[0xc3],[0xc0,0xaf],[0xed,0xa0,0x80],[0xf4,0x90,0x80,0x80]];
+  const cases:{name:string;part:Uint8Array;code:string}[]=invalidByteSequences.map(sequence=>({name:'invalid UTF-8 '+sequence.join(','),part:Buffer.concat([Buffer.from(xml).subarray(0,at),Buffer.from(sequence),Buffer.from(xml).subarray(at+1)]),code:'INVALID_XML'}));
+  const utf16=Buffer.concat([Buffer.from([0xff,0xfe]),Buffer.from(xml.replace('UTF-8','UTF-16'),'utf16le')]);
+  cases.push({name:'odd UTF-16 tail',part:Buffer.concat([utf16,Buffer.from([0x20])]),code:'INVALID_XML'},
+    {name:'unpaired UTF-16 surrogate',part:Buffer.concat([utf16,Buffer.from([0x00,0xd8])]),code:'INVALID_XML'},
+    {name:'UTF-8 bytes declared UTF-16',part:strToU8(xml.replace('UTF-8','UTF-16')),code:'INVALID_XML'},
+    {name:'UTF-16 bytes declared UTF-8',part:Buffer.concat([Buffer.from([0xff,0xfe]),Buffer.from(xml,'utf16le')]),code:'INVALID_XML'},
+    {name:'unsupported encoding',part:strToU8(xml.replace('UTF-8','ISO-8859-1')),code:'XML_ENCODING_UNSUPPORTED'});
+  for(const item of cases){const encoded=zipSync({...base,[path]:item.part}),original=new Uint8Array(encoded);assert.throws(()=>extractPptx(encoded,'sha256:invalid-encoding'),{code:item.code},item.name);assert.deepEqual(encoded,original);}
+});
+
+test('XML1.0 forbidden raw characters and actual references are rejected in consumed parts',()=>{
+  const base=unzipSync(bytes),path='ppt/slides/slide1.xml',xml=strFromU8(base[path]);
+  for(const cp of [0,1,8,11,12,14,31,0xfffe,0xffff])for(const context of ['text','cdata','attribute','comment','pi']){
+    const value=String.fromCodePoint(cp),modified=context==='text'?xml.replace('Before',value):context==='cdata'?xml.replace('Before','<![CDATA['+value+']]>'):context==='attribute'?xml.replace('<p:sld ','<p:sld own="'+value+'" '):xml.replace('</p:sld>',(context==='comment'?'<!--'+value+'-->':'<?own '+value+'?>')+'</p:sld>');
+    assert.throws(()=>extractPptx(zipSync({...base,[path]:strToU8(modified)}),'sha256:invalid-char'),{code:'INVALID_XML'},context+' raw '+cp);
+  }
+  for(const cp of [0,1,8,11,12,14,31,0xd800,0xdfff,0xfffe,0xffff,0x110000])for(const representation of ['&#'+cp+';','&#x'+cp.toString(16)+';'])for(const context of ['text','attribute']){
+    const modified=context==='text'?xml.replace('Before',representation):xml.replace('<p:sld ','<p:sld own="'+representation+'" ');
+    assert.throws(()=>extractPptx(zipSync({...base,[path]:strToU8(modified)}),'sha256:invalid-reference'),{code:'INVALID_XML'},context+' '+representation);
+  }
+});
+
+test('valid XML character boundaries and literal reference text remain observable',()=>{
+  const base=unzipSync(bytes),path='ppt/slides/slide1.xml',xml=strFromU8(base[path]);
+  const valid=[9,10,13,0x20,0xd7ff,0xe000,0xfffd,0x10000,0x10ffff],references=valid.map(cp=>'&#x'+cp.toString(16)+';').join('');
+  let modified=xml.replace('Before',references+'<![CDATA[ literal &#1; &#xFFFF; ]]>');
+  modified=modified.replace('</p:sld>','<!-- literal &#1; --><'+ '?own literal &#xFFFF;?'+ '></p:sld>');
+  const [page]=extractPptx(zipSync({...base,[path]:strToU8(modified)}),'sha256:valid-characters');
+  assert.ok(page.elements[0].text.startsWith(valid.map(cp=>String.fromCodePoint(cp)).join('')+' literal &#1; &#xFFFF; '));
+  assert.ok(page.elements[0].text.includes('literal &#x1F600; actual 😀'));
+  const replacement=xml.replace('Before','\uFFFD');const [literalReplacement]=extractPptx(zipSync({...base,[path]:strToU8(replacement)}),'sha256:literal-replacement');assert.ok(literalReplacement.elements[0].text.startsWith('\uFFFD '));
+});
+
 test('PPTX nested groups preserve child source order without claiming supported group geometry',()=>{
   const parts=unzipSync(bytes),path='ppt/slides/slide1.xml',xml=strFromU8(parts[path]);
   const table=xml.match(/<p:graphicFrame\b[\s\S]*?<\/p:graphicFrame>/)![0];
