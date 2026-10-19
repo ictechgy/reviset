@@ -168,3 +168,24 @@ an independently known hidden state does not depend on font metrics. Estimated
 hidden-source UI now separates observed nonpainting state from unknown location.
 Empty page quotes use page-observation fallback rather than naming an unquoted
 text layer. Universal OCR recall/precision and renderer fidelity remain open.
+
+
+Engine27 evaluates hybrid completeness from participating observations, not the
+hybrid label alone. A fully source-observed selected projection with no unresolved
+text remains complete when verification OCR is entirely shadowed. Thus a logo
+page's verification annex cannot suppress an unrelated complete-source page add
+or delete. Selected inferred OCR, unresolved OCR/source, raster-only evidence,
+failed/partial revisions and unavailable text remain incomplete. Both absence
+directions and these negative controls are covered; raw roles and the hybrid
+annex are retained, without restoring a basis that would ignore the roles.
+
+Retaining OCR also expands conservative recall limits on image-bearing readable
+source pages: native OCR case/character disagreement, outer bounds beyond the
+source union, and multiline/cell gaps can remain unresolved. An observed source
+regional pair may survive where a whole-page text edit is withheld. The mixed
+fixture's exact native header OCR exceeds the source right edge by about3.5pt;
+its stored OCR remains unresolved and source is compared once. No union tolerance
+was relaxed. Same-place fully covered controls shadow; partial coverage is kept
+unresolved. This is observed uncertainty, not proof that the page is unchanged.
+The engine25/27 native-observation replay records this qualification cost on
+pinned public PDFs and synthetic row controls separately from OCR accuracy.

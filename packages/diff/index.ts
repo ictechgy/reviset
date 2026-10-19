@@ -30,7 +30,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
       before:(a?(kind==='text_modified'?comparisonText(a):a.text||a.ocr_text):null)??null,after:(b?(kind==='text_modified'?comparisonText(b):b.text||b.ocr_text):null)??null,evidence:[...(a?[evidence(from,a,kind==='text_modified')]:[]),...(b?[evidence(to,b,kind==='text_modified')]:[])],
       lineage:match?{status:match.status,score:match.score,reasons:[...match.reasons]}:{status:'inferred',score:0,reasons:['unmatched_page']},coverage_gaps:gaps,evidence_uri:''});
   }
-  const uncertain=(r:RevisionData)=>r.status!=='success'||r.pages.some(p=>p.capabilities.text!=='available'||p.comparison_basis==='raster_ocr'||p.comparison_basis==='hybrid_regions_v1'||!!unresolvedComparisonText(p)||p.visible_text!==undefined&&!comparisonText(p).trim());
+  const uncertain=(r:RevisionData)=>r.status!=='success'||r.pages.some(p=>p.capabilities.text!=='available'||p.comparison_basis==='raster_ocr'||p.comparison_basis==='hybrid_regions_v1'&&comparisonRegions(p).some(e=>e.provenance!=='observed')||!!unresolvedComparisonText(p)||p.visible_text!==undefined&&!comparisonText(p).trim());
   if(from.status==='failed'||to.status==='failed') {
     const p=to.pages[0]??from.pages[0];if(p) add('coverage_gap',from.pages[0],to.pages[0],undefined,'failed_revision_no_comparison');
     return changes;

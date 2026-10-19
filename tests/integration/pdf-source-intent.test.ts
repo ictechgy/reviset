@@ -13,7 +13,7 @@ import {diffRevisions,evidence} from '../../packages/diff/index.js';
 import {recognizePdf,supplementPdfOcr} from '../../packages/ingest/ocr.js';
 import {annotationCarriers} from '../../packages/ingest/pdf-annotations.js';
 import {DesktopService} from '../../packages/desktop/service.js';
-import {Page,byteHash,type PageData,type ElementData,type RevisionData} from '../../packages/schema/index.js';
+import {Page,byteHash,unresolvedComparisonText,type PageData,type ElementData,type RevisionData} from '../../packages/schema/index.js';
 async function pdf(draw:(d:PDFKit.PDFDocument)=>void){const d=new PDFDocument({size:[600,400],margin:0}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(r=>d.on('end',()=>r(Buffer.concat(chunks))));draw(d);d.end();return done;}
 function text(d:PDFKit.PDFDocument,value:string,font='Times-Roman'){d.font(font).fontSize(32).text('Revenue '+value+' won',50,120,{lineBreak:false});}
 async function sample(value:string,draw?:(d:PDFKit.PDFDocument)=>void,font='Times-Roman'){
@@ -95,6 +95,16 @@ test('disjoint raster edits survive repeated source text and partial OCR lines r
 test('known-metric explicit nonpainting modes stay hidden independently of color and clip geometry',async()=>{
   for(const mode of ['7 Tr','0 g 3 Tr']){
     const bytes=await pdf(d=>{d.addContent(mode);text(d,'120','Helvetica');}),[page]=await extractPdf(bytes,'sha256:'+byteHash(bytes),{ocr:'off'});assert.equal(page.elements[0].visibility,'hidden_render_mode');assert.ok(page.elements[0].visibility_evidence?.some(v=>v.method==='explicit_nonpainting_text_mode'&&v.assessment==='observed'));Page.parse(page);
+  }
+});
+
+test('fully shadowed source verification keeps page absence complete while participating uncertainty still withholds',async()=>{
+  const c=createCanvas(8,8);c.getContext('2d').fillRect(0,0,8,8);const anchor=await sample('100',d=>d.image(c.toBuffer('image/png'),500,300,{width:20,height:20}),'Helvetica'),extra=(await sample('200',undefined,'Helvetica')).page;
+  assert.equal(anchor.ocr.comparison_role,'shadowed');assert.equal(unresolvedComparisonText(anchor.page),'');
+  const revision=(pages:PageData[],key:string):RevisionData=>({revision_id:key,revision_occurrence_id:key,label:key,assets:pages.map(p=>({asset_id:p.asset_id,format:'pdf',bytes:0})),status:'success',pages,coverage_gaps:[],errors:[],bundle_mapping:[]});
+  const run=(page:PageData,added:boolean)=>diffRevisions(revision(added?[page]:[page,extra],'before'),revision(added?[page,extra]:[page],'after'),[{from_page_id:page.page_id,to_page_id:page.page_id,score:1,status:'inferred',reasons:['controlled_anchor']}],[],()=> 'entity');
+  for(const added of [false,true]){assert.equal(run(anchor.page,added).filter(c=>c.kind===(added?'page_added':'page_deleted')).length,1);
+    for(const state of ['inferred','unresolved','source_unresolved']){const page=structuredClone(anchor.page),e:ElementData={...structuredClone(anchor.ocr),observation_id:'extra-'+state,text:'Raster 300 won',normalized_text:'Raster 300 won',bbox:[.1,.7,.3,.05],visibility:state==='inferred'?'visible':'uncertain',...(state==='source_unresolved'?{method:'pdf_text',provenance:'observed'}:{})};page.elements.push(e);selectHybridComparison(page);const result=run(page,added);assert.ok(!result.some(c=>c.kind==='page_added'||c.kind==='page_deleted'));assert.ok(result.some(c=>c.coverage_gaps.some(g=>g.reason==='comparison_observation_incomplete')));}
   }
 });
 
