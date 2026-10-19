@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
-const [sourceRun,output]=process.argv.slice(2).map(resolve);assert.ok(sourceRun&&output,'Pass previous own synthetic run folder and new output folder');
+const [sourceRun,output]=process.argv.slice(2).map(value=>resolve(value));assert.ok(sourceRun&&output,'Pass previous own synthetic run folder and new output folder');
 const original=JSON.parse(await readFile(join(sourceRun,'result.json'),'utf8')),processInfo=JSON.parse(await readFile(join(sourceRun,'process.json'),'utf8'));
 const userData=await mkdtemp(join(tmpdir(),'docver-reopen-')),library=join(userData,'library');
 await cp(join(processInfo.userData,'library'),library,{recursive:true});await mkdir(output,{recursive:true});
