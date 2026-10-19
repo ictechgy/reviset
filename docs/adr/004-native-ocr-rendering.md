@@ -176,7 +176,8 @@ text remains complete when verification OCR is entirely shadowed. Thus a logo
 page's verification annex cannot suppress an unrelated complete-source page add
 or delete. Selected inferred OCR, unresolved OCR/source, raster-only evidence,
 failed/partial revisions and unavailable text remain incomplete. Both absence
-directions and these negative controls are covered; raw roles and the hybrid
+directions and participating inferred/unresolved negatives are covered; unchanged
+revision-level failed/partial, raster-only and unavailable-text checks are retained; raw roles and the hybrid
 annex are retained, without restoring a basis that would ignore the roles.
 
 Retaining OCR also expands conservative recall limits on image-bearing readable
