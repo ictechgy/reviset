@@ -639,3 +639,38 @@ Fullserial164/164PASS,0fail/skip/cancel,156.114s;runtime source fixed through
 suite/commit and only evidence docs follow. Actual current480/app/scale/ZIP
 and40complete original-base reviews follow;remaining OCR/PPTX/manual relation
 work remainsOPEN. Repeated test/review checkpoints are not product completion.
+
+
+40actual uninstrumented helper22process+selector480qualification retains
+218full-page literal matches/22nonempty not-full-truth/240empty,all480primary
+non-ROI and native PNG hashes unchanged,0previously correct lost. However the
+complete original-base40architecture review BLOCKS source readiness despite
+code-laneAPPROVE: native Unicode White_Space compaction ignoresNEL while TS\s
+retains it. Actual frozen supplementation makes a mixed.5 primary TS-ambiguous,
+so8contexts admit an existing correction and4lose it. This is a schema-valid
+synthetic protocol boundary,not observed Vision NEL output. No40app was built.
+Claude40REQUEST_CHANGES also notes parity;its stale-warning hypothesis is not
+reproduced because existing writeCache strips flags.41explicitly replays the
+independent representative's source/raster caches to verify warning cleanup.
+
+41repairs the comparison-key root contract: native ambiguity compaction and
+high-scoreLatin eligibility use the explicit ECMAScript whitespace set. NEL,
+180E and200B remain meaningful;FEFF remains whitespace. Shared45fixtures cover
+every included codepoint,excluded controls,NFC/NFD,Latin eligibility and default
+case conversion. The first native run exposed Swift String.lowercased final
+Greek sigma differing from JS;NSString.default lowercasing aligns that context.
+Raw primary strings/scores are unchanged. The failed nativeSIGTRAP diagnostic
+and initial test-property type error are retained,not counted as passing.
+Corrected native controls pass,including actual producer4/8context planning on
+real raster with synthetic eligibility metadata and competitive score cutoffs;
+these are policy units,not accuracy counts. Actual TSsupplementation reproduces
+the8vs4NELcorrection seam. Helper23/ROIpolicyv5 invalidate caches. Fullserial
+165/165PASS,0fail/skip/cancel,158.010s;runtime source fixed through suite/commit,
+only evidence docs appended afterwards. Current41production480/app/scale and
+complete original-base reviews follow. No old approval or performance result
+is reused as current41package completion. Remaining product gates stayOPEN.
+
+Claude's native manual-relations design discussion completed separately,
+recommending one searchable paired-list sheet with explicit1:1/split/merge/
+unlink cardinality,conflict review and every branch page in history. This is
+proposed UX advice,not implemented/approved source or a new global design.

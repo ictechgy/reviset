@@ -507,3 +507,20 @@ median improvement;this does not measure app latency,unique-corpus p95 or
 universal OCR accuracy. Parent capture also retains a representative's own
 pre-render cache diagnostic after successful independent OCR,without sharing
 that execution-local warning across its peers.
+
+
+### Engine41/helper23: one OCR comparison-key contract
+
+Engine40's four-context optimization exposed an existing normalization
+mismatch: native Unicode White_Space also removedNEL,while TS\s retained it.
+This could conceal native ambiguity and prune still correction-eligible
+contexts. Align native ambiguity and Latin eligibility to the explicit
+ECMAScript whitespace set;preserve raw primary text. After NFC/whitespace
+processing,use NSString default contextual lowercase to match JS handling of
+finalGreek sigma,also covered by dottedI/NFC/NFD/shared whitespace fixtures.
+The source of the whitespace set is [ECMAScript lexical grammar12.2/12.3](https://tc39.es/ecma262/multipage/ecmascript-language-lexical-grammar.html#sec-white-space).
+Eight correction contexts remain available for the actual NEL supplement
+counterexample. Shared45fixtures and producer/consumer end-to-end policy
+controls qualify the bounded repair,not every Unicode sequence or OCR accuracy.
+Helper23/ROIpolicyv5 separate observation caches. Current packaged/runtime
+qualification remains a separate gate.

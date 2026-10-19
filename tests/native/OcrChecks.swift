@@ -4,6 +4,11 @@ import Vision
 
 @main struct OcrChecks {
     static func main() throws {
+        let normalization=try JSONSerialization.jsonObject(with:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[2]))) as! [[String:Any]]
+        for item in normalization {let text=item["text"] as! String;precondition(DocverVision.roiCompact(text)==item["compact"] as! String,"Shared OCR whitespace/NFC/case contract");precondition(DocverVision.latinCounterScript(text)==item["latin"] as! Bool,"Shared Latin counter-script contract")}
+        let whitespacePrimary="계익 Contract",whitespaceAlternative="계익\u{0085}Contract"
+        let whitespaceAmbiguous=DocverVision.roiCompact(whitespacePrimary) != DocverVision.roiCompact(whitespaceAlternative)
+        precondition(whitespaceAmbiguous && !DocverVision.mixedScriptCounterOnly(whitespacePrimary,0.5,whitespaceAmbiguous),"NEL dissent must retain the eight-context ambiguous correction path")
         for text in ["계약 Contract","한 éÆ"] {precondition(DocverVision.mixedScriptCounterOnly(text,0.5,false))}
         for text in ["Contract","éÆ","계약 검토","Δ"] {precondition(!DocverVision.mixedScriptCounterOnly(text,0.5,false))}
         for score in [0.0,0.3,0.499,0.501,1.0] {precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",score,false),"Weak and high-score profiles retain their existing evidence contract")}
@@ -222,6 +227,18 @@ import Vision
             let empty=observed["primary_empty_characters"] as? [[String:Any]] ?? []
             precondition(!empty.contains{entry in (entry["text"] as? String)?.range(of:"\\p{script=Hangul}",options:.regularExpression) != nil},"Actual Hangul ink cannot become an empty-character deletion certificate")
             precondition((observed["contexts"] as? [[String:Any]])?.count==8,"All native contexts were exercised")
+            if text=="Pineapple 주스" {
+                // Synthetic producer eligibility controls,not measured OCR
+                // confidence or accuracy claims. The raster/box are real.
+                let variants:[(String,Double,Int)]=[(text,0.5,4),("Pineapple\u{0085}주스",0.5,8),("Pineapple\u{0085}주스",0.35,8),("Pineapple\u{0085}주스",0.349,4),("pineapple  주스",0.5,4)]
+                for (alternative,score,count) in variants {
+                    let row:[String:Any]=["text":text,"confidence":0.5,"bbox":[CGFloat(b.minX),1-b.maxY,b.width,b.height],"numeric_consensus":true,"strike_candidate":false,"strike_status":"not_detected","alternatives":[["text":text,"confidence":0.5],["text":alternative,"confidence":score]]]
+                    let result=DocverVision.reconsideredLines(image,bitmap,[row])[0]
+                    precondition((result["reconsideration"] as? [String:Any])?["contexts"] is [[String:Any]])
+                    precondition(((result["reconsideration"] as! [String:Any])["contexts"] as! [[String:Any]]).count==count,"Actual producer preserves ambiguity and the competitive-score cutoff")
+                    precondition(result["text"] as? String==text && result["confidence"] as? Double==0.5)
+                }
+            }
         }
         print("PASS genuine trailing Hangul and Korean word raster ink never certifies empty-character deletion")
         print("PASS numeric position/multiplicity/conflict and lexical controls; grayscale strike/underline; ruled grid empty cells/partial-border/negative controls")

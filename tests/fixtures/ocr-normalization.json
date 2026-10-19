@@ -1,0 +1,227 @@
+[
+  {
+    "text": "\u00e9\u0085A",
+    "compact": "\u00e9\u0085a",
+    "latin": false
+  },
+  {
+    "text": "\u00e9\ufeffA",
+    "compact": "\u00e9a",
+    "latin": true
+  },
+  {
+    "text": "\u00e9\u180eA",
+    "compact": "\u00e9\u180ea",
+    "latin": false
+  },
+  {
+    "text": "\u00e9\u200bA",
+    "compact": "\u00e9\u200ba",
+    "latin": false
+  },
+  {
+    "text": "e\u0301\u00a0A",
+    "compact": "\u00e9a",
+    "latin": false
+  },
+  {
+    "text": "\u00e9\u00a0A",
+    "compact": "\u00e9a",
+    "latin": true
+  },
+  {
+    "text": "A\r\n\t B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "\uacc4\uc775 Contract",
+    "compact": "\uacc4\uc775contract",
+    "latin": false
+  },
+  {
+    "text": "\u216b",
+    "compact": "\u217b",
+    "latin": false
+  },
+  {
+    "text": "\u00e9\u00c6",
+    "compact": "\u00e9\u00e6",
+    "latin": true
+  },
+  {
+    "text": "\u2014+",
+    "compact": "\u2014+",
+    "latin": false
+  },
+  {
+    "text": "A\tB",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\nB",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u000bB",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\fB",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\rB",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u00a0B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u1680B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2000B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2001B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2002B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2003B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2004B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2005B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2006B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2007B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2008B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2009B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u200aB",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2028B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u2029B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u202fB",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u205fB",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u3000B",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\ufeffB",
+    "compact": "ab",
+    "latin": true
+  },
+  {
+    "text": "A\u0000B",
+    "compact": "a\u0000b",
+    "latin": false
+  },
+  {
+    "text": "A\bB",
+    "compact": "a\bb",
+    "latin": false
+  },
+  {
+    "text": "A\u000eB",
+    "compact": "a\u000eb",
+    "latin": false
+  },
+  {
+    "text": "A\u0085B",
+    "compact": "a\u0085b",
+    "latin": false
+  },
+  {
+    "text": "A\u180eB",
+    "compact": "a\u180eb",
+    "latin": false
+  },
+  {
+    "text": "A\u200bB",
+    "compact": "a\u200bb",
+    "latin": false
+  },
+  {
+    "text": "A\u2060B",
+    "compact": "a\u2060b",
+    "latin": false
+  },
+  {
+    "text": "\u0130",
+    "compact": "i\u0307",
+    "latin": true
+  },
+  {
+    "text": "\u039f\u03a3",
+    "compact": "\u03bf\u03c2",
+    "latin": false
+  }
+]

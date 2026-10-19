@@ -22,10 +22,19 @@ extension DocverVision {
         return true
     }
     static let hangulScript=try! NSRegularExpression(pattern:"\\p{script=Hangul}")
+    // Match ECMAScript \s in the TypeScript consumer. Unicode White_Space also
+    // removes NEL, while ECMAScript retains NEL and includes FEFF instead.
+    static let ocrWhitespaceClass="\\x{0009}-\\x{000D}\\x{0020}\\x{00A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}"
     static func roiCompact(_ text:String)->String {
-        text.precomposedStringWithCanonicalMapping.replacingOccurrences(of:"[\\p{White_Space}\\x{FEFF}]",with:"",options:.regularExpression).lowercased()
+        let normalized=text.precomposedStringWithCanonicalMapping.replacingOccurrences(of:"["+ocrWhitespaceClass+"]",with:"",options:.regularExpression)
+        // NSString applies default contextual casing (e.g. final Greek sigma),
+        // matching JavaScript; Swift String.lowercased uses a different mapping.
+        return (normalized as NSString).lowercased
     }
-    static let reconsiderationPolicy="vision-roi-v4; 4 nonnumeric lines/page; weak then borderline then high-score Latin; 8 correction/monoscript borderline contexts, 4 bilingual mixed-script counter-only contexts, or 2 en-US broad high-score contexts; 262144 core pixels; 4M pixels/crop; 12s/page best-effort cancellation; no language correction"
+    static func latinCounterScript(_ text:String)->Bool {
+        text.range(of:"^[\\p{script=Latin}"+ocrWhitespaceClass+"\\p{P}\\p{S}]+$",options:.regularExpression) != nil && text.range(of:"\\p{L}",options:.regularExpression) != nil
+    }
+    static let reconsiderationPolicy="vision-roi-v5; ECMAScript whitespace ambiguity/script parity; 4 nonnumeric lines/page; weak then borderline then high-score Latin; 8 correction/monoscript borderline contexts, 4 bilingual mixed-script counter-only contexts, or 2 en-US broad high-score contexts; 262144 core pixels; 4M pixels/crop; 12s/page best-effort cancellation; no language correction"
     static func mixedScriptCounterOnly(_ text:String,_ confidence:Double,_ ambiguous:Bool)->Bool {
         // At exactly0.5 without ambiguity, positive correction is ineligible.
         // The consumer requires BOTH languages for mixed Hangul/Latin dissent;
@@ -46,7 +55,7 @@ extension DocverVision {
                 guard let value=candidate["text"] as? String,let score=candidate["confidence"] as? Double else{return false}
                 return roiCompact(value) != roiCompact(text) && score>=confidence-0.15
             }
-            let highLatin=confidence>0.5 && !ambiguous && text.range(of:"^[\\p{script=Latin}\\p{White_Space}\\p{P}\\p{S}]+$",options:.regularExpression) != nil && text.range(of:"\\p{L}",options:.regularExpression) != nil
+            let highLatin=confidence>0.5 && !ambiguous && latinCounterScript(text)
             guard confidence<=0.5 || ambiguous || highLatin else{return nil}
             return (index,confidence<0.5 || ambiguous ? 0:highLatin ? 2:1,CGRect(x:b[0],y:b[1],width:b[2],height:b[3]),text,highLatin,mixedScriptCounterOnly(text,confidence,ambiguous))
         }.sorted {a,b in a.priority==b.priority ? a.index<b.index:a.priority<b.priority}

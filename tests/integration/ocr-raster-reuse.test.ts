@@ -84,7 +84,10 @@ const r=await captureNativePages(bytes,pages,pages,{cacheRoot});
 assert.equal(r.get(1).cache_write_failed,true);assert.equal(r.get(2).cache_write_failed,true);
 assert.equal(r.get(3).cache_write_failed,true,'An independently observed representative retains its own render-stage diagnostic');
 assert.equal(r.get(4).cache_write_failed,undefined);assert.equal(r.get(4).lines[0].text,'Revenue 100');
-const replay=await captureNativePages(bytes,[2,4],[2,4],{cacheRoot});for(const v of replay.values())assert.equal(v.cache_write_failed,undefined);
+await rm(path(3,false),{recursive:true});
+const replay=await captureNativePages(bytes,[2,3,4],[2,3,4],{cacheRoot});for(const v of replay.values())assert.equal(v.cache_write_failed,undefined);
+assert.equal(JSON.parse(await readFile(path(3,true),'utf8')).value.cache_write_failed,undefined,'Independent OCR source cache strips its render-stage operational warning');
+const newSource=await captureNativePages(new Uint8Array([7,8,9]),[3],[3],{cacheRoot});assert.equal(newSource.get(3).cache_write_failed,undefined,'Raster-cache replay also strips operational warnings');
 `));
 
 test('cold caches and explicit no-reuse retain normal batching without an extra render pass',()=>fixture(`
