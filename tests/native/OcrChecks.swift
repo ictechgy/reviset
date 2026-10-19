@@ -37,6 +37,7 @@ import AppKit
         precondition(DocverVision.orderedLines(Array(jitter.reversed())).map{$0["text"] as! String}==["left","right","below"])
         let expr=try DocverVision.numericExpression()
         func numbers(_ text:String)->[String]{expr.matches(in:text,range:NSRange(text.startIndex...,in:text)).map{DocverVision.canonicalNumber(String(text[Range($0.range,in:text)!]))}}
+        precondition(numbers("1\u{0085}/\u{0085}2 －５００")==["1/2","-500"],"Unicode whitespace/sign canonicalization matches TypeScript")
         precondition(numbers("1, 2, 3")==["1","2","3"],"List commas cannot fuse separate values")
         precondition(numbers("2026-10-19")==["2026","10","19"],"Date separators cannot become negative signs")
         precondition(numbers("−５００원 ＋１０％")==["-500원","+10%"],"Full width digits and signed units")

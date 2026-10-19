@@ -176,7 +176,7 @@
     "supported": false
   },
   {
-    "text": "1​/​2",
+    "text": "1\u200b/\u200b2",
     "supported": false
   },
   {
@@ -192,19 +192,19 @@
     "supported": false
   },
   {
-    "text": "1/́2",
+    "text": "1/\u03012",
     "supported": false
   },
   {
-    "text": "a/2́",
+    "text": "a/2\u0301",
     "supported": false
   },
   {
-    "text": "1﻿/2",
+    "text": "1\ufeff/2",
     "supported": false
   },
   {
-    "text": "1⁠/2",
+    "text": "1\u2060/2",
     "supported": false
   },
   {
@@ -229,6 +229,134 @@
   },
   {
     "text": "100원/ 월",
+    "supported": false
+  },
+  {
+    "text": "／－２",
+    "supported": false
+  },
+  {
+    "text": "/–2 cup",
+    "supported": false
+  },
+  {
+    "text": "/‐2",
+    "supported": false
+  },
+  {
+    "text": "/﹣2",
+    "supported": false
+  },
+  {
+    "text": "/(2",
+    "supported": false
+  },
+  {
+    "text": "/#2",
+    "supported": false
+  },
+  {
+    "text": "Amount 1/\u3164 cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 1/\u115f cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 1/\u1160 cup olives",
+    "supported": false
+  },
+  {
+    "text": "Amount 1/\uffa0 cup olives",
+    "supported": false
+  },
+  {
+    "text": "1\u034f/2",
+    "supported": false
+  },
+  {
+    "text": "1\ufe0f/2",
+    "supported": false
+  },
+  {
+    "text": "1⟋2",
+    "supported": false
+  },
+  {
+    "text": "1\u0000/2",
+    "supported": false
+  },
+  {
+    "text": "4.5/5",
+    "supported": false
+  },
+  {
+    "text": "0.5/1.0",
+    "supported": false
+  },
+  {
+    "text": "1,000/2,000",
+    "supported": false
+  },
+  {
+    "text": "2026.10.19/2026.10.20",
+    "supported": false
+  },
+  {
+    "text": "Q1/Q2",
+    "supported": false
+  },
+  {
+    "text": "H1/H2",
+    "supported": false
+  },
+  {
+    "text": "v1/v2",
+    "supported": false
+  },
+  {
+    "text": "2024/Q3",
+    "supported": false
+  },
+  {
+    "text": "USD 100 / USD 120",
+    "supported": false
+  },
+  {
+    "text": "KRW 12,000 / KRW 13,000",
+    "supported": false
+  },
+  {
+    "text": "1\u0085/\u00852",
+    "supported": true
+  },
+  {
+    "text": "－５００원",
+    "supported": true
+  },
+  {
+    "text": "1\u00a0/\u00a02",
+    "supported": true
+  },
+  {
+    "text": "2－/",
+    "supported": false
+  },
+  {
+    "text": "2–/",
+    "supported": false
+  },
+  {
+    "text": "(2)/",
+    "supported": false
+  },
+  {
+    "text": "2)/",
+    "supported": false
+  },
+  {
+    "text": "2#/",
     "supported": false
   }
 ]
