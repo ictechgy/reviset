@@ -177,7 +177,8 @@ page's verification annex cannot suppress an unrelated complete-source page add
 or delete. Selected inferred OCR, unresolved OCR/source, raster-only evidence,
 failed/partial revisions and unavailable text remain incomplete. Both absence
 directions and participating inferred/unresolved negatives are covered; unchanged
-revision-level failed/partial, raster-only and unavailable-text checks are retained; raw roles and the hybrid
+revision-level failed/partial, raster-only and unavailable-text production code
+paths are retained; raw roles and the hybrid
 annex are retained, without restoring a basis that would ignore the roles.
 
 Retaining OCR also expands conservative recall limits on image-bearing readable
@@ -190,3 +191,14 @@ was relaxed. Same-place fully covered controls shadow; partial coverage is kept
 unresolved. This is observed uncertainty, not proof that the page is unchanged.
 The engine25/27 native-observation replay records this qualification cost on
 pinned public PDFs and synthetic row controls separately from OCR accuracy.
+
+
+The native inspector keeps raster origin separate from confidence: the noun is
+always rendered screen, with observed/inferred level from evidence provenance.
+Legacy evidence may omit provenance; OCR still displays inferred, and other
+methods explicitly display unknown evidence level. Reasons lack per-item origin
+tags, so human-confirmed reason lists remain verbatim to preserve free text,
+including engine-like prefixes. Such lists may also contain raw engine reason
+codes; this is a deliberate preservation limit, not a new mapping-review warning.
+Automatic appearance transitions use the exact producer arrow separator; other
+known gap/range reasons are localized and unknown labels remain neutral/deduped.
