@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
+import {comparisonRegions,pageSimilarity} from './page-similarity.js';
+export {normalize,comparisonRegions} from './page-similarity.js';
 
 export const SCHEMA_VERSION = '0.4.0';
 const StoredSchemaVersion=z.enum(['0.1.0','0.2.0','0.3.0','0.4.0']);
@@ -13,7 +15,6 @@ export const canonical = (value: unknown): string => JSON.stringify(value, (_, v
 export const hash = (value: unknown): string => createHash('sha256').update(canonical(value)).digest('hex');
 export const byteHash = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 export const id = (prefix: string, value: unknown): string => `${prefix}_${hash(value)}`;
-export const normalize = (text: string): string => text.normalize('NFC').replace(/\s+/gu, ' ').trim();
 export const Availability = z.enum(['available', 'unavailable', 'unsupported', 'extraction_failed']);
 export const Bbox = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1)])
   .refine(([x,y,w,h]) => x+w <= 1.000001 && y+h <= 1.000001, 'bbox exceeds page');
@@ -120,6 +121,7 @@ export function replayBundleMappings(revisions:z.infer<typeof Revision>[],entrie
     if(!source||source.revision.revision_occurrence_id!==entry.revision_occurrence_id||source.page.asset_id!==entry.source_asset_id||!source.revision.assets.some(a=>a.asset_id===entry.source_asset_id&&a.format==='pptx')||!source.revision.assets.some(a=>a.asset_id===entry.rendered_asset_id&&a.format==='pdf'))return undefined;
     if(entry.rendered_page_id&&(!target||target.revision!==source.revision||target.page.asset_id!==entry.rendered_asset_id))return undefined;
     if(entry.action==='link'&&(!target||entry.score===null)||entry.action==='unlink'&&entry.score!==null)return undefined;
+    if(entry.action==='link'&&entry.score!==pageSimilarity(source.page,target!.page))return undefined;
     const conflictSources=new Set([entry.source_page_id,...(entry.action==='link'&&entry.rendered_page_id?[owners.get(entry.rendered_page_id)??'']:[])]),conflicts=[...conflictSources].map(source=>pairs.get(source)).filter((p):p is z.infer<typeof BundlePriorPair>=>!!p),sort=(a:z.infer<typeof BundlePriorPair>,b:z.infer<typeof BundlePriorPair>)=>a.source_page_id.localeCompare(b.source_page_id,'en')||a.rendered_page_id.localeCompare(b.rendered_page_id,'en');
     if(canonical(conflicts.sort(sort))!==canonical([...entry.displaced].sort(sort)))return undefined;
     if(entry.action==='unlink'&&entry.rendered_page_id!==null&&!conflicts.some(p=>p.source_page_id===entry.source_page_id&&p.rendered_page_id===entry.rendered_page_id))return undefined;
@@ -182,7 +184,6 @@ export type RevisionData = z.infer<typeof Revision>;
 export type ElementData = z.infer<typeof Element>;
 export type ChangeData = z.infer<typeof Change>;
 export type MatchData = z.infer<typeof Match>;
-export const comparisonRegions=(p:PageData):ElementData[]=>p.elements.filter(e=>e.comparison_role==='selected'||e.comparison_role==='unresolved').sort((a,b)=>(a.comparison_order??a.reading_order)-(b.comparison_order??b.reading_order));
 export const comparisonText=(p:PageData):string=>p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p).filter(e=>e.comparison_role==='selected').map(e=>e.text).join('\n'):p.comparison_basis==='raster_ocr'?p.ocr_text??'':p.visible_text??p.text;
 export const unresolvedComparisonText=(p:PageData):string=>p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p).filter(e=>e.comparison_role==='unresolved').map(e=>e.text).join('\n'):p.comparison_basis==='raster_ocr'?p.ocr_unresolved_text??'':p.unresolved_text??'';
 export const Manifest = z.object({ project_id: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/), title: z.string(),

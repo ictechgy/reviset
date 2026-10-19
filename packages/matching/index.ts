@@ -1,18 +1,7 @@
-import { normalize,comparisonRegions, type PageData, type MatchData, type MappingDecision, type MappingRelationData, DocverError } from '../schema/index.js';
+import { type PageData, type MatchData, type MappingDecision, type MappingRelationData, DocverError } from '../schema/index.js';
+import {grams,dice,matchingText,sameOriginalPage,sameSourceRaster} from '../schema/page-similarity.js';
+export {matchingText,pageSimilarity as similarity} from '../schema/page-similarity.js';
 import {relationEdges} from './relations.js';
-function grams(text:string):Set<string> {
-  const s=normalize(text).toLowerCase().replace(/[+−-]?\d+(?:[.,]\d+)*/gu,'#').replace(/\s/gu,'');
-  return new Set(Array.from({length:Math.max(0,s.length-1)},(_,i)=>s.slice(i,i+2)));
-}
-function dice(x:Set<string>,y:Set<string>):number {
-  if(!x.size||!y.size) return 0;
-  const intersection=[...x].filter(g=>y.has(g)).length;
-  return 2*intersection/(x.size+y.size);
-}
-export const matchingText=(p:PageData)=>p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p).map(e=>e.text).join('\n'):p.comparison_basis==='raster_ocr'?p.elements.filter(e=>e.method==='vision_ocr').map(e=>e.text).join('\n'):p.text+(p.ocr?.mode==='supplement'?'\n'+p.ocr_text:'');
-const sameOriginalPage=(a:PageData,b:PageData)=>a.asset_id===b.asset_id&&a.page===b.page;
-const sameSourceRaster=(a:PageData,b:PageData)=>!a.preview&&!b.preview&&!a.appearance&&!b.appearance&&!!a.raster?.sha256&&a.raster.sha256===b.raster?.sha256;
-export function similarity(a:PageData,b:PageData):number{return sameOriginalPage(a,b)||sameSourceRaster(a,b)?1:dice(grams(matchingText(a)),grams(matchingText(b)));}
 // Rectangular maximum-weight assignment with private dummy columns for unmatched rows.
 function assignment(weights:number[][]):number[] {
   if(!weights.length) return [];

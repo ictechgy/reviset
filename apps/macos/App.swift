@@ -33,6 +33,7 @@ import PDFKit
             } else if request["files"].array.isEmpty{await model.demo()}
             else{let rows=request["files"].array.map{ImportRow(label:URL(fileURLWithPath:$0.string).deletingPathExtension().lastPathComponent,urls:[URL(fileURLWithPath:$0.string)])};let p=try await model.create(title:"수백 페이지 합성 검증",rows:rows);model.projectID=p["project_id"].string;await model.run(model.projectID)}
             guard !model.report.isNull else{throw BridgeError(code:"SMOKE_NO_REPORT",message:model.error)}
+            let aspectChecks=request["aspect_ratio_checks"].bool ? try await exerciseAspectRatios(model,output):[]
             if request["bundle_sheet_page"].int>0 {
                 let revision=model.revision(0),number=request["bundle_sheet_page"].int
                 guard let selected=model.primaryPages(revision).first(where:{$0["page"].int==number}) else{throw BridgeError(code:"BUNDLE_LARGE_PAGE",message:"수백 페이지 묶음의 선택 페이지를 찾지 못했습니다.")}
@@ -71,8 +72,31 @@ import PDFKit
             await model.loadMCP()
             let numeric=model.changes.filter{$0["kind"].string=="text_modified"}
             let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"reference_appearance_checks":referenceChecks,"import_draft_checks":importChecks,"bundle_mapping_checks":bundleChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
-            try JSON(result).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
+            var complete=result;complete["aspect_ratio_checks"]=aspectChecks
+            try JSON(complete).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
         }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Docver native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
+    }
+    static func exerciseAspectRatios(_ model:AppModel,_ output:URL) async throws->[[String:Any]] {
+        model.focus=true;model.pageMode="both";model.showChanges=false;model.inspector=false;model.tab="compare";try await model.updateChanges();try await Task.sleep(nanoseconds:650_000_000)
+        func canvases(_ view:NSView)->[StructureCanvas.Canvas] {
+            var found:[StructureCanvas.Canvas]=[];if let canvas=view as? StructureCanvas.Canvas{found.append(canvas)}
+            for child in view.subviews{found += canvases(child)};return found
+        }
+        func checks(_ view:NSView)throws->[[String:Any]] {
+            try canvases(view).map{canvas in
+                let width=canvas.page["width"].number,height=canvas.page["height"].number,displayWidth=Double(canvas.bounds.width),displayHeight=Double(canvas.bounds.height)
+                guard width>0,height>0,displayWidth>0,displayHeight>0,abs((displayWidth/displayHeight)/(width/height)-1)<0.001 else{throw BridgeError(code:"ASPECT_STRETCHED",message:"실제 구조 보기의 페이지 비율이 원본과 다릅니다.")}
+                return ["source_width":width,"source_height":height,"display_width":displayWidth,"display_height":displayHeight,"page_ratio_preserved":true]
+            }
+        }
+        guard let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}),let content=window.contentView else{throw BridgeError(code:"ASPECT_WINDOW",message:"페이지 비율 검증 창을 찾지 못했습니다.")}
+        let main=try checks(content);guard main.count==2,main.contains(where:{$0["source_width"] as? Double ?? 0 < ($0["source_height"] as? Double ?? 0)/10}),main.contains(where:{$0["source_width"] as? Double ?? 0 > ($0["source_height"] as? Double ?? 0)*10}) else{throw BridgeError(code:"ASPECT_FIXTURE",message:"세로·가로로 긴 두 원본 구조를 표시하지 못했습니다.")}
+        try capture(output.appendingPathComponent("native-aspect-main.png"))
+        let source=model.primaryPages(model.revision(0))[0],payload=try await model.page(source["page_id"].string);guard payload["source"]["kind"].string=="pptx",payload["page"]["preview"].isNull else{throw BridgeError(code:"ASPECT_STRUCTURE",message:"구조 보기 검증에 별도 PDF 렌더를 사용했습니다.")}
+        model.openBundle(model.revision(0),source:source["page_id"].string);try await Task.sleep(nanoseconds:700_000_000)
+        guard let sheet=window.sheets.first,let sheetContent=sheet.contentView else{throw BridgeError(code:"ASPECT_BUNDLE_SHEET",message:"긴 페이지의 제공 PDF 연결 창을 열지 못했습니다.")}
+        let selected=try checks(sheetContent);guard selected.count==1 else{throw BridgeError(code:"ASPECT_BUNDLE_SOURCE",message:"연결 창의 독립 구조 원문을 확인하지 못했습니다.")};try captureView(sheet,output.appendingPathComponent("native-aspect-bundle.png"));model.bundleSheet=false;model.focus=false;model.showChanges=true;try await Task.sleep(nanoseconds:200_000_000)
+        return main+selected
     }
     static func exerciseBundleMapping(_ model:AppModel,_ output:URL) async throws->[String:Any] {
         let project=model.projectID,original=model.report["report_id"].string,revision=model.revision(0),occurrence=revision["revision_occurrence_id"].string,sources=model.primaryPages(revision)
@@ -108,7 +132,8 @@ import PDFKit
         let displaced=try await model.page(sources[1]["page_id"].string);guard displaced["source"]["origin"].string != "reference_pdf" else{throw BridgeError(code:"BUNDLE_DISPLACED_REFILLED",message:"해제된 슬라이드에 PDF가 자동으로 다시 연결되었습니다.")}
         await model.selectProject(project,snapshot:currentReport);guard model.report["bundle_decision_count"].int==3 else{throw BridgeError(code:"BUNDLE_REOPEN",message:"재조회 후 연결 이력이 다릅니다.")}
         guard let parent=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}) else{throw BridgeError(code:"BUNDLE_HISTORY_WINDOW",message:"연결 이력 창을 표시하지 못했습니다.")}
-        let historyWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:800,height:580),styleMask:[.titled,.closable],backing:.buffered,defer:false);historyWindow.contentView=NSHostingView(rootView:BundleHistorySheet(projectID:project,reportID:currentReport,occurrence:occurrence).environmentObject(model));parent.beginSheet(historyWindow,completionHandler:{_ in});try await Task.sleep(nanoseconds:500_000_000);try captureView(historyWindow,output.appendingPathComponent("native-bundle-history.png"));parent.endSheet(historyWindow);historyWindow.orderOut(nil)
+        let finalContext=try await model.bundleContext(project:project,report:currentReport,occurrence:occurrence),activeIDs=Set(finalContext["manual_states"].array.filter{!$0["displaced"].bool}.map{$0["decision_id"].string})
+        let historyWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:800,height:580),styleMask:[.titled,.closable],backing:.buffered,defer:false);historyWindow.contentView=NSHostingView(rootView:BundleHistorySheet(projectID:project,reportID:currentReport,occurrence:occurrence,activeDecisionIDs:activeIDs).environmentObject(model));parent.beginSheet(historyWindow,completionHandler:{_ in});try await Task.sleep(nanoseconds:500_000_000);try captureView(historyWindow,output.appendingPathComponent("native-bundle-history.png"));parent.endSheet(historyWindow);historyWindow.orderOut(nil)
         return ["original_report_id":original,"revision_occurrence_id":occurrence,"verbatim_first_reason":reason,"native_context_contract":true,"native_sheet_cancel_no_write":true,"stale_write_rejected":true,"source_and_pdf_preview_authority":true,"displaced_source_stays_unlinked":true,"append_only_link_unlink_relink":true,"old_snapshot_unchanged":true,"reopen_history_count":3,"interaction_scope":"production model/actions and rendered native sheets; no OS mouse/keyboard input automation"]
     }
     static func exerciseImportDraft(_ model:AppModel,_ output:URL,_ files:[URL]) async throws->[String:Any] {

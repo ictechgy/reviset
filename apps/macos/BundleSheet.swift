@@ -31,12 +31,19 @@ struct BundleSheet: View {
     var conflicts:[JSON] {
         mapping.filter { $0["source_page_id"].string==sourceID || (mode=="link" && $0["rendered_page_id"].string==pdfID) }
     }
+    var keepsPair:Bool {mode=="link" && !pdfID.isEmpty && current["rendered_page_id"].string==pdfID}
+    var activeDecisionIDs:Set<String> {Set(context["manual_states"].array.filter{!$0["displaced"].bool}.map{$0["decision_id"].string})}
+    var proposedPair:String {
+        let before=pdfs.first{$0["page_id"].string==current["rendered_page_id"].string}.map{"PDF p.\($0["page"].int)"} ?? "연결 없음"
+        let after=mode=="unlink" ? "연결 없음":pdfs.first{$0["page_id"].string==pdfID}.map{"PDF p.\($0["page"].int)"} ?? "미선택"
+        return "기존 \(before) → 적용 후 \(after)"
+    }
     var selectionWarnings:[String] {
         let source=sources.first{$0["page_id"].string==sourceID} ?? JSON(),target=pdfs.first{$0["page_id"].string==pdfID} ?? JSON()
         var warnings=(source["coverage_gaps"].array+target["coverage_gaps"].array).map{coverageReasonName($0["reason"].string)}
         if mode=="link",!source.isNull,!target.isNull {
             if source["comparison_text_hash"].string != target["comparison_text_hash"].string || target["comparison_unresolved"].bool {warnings.append(coverageReasonName("manual_reference_text_unresolved_or_different"))}
-            if abs((source["width"].number/max(1,source["height"].number))/(target["width"].number/max(1,target["height"].number))-1)>0.001 {warnings.append(coverageReasonName("manual_reference_geometry_mismatch"))}
+            if source["height"].number>0,target["height"].number>0,abs((source["width"].number/source["height"].number)/(target["width"].number/target["height"].number)-1)>0.001 {warnings.append(coverageReasonName("manual_reference_geometry_mismatch"))}
             if source["hidden"].bool {warnings.append(coverageReasonName("manual_reference_linked_hidden_source_slide"))}
             if !target["native_raster_available"].bool {warnings.append(coverageReasonName("manual_reference_native_raster_unavailable"))}
             if !target["reference_transform_available"].bool {warnings.append(coverageReasonName("manual_reference_transform_unavailable"))}
@@ -70,11 +77,13 @@ struct BundleSheet: View {
                 DisclosureGroup("선택한 원문·연결 주의사항 \(selectionWarnings.count)개",isExpanded:$warningsExpanded){ScrollView{VStack(alignment:.leading,spacing:4){ForEach(selectionWarnings,id:\.self){Text($0).font(.caption).foregroundStyle(.orange)}}.frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:65)}.font(.caption)
             }
             HStack {Picker("연결 방식",selection:$mode){Text("PDF 페이지 연결").tag("link");Text("이 슬라이드의 PDF 연결 해제·차단").tag("unlink")}.labelsHidden().pickerStyle(.segmented).disabled(saving);Text(statusText).font(.caption).foregroundStyle(.secondary)}
+            Text(proposedPair).font(.caption.weight(.medium))
+            if keepsPair {Text("페이지 연결을 유지하고 새 수정 이유와 사용자 확인을 이력에 기록합니다.").font(.caption).foregroundStyle(.secondary)}
             if !conflicts.isEmpty {
-                DisclosureGroup("기존 연결 \(conflicts.count)개를 대체합니다 · 연결 이유 확인",isExpanded:$conflictsExpanded) {
+                DisclosureGroup(keepsPair ? "현재 연결의 이전 수정 이유":"기존 연결 \(conflicts.count)개를 대체합니다 · 연결 이유 확인",isExpanded:$conflictsExpanded) {
                     ScrollView {VStack(alignment:.leading,spacing:6){ForEach(Array(conflicts.enumerated()),id:\.offset){_,entry in
                         Text(pairLabel(entry)+(entry["association"].string=="human_confirmed" ? " · 사용자 연결":" · 자동 추정")).font(.caption.weight(.medium))
-                        if !entry["reason"].string.isEmpty {Text(entry["reason"].string).font(.caption).textSelection(.enabled)}
+                        if !entry["reason"].string.isEmpty {Text("기존에 기록한 수정 이유").font(.caption2).foregroundStyle(.secondary);Text(entry["reason"].string).font(.caption).textSelection(.enabled)}
                     }}.frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:65)
                 }.font(.caption)
             }
@@ -83,7 +92,7 @@ struct BundleSheet: View {
             if !failure.isEmpty {Text(failure).font(.caption).foregroundStyle(.red).textSelection(.enabled)}
             HStack {Text("적용 전 취소하면 저장하지 않습니다.").font(.caption).foregroundStyle(.secondary);Spacer();if saving{ProgressView().controlSize(.small)};Button("적용하고 재분석"){Task{await apply()}}.buttonStyle(.borderedProminent).disabled(validation != nil || saving || model.busy)}
         }.padding(22).frame(width:1040,height:780).background(Color(nsColor:.windowBackgroundColor))
-        .sheet(isPresented:$showHistory){BundleHistorySheet(projectID:projectID,reportID:reportID,occurrence:occurrence).environmentObject(model)}
+        .sheet(isPresented:$showHistory){BundleHistorySheet(projectID:projectID,reportID:reportID,occurrence:occurrence,activeDecisionIDs:activeDecisionIDs).environmentObject(model)}
         .onChange(of:sourceID){selectCurrentPDF()}
         .task {
             do {
@@ -133,6 +142,7 @@ struct BundleHistorySheet:View {
     let projectID:String
     let reportID:String
     let occurrence:String
+    var activeDecisionIDs:Set<String>=[]
     @State private var entries:[JSON]=[]
     @State private var cursor:String?=nil
     @State private var loading=false
@@ -143,7 +153,7 @@ struct BundleHistorySheet:View {
     var body:some View {
         VStack(alignment:.leading,spacing:12){
             HStack{Text("제공 PDF 연결 이력").font(.title2.weight(.semibold));Spacer();Button("닫기"){dismiss()}.keyboardShortcut(.cancelAction)}
-            Text("이 고정 보고서에 저장된 순서와 이유입니다. 해제·재연결은 이전 기록을 보존합니다.").font(.caption).foregroundStyle(.secondary)
+            Text("오래된 기록부터 표시합니다. ‘현재 적용 상태’는 이 고정 보고서에서 유효한 마지막 결정입니다. 해제·재연결은 이전 기록을 보존합니다.").font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:14) {
                     ForEach(Array(entries.enumerated()),id:\.offset){_,entry in historyRow(entry)}
@@ -160,6 +170,8 @@ struct BundleHistorySheet:View {
         let id=entry["decision_id"].string
         return VStack(alignment:.leading,spacing:6){
             Text("\(entry["ordinal"].int+1). 슬라이드 \(entry["source_page"].int) → "+(entry["action"].string=="unlink" ? "PDF 연결 없음":"PDF p.\(entry["rendered_page"].int)")).font(.headline)
+            if activeDecisionIDs.contains(id) {Label("현재 적용 상태",systemImage:"checkmark.circle.fill").font(.caption).foregroundStyle(.blue)}
+            Text("수정 이유").font(.caption).foregroundStyle(.secondary)
             Text(reasons[id] ?? entry["reason"].string).font(.callout).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
             if !entry["next_reason_offset"].isNull && reasons[id]==nil {Button(expanding.contains(id) ? "이유 불러오는 중…":"수정 이유 전체 보기"){Task{await expand(entry)}}.disabled(expanding.contains(id))}
             Text("대체한 기존 연결 \(entry["displaced"].array.count)개 · "+String(id.prefix(17))+"…").font(.caption2).foregroundStyle(.secondary)
@@ -200,11 +212,8 @@ struct BundlePagePreview:View {
                 else if !failure.isEmpty {Text(failure).foregroundStyle(.red).font(.caption)}
                 else if payload.isNull {ProgressView().frame(maxWidth:.infinity,maxHeight:.infinity)}
                 else if payload["source"]["kind"].string=="pdf" {OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["page"]["page"].int,zoom:0,evidence:JSON(),page:payload["display_page"])}
-                else {
-                    let aspect=max(0.1,payload["page"]["width"].number/max(1,payload["page"]["height"].number))
-                    let width=min(geometry.size.width,geometry.size.height*aspect)
-                    StructureCanvas(page:payload["page"],evidence:JSON()).frame(width:width,height:width/aspect).frame(maxWidth:.infinity,maxHeight:.infinity)
-                }
+                else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size) {StructureCanvas(page:payload["page"],evidence:JSON()).frame(width:size.width,height:size.height).frame(maxWidth:.infinity,maxHeight:.infinity)}
+                else {ContentUnavailableView("페이지 크기를 확인할 수 없습니다",systemImage:"exclamationmark.triangle")}
             }.background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:5))
         }.frame(maxWidth:.infinity).task(id:projectID+reportID+pageID+basis){
             payload=JSON();failure="";guard !pageID.isEmpty else{return}

@@ -42,8 +42,9 @@ export function applyBundleDecisions(revision:RevisionData,history:BundleDecisio
     const {decision}=directive,{source,target}=bundleContext([revision],{...decision,source_page_id:directive.source_page_id,rendered_page_id:directive.rendered_page_id,action:directive.action});
     if(directive.action==='unlink'){clearReference(source);source.coverage_gaps.push({feature:'reference_appearance',reason:directive.displaced?'manual_reference_displaced_by_another_source':'manual_reference_explicitly_unlinked'});continue;}
     if(!target)throw new DocverError('BUNDLE_PAGE_SCOPE','연결할 제공 PDF 페이지를 찾지 못했습니다.');
+    const score=similarity(source,target);
+    if(decision.score!==score)throw new DocverError('BUNDLE_SCORE','연결 점수가 원본 페이지의 관측과 다릅니다. 원본과 연결 이력을 확인하세요.');
     clearReference(source);source.preview=undefined;source.raster=undefined;
-    const score=decision.score!;
     retained.push({source_page_id:source.page_id,rendered_page_id:target.page_id,score,association:'human_confirmed',decision_id:decision.decision_id});
     if(target.source_transform.length!==6){source.coverage_gaps.push({feature:'reference_appearance',reason:'manual_reference_transform_unavailable'});continue;}
     source.appearance={kind:'reference_pdf',asset_id:target.asset_id,source_page_id:target.page_id,page:target.page,width:target.width,height:target.height,source_transform:[...target.source_transform],...(target.raster?{raster:{...target.raster}}:{}),association:'human_confirmed',score,policy:'human-bundle-v1',decision_id:decision.decision_id,reason:decision.reason};

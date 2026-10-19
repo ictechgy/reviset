@@ -171,12 +171,12 @@ struct PageColumn: View {
                 else if payload.isNull { ProgressView("원문 페이지 로딩…").frame(maxWidth:.infinity,maxHeight:.infinity) }
                 else if payload["source"]["kind"].string == "pdf" {
                     OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:payload["source"]["origin"].string == "original" ? evidence : JSON(),page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
-                } else {
+                } else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size) {
                     ScrollView([.horizontal,.vertical]) {
-                        let width = geometry.size.width * (model.zoom == 0 ? 1 : model.zoom)
-                        VStack { Spacer(minLength:0); StructureCanvas(page:payload["page"],evidence:evidence).frame(width:width,height:width * max(0.1,payload["page"]["height"].number/max(1,payload["page"]["width"].number))).shadow(color:.black.opacity(0.08),radius:5); Spacer(minLength:0) }.frame(minHeight:geometry.size.height)
+                        let scale = model.zoom == 0 ? 1 : model.zoom
+                        VStack { Spacer(minLength:0); StructureCanvas(page:payload["page"],evidence:evidence).frame(width:size.width*scale,height:size.height*scale).shadow(color:.black.opacity(0.08),radius:5); Spacer(minLength:0) }.frame(minWidth:geometry.size.width,minHeight:geometry.size.height)
                     }
-                }
+                } else {ContentUnavailableView("페이지 크기를 확인할 수 없습니다",systemImage:"exclamationmark.triangle")}
             }.background(Color(nsColor:.windowBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:5))
             DisclosureGroup("추출 내용·표·표시 상태",isExpanded:$rawOpen) {
                 ScrollView { LazyVStack(alignment:.leading,spacing:10) {

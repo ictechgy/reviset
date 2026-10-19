@@ -7,6 +7,12 @@ import SwiftUI
  }
  @MainActor static func exercise() async throws {
   let model=AppModel()
+  for (width,height,expectedWidth,expectedHeight) in [(960.0,540.0,400.0,225.0),(100.0,2000.0,12.5,250.0),(2000.0,100.0,400.0,20.0),(0.5,10.0,12.5,250.0)] {
+   guard let fitted=fittedPageSize(width:width,height:height,available:CGSize(width:400,height:250)),abs(fitted.width-expectedWidth)<0.000001,abs(fitted.height-expectedHeight)<0.000001 else{throw NSError(domain:"PageFitDistortedAcceptedAspect",code:14)}
+  }
+  for (width,height) in [(0.0,100.0),(-1.0,100.0),(Double.nan,100.0),(100.0,Double.infinity)] {
+   guard fittedPageSize(width:width,height:height,available:CGSize(width:400,height:250))==nil else{throw NSError(domain:"PageFitAcceptedInvalidDimensions",code:15)}
+  }
   let revisions:[[String:Any]]=[
    ["revision_occurrence_id":"occ_before","assets":[["asset_id":"pptx_before","format":"pptx"],["asset_id":"pdf_before","format":"pdf"]],"pages":[["page_id":"source_before","asset_id":"pptx_before","appearance":["source_page_id":"reference_before"]],["page_id":"reference_before","asset_id":"pdf_before"],["page_id":"source_before_b","asset_id":"pptx_before"]]],
    ["revision_occurrence_id":"occ_after","assets":[["asset_id":"pptx_after","format":"pptx"],["asset_id":"pdf_after","format":"pdf"]],"pages":[["page_id":"source_after","asset_id":"pptx_after","appearance":["source_page_id":"reference_after"]],["page_id":"reference_after","asset_id":"pdf_after"]]]]

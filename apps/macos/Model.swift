@@ -332,6 +332,13 @@ struct ImportRow: Identifiable,Equatable {
         rows.swapAt(index,index+delta);return true
     }
 }
+func fittedPageSize(width:Double,height:Double,available:CGSize)->CGSize? {
+    let boundsWidth=Double(available.width),boundsHeight=Double(available.height)
+    guard [width,height,boundsWidth,boundsHeight].allSatisfy({$0.isFinite && $0>0}) else{return nil}
+    let scale=min(boundsWidth/width,boundsHeight/height),w=width*scale,h=height*scale
+    guard scale.isFinite,scale>0,w.isFinite,h.isFinite,w>0,h>0 else{return nil}
+    return CGSize(width:w,height:h)
+}
 let changeNames = ["text_modified": "텍스트 수정", "page_moved": "페이지 이동", "page_added": "페이지 추가", "page_deleted": "페이지 삭제", "text_struck_through": "취소선 표시", "text_occluded": "텍스트 가림", "text_revealed": "텍스트 다시 표시", "visual_region_changed": "화면 변경", "coverage_gap": "관측 공백", "page_split": "페이지 분할", "page_merged": "페이지 병합", "page_lineage_changed": "페이지 계보 변경"]
 func isReferenceAppearanceChange(_ change:JSON)->Bool {
     change["kind"].string == "visual_region_changed" && change["evidence"].array.contains { $0["method"].string == "provided_pdf_native_raster" }
