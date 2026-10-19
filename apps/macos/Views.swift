@@ -17,7 +17,7 @@ func evidenceMethodName(_ value:String)->String {
     switch value {
     case "pdf_text": return "PDF 원문 텍스트"
     case "vision_ocr": return "화면 OCR · 추정"
-    case "native_raster": return "원본 화면 관측"
+    case "native_raster": return "렌더 화면"
     case "page_observation": return "페이지 관측"
     case "pdf_page_annotation": return "PDF 주석 메타데이터"
     default: return value.hasPrefix("pptx") || value.hasPrefix("ooxml") ? "PPTX 원본 구조" : "원문 관측"
