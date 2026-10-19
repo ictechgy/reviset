@@ -27,11 +27,15 @@ import PDFKit
             let startedAt=Date()
             if !request["existing_project_id"].string.isEmpty {
                 await model.selectProject(request["existing_project_id"].string,snapshot:request["existing_report_id"].string)
+            } else if !request["bundle_revisions"].array.isEmpty {
+                let rows=request["bundle_revisions"].array.map{r in ImportRow(label:r["label"].string,urls:r["files"].array.map{URL(fileURLWithPath:$0.string)})}
+                let p=try await model.create(title:"제공 PDF 화면 근거 검증",rows:rows);model.projectID=p["project_id"].string;await model.run(model.projectID)
             } else if request["files"].array.isEmpty{await model.demo()}
             else{let rows=request["files"].array.map{ImportRow(label:URL(fileURLWithPath:$0.string).deletingPathExtension().lastPathComponent,urls:[URL(fileURLWithPath:$0.string)])};let p=try await model.create(title:"수백 페이지 합성 검증",rows:rows);model.projectID=p["project_id"].string;await model.run(model.projectID)}
             guard !model.report.isNull else{throw BridgeError(code:"SMOKE_NO_REPORT",message:model.error)}
             let manualChecks=request["manual_relations"].bool ? try await exerciseManualRelations(model,output):[]
             let layoutChecks=request["layout_checks"].bool ? try await exerciseLayout(model):[:]
+            let referenceChecks=request["reference_appearance_checks"].bool ? try await exerciseReferenceAppearance(model):[:]
             model.inspector=true
             try await Task.sleep(nanoseconds:700_000_000);try capture(output.appendingPathComponent("native-compare.png"))
             model.inspector=false;model.focus=true;model.showChanges=false;model.pageMode="after"
@@ -55,9 +59,23 @@ import PDFKit
             model.tab="history";try await model.updateChanges()
             await model.loadMCP()
             let numeric=model.changes.filter{$0["kind"].string=="text_modified"}
-            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
+            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"reference_appearance_checks":referenceChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
             try JSON(result).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
         }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Docver native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
+    }
+    static func exerciseReferenceAppearance(_ model:AppModel) async throws->[String:Any] {
+        var references=0
+        for revision in model.revisions {for page in model.primaryPages(revision) where !page["appearance"].isNull {
+            let payload=try await model.bridge.call("page",["project_id":model.projectID,"report_id":model.report["report_id"].string,"page_id":page["page_id"].string])
+            guard payload["source"]["origin"].string=="reference_pdf",payload["page"]["preview"].isNull,payload["page"]["raster"].isNull,payload["display_page"]["asset_id"].string==page["appearance"]["asset_id"].string,payload["display_page_number"].int==payload["page"]["appearance"]["page"].int else{throw BridgeError(code:"REFERENCE_SOURCE",message:"제공 PDF의 원본·페이지 근거가 일치하지 않습니다.")}
+            references+=1
+        }}
+        guard references>0,model.revisions.count>=2 else{throw BridgeError(code:"REFERENCE_MISSING",message:"제공 PDF 대응이 없습니다.")}
+        model.tab="compare";model.from=0;model.to=1;try await model.updateChanges()
+        guard let visual=model.changes.first(where:{$0["kind"].string=="visual_region_changed" || $0["coverage_gaps"].array.contains(where:{$0["reason"].string=="reference_pdf_changed_without_pptx_source_change"})}) else{throw BridgeError(code:"REFERENCE_VISUAL",message:"제공 PDF의 화면 차이 근거가 없습니다.")}
+        model.selectedChangeID=visual["change_id"].string;model.selectEvidence()
+        guard model.primaryPages(model.revision(0)).contains(where:{$0["page_id"].string==model.leftPageID}),model.primaryPages(model.revision(1)).contains(where:{$0["page_id"].string==model.rightPageID}),visual["appearance_assessment"].string=="inferred",visual["evidence"].array.allSatisfy({$0["method"].string=="provided_pdf_native_raster"}) else{throw BridgeError(code:"REFERENCE_NAVIGATION",message:"PDF 화면 근거에서 원본 슬라이드로 이동하지 못했습니다.")}
+        return ["reference_pages":references,"hash_verified_pdf_source":true,"source_slide_navigation":true,"visual_association_inferred":true,"source_unchanged_reference_difference_withheld":visual["kind"].string=="coverage_gap"]
     }
     static func exerciseManualRelations(_ model:AppModel,_ output:URL) async throws -> [String] {
         let project=model.projectID,original=model.report["report_id"].string

@@ -148,7 +148,7 @@ struct PageColumn: View {
     @State private var rawOpen = false
     var pages: [JSON] { model.primaryPages(revision) }
     var current: JSON { pages.first { $0["page_id"].string == pageID } ?? JSON() }
-    var evidence: JSON { model.selected["evidence"].array.first { $0["page_id"].string == pageID } ?? JSON() }
+    var evidence: JSON { model.selected["evidence"].array.first { $0["page_id"].string == pageID || (!current["appearance"]["source_page_id"].string.isEmpty && $0["page_id"].string == current["appearance"]["source_page_id"].string) } ?? JSON() }
     var body: some View {
         VStack(spacing: 9) {
             HStack { Text(side + " · " + revision["label"].string).font(.headline); Spacer()
@@ -159,10 +159,10 @@ struct PageColumn: View {
                 TextField("페이지", text:$pageInput).frame(width:48).multilineTextAlignment(.center).onSubmit { if let n=Int(pageInput){go(n)} }
                 Text("/ \(pages.count)").foregroundStyle(.secondary).font(.caption)
                 Button { go(current["page"].int+1) } label: { Image(systemName:"chevron.right") }.disabled(current.isNull || current["page"].int>=pages.count)
-                Spacer(); Text(payload["source"]["origin"].string == "reference_pdf" ? "같은 버전의 원본 PDF" : payload["source"]["origin"].string == "pptx_converted" ? "PPTX 렌더 · LibreOffice" : payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 렌더 없음").font(.caption).foregroundStyle(.secondary)
+                Spacer(); Text(payload["source"]["origin"].string == "reference_pdf" ? "제공 PDF · 페이지 대응 추정" : payload["source"]["origin"].string == "pptx_converted" ? "PPTX 렌더 · LibreOffice" : payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 렌더 없음").font(.caption).foregroundStyle(.secondary)
             }.controlSize(.small)
             if !evidence.isNull && ["reference_pdf","pptx_converted"].contains(payload["source"]["origin"].string) {
-                Text("PPTX 근거의 화면 좌표는 미검증입니다. 아래 추출 원문에서 내용을 확인하세요.").font(.caption).foregroundStyle(.orange)
+                Text(evidence["method"].string == "provided_pdf_native_raster" ? "제공 PDF의 화면 근거입니다. PPTX와의 페이지 대응은 추정입니다." : "PPTX 근거의 화면 좌표는 미검증입니다. 아래 추출 원문에서 내용을 확인하세요.").font(.caption).foregroundStyle(.orange)
             }
             GeometryReader { geometry in
                 if current.isNull { ContentUnavailableView("대응하는 원문 없음", systemImage:"doc", description:Text("관측 부재와 실제 삭제를 변경 근거에서 구분하세요.")) }

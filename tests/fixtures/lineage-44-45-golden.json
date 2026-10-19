@@ -1,0 +1,3214 @@
+{
+  "source_head": "5c843896528bf392e850ec7057b61364ead349e8",
+  "scope": "Generated with immutable native49 frozen code BEFORE bundle50 kernel changes; actual historical net IDs, full events and evidence for four selector pairs, continuation+branch.",
+  "fixtures": [
+    {
+      "report": {
+        "schema_version": "0.3.0",
+        "engine_version": "0.3.0-native.lineage.44",
+        "report_id": "report_golden_44_false",
+        "project_id": "project_golden",
+        "timeline_revision_id": "timeline_golden",
+        "mapping_revision_id": "mapping_golden",
+        "schema_hash": "a609f4c11c81384edc7b8852d26114dba48150bf1b158ce21a8e90883fcc2f83",
+        "observation_environment": {
+          "fixture": "immutable_native49_golden"
+        },
+        "revisions": [
+          {
+            "revision_id": "rev_a",
+            "revision_occurrence_id": "occ_a",
+            "label": "a",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "a",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "매출 100억",
+                "elements": [
+                  {
+                    "observation_id": "obs_a",
+                    "kind": "text",
+                    "text": "매출 100억",
+                    "normalized_text": "매출 100억",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "a",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          },
+          {
+            "revision_id": "rev_b",
+            "revision_occurrence_id": "occ_b",
+            "label": "b",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "b",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "매출 120억",
+                "elements": [
+                  {
+                    "observation_id": "obs_b",
+                    "kind": "text",
+                    "text": "매출 120억",
+                    "normalized_text": "매출 120억",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "b",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          },
+          {
+            "revision_id": "rev_c",
+            "revision_occurrence_id": "occ_c",
+            "label": "c",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "c",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "매출 110억",
+                "elements": [
+                  {
+                    "observation_id": "obs_c",
+                    "kind": "text",
+                    "text": "매출 110억",
+                    "normalized_text": "매출 110억",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "c",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          }
+        ],
+        "matches": [
+          {
+            "from_page_id": "a",
+            "to_page_id": "b",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ]
+          },
+          {
+            "from_page_id": "b",
+            "to_page_id": "c",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ]
+          }
+        ],
+        "candidates": [],
+        "mapping_decisions": [],
+        "mapping_relations": [],
+        "lineages": [
+          {
+            "entity_id": "family",
+            "page_ids": [
+              "a",
+              "b",
+              "c"
+            ],
+            "status": "human_confirmed"
+          }
+        ],
+        "changes": [],
+        "coverage_gaps": []
+      },
+      "requests": [
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_44_false",
+            "from": "rev_a",
+            "to": "rev_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_false",
+              "change_id": "net_d4e258e88853976e290e3695c4fdd8e10b2d617d96f65d831eaec63d2eb2bd48",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "text_modified",
+              "before": "매출 100억",
+              "after": "매출 110억",
+              "text_assessment": "observed",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net"
+                ]
+              },
+              "coverage_gaps": [],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_44_false/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_false",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_44_false",
+            "from": "rev_a",
+            "to": "occ_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_false",
+              "change_id": "net_250c7c61e54207c3b9649afa4534057583faa7450fce91b321110f463a6a8483",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "text_modified",
+              "before": "매출 100억",
+              "after": "매출 110억",
+              "text_assessment": "observed",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net"
+                ]
+              },
+              "coverage_gaps": [],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_44_false/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_false",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_44_false",
+            "from": "occ_a",
+            "to": "rev_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_false",
+              "change_id": "net_1e47c3944f35ce2abbebbf8100d1910cfeeb5dde48359f822427d06fa5b9c769",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "text_modified",
+              "before": "매출 100억",
+              "after": "매출 110억",
+              "text_assessment": "observed",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net"
+                ]
+              },
+              "coverage_gaps": [],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_44_false/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_false",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_44_false",
+            "from": "occ_a",
+            "to": "occ_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_false",
+              "change_id": "net_6c8084df8ae1a2192d41009940279ffc35b74a42bdc3611bd59f83ca9a2cac03",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "text_modified",
+              "before": "매출 100억",
+              "after": "매출 110억",
+              "text_assessment": "observed",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net"
+                ]
+              },
+              "coverage_gaps": [],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_44_false/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_false",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "report": {
+        "schema_version": "0.3.0",
+        "engine_version": "0.3.0-native.lineage.44",
+        "report_id": "report_golden_44_true",
+        "project_id": "project_golden",
+        "timeline_revision_id": "timeline_golden",
+        "mapping_revision_id": "mapping_golden",
+        "schema_hash": "a609f4c11c81384edc7b8852d26114dba48150bf1b158ce21a8e90883fcc2f83",
+        "observation_environment": {
+          "fixture": "immutable_native49_golden"
+        },
+        "revisions": [
+          {
+            "revision_id": "rev_a",
+            "revision_occurrence_id": "occ_a",
+            "label": "a",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "a",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "매출 100억",
+                "elements": [
+                  {
+                    "observation_id": "obs_a",
+                    "kind": "text",
+                    "text": "매출 100억",
+                    "normalized_text": "매출 100억",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "a",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          },
+          {
+            "revision_id": "rev_b",
+            "revision_occurrence_id": "occ_b",
+            "label": "b",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "b1",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "설계 내용",
+                "elements": [
+                  {
+                    "observation_id": "obs_b1",
+                    "kind": "text",
+                    "text": "설계 내용",
+                    "normalized_text": "설계 내용",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "b1",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              },
+              {
+                "page_id": "b2",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "구현 내용",
+                "elements": [
+                  {
+                    "observation_id": "obs_b2",
+                    "kind": "text",
+                    "text": "구현 내용",
+                    "normalized_text": "구현 내용",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "b2",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          },
+          {
+            "revision_id": "rev_c",
+            "revision_occurrence_id": "occ_c",
+            "label": "c",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "c",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "매출 110억",
+                "elements": [
+                  {
+                    "observation_id": "obs_c",
+                    "kind": "text",
+                    "text": "매출 110억",
+                    "normalized_text": "매출 110억",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "c",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          }
+        ],
+        "matches": [
+          {
+            "from_page_id": "a",
+            "to_page_id": "b1",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ],
+            "relation_id": "split_rel",
+            "relation_kind": "split"
+          },
+          {
+            "from_page_id": "a",
+            "to_page_id": "b2",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ],
+            "relation_id": "split_rel",
+            "relation_kind": "split"
+          },
+          {
+            "from_page_id": "b1",
+            "to_page_id": "c",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ],
+            "relation_id": "merge_rel",
+            "relation_kind": "merge"
+          },
+          {
+            "from_page_id": "b2",
+            "to_page_id": "c",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ],
+            "relation_id": "merge_rel",
+            "relation_kind": "merge"
+          }
+        ],
+        "candidates": [],
+        "mapping_decisions": [],
+        "mapping_relations": [],
+        "lineages": [
+          {
+            "entity_id": "family",
+            "page_ids": [
+              "a",
+              "b1",
+              "b2",
+              "c"
+            ],
+            "status": "human_confirmed"
+          }
+        ],
+        "changes": [],
+        "coverage_gaps": []
+      },
+      "requests": [
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_44_true",
+            "from": "rev_a",
+            "to": "rev_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_true",
+              "change_id": "net_e1729ec41103ca72540c4be4c8d4fc1cc04f1cc66cf0dae4db124003960fc120",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "page_lineage_changed",
+              "topology": {
+                "relation_id": "range_rel_a1bd5c4522ba3e09478e5f6b4e92ad96e1ac03bec5e1a6426248cbd1852c8a29",
+                "kind": "range_lineage",
+                "from_page_ids": [
+                  "a"
+                ],
+                "to_page_ids": [
+                  "c"
+                ],
+                "semantics": "directed_reachability"
+              },
+              "before": "이전 1페이지",
+              "after": "이후 1페이지",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net",
+                  "structural_lineage_does_not_confirm_text"
+                ]
+              },
+              "coverage_gaps": [
+                {
+                  "feature": "comparison",
+                  "reason": "split_merge_text_comparison_withheld"
+                }
+              ],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_44_true/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_true",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_44_true",
+            "from": "rev_a",
+            "to": "occ_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_true",
+              "change_id": "net_9e2c4bf7e03c13d87b649af20c06aadb7c97ffe5a61075bfc826382db29bd456",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "page_lineage_changed",
+              "topology": {
+                "relation_id": "range_rel_a1bd5c4522ba3e09478e5f6b4e92ad96e1ac03bec5e1a6426248cbd1852c8a29",
+                "kind": "range_lineage",
+                "from_page_ids": [
+                  "a"
+                ],
+                "to_page_ids": [
+                  "c"
+                ],
+                "semantics": "directed_reachability"
+              },
+              "before": "이전 1페이지",
+              "after": "이후 1페이지",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net",
+                  "structural_lineage_does_not_confirm_text"
+                ]
+              },
+              "coverage_gaps": [
+                {
+                  "feature": "comparison",
+                  "reason": "split_merge_text_comparison_withheld"
+                }
+              ],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_44_true/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_true",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_44_true",
+            "from": "occ_a",
+            "to": "rev_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_true",
+              "change_id": "net_26e3bcab317c9689e8ffb0018a1497ffc252d92cbb61d8d4d93ee3e71836e6fd",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "page_lineage_changed",
+              "topology": {
+                "relation_id": "range_rel_a1bd5c4522ba3e09478e5f6b4e92ad96e1ac03bec5e1a6426248cbd1852c8a29",
+                "kind": "range_lineage",
+                "from_page_ids": [
+                  "a"
+                ],
+                "to_page_ids": [
+                  "c"
+                ],
+                "semantics": "directed_reachability"
+              },
+              "before": "이전 1페이지",
+              "after": "이후 1페이지",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net",
+                  "structural_lineage_does_not_confirm_text"
+                ]
+              },
+              "coverage_gaps": [
+                {
+                  "feature": "comparison",
+                  "reason": "split_merge_text_comparison_withheld"
+                }
+              ],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_44_true/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_true",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_44_true",
+            "from": "occ_a",
+            "to": "occ_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_true",
+              "change_id": "net_484682482424d8eaf1a379d7aadfc2af7b6b00ef8116fb622c297fcd2b487950",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "page_lineage_changed",
+              "topology": {
+                "relation_id": "range_rel_a1bd5c4522ba3e09478e5f6b4e92ad96e1ac03bec5e1a6426248cbd1852c8a29",
+                "kind": "range_lineage",
+                "from_page_ids": [
+                  "a"
+                ],
+                "to_page_ids": [
+                  "c"
+                ],
+                "semantics": "directed_reachability"
+              },
+              "before": "이전 1페이지",
+              "after": "이후 1페이지",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net",
+                  "structural_lineage_does_not_confirm_text"
+                ]
+              },
+              "coverage_gaps": [
+                {
+                  "feature": "comparison",
+                  "reason": "split_merge_text_comparison_withheld"
+                }
+              ],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_44_true/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_44_true",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "report": {
+        "schema_version": "0.3.0",
+        "engine_version": "0.3.0-native.lineage.45",
+        "report_id": "report_golden_45_false",
+        "project_id": "project_golden",
+        "timeline_revision_id": "timeline_golden",
+        "mapping_revision_id": "mapping_golden",
+        "schema_hash": "a609f4c11c81384edc7b8852d26114dba48150bf1b158ce21a8e90883fcc2f83",
+        "observation_environment": {
+          "fixture": "immutable_native49_golden"
+        },
+        "revisions": [
+          {
+            "revision_id": "rev_a",
+            "revision_occurrence_id": "occ_a",
+            "label": "a",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "a",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "매출 100억",
+                "elements": [
+                  {
+                    "observation_id": "obs_a",
+                    "kind": "text",
+                    "text": "매출 100억",
+                    "normalized_text": "매출 100억",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "a",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          },
+          {
+            "revision_id": "rev_b",
+            "revision_occurrence_id": "occ_b",
+            "label": "b",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "b",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "매출 120억",
+                "elements": [
+                  {
+                    "observation_id": "obs_b",
+                    "kind": "text",
+                    "text": "매출 120억",
+                    "normalized_text": "매출 120억",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "b",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          },
+          {
+            "revision_id": "rev_c",
+            "revision_occurrence_id": "occ_c",
+            "label": "c",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "c",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "매출 110억",
+                "elements": [
+                  {
+                    "observation_id": "obs_c",
+                    "kind": "text",
+                    "text": "매출 110억",
+                    "normalized_text": "매출 110억",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "c",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          }
+        ],
+        "matches": [
+          {
+            "from_page_id": "a",
+            "to_page_id": "b",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ]
+          },
+          {
+            "from_page_id": "b",
+            "to_page_id": "c",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ]
+          }
+        ],
+        "candidates": [],
+        "mapping_decisions": [],
+        "mapping_relations": [],
+        "lineages": [
+          {
+            "entity_id": "family",
+            "page_ids": [
+              "a",
+              "b",
+              "c"
+            ],
+            "status": "human_confirmed"
+          }
+        ],
+        "changes": [],
+        "coverage_gaps": []
+      },
+      "requests": [
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_45_false",
+            "from": "rev_a",
+            "to": "rev_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_false",
+              "change_id": "net_a93edef85912b744e8aa1eebeee59e6d2ee1e054fdfb1a6a0362d5d70026afcc",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "text_modified",
+              "before": "매출 100억",
+              "after": "매출 110억",
+              "text_assessment": "observed",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net"
+                ]
+              },
+              "coverage_gaps": [],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_45_false/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_false",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_45_false",
+            "from": "rev_a",
+            "to": "occ_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_false",
+              "change_id": "net_a93edef85912b744e8aa1eebeee59e6d2ee1e054fdfb1a6a0362d5d70026afcc",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "text_modified",
+              "before": "매출 100억",
+              "after": "매출 110억",
+              "text_assessment": "observed",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net"
+                ]
+              },
+              "coverage_gaps": [],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_45_false/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_false",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_45_false",
+            "from": "occ_a",
+            "to": "rev_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_false",
+              "change_id": "net_a93edef85912b744e8aa1eebeee59e6d2ee1e054fdfb1a6a0362d5d70026afcc",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "text_modified",
+              "before": "매출 100억",
+              "after": "매출 110억",
+              "text_assessment": "observed",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net"
+                ]
+              },
+              "coverage_gaps": [],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_45_false/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_false",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_45_false",
+            "from": "occ_a",
+            "to": "occ_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_false",
+              "change_id": "net_a93edef85912b744e8aa1eebeee59e6d2ee1e054fdfb1a6a0362d5d70026afcc",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "text_modified",
+              "before": "매출 100억",
+              "after": "매출 110억",
+              "text_assessment": "observed",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net"
+                ]
+              },
+              "coverage_gaps": [],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_45_false/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_false",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "report": {
+        "schema_version": "0.3.0",
+        "engine_version": "0.3.0-native.lineage.45",
+        "report_id": "report_golden_45_true",
+        "project_id": "project_golden",
+        "timeline_revision_id": "timeline_golden",
+        "mapping_revision_id": "mapping_golden",
+        "schema_hash": "a609f4c11c81384edc7b8852d26114dba48150bf1b158ce21a8e90883fcc2f83",
+        "observation_environment": {
+          "fixture": "immutable_native49_golden"
+        },
+        "revisions": [
+          {
+            "revision_id": "rev_a",
+            "revision_occurrence_id": "occ_a",
+            "label": "a",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "a",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "매출 100억",
+                "elements": [
+                  {
+                    "observation_id": "obs_a",
+                    "kind": "text",
+                    "text": "매출 100억",
+                    "normalized_text": "매출 100억",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "a",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          },
+          {
+            "revision_id": "rev_b",
+            "revision_occurrence_id": "occ_b",
+            "label": "b",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "b1",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "설계 내용",
+                "elements": [
+                  {
+                    "observation_id": "obs_b1",
+                    "kind": "text",
+                    "text": "설계 내용",
+                    "normalized_text": "설계 내용",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "b1",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              },
+              {
+                "page_id": "b2",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "구현 내용",
+                "elements": [
+                  {
+                    "observation_id": "obs_b2",
+                    "kind": "text",
+                    "text": "구현 내용",
+                    "normalized_text": "구현 내용",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "b2",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          },
+          {
+            "revision_id": "rev_c",
+            "revision_occurrence_id": "occ_c",
+            "label": "c",
+            "assets": [
+              {
+                "asset_id": "source_asset",
+                "format": "pptx",
+                "bytes": 0
+              }
+            ],
+            "status": "success",
+            "pages": [
+              {
+                "page_id": "c",
+                "asset_id": "source_asset",
+                "page": 1,
+                "width": 960,
+                "height": 540,
+                "coordinate_system": "normalized_top_left",
+                "source_transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ],
+                "hidden": false,
+                "text": "매출 110억",
+                "elements": [
+                  {
+                    "observation_id": "obs_c",
+                    "kind": "text",
+                    "text": "매출 110억",
+                    "normalized_text": "매출 110억",
+                    "bbox": [
+                      0.1,
+                      0.1,
+                      0.5,
+                      0.1
+                    ],
+                    "reading_order": 0,
+                    "availability": "available",
+                    "method": "ooxml_text",
+                    "source_ref": "c",
+                    "provenance": "observed"
+                  }
+                ],
+                "notes": "",
+                "capabilities": {
+                  "text": "available",
+                  "notes": "available",
+                  "hidden_slides": "available",
+                  "animation": "unavailable",
+                  "structure": "available",
+                  "preview": "unavailable"
+                },
+                "coverage_gaps": []
+              }
+            ],
+            "coverage_gaps": [],
+            "errors": [],
+            "bundle_mapping": []
+          }
+        ],
+        "matches": [
+          {
+            "from_page_id": "a",
+            "to_page_id": "b1",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ],
+            "relation_id": "split_rel",
+            "relation_kind": "split"
+          },
+          {
+            "from_page_id": "a",
+            "to_page_id": "b2",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ],
+            "relation_id": "split_rel",
+            "relation_kind": "split"
+          },
+          {
+            "from_page_id": "b1",
+            "to_page_id": "c",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ],
+            "relation_id": "merge_rel",
+            "relation_kind": "merge"
+          },
+          {
+            "from_page_id": "b2",
+            "to_page_id": "c",
+            "score": 1,
+            "status": "human_confirmed",
+            "reasons": [
+              "frozen_preappearance_baseline"
+            ],
+            "relation_id": "merge_rel",
+            "relation_kind": "merge"
+          }
+        ],
+        "candidates": [],
+        "mapping_decisions": [],
+        "mapping_relations": [],
+        "lineages": [
+          {
+            "entity_id": "family",
+            "page_ids": [
+              "a",
+              "b1",
+              "b2",
+              "c"
+            ],
+            "status": "human_confirmed"
+          }
+        ],
+        "changes": [],
+        "coverage_gaps": []
+      },
+      "requests": [
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_45_true",
+            "from": "rev_a",
+            "to": "rev_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_true",
+              "change_id": "net_c6f4a1b08ee33018429278df65d7cc3d41842288728edb6c67f91f7363695a1c",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "page_lineage_changed",
+              "topology": {
+                "relation_id": "range_rel_a1bd5c4522ba3e09478e5f6b4e92ad96e1ac03bec5e1a6426248cbd1852c8a29",
+                "kind": "range_lineage",
+                "from_page_ids": [
+                  "a"
+                ],
+                "to_page_ids": [
+                  "c"
+                ],
+                "semantics": "directed_reachability"
+              },
+              "before": "이전 1페이지",
+              "after": "이후 1페이지",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net",
+                  "structural_lineage_does_not_confirm_text"
+                ]
+              },
+              "coverage_gaps": [
+                {
+                  "feature": "comparison",
+                  "reason": "split_merge_text_comparison_withheld"
+                }
+              ],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_45_true/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_true",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_45_true",
+            "from": "rev_a",
+            "to": "occ_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_true",
+              "change_id": "net_c6f4a1b08ee33018429278df65d7cc3d41842288728edb6c67f91f7363695a1c",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "page_lineage_changed",
+              "topology": {
+                "relation_id": "range_rel_a1bd5c4522ba3e09478e5f6b4e92ad96e1ac03bec5e1a6426248cbd1852c8a29",
+                "kind": "range_lineage",
+                "from_page_ids": [
+                  "a"
+                ],
+                "to_page_ids": [
+                  "c"
+                ],
+                "semantics": "directed_reachability"
+              },
+              "before": "이전 1페이지",
+              "after": "이후 1페이지",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net",
+                  "structural_lineage_does_not_confirm_text"
+                ]
+              },
+              "coverage_gaps": [
+                {
+                  "feature": "comparison",
+                  "reason": "split_merge_text_comparison_withheld"
+                }
+              ],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_45_true/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_true",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_45_true",
+            "from": "occ_a",
+            "to": "rev_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_true",
+              "change_id": "net_c6f4a1b08ee33018429278df65d7cc3d41842288728edb6c67f91f7363695a1c",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "page_lineage_changed",
+              "topology": {
+                "relation_id": "range_rel_a1bd5c4522ba3e09478e5f6b4e92ad96e1ac03bec5e1a6426248cbd1852c8a29",
+                "kind": "range_lineage",
+                "from_page_ids": [
+                  "a"
+                ],
+                "to_page_ids": [
+                  "c"
+                ],
+                "semantics": "directed_reachability"
+              },
+              "before": "이전 1페이지",
+              "after": "이후 1페이지",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net",
+                  "structural_lineage_does_not_confirm_text"
+                ]
+              },
+              "coverage_gaps": [
+                {
+                  "feature": "comparison",
+                  "reason": "split_merge_text_comparison_withheld"
+                }
+              ],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_45_true/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_true",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        },
+        {
+          "args": {
+            "project_id": "project_golden",
+            "report_id": "report_golden_45_true",
+            "from": "occ_a",
+            "to": "occ_c",
+            "mode": "range_net"
+          },
+          "events": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_true",
+              "change_id": "net_c6f4a1b08ee33018429278df65d7cc3d41842288728edb6c67f91f7363695a1c",
+              "entity_id": "family",
+              "from_revision": "rev_a",
+              "to_revision": "rev_c",
+              "from_occurrence": "occ_a",
+              "to_occurrence": "occ_c",
+              "kind": "page_lineage_changed",
+              "topology": {
+                "relation_id": "range_rel_a1bd5c4522ba3e09478e5f6b4e92ad96e1ac03bec5e1a6426248cbd1852c8a29",
+                "kind": "range_lineage",
+                "from_page_ids": [
+                  "a"
+                ],
+                "to_page_ids": [
+                  "c"
+                ],
+                "semantics": "directed_reachability"
+              },
+              "before": "이전 1페이지",
+              "after": "이후 1페이지",
+              "evidence": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed"
+                }
+              ],
+              "lineage": {
+                "status": "human_confirmed",
+                "score": 1,
+                "reasons": [
+                  "directed_lineage_range_net",
+                  "structural_lineage_does_not_confirm_text"
+                ]
+              },
+              "coverage_gaps": [
+                {
+                  "feature": "comparison",
+                  "reason": "split_merge_text_comparison_withheld"
+                }
+              ],
+              "evidence_uri": "docver://projects/project_golden/reports/report_golden_45_true/manifest"
+            }
+          ],
+          "evidence": [
+            {
+              "schema_version": "0.3.0",
+              "report_id": "report_golden_45_true",
+              "items": [
+                {
+                  "revision_id": "rev_a",
+                  "revision_occurrence_id": "occ_a",
+                  "asset_id": "source_asset",
+                  "page_id": "a",
+                  "page": 1,
+                  "observation_id": "obs_a",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 100억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                },
+                {
+                  "revision_id": "rev_c",
+                  "revision_occurrence_id": "occ_c",
+                  "asset_id": "source_asset",
+                  "page_id": "c",
+                  "page": 1,
+                  "observation_id": "obs_c",
+                  "bbox": [
+                    0.1,
+                    0.1,
+                    0.5,
+                    0.1
+                  ],
+                  "quote": "매출 110억",
+                  "method": "ooxml_text",
+                  "provenance": "observed",
+                  "text_offset": 0,
+                  "next_text_offset": null
+                }
+              ],
+              "next_cursor": null,
+              "coverage_gaps": [],
+              "truncated": false,
+              "omitted_fields": [],
+              "token_estimation": "conservative_utf8_bytes_upper_estimate; model tokenizer varies"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

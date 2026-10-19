@@ -11,7 +11,7 @@ function dice(x:Set<string>,y:Set<string>):number {
 }
 export const matchingText=(p:PageData)=>p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p).map(e=>e.text).join('\n'):p.comparison_basis==='raster_ocr'?p.elements.filter(e=>e.method==='vision_ocr').map(e=>e.text).join('\n'):p.text+(p.ocr?.mode==='supplement'?'\n'+p.ocr_text:'');
 const sameOriginalPage=(a:PageData,b:PageData)=>a.asset_id===b.asset_id&&a.page===b.page;
-const sameSourceRaster=(a:PageData,b:PageData)=>!a.preview&&!b.preview&&!!a.raster?.sha256&&a.raster.sha256===b.raster?.sha256;
+const sameSourceRaster=(a:PageData,b:PageData)=>!a.preview&&!b.preview&&!a.appearance&&!b.appearance&&!!a.raster?.sha256&&a.raster.sha256===b.raster?.sha256;
 export function similarity(a:PageData,b:PageData):number{return sameOriginalPage(a,b)||sameSourceRaster(a,b)?1:dice(grams(matchingText(a)),grams(matchingText(b)));}
 // Rectangular maximum-weight assignment with private dummy columns for unmatched rows.
 function assignment(weights:number[][]):number[] {
@@ -55,7 +55,7 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
   const sourceKey=(p:PageData)=>JSON.stringify([p.asset_id,p.page]);
   function counts(pages:PageData[],key:(p:PageData)=>string|undefined){const out=new Map<string,number>();for(const p of pages){const k=key(p);if(k!==undefined)out.set(k,(out.get(k)??0)+1);}return out;}
   const sourceLeft=counts(left,sourceKey),sourceRight=counts(right,sourceKey);
-  const rasterKey=(p:PageData)=>p.preview?undefined:p.raster?.sha256;
+  const rasterKey=(p:PageData)=>p.preview||p.appearance?undefined:p.raster?.sha256;
   const rasterLeft=counts(left,rasterKey),rasterRight=counts(right,rasterKey);
   const uniqueOriginal=(i:number,j:number)=>sameOriginalPage(left[i],right[j])&&sourceLeft.get(sourceKey(left[i]))===1&&sourceRight.get(sourceKey(right[j]))===1;
   const uniqueRaster=(i:number,j:number)=>sameSourceRaster(left[i],right[j])&&rasterLeft.get(left[i].raster!.sha256)===1&&rasterRight.get(right[j].raster!.sha256)===1;

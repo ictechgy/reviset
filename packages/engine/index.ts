@@ -12,6 +12,7 @@ import { fileSha256 } from '../runtime/file-hash.js';
 import {pdfWorkerEnvironment} from '../runtime/pdfjs-environment.js';
 import { ocrEnvironment } from '../ingest/ocr.js';
 import { officeEnvironment,preparePptxPreview } from '../render/pptx-preview.js';
+import {qualifyReferenceAppearance,attachReferenceAppearance,referenceAppearancePolicy} from '../render/reference-appearance.js';
 const require=createRequire(import.meta.url);
 function dependencyVersion(name:string):string {
   let folder=dirname(require.resolve(name));
@@ -32,7 +33,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
   try {
     onProgress?.({analysis_run_id:run,phase:'extract',current:0,total:manifest.revisions.length});
     const revisions:RevisionData[]=[];
-    const timelineIdentity=[];
+    const timelineIdentity=[],inputIdentities:string[][]=[],referenceSources=new Map<string,Set<string>>();
     for(const [index,entry] of manifest.revisions.entries()) {
       const inputs=[];
       for(const [fileIndex,file] of entry.files.entries()) {
@@ -41,7 +42,12 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
           inputs.push(size>MAX_INPUT_BYTES?`oversized:${size}`:'sha256:'+await fileSha256(path,signal));
         } catch {inputs.push(`unreadable:${index}:${fileIndex}`);}
       }
-      timelineIdentity.push({label:entry.label,assets:inputs.sort()});
+      inputIdentities.push([...inputs]);
+      const pptx=entry.files.findIndex(f=>/\.pptx$/i.test(f)),pdf=entry.files.findIndex(f=>/\.pdf$/i.test(f));
+      if(pptx>=0&&pdf>=0&&inputs[pptx].startsWith('sha256:')&&inputs[pdf].startsWith('sha256:')){
+        const sources=referenceSources.get(inputs[pdf])??new Set<string>();sources.add(inputs[pptx]);referenceSources.set(inputs[pdf],sources);
+      }
+      timelineIdentity.push({label:entry.label,assets:[...inputs].sort()});
     }
     const timelineId=id('timeline',timelineIdentity);
     const cache=new Map<string,Omit<Extracted,'bytes'>>();
@@ -49,21 +55,21 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
       signal?.throwIfAborted();
       onProgress?.({analysis_run_id:run,phase:'extract',current:index,total:manifest.revisions.length,label:entry.label});
       const extracted:Omit<Extracted,'bytes'>[]=[], errors:RevisionData['errors']=[],failedInputs:string[]=[];
-      for(const file of entry.files) {
+      for(const [fileIndex,file] of entry.files.entries()) {
         const path=resolve(baseDir,file);
         try {
-          let observation=cache.get(path);
+          const expected=inputIdentities[index][fileIndex],cacheKey=JSON.stringify([expected,/\.pptx$/i.test(file)?'pptx':'pdf']);
+          let observation=cache.get(cacheKey);
           if(!observation){const loaded=await ingest(path,{ocr:options.ocr??'auto',reuseRasterOcr:revisions.some(r=>r.pages.some(p=>p.ocr?.status==='available')),cacheRoot:join(store.root,'cache'),signal,onPage:(current,total)=>onProgress?.({analysis_run_id:run,phase:'extract',current:index,total:manifest.revisions.length,label:entry.label+` · PDF ${current}/${total}`})});
-            if(loaded.asset.format==='pptx'&&options.pptxPreview!==false){
-              try{const pdf=await preparePptxPreview(path,loaded.bytes,loaded.pages,join(store.root,'cache'),signal);if(pdf)store.putAsset('sha256:'+byteHash(pdf),pdf);}
-              catch(e){if(signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;for(const p of loaded.pages){p.preview=undefined;p.raster=undefined;p.capabilities.preview='unavailable';p.coverage_gaps=p.coverage_gaps.filter(g=>g.feature!=='render_fidelity');p.coverage_gaps.push({feature:'preview',reason:e instanceof DocverError?e.code:'CONVERSION_FAILED'});}}
-            }
-            store.putAsset(loaded.asset.asset_id,loaded.bytes);const {bytes,...metadata}=loaded;observation=metadata;cache.set(path,observation);
+            if(loaded.asset.asset_id!==expected)throw new DocverError('SOURCE_CHANGED','Input changed while analysis was starting; retry with stable source files');
+            store.putAsset(loaded.asset.asset_id,loaded.bytes);const {bytes,...metadata}=loaded;observation=structuredClone(metadata);cache.set(cacheKey,observation);
           }
-          extracted.push(observation);
+          // Raw parse observations belong to the asset. Bundle/preview enrichment
+          // belongs to this occurrence and must never leak through the cache.
+          extracted.push(structuredClone(observation));
 
         } catch(e) {
-          if(signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;
+          if(signal?.aborted||(e instanceof DocverError&&['CANCELLED','SOURCE_CHANGED'].includes(e.code)))throw e;
           // Preserve a content identity even when parsing fails; never put local paths in a report.
           try {const size=(await stat(path)).size;failedInputs.push(size>MAX_INPUT_BYTES?`oversized:${size}`:'sha256:'+await fileSha256(path,signal));} catch {failedInputs.push('unreadable:'+failedInputs.length);}
           errors.push({code:e instanceof DocverError?e.code:'INPUT_UNREADABLE',message:e instanceof DocverError?e.message:'Input could not be read'});
@@ -76,6 +82,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
       const stamp=(pages:Extracted['pages'])=>pages.map(p=>({...p,page_id:id('pg',[occurrence,p.page_id]),
         elements:p.elements.map(e=>({...e,observation_id:id('obs',[occurrence,e.observation_id])}))}));
       const pages=stamp(primary?.pages??[]),bundleMapping:RevisionData['bundle_mapping']=[],gaps:RevisionData['coverage_gaps']=[];
+      let referenceQualified=false;
       if(extracted.length===2) {
         const secondary=extracted.find(e=>e!==primary)!;
         const rendered=stamp(secondary.pages), visible=pages.filter(p=>!p.hidden),pairing=matchPages(visible,rendered);
@@ -84,10 +91,26 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
           const a=visible.find(p=>p.page_id===m.from_page_id)!,b=rendered.find(p=>p.page_id===m.to_page_id)!;
           return a.text.replace(/\s/g,'')!==b.text.replace(/\s/g,'');
         })) gaps.push({feature:'bundle',reason:'bundle_inconsistent'});
+        if(primary?.asset.format==='pptx'&&secondary.asset.format==='pdf'){
+          const qualification=qualifyReferenceAppearance(pages,rendered,bundleMapping,pairing.matches.some(m=>m.status==='needs_review')||gaps.some(g=>g.reason==='bundle_inconsistent'),(referenceSources.get(secondary.asset.asset_id)?.size??0)>1);
+          referenceQualified=qualification.qualified;
+          if(referenceQualified)attachReferenceAppearance(pages,rendered,bundleMapping);
+          else gaps.push({feature:'reference_appearance',reason:qualification.reason});
+        }
         // Keep the secondary source independently addressable; it is not silently substituted for structure.
         pages.push(...rendered);
       }
+      signal?.throwIfAborted();
+      if(primary?.asset.format==='pptx'&&options.pptxPreview!==false&&!referenceQualified){
+        const source=entry.files.find(file=>/\.pptx$/i.test(file))!,sourcePages=pages.filter(p=>p.asset_id===primary.asset.asset_id);
+        try{
+          const bytes=readFileSync(join(store.root,'assets',primary.asset.asset_id.slice(7)));
+          if('sha256:'+byteHash(bytes)!==primary.asset.asset_id)throw new DocverError('ASSET_CORRUPT','Stored source hash mismatch');
+          const pdf=await preparePptxPreview(resolve(baseDir,source),bytes,sourcePages,join(store.root,'cache'),signal);if(pdf)store.putAsset('sha256:'+byteHash(pdf),pdf);
+        }catch(e){if(signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;for(const p of sourcePages){p.preview=undefined;p.raster=undefined;p.capabilities.preview='unavailable';p.coverage_gaps=p.coverage_gaps.filter(g=>g.feature!=='render_fidelity');p.coverage_gaps.push({feature:'preview',reason:e instanceof DocverError?e.code:'CONVERSION_FAILED'});}}
+      }
       const revision:RevisionData={revision_id:revisionId,revision_occurrence_id:occurrence,label:entry.label,assets:extracted.map(e=>e.asset),status:errors.length?(extracted.length?'partial':'failed'):'success',pages,
+        reference_appearance_policy:referenceAppearancePolicy,
         coverage_gaps:[...gaps,...(errors.length?[{feature:'input',reason:'input_extraction_failed'}]:[]),...pages.flatMap(p=>p.coverage_gaps.map(g=>({...g,page_id:p.page_id,revision_id:revisionId})))],errors,bundle_mapping:bundleMapping};
       revisions.push(revision);
     }

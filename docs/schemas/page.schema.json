@@ -84,6 +84,19 @@
         },
         "environment": {
           "type": "string"
+        },
+        "page_box": {
+          "type": "string",
+          "const": "cropBox"
+        },
+        "rotation": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "render_policy": {
+          "type": "string",
+          "const": "pdfkit-300dpi-max4096-source-color-profile-v1"
         }
       },
       "required": [
@@ -92,6 +105,116 @@
         "height",
         "renderer",
         "environment"
+      ],
+      "additionalProperties": false
+    },
+    "appearance": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "reference_pdf"
+        },
+        "asset_id": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "source_page_id": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "source_transform": {
+          "minItems": 6,
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "raster": {
+          "type": "object",
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "width": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "height": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "renderer": {
+              "type": "string"
+            },
+            "environment": {
+              "type": "string"
+            },
+            "page_box": {
+              "type": "string",
+              "const": "cropBox"
+            },
+            "rotation": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "render_policy": {
+              "type": "string",
+              "const": "pdfkit-300dpi-max4096-source-color-profile-v1"
+            }
+          },
+          "required": [
+            "sha256",
+            "width",
+            "height",
+            "renderer",
+            "environment"
+          ],
+          "additionalProperties": false
+        },
+        "association": {
+          "type": "string",
+          "const": "inferred"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0.95,
+          "maximum": 1
+        },
+        "policy": {
+          "type": "string",
+          "const": "qualified-full-bundle-v1"
+        }
+      },
+      "required": [
+        "kind",
+        "asset_id",
+        "source_page_id",
+        "page",
+        "width",
+        "height",
+        "source_transform",
+        "raster",
+        "association",
+        "score",
+        "policy"
       ],
       "additionalProperties": false
     },

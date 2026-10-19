@@ -1,4 +1,7 @@
 import {diffRevisions as legacyOcr43Diff} from '../diff/legacy-ocr-43.js';
+import {diffRevisions as legacyLineage45Diff} from '../diff/legacy-lineage-45.js';
+import {matchPages as legacyLineage45Match} from '../matching/legacy-lineage-45.js';
+import {rangeLineage as legacyLineage45Range} from '../matching/legacy-lineage-45-graph.js';
 import {matchPages as legacyOcr43Match} from '../matching/legacy-ocr-43.js';
 import {pathEdges,rangeLineage} from '../matching/lineage.js';
 import {diffRevisions as legacyOcr9Diff} from '../diff/legacy-ocr-9.js';
@@ -38,9 +41,10 @@ function ocrSummary(ocr:ElementData['ocr']){
     ...(observation?{reconsideration_observation:{status:observation.status,band_bbox:observation.band_bbox,ink_pixels:observation.ink_pixels,threshold:observation.threshold,context_count:observation.contexts.length,empty_character_count:observation.primary_empty_characters?.length??0}}:{}),
     ...(reconsideration?{reconsideration:{method:reconsideration.method,primary_source_ref:reconsideration.primary_source_ref,primary_text:reconsideration.primary_text,primary_confidence:reconsideration.primary_confidence,primary_bbox:reconsideration.primary_bbox,context_count:reconsideration.observation.contexts.length,empty_character_count:reconsideration.observation.primary_empty_characters?.length??0}}:{})};
 }
-// Engine45 changes only net-ID selector canonicalization;44 retains the same
-// exact matching/diff/DAG kernel and its historical raw-selector ID preimage.
-const currentLineageKernel=(version:string)=>version===ENGINE_VERSION||version==='0.3.0-native.lineage.44';
+//44/45 retain archived matching/diff/DAG semantics.45 canonicalized selector
+//occurrences;44's historical IDs still use the original raw selector preimage.
+const archivedLineageKernel=(version:string)=>['0.3.0-native.lineage.44','0.3.0-native.lineage.45'].includes(version);
+const currentLineageKernel=(version:string)=>version===ENGINE_VERSION||archivedLineageKernel(version);
 const resource=(r:ReportData,kind:string,key?:string)=>`docver://projects/${r.project_id}/reports/${r.report_id}/${kind}${key?'/'+key:''}`;
 export class QueryService {
   constructor(readonly store:Store,readonly allowedProjects:Set<string>,private readonly loadSnapshot?:(projectId:string,reportId:string)=>ReportData) {}
@@ -122,12 +126,12 @@ export class QueryService {
           const entity=(p:string)=>r.lineages.find(l=>l.page_ids.includes(p))?.entity_id??'';
           const primary=(v:typeof a)=>v.assets.some(s=>s.format==='pptx')?{...v,pages:v.pages.filter(p=>v.assets.find(s=>s.asset_id===p.asset_id)?.format==='pptx')}:v;
           const left=primary(a),right=primary(b);
-          const directed=currentLineageKernel(r.engine_version)?rangeLineage(r,a,b):undefined;
+          const directed=currentLineageKernel(r.engine_version)?(archivedLineageKernel(r.engine_version)?legacyLineage45Range:rangeLineage)(r,a,b):undefined;
           const matches=directed?.matches??left.pages.flatMap(p=>right.pages.filter(q=>entity(p.page_id)===entity(q.page_id)).map(q=>({from_page_id:p.page_id,to_page_id:q.page_id,score:Math.min(1,...r.matches.filter(m=>r.lineages.find(l=>l.entity_id===entity(p.page_id))?.page_ids.includes(m.from_page_id)).map(m=>m.score)),status:r.lineages.find(l=>l.entity_id===entity(p.page_id))?.status??'inferred',reasons:['snapshot_lineage_range_net']})));
-          const diff=currentLineageKernel(r.engine_version)?diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Diff:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Diff:undefined;
+          const diff=currentLineageKernel(r.engine_version)?archivedLineageKernel(r.engine_version)?legacyLineage45Diff:diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Diff:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Diff:undefined;
           if(!diff)throw new DocverError('ENGINE_VERSION_UNAVAILABLE','Historical range computation requires its archived engine; stored history/export remains readable, and reanalysis creates a new report');
-          const candidates=(r.engine_version==='0.1.0-native.1'?legacyNativeMatch:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Match:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Match:matchPages)(left.pages,right.pages).candidates;
-          const endpointIds=r.engine_version===ENGINE_VERSION?[a.revision_occurrence_id,b.revision_occurrence_id]:[args.from,args.to];
+          const candidates=(archivedLineageKernel(r.engine_version)?legacyLineage45Match:r.engine_version==='0.1.0-native.1'?legacyNativeMatch:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Match:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Match:matchPages)(left.pages,right.pages).candidates;
+          const endpointIds=r.engine_version===ENGINE_VERSION||r.engine_version==='0.3.0-native.lineage.45'?[a.revision_occurrence_id,b.revision_occurrence_id]:[args.from,args.to];
           changes=diff(left,right,matches,candidates,entity,directed?.structural).map((c,i)=>{const event={...c,schema_version:r.schema_version};return {...event,report_id:r.report_id,change_id:id('net',[r.report_id,...endpointIds,i,event]),evidence_uri:resource(r,'manifest')};});
         } else {
           const revIndex=(key:string)=>r.revisions.findIndex(v=>v.revision_occurrence_id===key||v.revision_id===key);

@@ -59,7 +59,7 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
       try{
         const observations=await captureNativePages(bytes,pages.map(p=>p.page),ocrPages,options);
         for(const p of pages){const result=observations.get(p.page);if(!result){const reason=observations.failures.get(p.page)??'NATIVE_PAGE_FAILED';p.coverage_gaps.push({feature:'raster_verification',reason});if(ocrPages.includes(p.page))p.ocr={status:'failed',engine:'native-vision-helper',environment,reason};continue;}
-          p.raster={sha256:result.render_sha256,width:result.width,height:result.height,renderer:result.renderer,environment};
+          p.raster={sha256:result.render_sha256,width:result.width,height:result.height,renderer:result.renderer,environment,page_box:'cropBox',rotation:result.rotation,render_policy:'pdfkit-300dpi-max4096-source-color-profile-v1'};
           if(result.cache_write_failed&&!ocrPages.includes(p.page))p.coverage_gaps.push({feature:'native_cache',reason:'optional_cache_write_failed_observations_retained'});
           if(ocrPages.includes(p.page))await supplementPdfOcr(p,bytes,{...options,nativeResult:result});
         }

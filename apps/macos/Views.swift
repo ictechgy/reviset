@@ -64,6 +64,14 @@ func coverageReasonName(_ value:String)->String {
     case "estimated_source_geometry_not_used_for_raster_pairing": return "원문 텍스트의 위치가 불확실해 화면에서 판독한 영역을 기준으로 대응했습니다."
     case "unlocalized_source_text_review_budget_exceeded": return "위치가 불확실한 원문 텍스트를 모두 검토하지 못해 비교를 보류했습니다."
     case "revision_interval_render_appearance_not_comparable": return "두 버전의 형식이나 렌더링 환경이 달라 화면 차이를 직접 비교할 수 없습니다."
+    case "reference_pdf_changed_without_pptx_source_change": return "PPTX 원본은 같지만 제공된 PDF 화면이 다릅니다. PDF가 해당 버전에서 내보낸 파일인지 확인하세요."
+    case "pptx_source_changed_despite_identical_reference_pixels": return "PPTX 원본은 바뀌었지만 제공된 PDF 화면은 같습니다. 원본의 변경이 PDF에 반영됐는지 확인하세요."
+    case "reference_appearance_unavailable_or_unverified_for_page": return "이 페이지의 화면 근거를 양쪽 모두 확인하지 못해 화면 비교를 보류했습니다. 다른 페이지의 비교는 유지합니다."
+    case "provided_pdf_visual_difference_with_inferred_source_association": return "제공된 PDF 화면의 차이입니다. PDF와 PPTX 페이지의 대응은 추정이며 원본 화면의 충실도를 보증하지 않습니다."
+    case "provided_pdf_association_inferred_not_powerpoint_equivalence": return "제공된 PDF 화면을 표시합니다. PPTX 페이지와의 대응은 추정이므로 해당 버전에서 내보낸 PDF인지 확인하세요."
+    case "reference_pdf_reused_for_different_pptx": return "하나의 PDF가 서로 다른 PPTX 원본에 묶여 있어 자동 화면 대응을 보류했습니다."
+    case "reference_rotation_requires_review": return "회전된 PDF의 자동 화면 대응을 보류했습니다. 원문 방향을 확인하세요."
+    case "reference_geometry_mismatch": return "PPTX와 제공된 PDF의 페이지 비율이 달라 자동 화면 대응을 보류했습니다."
     case "native_raster_difference_is_not_semantic_deletion": return "화면 차이는 관측했지만 내용의 삭제 여부는 확정하지 않았습니다."
     case "render_difference_may_include_renderer_substitution": return "화면 차이에 글꼴이나 변환기의 대체 결과가 포함될 수 있습니다."
     case "failed_revision_no_comparison": return "버전 처리에 실패해 비교하지 못했습니다."
@@ -248,7 +256,7 @@ struct InspectorView: View {
                 if let message=mappingUnavailableReason { Text(message).font(.caption).foregroundStyle(.secondary) }
                 Divider();Label("관측 한계",systemImage:"exclamationmark.triangle").font(.headline)
                 Text("가려진 텍스트와 취소선은 표시 상태로 보존합니다. 박스나 선이 삭제 의도인지는 시각 근거와 함께 검토하세요. PDF에서 추정한 표 구조는 PPTX의 원래 표와 동일하다고 보장하지 않습니다.").font(.caption)
-                Text("OCR 추정 값은 원본 화면과 대조하세요. PDF에 없는 노트·숨김 정보는 삭제로 집계하지 않습니다. PPTX는 LibreOffice 변환 화면이며 폰트 대체·변환 경고를 근거 패널에서 확인할 수 있습니다.").font(.caption).foregroundStyle(.secondary)
+                Text("OCR 추정 값은 원본 화면과 대조하세요. PDF에 없는 노트·숨김 정보는 삭제로 집계하지 않습니다. PPTX 화면에는 제공된 PDF 또는 LibreOffice 변환본을 사용합니다. 페이지 위의 출처와 근거 패널의 대응·변환 경고를 확인하세요.").font(.caption).foregroundStyle(.secondary)
             }.padding(17).frame(maxWidth:.infinity,alignment:.leading)
         }.sheet(isPresented:$model.mappingSheet) {
             MappingSheet(projectID:model.projectID,reportID:model.report["report_id"].string,draftHash:model.report["draft_hash"].string,before:model.revision(model.from),after:model.revision(model.to),left:Set(model.mappingSelection["from_page_ids"].array.map(\.string)),right:Set(model.mappingSelection["to_page_ids"].array.map(\.string)),mode:model.mappingSelection["kind"].string,reason:model.mappingSelection["reason"].string).environmentObject(model)

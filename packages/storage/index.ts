@@ -12,7 +12,7 @@ function pagePayload(report:ReportData,pageId:string):z.infer<typeof NativePage>
 }
 function indexedPagePayload(revision:RevisionData,page:PageData,pages=new Map(revision.pages.map(p=>[p.page_id,p])),mapping=new Map(revision.bundle_mapping.map(m=>[m.source_page_id,m.rendered_page_id]))):z.infer<typeof NativePage>{
   const asset=revision.assets.find(a=>a.asset_id===page.asset_id)!;
-  const reference=!revision.coverage_gaps.some(g=>g.reason==='bundle_inconsistent')?pages.get(mapping.get(page.page_id)??''):undefined;
+  const reference=revision.reference_appearance_policy?pages.get(page.appearance?.source_page_id??''):!revision.coverage_gaps.some(g=>g.reason==='bundle_inconsistent')?pages.get(mapping.get(page.page_id)??''):undefined;
   return NativePage.parse({page,asset,reference:reference?{asset_id:reference.asset_id,page:reference.page,width:reference.width,height:reference.height,source_transform:reference.source_transform}:undefined});
 }
 

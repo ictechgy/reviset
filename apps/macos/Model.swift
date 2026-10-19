@@ -127,10 +127,13 @@ import Darwin
         guard !selected.isNull else { return }
         if tab == "history" { return }
         let evidence = selected["evidence"].array
-        let left=evidence.filter { $0["revision_occurrence_id"].string == revision(from)["revision_occurrence_id"].string }.map { $0["page_id"].string }
+        let left=evidence.filter { $0["revision_occurrence_id"].string == revision(from)["revision_occurrence_id"].string }.map { displayPageID($0["page_id"].string, in:revision(from)) }
         leftPageID = left.contains(leftPageID) ? leftPageID : left.first ?? ""
-        let right=evidence.filter { $0["revision_occurrence_id"].string == revision(to)["revision_occurrence_id"].string }.map { $0["page_id"].string }
+        let right=evidence.filter { $0["revision_occurrence_id"].string == revision(to)["revision_occurrence_id"].string }.map { displayPageID($0["page_id"].string, in:revision(to)) }
         rightPageID = right.contains(rightPageID) ? rightPageID : right.first ?? ""
+    }
+    func displayPageID(_ sourcePageID:String,in revision:JSON)->String {
+        primaryPages(revision).first { $0["appearance"]["source_page_id"].string == sourcePageID }?["page_id"].string ?? sourcePageID
     }
     func chooseChange(_ id:String){guard !loadingChanges else{return};pageNavigation=nil;selectedChangeID=id;selectEvidence()}
     func openHistoryPage(_ index:Int,_ pageID:String){
@@ -161,6 +164,7 @@ import Darwin
             if quality["ocr_failed_pages"].int>0{summary.append("OCR 실패 \(quality["ocr_failed_pages"].int)쪽")}
             if quality["unresolved_comparison_pages"].int>0{summary.append("판독 보류 \(quality["unresolved_comparison_pages"].int)쪽")}
             if quality["pptx_without_render"].int>0{summary.append("PPTX 렌더 없음 \(quality["pptx_without_render"].int)쪽")}
+            if quality["reference_pdf_pages"].int>0{summary.append("제공 PDF 화면 \(quality["reference_pdf_pages"].int)쪽 · 대응 추정")}
             status=summary.joined(separator:" · ")
         } catch {
             analysisToken=nil;committing = false

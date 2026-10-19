@@ -95,3 +95,8 @@ Claude reviewed three actual app45 captures (focus p300, split/mergehistory,600s
 
 ### Native49 visible history legend
 Actual48fivecaptureClaude review confirms largerdocumentcanvas/pageedges/compactchangelist/sheets, but historylegend wasclipped atsplitboundary. Keep “— 관측 없음…” underhistorysubtitleoutside scrollcontent, alwaysvisible at anydividerposition. Native split remainsuserresizable; source/diff unchanged. The applybuttonalreadyusesborderedProminent+defaultAction; advisorrecommendationtoaddthoseisnot a newcodefix. Capturemayreflectinactivewindow/systemaccent; no unverifiedactivecolorclaim.
+
+### 2026-10-20 provided PDF appearance
+- A qualified supplied PDF may provide the native PPTX display while raw OOXML text/notes/hidden slides remain primary source observations. Show `제공 PDF · 페이지 대응 추정`, not a PowerPoint fidelity certificate.
+- Distinguish supplied-PDF pixel differences from source edits. If unchanged PPTX bytes have different PDFs, explain the export/source inconsistency as a review gap. Missing one page's appearance is a page gap; it does not cancel other page comparisons.
+- Selecting PDF appearance evidence must navigate to the associated primary PPTX slide. Keep source coordinate overlays withheld across an inferred relation. Count provided PDF display separately from missing/conversion previews.

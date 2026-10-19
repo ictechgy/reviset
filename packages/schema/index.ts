@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 
 export const SCHEMA_VERSION = '0.3.0';
 const StoredSchemaVersion=z.enum(['0.1.0','0.2.0','0.3.0']);
-export const ENGINE_VERSION = '0.3.0-native.lineage.45';
+export const ENGINE_VERSION = '0.3.0-native.bundle.50';
 export const MAX_INPUT_BYTES=512*1024*1024;
 export const MAX_PPTX_EXPANDED_BYTES=512*1024*1024;
 export const MAX_PPTX_PART_BYTES=64*1024*1024;
@@ -48,17 +48,20 @@ export const Element = z.object({ observation_id: z.string(), kind: z.enum(['tex
   visibility_spans:z.array(z.object({text:z.string(),state:z.string(),bbox:Bbox,paint_index:z.number().int().nonnegative(),assessment:z.enum(['observed','inferred'])})).optional(),
   visibility_evidence:z.array(z.object({method:z.string(),bbox:Bbox,assessment:z.enum(['observed','inferred']),coverage:z.number().min(0).max(1)})).optional(),
   table:z.object({table_id:z.string(),row:z.number().int().nonnegative(),column:z.number().int().nonnegative(),row_span:z.number().int().positive().optional(),column_span:z.number().int().positive().optional(),origin:z.enum(['ooxml_table','pdf_grid_inferred','vision_table_inferred']),assessment:z.enum(['observed','inferred'])}).optional() });
+export const NativeRaster=z.object({sha256:z.string().regex(/^[a-f0-9]{64}$/),width:z.number().int().positive(),height:z.number().int().positive(),renderer:z.string(),environment:z.string(),page_box:z.literal('cropBox').optional(),rotation:z.number().int().optional(),render_policy:z.literal('pdfkit-300dpi-max4096-source-color-profile-v1').optional()});
+export const ReferenceAppearance=z.object({kind:z.literal('reference_pdf'),asset_id:z.string().regex(/^sha256:[a-f0-9]{64}$/),source_page_id:z.string(),page:z.number().int().positive(),width:z.number().positive(),height:z.number().positive(),source_transform:z.array(z.number()).length(6),raster:NativeRaster,association:z.literal('inferred'),score:z.number().min(.95).max(1),policy:z.literal('qualified-full-bundle-v1')});
 export const Page = z.object({ page_id: z.string(), asset_id: z.string(), page: z.number().int().positive(),
   width: z.number().positive(), height: z.number().positive(), coordinate_system: z.string(),
   source_transform: z.array(z.number()), hidden: z.boolean().nullable(), text: z.string(), visible_text:z.string().optional(),unresolved_text:z.string().optional(),suppressed_text:z.string().optional(),
   ocr_text:z.string().optional(),ocr_unresolved_text:z.string().optional(),comparison_basis:z.enum(['text_layer','raster_ocr','hybrid_regions_v1']).optional(),
-  raster:z.object({sha256:z.string().regex(/^[a-f0-9]{64}$/),width:z.number().int().positive(),height:z.number().int().positive(),renderer:z.string(),environment:z.string()}).optional(),
+  raster:NativeRaster.optional(),appearance:ReferenceAppearance.optional(),
   ocr:z.object({status:z.enum(['available','no_text','unavailable','failed']),mode:z.enum(['scan','supplement','verification']).optional(),engine:z.string(),environment:z.string(),structure_status:z.string().optional(),grid_status:GridStatus.optional(),grid_reasons:z.array(z.string()).max(20).optional(),bitmap_format:z.number().int().nonnegative().optional(),bitmap_bits_per_sample:z.number().int().positive().optional(),bitmap_bits_per_pixel:z.number().int().positive().optional(),table_count:z.number().int().nonnegative().optional(),render_sha256:z.string().optional(),width:z.number().int().positive().optional(),height:z.number().int().positive().optional(),reason:z.string().optional()}).optional(),
   preview:z.object({asset_id:z.string().regex(/^sha256:[a-f0-9]{64}$/),page:z.number().int().positive(),width:z.number().positive(),height:z.number().positive(),source_transform:z.array(z.number()).length(6),renderer:z.string(),environment:z.string(),assessment:z.literal('inferred'),warnings:z.array(z.string()),input_preparation:OfficeInputPreparation.optional()}).optional(),
   elements: z.array(Element), notes: z.string().nullable(), capabilities: Capability, coverage_gaps: z.array(Gap) });
 export const Asset = z.object({ asset_id: z.string(), format: z.enum(['pptx','pdf']), bytes: z.number().int().nonnegative() });
 export const Revision = z.object({ revision_id: z.string(), revision_occurrence_id: z.string(), label: z.string(),
   assets: z.array(Asset), status: z.enum(['success','partial','failed']), pages: z.array(Page),
+  reference_appearance_policy:z.literal('qualified-full-bundle-v1').optional(),
   coverage_gaps: z.array(Gap), errors: z.array(z.object({ code: z.string(), message: z.string() })),
   bundle_mapping: z.array(z.object({ source_page_id: z.string(), rendered_page_id: z.string(), score: z.number() })) });
 export const Evidence = z.object({ revision_id: z.string(), revision_occurrence_id: z.string(), asset_id: z.string(),
@@ -84,7 +87,18 @@ export const Lineage = z.object({ entity_id: z.string(), page_ids: z.array(z.str
 export const Report = z.object({ schema_version: StoredSchemaVersion, engine_version: z.string(), report_id: z.string(), project_id: z.string(),
   timeline_revision_id: z.string(), mapping_revision_id: z.string(), schema_hash: z.string(), observation_environment: z.record(z.string(), z.string()),
   revisions: z.array(Revision), matches: z.array(Match), candidates: z.array(Match), mapping_decisions: z.array(StoredDecision),mapping_relations:z.array(MappingRelation).optional(),
-  lineages: z.array(Lineage), changes: z.array(Change), coverage_gaps: z.array(Gap) }).refine(r=>r.changes.every(c=>c.schema_version===r.schema_version),'Change schema version differs from report');
+  lineages: z.array(Lineage), changes: z.array(Change), coverage_gaps: z.array(Gap) }).refine(r=>r.changes.every(c=>c.schema_version===r.schema_version),'Change schema version differs from report').refine(r=>r.revisions.every(revision=>{
+    const pages=new Map(revision.pages.map(p=>[p.page_id,p])),formats=new Map(revision.assets.map(a=>[a.asset_id,a.format]));
+    return revision.pages.every(page=>{
+      const appearance=page.appearance;if(!appearance)return true;
+      const reference=pages.get(appearance.source_page_id);
+      return revision.reference_appearance_policy===appearance.policy&&formats.get(page.asset_id)==='pptx'&&!page.hidden&&!page.preview&&!page.raster&&!!reference&&formats.get(reference.asset_id)==='pdf'&&reference.asset_id===appearance.asset_id&&reference.page===appearance.page&&reference.width===appearance.width&&reference.height===appearance.height&&canonical(reference.source_transform)===canonical(appearance.source_transform)&&canonical(reference.raster)===canonical(appearance.raster)&&revision.bundle_mapping.some(m=>m.source_page_id===page.page_id&&m.rendered_page_id===reference.page_id&&m.score===appearance.score);
+    });
+  }),'Reference appearance must preserve a qualified PDF observation in the same revision').refine(r=>{
+    const sources=new Map<string,string>();
+    for(const revision of r.revisions)for(const page of revision.pages){const appearance=page.appearance;if(!appearance)continue;const source=sources.get(appearance.asset_id);if(source&&source!==page.asset_id)return false;sources.set(appearance.asset_id,page.asset_id);}
+    return true;
+  },'A reference PDF cannot qualify against different PPTX source assets');
 export const SCHEMA_HASH=hash(z.toJSONSchema(Report));
 export type ReportData = z.infer<typeof Report>;
 export type PageData = z.infer<typeof Page>;
