@@ -137,6 +137,21 @@ import AppKit
         budgetGrid(40,3,"column_rule_limit_33")
         budgetGrid(10,65,"row_rule_limit_64")
         budgetGrid(32,33,"cell_limit_1000")
+        let high=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:900,pixelsHigh:4096,bitsPerSample:8,samplesPerPixel:1,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceWhite,bytesPerRow:900,bitsPerPixel:8)!,hp=high.bitmapData!
+        let highLines:[[String:Any]]=words.map{row,col,text in ["text":text,"tokens":[["text":text,"bbox":[CGFloat(24+col*280)/900,CGFloat(480+row*400)/4096,100.0/900,60.0/4096]]]]}
+        for vertical in [false,true]{for gray:UInt8 in [180,230]{
+            hp.initialize(repeating:255,count:900*4096)
+            for y in (vertical ? [400,800,1200,1600]:[400,800,1600]){for x in 20...880{hp[y*900+x]=0}}
+            for x in (vertical ? [20,580,880]:[20,300,580,880]){for y in 400...1600{hp[y*900+x]=0}}
+            //13 pixels is the maximum accepted rule thickness at4096px.
+            if vertical{for x in 294...306{for y in 400...800{hp[y*900+x]=gray}}}
+            else{for y in 1194...1206{for x in 300...880{hp[y*900+x]=gray}}}
+            // Keep the accepted solid rulings continuous at intersections.
+            for y in (vertical ? [400,800,1200,1600]:[400,800,1600]){for x in 20...880{hp[y*900+x]=0}}
+            for x in (vertical ? [20,580,880]:[20,300,580,880]){for y in 400...1600{hp[y*900+x]=0}}
+            let observed=DocverVision.gridObservation(high,highLines)
+            precondition(observed.status=="ambiguous_boundaries","Maximum-thickness faint partial dividers must withhold a coarse grid: vertical=\(vertical),gray=\(gray),status=\(observed.status)")
+        }}
         print("PASS numeric position/multiplicity/conflict and lexical controls; grayscale strike/underline; ruled grid empty cells/partial-border/negative controls")
     }
 }

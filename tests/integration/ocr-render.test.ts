@@ -127,6 +127,19 @@ test('mixed PDF glyph paint states block OCR lines and grid values independently
   assert.equal(p.elements.find(e=>e.method==='vision_ocr')?.visibility,'uncertain');assert.equal(p.elements.find(e=>e.method==='vision_ocr')?.comparison_reason,'source_appearance_blocks_ocr');assert.equal(p.elements.find(e=>e.method==='raster_ruled_grid_cell')?.visibility,'uncertain');assert.equal(comparisonText(p),'');assert.ok(unresolvedComparisonText(p).includes('1.5'));
 });
 
+test('observed PDF strike source retains priority over redundant blocked OCR without clearing its visibility',native,async()=>{
+  const make=(value:string)=>pdf(d=>{d.fontSize(24).text('Revenue '+value,50,80,{lineBreak:false});d.strike(49,76,160,35,{color:'red'});d.addContent('3 Tr');d.text('Prior hidden 999',50,400,{lineBreak:false});});
+  const left=await make('100'),right=await make('120'),a=(await extractPdf(left,'sha256:observed-strike-a'))[0],b=(await extractPdf(right,'sha256:observed-strike-b'))[0];
+  for(const [p,bytes,value]of [[a,left,'100'],[b,right,'120']] as const){
+    const raw=p.elements[0];assert.equal(raw.visibility,'struck_through');assert.ok(raw.visibility_spans?.every(s=>s.state==='struck_through'&&s.assessment==='observed'));
+    const result=await recognizePdf(bytes,1),line={...result.lines[0],text:'Revenue '+value,confidence:1,bbox:raw.bbox,strike_candidate:false,strike_status:'not_detected',numeric_consensus:true,numeric_status:'verified',alternatives:[{text:'Revenue '+value,confidence:1}]};
+    await supplementPdfOcr(p,bytes,{nativeResult:{...result,lines:[line],tables:[],grid_tables:[{cells:[{row:0,column:0,row_span:1,column_span:1,text:'Revenue '+value,text_confident:true,bbox:raw.bbox}]}]}});
+    const redundant=p.elements.find(e=>e.method==='vision_ocr')!;assert.equal(raw.comparison_role,'selected');assert.equal(redundant.comparison_role,'shadowed');assert.equal(redundant.visibility,'uncertain');assert.equal(p.elements.find(e=>e.method==='raster_ruled_grid_cell')?.visibility,'uncertain');assert.equal(unresolvedComparisonText(p),'');
+  }
+  const modified=changes(a,b).filter(c=>c.kind==='text_modified');assert.equal(modified.length,1);assert.equal(modified[0].text_assessment,'observed');assert.deepEqual(modified[0].evidence.map(e=>e.quote),['Revenue 100','Revenue 120']);
+  const partial=structuredClone(a),source=partial.elements[0];source.visibility='uncertain';source.visibility_spans![0].state='partially_struck_through';selectHybridComparison(partial);assert.equal(partial.elements.find(e=>e.method==='vision_ocr')?.comparison_role,'unresolved');assert.ok(unresolvedComparisonText(partial).includes('100'));
+});
+
 test('native tiled Korean/English OCR retains signs and amounts and caches exact evidence',native,async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-ocr-test-'));
   try{

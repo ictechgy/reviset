@@ -31,7 +31,10 @@ export function selectHybridComparison(page:PageData):void{
   for(const e of ocr){
     const nearby=raw.filter(r=>r.visibility!=='hidden_render_mode'&&intersection(boxes.get(r)!,e.bbox)>0),clear=nearby.filter(readable),unknown=nearby.filter(r=>!readable(r));
     e.comparison_role='unresolved';e.comparison_reason='unresolved_ocr';
-    if(raw.some(r=>sourceAppearanceBlocks(r,e.bbox))){e.comparison_reason='source_appearance_blocks_ocr';continue;}
+    // A complete observed strike is readable source. Redundant OCR can be
+    // shadowed by that source without promoting the OCR's visibility. Partial,
+    // inferred, mixed or covered strikes still block the entire OCR line.
+    if(raw.some(r=>sourceAppearanceBlocks(r,e.bbox)&&!(r.visibility==='struck_through'&&readable(r)))){e.comparison_reason='source_appearance_blocks_ocr';continue;}
     if(clear.length){
       const b=clear.map(r=>boxes.get(r)!),x=Math.min(...b.map(r=>r[0])),y=Math.min(...b.map(r=>r[1])),extent:Box=[x,y,Math.max(...b.map(r=>r[0]+r[2]))-x,Math.max(...b.map(r=>r[1]+r[3]))-y];
       if(!unknown.length&&contains(extent,e.bbox,dx,dy)){
@@ -46,6 +49,7 @@ export function selectHybridComparison(page:PageData):void{
       // Without per-glyph proof we retain the entire unverified source run.
       for(const r of unknown){const extent=boxes.get(r)!;
         if(contains(e.bbox,extent,dx,dy)||corroboratesCompleteText(r,e,extent)){r.comparison_role='shadowed';r.comparison_reason='unverified_source_compared_by_inferred_raster';}
+        else page.coverage_gaps.push({feature:'ocr',reason:'partial_raster_coverage_source_remains_unresolved'});
       }
     }
   }
@@ -54,5 +58,5 @@ export function selectHybridComparison(page:PageData):void{
   const participants=rowOrderedRegions(page.elements.filter(e=>e.comparison_role==='selected'||e.comparison_role==='unresolved'));
   participants.forEach((e,i)=>{e.comparison_order=i;});
   page.comparison_basis='hybrid_regions_v1';
-  page.coverage_gaps=[...new Map(page.coverage_gaps.map(g=>[g.feature+'\0'+g.reason,g])).values()];
+  page.coverage_gaps=[...new Map(page.coverage_gaps.map(g=>[JSON.stringify([g.feature,g.reason,g.revision_id,g.page_id]),g])).values()];
 }
