@@ -45,6 +45,13 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
   if(links.some(d=>blocked.has(d.from_page_id+'|'+d.to_page_id))) throw new DocverError('MAPPING_CONFLICT','Same pair is linked and unlinked');
   const left=from.filter(p=>!links.some(d=>d.from_page_id===p.page_id));
   const right=to.filter(p=>!links.some(d=>d.to_page_id===p.page_id));
+  const sourceKey=(p:PageData)=>JSON.stringify([p.asset_id,p.page]);
+  function counts(pages:PageData[],key:(p:PageData)=>string|undefined){const out=new Map<string,number>();for(const p of pages){const k=key(p);if(k!==undefined)out.set(k,(out.get(k)??0)+1);}return out;}
+  const sourceLeft=counts(left,sourceKey),sourceRight=counts(right,sourceKey);
+  const rasterKey=(p:PageData)=>p.preview?undefined:p.raster?.sha256;
+  const rasterLeft=counts(left,rasterKey),rasterRight=counts(right,rasterKey);
+  const uniqueOriginal=(i:number,j:number)=>sameOriginalPage(left[i],right[j])&&sourceLeft.get(sourceKey(left[i]))===1&&sourceRight.get(sourceKey(right[j]))===1;
+  const uniqueRaster=(i:number,j:number)=>sameSourceRaster(left[i],right[j])&&rasterLeft.get(left[i].raster!.sha256)===1&&rasterRight.get(right[j].raster!.sha256)===1;
   const leftGrams=left.map(p=>grams(matchingText(p))),rightGrams=right.map(p=>grams(matchingText(p)));
   const weights=left.map((a,i)=>right.map((b,j)=>blocked.has(a.page_id+'|'+b.page_id)?0:sameOriginalPage(a,b)||sameSourceRaster(a,b)?1:dice(leftGrams[i],rightGrams[j])));
   const candidates:MatchData[]=[],matches:MatchData[]=links.map(d=>({from_page_id:d.from_page_id,to_page_id:d.to_page_id,score:1,status:'human_confirmed',reasons:[d.reason]}));
@@ -53,9 +60,8 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
   function candidate(i:number,j:number):MatchData {
     const score=weights[i][j];
     const competingRow=topRow[i].find(v=>v.j!==j)?.score??0,competingCol=topCol[j].find(v=>v.i!==i)?.score??0;
-    const original=sameOriginalPage(left[i],right[j]),uniqueOriginal=original&&left.filter(p=>sameOriginalPage(p,right[j])).length===1&&right.filter(p=>sameOriginalPage(left[i],p)).length===1;
-    const raster=left[i].raster?.sha256,exact=sameSourceRaster(left[i],right[j]),uniqueRaster=exact&&left.filter(p=>p.raster?.sha256===raster).length===1&&right.filter(p=>p.raster?.sha256===raster).length===1;
-    const ambiguous=!uniqueOriginal&&!uniqueRaster&&(competingRow>=score-0.06||competingCol>=score-0.06);
+    const original=sameOriginalPage(left[i],right[j]),exact=sameSourceRaster(left[i],right[j]);
+    const ambiguous=!uniqueOriginal(i,j)&&!uniqueRaster(i,j)&&(competingRow>=score-0.06||competingCol>=score-0.06);
     return {from_page_id:left[i].page_id,to_page_id:right[j].page_id,score,status:ambiguous?'needs_review':'inferred',reasons:[original?'exact_source_page':exact?'exact_native_raster':'normalized_text_bigrams',...(ambiguous?['competing_duplicate_or_split_merge_candidate']:[]),...(topRow[i].filter(v=>v.score>=0.4).length>8||topCol[j].filter(v=>v.score>=0.4).length>8?['candidate_pool_limited_to_top_8_per_direction']:[])]};
   }
   // Retain both directions: absence from this bounded array must still mean no plausible edge.
@@ -63,7 +69,13 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
   function keep(i:number,j:number){const key=i+'|'+j;if(weights[i][j]>=0.4&&!retained.has(key)){retained.add(key);candidates.push(candidate(i,j));}}
   for(let i=0;i<left.length;i++)for(const {j} of topRow[i].filter(v=>v.score>=0.4).slice(0,8))keep(i,j);
   for(let j=0;j<right.length;j++)for(const {i} of topCol[j].filter(v=>v.score>=0.4).slice(0,8))keep(i,j);
-  const chosen=assignment(weights.map(row=>row.map(s=>s>=0.58?s:0)));
+  // Unique immutable identity constrains assignment before textual similarity.
+  // A normalized text score of1 must not displace an exact source/raster pair.
+  const chosen=left.map(()=>-1),used=new Set<number>();
+  function anchor(unique:(i:number,j:number)=>boolean){for(let i=0;i<left.length;i++)if(chosen[i]<0){const j=right.findIndex((_,j)=>!used.has(j)&&weights[i][j]>0&&unique(i,j));if(j>=0){chosen[i]=j;used.add(j);}}}
+  anchor(uniqueOriginal);anchor(uniqueRaster);
+  const remainingLeft=left.map((_,i)=>i).filter(i=>chosen[i]<0),remainingRight=right.map((_,j)=>j).filter(j=>!used.has(j));
+  assignment(remainingLeft.map(i=>remainingRight.map(j=>weights[i][j]>=0.58?weights[i][j]:0))).forEach((j,k)=>{if(j>=0&&j<remainingRight.length)chosen[remainingLeft[k]]=remainingRight[j];});
   chosen.forEach((j,i)=>{if(j<right.length&&j>=0&&weights[i][j]>=0.58) {matches.push(candidate(i,j));keep(i,j);}});
   return {matches,candidates};
 }

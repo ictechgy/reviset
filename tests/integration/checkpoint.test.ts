@@ -111,6 +111,12 @@ test('query/export parity; page → element → evidence; cursor report/query bi
   const history=await readFile(join(folder,'history.md'),'utf8');assert.ok(history.includes('120억'));assert.ok(history.includes('110억'));
   for(const match of history.matchAll(/\]\((content\/[^)]+)\)/g))await readFile(join(folder,match[1]));
 });
+test('Markdown history keeps inferred text and appearance qualifiers beside confirmed page mappings',async()=>{
+  const r=structuredClone(reports.get('forward')!);r.project_id='prj_export_qualifiers';r.report_id='rpt_export_qualifiers';r.coverage_gaps=[];r.changes=r.changes.filter(c=>c.kind==='text_modified').slice(0,1);
+  const c=r.changes[0];assert.ok(c);c.report_id=r.report_id;c.lineage.status='human_confirmed';c.text_assessment='inferred';c.appearance_assessment='inferred';c.coverage_gaps=[{feature:'ocr',reason:'ocr_inferred_text_requires_source_review'}];c.evidence=c.evidence.map(e=>({...e,method:'vision_ocr',provenance:'inferred'}));
+  store.finishRun(store.beginRun(r.project_id,'Markdown qualifier regression'),r);const folder=join(root,'qualified-export');await exportReport(new QueryService(store,new Set([r.project_id])),r.project_id,r.report_id,folder);
+  const md=await readFile(join(folder,'history.md'),'utf8');assert.match(md,/human_confirmed/);assert.match(md,/문구 판정: 추정 · 표시 판정: 추정/);assert.match(md,/방법: vision_ocr · 출처: 추정/);assert.match(md,/이 변경의 관측 한계:[\s\S]*ocr_inferred_text_requires_source_review/);assert.deepEqual(JSON.parse(await readFile(join(folder,'report.json'),'utf8')).changes,r.changes);
+});
 test('response byte budget and scope restrictions',()=>{
   const r=reports.get('forward')!,q=new QueryService(store,new Set([r.project_id])),scope={project_id:r.project_id,report_id:r.report_id};
   const response=q.query('list_changes',{...scope,max_output_tokens:1400});assert.ok(Buffer.byteLength(JSON.stringify(response))<=1400);assert.ok(response.truncated);assert.ok(response.omitted_fields.length);

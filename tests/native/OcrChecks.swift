@@ -3,6 +3,8 @@ import AppKit
 
 @main struct OcrChecks {
     static func main() throws {
+        let little=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:100,pixelsHigh:100,bitsPerSample:8,samplesPerPixel:4,hasAlpha:true,isPlanar:false,colorSpaceName:.deviceRGB,bitmapFormat:[.alphaFirst,.thirtyTwoBitLittleEndian],bytesPerRow:400,bitsPerPixel:32)!
+        precondition(!DocverVision.supportedPixels(little),"Little endian channels must not be read as RGB")
         typealias Reading=DocverVision.NumericReading
         let a=Reading(text:"100",rect:CGRect(x:0.1,y:0.1,width:0.2,height:0.05),sources:["whole:0"])
         let b=Reading(text:"100",rect:CGRect(x:0.5,y:0.1,width:0.2,height:0.05),sources:["whole:1"])
@@ -17,7 +19,13 @@ import AppKit
         precondition(!DocverVision.numericAgreement([a,b],[merged]),"Merged crop cannot verify individual slots")
         precondition(DocverVision.numericStatus([],[a])=="conflicted","Foo versus tile F00 must remain a contradiction")
         precondition(DocverVision.numericStatus([a],[])=="unverified","Missing evidence is not a contradictory reading")
+        precondition(DocverVision.numericStatus([a],[a,b])=="conflicted","An extra unmatched numeric reading is a contradiction")
         precondition(DocverVision.numericStatus([a],[conflict])=="conflicted")
+        let tall:[[String:Any]]=[
+            ["text":"tall","bbox":[CGFloat(0.1),CGFloat(0.1),CGFloat(0.1),CGFloat(0.1)]],
+            ["text":"L1","bbox":[CGFloat(0.31),CGFloat(0.1),CGFloat(0.2),CGFloat(0.02)]],
+            ["text":"L2","bbox":[CGFloat(0.30),CGFloat(0.13),CGFloat(0.2),CGFloat(0.02)]]]
+        precondition(DocverVision.orderedLines(tall).map{$0["text"] as! String} == ["tall","L1","L2"],"Tall anchors must not absorb stacked neighboring lines")
         let jitter:[[String:Any]]=[
             ["text":"right","bbox":[CGFloat(0.7),CGFloat(0.100),CGFloat(0.2),CGFloat(0.02)]],
             ["text":"left","bbox":[CGFloat(0.1),CGFloat(0.101),CGFloat(0.2),CGFloat(0.02)]],

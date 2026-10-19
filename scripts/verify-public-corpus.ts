@@ -26,6 +26,7 @@ const head=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),pat
 const untracked: {path:string;kind:string;sha256:string}[]=[];
 for(const path of execFileSync('git',['ls-files','--others','--exclude-standard','-z'],{encoding:'utf8'}).split('\0').filter(Boolean).sort()){
   const stat=await lstat(path);
+  if(!stat.isFile()&&!stat.isSymbolicLink())throw new Error('Cannot fingerprint non-regular untracked source: '+JSON.stringify(path));
   // Hash link text rather than reading a target that may be outside the repository.
   untracked.push({path,kind:stat.isSymbolicLink()?'symlink':'file',sha256:stat.isSymbolicLink()?byteHash(Buffer.from(await readlink(path))):await fileSha256(path)});
 }

@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-6-qualified-grid"
+    static let version = "docver-vision-7-qualified-grid"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -25,7 +25,7 @@ struct DocverVision {
         text.range(of:"(?=\\p{N})[^0-9０-９]",options:.regularExpression)==nil
     }
     static func supportedPixels(_ image:NSBitmapImageRep)->Bool {
-        !image.isPlanar && image.bitsPerSample==8 && image.bitsPerPixel==image.samplesPerPixel*8 && ((image.colorSpace.colorSpaceModel == .rgb && [3,4].contains(image.samplesPerPixel)) || (image.colorSpace.colorSpaceModel == .gray && [1,2].contains(image.samplesPerPixel)))
+        !image.isPlanar && image.bitsPerSample==8 && image.bitsPerPixel==image.samplesPerPixel*8 && !image.bitmapFormat.contains(.sixteenBitLittleEndian) && !image.bitmapFormat.contains(.thirtyTwoBitLittleEndian) && ((image.colorSpace.colorSpaceModel == .rgb && [3,4].contains(image.samplesPerPixel)) || (image.colorSpace.colorSpaceModel == .gray && [1,2].contains(image.samplesPerPixel)))
     }
     struct NumericReading {var text:String;var rect:CGRect;var sources:[String]}
     static func sameNumericRegion(_ a:CGRect,_ b:CGRect)->Bool {
@@ -53,7 +53,7 @@ struct DocverVision {
         if !formatSupported{return "unsupported_notation"}
         let observed=uniqueNumbers(readings)
         if !missingBounds && numericAgreement(required,observed){return required.isEmpty ? "not_applicable":"verified"}
-        if (!missingBounds && required.isEmpty && !observed.isEmpty) || required.contains(where:{r in observed.contains(where:{sameNumericRegion(r.rect,$0.rect) && r.text != $0.text})}){return "conflicted"}
+        if (!missingBounds && observed.contains(where:{o in !required.contains(where:{sameNumericRegion($0.rect,o.rect)})})) || required.contains(where:{r in observed.contains(where:{sameNumericRegion(r.rect,$0.rect) && r.text != $0.text})}){return "conflicted"}
         return "unverified"
     }
     static func orderedLines(_ lines:[[String:Any]])->[[String:Any]] {
@@ -63,7 +63,7 @@ struct DocverVision {
         for i in order {
             let b=rect(i)
             if let anchor=bands.last?.first {let a=rect(anchor),overlap=min(a.maxY,b.maxY)-max(a.minY,b.minY)
-                if overlap>0.5*min(a.height,b.height){bands[bands.count-1].append(i);continue}
+                if overlap>0.5*max(a.height,b.height){bands[bands.count-1].append(i);continue}
             }
             bands.append([i])
         }
@@ -90,7 +90,7 @@ struct DocverVision {
                 "revision":r.revision, "languages":r.recognitionLanguages, "supported_languages":try r.supportedRecognitionLanguages(),
                 "language_correction":false,"automatic_language_detection":false,"target_dpi":300,"max_dimension":4096,"tile_size":1600,"tile_overlap":240,"compute_device":"Vision automatic; same OS/build keyed", "renderer":"PDFKit.thumbnail.cropBox", "font_families":families,
                 "document_structure":ProcessInfo.processInfo.operatingSystemVersion.majorVersion>=26,
-                "ruled_grid_inference":"complete-dark-rectangles-v1; OCR tokens; inferred only",
+                "ruled_grid_inference":"complete-dark-solid-rectangles-v2; faint/dashed dividers may be missed; OCR tokens; inferred only",
                 "font_inventory_sha256":digest(Data(inventory.utf8))]
     }
     static func process(_ input:[String:Any]) throws -> [String:Any] {

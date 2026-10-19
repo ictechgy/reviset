@@ -100,12 +100,15 @@ struct PageColumn: View {
                 Button { go(current["page"].int+1) } label: { Image(systemName:"chevron.right") }.disabled(current.isNull || current["page"].int>=pages.count)
                 Spacer(); Text(payload["source"]["origin"].string == "reference_pdf" ? "같은 버전의 원본 PDF" : payload["source"]["origin"].string == "pptx_converted" ? "PPTX 렌더 · LibreOffice" : payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 렌더 없음").font(.caption).foregroundStyle(.secondary)
             }.controlSize(.small)
+            if !evidence.isNull && ["reference_pdf","pptx_converted"].contains(payload["source"]["origin"].string) {
+                Text("PPTX 근거의 화면 좌표는 미검증입니다. 아래 추출 원문에서 내용을 확인하세요.").font(.caption).foregroundStyle(.orange)
+            }
             GeometryReader { geometry in
                 if current.isNull { ContentUnavailableView("대응하는 원문 없음", systemImage:"doc", description:Text("관측 부재와 실제 삭제를 변경 근거에서 구분하세요.")) }
                 else if !failure.isEmpty { ContentUnavailableView("페이지를 열지 못했습니다",systemImage:"exclamationmark.triangle",description:Text(failure)) }
                 else if payload.isNull { ProgressView("원문 페이지 로딩…").frame(maxWidth:.infinity,maxHeight:.infinity) }
                 else if payload["source"]["kind"].string == "pdf" {
-                    OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:evidence,page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
+                    OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:payload["source"]["origin"].string == "original" ? evidence : JSON(),page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
                 } else {
                     ScrollView([.horizontal,.vertical]) {
                         let width = geometry.size.width * (model.zoom == 0 ? 1 : model.zoom)
