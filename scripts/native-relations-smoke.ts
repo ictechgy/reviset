@@ -18,5 +18,6 @@ const child=spawn(resolve('release/Docver.app/Contents/MacOS/Docver'),[],{cwd:'/
 let stdout='',stderr='';child.stdout.on('data',d=>stdout+=d);child.stderr.on('data',d=>stderr+=d);
 const code=await new Promise<number|null>((res,rej)=>{const timer=setTimeout(()=>{child.kill('SIGKILL');rej(Error('Native relations app timeout'));},300000);child.on('error',rej);child.on('exit',c=>{clearTimeout(timer);res(c);});});
 await writeFile(join(output,'process.json'),JSON.stringify({code,userData,stdout,stderr},null,2));assert.equal(code,0,stderr);
-const result=JSON.parse(await readFile(join(output,'result.json'),'utf8'));assert.equal(result.error,'');assert.deepEqual(result.pages,[2,3,2]);assert.equal(result.numeric_changes.length,1);assert.equal(result.manual_relation_checks.length,4);
+let failure:string|undefined;try{failure=JSON.parse(await readFile(join(output,'failure.json'),'utf8')).error;}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}assert.equal(failure,undefined,failure ?? "Native relations validation failed");
+const result=JSON.parse(await readFile(join(output,'result.json'),'utf8'));assert.equal(result.error,'');assert.deepEqual(result.pages,[2,3,2]);assert.equal(result.numeric_changes.length,1);assert.equal(result.manual_relation_checks.length,5);
 console.log(JSON.stringify({output,userData,pages:result.pages,checks:result.manual_relation_checks,seconds:result.analysis_and_ui_seconds,report_id:result.report_id},null,2));

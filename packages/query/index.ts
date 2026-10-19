@@ -38,6 +38,9 @@ function ocrSummary(ocr:ElementData['ocr']){
     ...(observation?{reconsideration_observation:{status:observation.status,band_bbox:observation.band_bbox,ink_pixels:observation.ink_pixels,threshold:observation.threshold,context_count:observation.contexts.length,empty_character_count:observation.primary_empty_characters?.length??0}}:{}),
     ...(reconsideration?{reconsideration:{method:reconsideration.method,primary_source_ref:reconsideration.primary_source_ref,primary_text:reconsideration.primary_text,primary_confidence:reconsideration.primary_confidence,primary_bbox:reconsideration.primary_bbox,context_count:reconsideration.observation.contexts.length,empty_character_count:reconsideration.observation.primary_empty_characters?.length??0}}:{})};
 }
+// Engine45 changes only net-ID selector canonicalization;44 retains the same
+// exact matching/diff/DAG kernel and its historical raw-selector ID preimage.
+const currentLineageKernel=(version:string)=>version===ENGINE_VERSION||version==='0.3.0-native.lineage.44';
 const resource=(r:ReportData,kind:string,key?:string)=>`docver://projects/${r.project_id}/reports/${r.report_id}/${kind}${key?'/'+key:''}`;
 export class QueryService {
   constructor(readonly store:Store,readonly allowedProjects:Set<string>,private readonly loadSnapshot?:(projectId:string,reportId:string)=>ReportData) {}
@@ -119,12 +122,13 @@ export class QueryService {
           const entity=(p:string)=>r.lineages.find(l=>l.page_ids.includes(p))?.entity_id??'';
           const primary=(v:typeof a)=>v.assets.some(s=>s.format==='pptx')?{...v,pages:v.pages.filter(p=>v.assets.find(s=>s.asset_id===p.asset_id)?.format==='pptx')}:v;
           const left=primary(a),right=primary(b);
-          const directed=r.engine_version===ENGINE_VERSION?rangeLineage(r,a,b):undefined;
+          const directed=currentLineageKernel(r.engine_version)?rangeLineage(r,a,b):undefined;
           const matches=directed?.matches??left.pages.flatMap(p=>right.pages.filter(q=>entity(p.page_id)===entity(q.page_id)).map(q=>({from_page_id:p.page_id,to_page_id:q.page_id,score:Math.min(1,...r.matches.filter(m=>r.lineages.find(l=>l.entity_id===entity(p.page_id))?.page_ids.includes(m.from_page_id)).map(m=>m.score)),status:r.lineages.find(l=>l.entity_id===entity(p.page_id))?.status??'inferred',reasons:['snapshot_lineage_range_net']})));
-          const diff=r.engine_version===ENGINE_VERSION?diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Diff:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Diff:undefined;
+          const diff=currentLineageKernel(r.engine_version)?diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Diff:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Diff:undefined;
           if(!diff)throw new DocverError('ENGINE_VERSION_UNAVAILABLE','Historical range computation requires its archived engine; stored history/export remains readable, and reanalysis creates a new report');
           const candidates=(r.engine_version==='0.1.0-native.1'?legacyNativeMatch:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Match:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Match:matchPages)(left.pages,right.pages).candidates;
-          changes=diff(left,right,matches,candidates,entity,directed?.structural).map((c,i)=>{const event={...c,schema_version:r.schema_version};return {...event,report_id:r.report_id,change_id:id('net',[r.report_id,args.from,args.to,i,event]),evidence_uri:resource(r,'manifest')};});
+          const endpointIds=r.engine_version===ENGINE_VERSION?[a.revision_occurrence_id,b.revision_occurrence_id]:[args.from,args.to];
+          changes=diff(left,right,matches,candidates,entity,directed?.structural).map((c,i)=>{const event={...c,schema_version:r.schema_version};return {...event,report_id:r.report_id,change_id:id('net',[r.report_id,...endpointIds,i,event]),evidence_uri:resource(r,'manifest')};});
         } else {
           const revIndex=(key:string)=>r.revisions.findIndex(v=>v.revision_occurrence_id===key||v.revision_id===key);
           const start=args.from?revIndex(args.from):0,end=args.to?revIndex(args.to):r.revisions.length-1;
@@ -149,7 +153,20 @@ export class QueryService {
       }
       case 'get_evidence': {
         if(Boolean(args.change_id)===Boolean(args.observation_id))throw new DocverError('EVIDENCE_TARGET','Supply exactly one change_id or observation_id');
-        if(args.change_id) {const c=r.changes.find(c=>c.change_id===args.change_id)??(args.from&&args.to?this.changeSet({project_id:r.project_id,report_id:r.report_id,from:args.from,to:args.to,mode:'range_net',change_id:args.change_id})[0]:undefined);if(!c)throw new DocverError('CHANGE_NOT_FOUND','Change is outside this report');
+        if(args.change_id) {
+          let c=r.changes.find(c=>c.change_id===args.change_id);
+          if(!c&&args.from&&args.to){
+            const events=this.changeSet({project_id:r.project_id,report_id:r.report_id,from:args.from,to:args.to,mode:'range_net'});
+            c=events.find(c=>c.change_id===args.change_id);
+            if(!c&&r.engine_version!==ENGINE_VERSION){
+              // Historical net IDs used raw selectors. Recover the same event
+              // from its canonical occurrence fields without renaming old IDs.
+              const resolve=(key:string)=>r.revisions.find(v=>v.revision_occurrence_id===key)??r.revisions.find(v=>v.revision_id===key),left=resolve(args.from)!,right=resolve(args.to)!;
+              const aliases=(v:typeof left)=>[...new Set([v.revision_occurrence_id,v.revision_id])].filter(key=>resolve(key)===v);
+              c=events.find((event,i)=>{const original={...event,report_id:'',change_id:'',evidence_uri:''};return aliases(left).some(a=>aliases(right).some(b=>id('net',[r.report_id,a,b,i,original])===args.change_id));});
+            }
+          }
+          if(!c)throw new DocverError('CHANGE_NOT_FOUND','Change is outside this report; computed range evidence also requires from/to occurrence IDs');
           return c.evidence.map(e=>{const quote=textChunk(e.quote,args.text_offset,args.text_length);return {...e,quote,text_offset:args.text_offset,next_text_offset:args.text_offset+quote.length<e.quote.length?args.text_offset+quote.length:null};});}
         const {v,p,e}=element(),quote=textChunk(e.text,args.text_offset,args.text_length);
         return [{revision_id:v.revision_id,revision_occurrence_id:v.revision_occurrence_id,asset_id:p.asset_id,page_id:p.page_id,page:p.page,observation_id:e.observation_id,bbox:e.bbox,quote,method:e.method,provenance:e.provenance,ocr:e.ocr?{confidence:e.ocr.confidence,numeric_consensus:e.ocr.numeric_consensus,ambiguous:e.ocr.ambiguous,confidence_scope:e.ocr.confidence_scope,alternative_count:e.ocr.alternatives.length,...(e.ocr.reconsideration?{reconsideration:{method:e.ocr.reconsideration.method,primary_source_ref:e.ocr.reconsideration.primary_source_ref,primary_text:e.ocr.reconsideration.primary_text,primary_confidence:e.ocr.reconsideration.primary_confidence,context_count:e.ocr.reconsideration.observation.contexts.length}}:{})}:undefined,

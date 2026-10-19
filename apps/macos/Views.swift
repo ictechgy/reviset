@@ -182,8 +182,8 @@ struct CompareWorkspace: View {
 }
 struct ChangeListView: View {
     @EnvironmentObject var model: AppModel
-    var body: some View {VStack(spacing:5){HStack{Picker("유형",selection:$model.kind){Text("전체 변경").tag("all");ForEach(changeNames.keys.sorted(),id:\.self){Text(changeNames[$0]!).tag($0)}}.frame(width:180);TextField("원문에서 검색",text:$model.search).textFieldStyle(.roundedBorder).frame(maxWidth:250);Spacer();Text("\(model.filteredChanges.count)개").font(.caption).foregroundStyle(.secondary)}.padding(.horizontal,12).padding(.top,8)
-        ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear) } }.padding(6) }
+    var body: some View {VStack(spacing:5){HStack{Picker("유형",selection:$model.kind){Text("전체 변경").tag("all");ForEach(changeNames.keys.sorted(),id:\.self){Text(changeNames[$0]!).tag($0)}}.frame(width:180);TextField("원문에서 검색",text:$model.search).textFieldStyle(.roundedBorder).frame(maxWidth:250);Spacer();if model.loadingChanges{ProgressView().controlSize(.small)};Text("\(model.filteredChanges.count)개").font(.caption).foregroundStyle(.secondary)}.padding(.horizontal,12).padding(.top,8)
+        ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear) } }.padding(6) }
     }}
 }
 
@@ -197,7 +197,16 @@ struct ChangeRow: View {
 
 struct InspectorView: View {
     @EnvironmentObject var model: AppModel
-    var editable: Bool { !model.busy && !model.project["dirty"].bool && model.project["last_report_id"].string == model.report["report_id"].string && model.to == model.from+1 && !model.leftPageID.isEmpty && !model.rightPageID.isEmpty }
+    var mappingUnavailableReason: String? {
+        if model.busy { return "분석이 끝난 뒤 대응을 수정할 수 있습니다." }
+        if model.loading || model.loadingChanges { return "변경 목록을 불러오고 있습니다." }
+        if model.project["dirty"].bool { return "대기 중인 수정을 재분석한 뒤 대응을 수정하세요." }
+        if model.project["last_report_id"].string != model.report["report_id"].string { return "최신 보고서를 선택하세요." }
+        if model.to != model.from+1 { return "서로 인접한 두 버전을 선택하세요." }
+        if !model.primaryPages(model.revision(model.from)).contains(where:{$0["page_id"].string==model.leftPageID}) || !model.primaryPages(model.revision(model.to)).contains(where:{$0["page_id"].string==model.rightPageID}) { return "양쪽 원문 페이지를 하나씩 선택하세요." }
+        return nil
+    }
+    var editable: Bool { mappingUnavailableReason == nil }
     var structural: Bool { !model.selected["topology"].isNull }
     var body: some View {
         ScrollView {
@@ -223,7 +232,8 @@ struct InspectorView: View {
                 }
                 Divider();Text("페이지 대응 검토").font(.headline)
                 Text("인접 버전의 페이지를 연결·해제하거나 분할·병합 관계로 묶습니다. 이유를 남기면 새 보고서로 분석합니다.").font(.caption).foregroundStyle(.secondary)
-                Button("연결·분할·병합 수정…") { model.mappingSheet=true }.disabled(!editable)
+                Button("연결·분할·병합 수정…") { model.mappingSheet=true }.disabled(!editable).accessibilityHint(Text(mappingUnavailableReason ?? "페이지 대응을 수정합니다"))
+                if let message=mappingUnavailableReason { Text(message).font(.caption).foregroundStyle(.secondary) }
                 Divider();Label("관측 한계",systemImage:"exclamationmark.triangle").font(.headline)
                 Text("가려진 텍스트와 취소선은 표시 상태로 보존합니다. 박스나 선이 삭제 의도인지는 시각 근거와 함께 검토하세요. PDF에서 추정한 표 구조는 PPTX의 원래 표와 동일하다고 보장하지 않습니다.").font(.caption)
                 Text("OCR 추정 값은 원본 화면과 대조하세요. PDF에 없는 노트·숨김 정보는 삭제로 집계하지 않습니다. PPTX는 LibreOffice 변환 화면이며 폰트 대체·변환 경고를 근거 패널에서 확인할 수 있습니다.").font(.caption).foregroundStyle(.secondary)

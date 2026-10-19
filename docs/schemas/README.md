@@ -84,7 +84,7 @@ OOXML 표의 `ooxml_table/observed`와 PDF 격자에서 추정한 `pdf_grid_infe
 
 관측 취소선은 여전히 화면에서 읽을 수 있으므로 `visible_text`에 포함하고 `text_struck_through`로 표시 변경을 표현한다. 숨김 OC paint나 글자 clipping 모드는 확정 가림으로 쓰지 않는다. 보이는 내용이 같더라도 억제된 원문층이 바뀌면 `raw_text_changed_in_suppressed_layer` 관측 공백을 기록한다.
 
-신규 report/change와 조회 envelope는 0.2.0을 생산한다. 기존 0.1.0 snapshot은 읽기/내보내기에서 원래 버전을 보존하며, range 재계산은 지원되는 archived engine에만 허용한다. 새 Change enum/provenance를 해석하는 소비자는 schema_version과 schema_hash를 함께 확인한다. text_scope=region의 값은 원문 관측일 수 있지만 region_pairing_assessment=inferred는 영역 대응 자체가 추정임을 명시한다.
+신규 report/change와 조회 envelope는 0.3.0을 생산한다. 기존 0.1/0.2 snapshot은 읽기/내보내기에서 원래 버전을 보존하며, range 재계산은 지원되는 archived engine에만 허용한다. 새 Change enum/provenance를 해석하는 소비자는 schema_version과 schema_hash를 함께 확인한다. text_scope=region의 값은 원문 관측일 수 있지만 region_pairing_assessment=inferred는 영역 대응 자체가 추정임을 명시한다.
 
 
 ## 수동 페이지 분할·병합과 호환성
@@ -95,4 +95,7 @@ page_split/page_merged 이벤트는 구성 변경이며 문구의 삭제·수정
 
 구간에서 계산한 이벤트의 근거는 get_evidence에 change_id와 동일한 from/to occurrence ID를 함께 전달해 복구한다. 큰 이벤트/계보도 cursor와 개별 페이지·요소 도구로 순회한다. 전체 export에는 page-relations.jsonl과 mapping-relations.json이 포함된다.
 
-저장된0.1/0.2 보고서는 변환하지 않고 읽는다. range_net은 native1/ocr9/ocr42/ocr43의 보관된 kernel 또는 현재 엔진만 지원한다. 다른 과거 엔진의 재계산은 ENGINE_VERSION_UNAVAILABLE로 명시하며 저장된 history/export는 계속 조회한다. 앱-백엔드 통신 envelope는0.3.0이고 과거 보고서 본문의 schema_version은 유지한다.
+저장된0.1/0.2 보고서는 변환하지 않고 읽는다. range_net은 native1/ocr9/ocr42/ocr43의 보관된 kernel, 동일한 방향 그래프 kernel을 유지한44, 또는 현재 엔진을 지원한다. 다른 과거 엔진의 재계산은 ENGINE_VERSION_UNAVAILABLE로 명시하며 저장된 history/export는 계속 조회한다. 앱-백엔드 통신 envelope는0.3.0이고 과거 보고서 본문의 schema_version은 유지한다.
+
+
+현재 엔진의 range_net ID는 별칭 revision_id 입력도 해석된 occurrence ID로 정규화하므로 같은 구간의 ID가 같다. get_evidence에는 이벤트가 반환한 from_occurrence/to_occurrence를 그대로 전달할 수 있다. 보관된44 이하 kernel의 기존 raw-selector ID는 바꾸지 않으며, 근거 조회는 해당 구간의 유효한 revision/occurrence 별칭 조합을 대조해 복구한다.

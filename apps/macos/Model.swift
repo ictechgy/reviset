@@ -18,6 +18,7 @@ import Darwin
     @Published var rightPageID = ""
     @Published var busy = false
     @Published var loading = false
+    @Published var loadingChanges = false
     @Published var committing = false
     @Published var status = ""
     @Published var error = ""
@@ -40,6 +41,7 @@ import Darwin
     private var started = false
     private var rangeGeneration = 0
     private var selectionGeneration = 0
+    private var pendingRange: (key: String, generation: Int, task: Task<[JSON], Error>)?
     private var pageNavigation: (report:String, from:Int, to:Int, left:String, right:String)?
     init() {
         let resources = Bundle.main.resourceURL!
@@ -71,7 +73,7 @@ import Darwin
     }
     func selectProject(_ id: String, snapshot: String? = nil) async {
         guard libraryAvailable && !busy else { return }
-        selectionGeneration += 1;rangeGeneration += 1;let generation=selectionGeneration;pageNavigation=nil
+        selectionGeneration += 1;rangeGeneration += 1;pendingRange=nil;loadingChanges=false;let generation=selectionGeneration;pageNavigation=nil
         loading = true; error = ""; projectID = id; report = JSON(); changes = []; selectedChangeID = nil
         do {
             try await refresh();let loadedReports = try await bridge.call("reports", ["project_id": id]).array
@@ -91,12 +93,34 @@ import Darwin
         guard !report.isNull else { return }
         if revisions.count < 2 { changes = []; selectedChangeID = ""; return }
         let history = tab == "history", start = history ? 0 : from, end = history ? revisions.count - 1 : to
-        rangeGeneration += 1; let generation = rangeGeneration
-        let response = try await bridge.call("changes", ["project_id": projectID, "report_id": report["report_id"].string, "from": revision(start)["revision_occurrence_id"].string, "to": revision(end)["revision_occurrence_id"].string, "mode": history ? "history" : end == start + 1 ? "adjacent" : "range_net"]).array
-        guard generation == rangeGeneration else { return }; changes = response
-        selectedChangeID = changes.first(where: { $0["kind"].string == "text_modified" })?["change_id"].string ?? changes.first?["change_id"].string ?? ""
-        selectEvidence()
+        let project=projectID,reportID=report["report_id"].string,before=revision(start)["revision_occurrence_id"].string,after=revision(end)["revision_occurrence_id"].string
+        let mode=history ? "history" : end == start+1 ? "adjacent" : "range_net"
+        let key=[project,reportID,before,after,mode].joined(separator:"|")
+        let generation:Int,task:Task<[JSON],Error>
+        if let pending=pendingRange,pending.key==key {
+            generation=pending.generation;task=pending.task
+        } else {
+            rangeGeneration += 1;generation=rangeGeneration;loadingChanges=true
+            task=Task { try await self.bridge.call("changes",["project_id":project,"report_id":reportID,"from":before,"to":after,"mode":mode]).array }
+            pendingRange=(key,generation,task)
+        }
+        do {
+            let response=try await task.value
+            guard generation==rangeGeneration else{return}
+            changes=response
+            if !changes.contains(where:{$0["change_id"].string==selectedChangeID}) {
+                selectedChangeID=changes.first(where:{$0["kind"].string=="text_modified"})?["change_id"].string ?? changes.first?["change_id"].string ?? ""
+            }
+            selectEvidence();loadingChanges=false
+            if pendingRange?.generation==generation {pendingRange=nil}
+        } catch {
+            guard generation==rangeGeneration else{return}
+            loadingChanges=false
+            if pendingRange?.generation==generation {pendingRange=nil}
+            throw error
+        }
     }
+
     func selectEvidence() {
         if let n=pageNavigation,n.report==report["report_id"].string,n.from==from,n.to==to {leftPageID=n.left;rightPageID=n.right;return}
         guard !selected.isNull else { return }
@@ -107,7 +131,7 @@ import Darwin
         let right=evidence.filter { $0["revision_occurrence_id"].string == revision(to)["revision_occurrence_id"].string }.map { $0["page_id"].string }
         rightPageID = right.contains(rightPageID) ? rightPageID : right.first ?? ""
     }
-    func chooseChange(_ id:String){pageNavigation=nil;selectedChangeID=id;selectEvidence()}
+    func chooseChange(_ id:String){guard !loadingChanges else{return};pageNavigation=nil;selectedChangeID=id;selectEvidence()}
     func openHistoryPage(_ index:Int,_ pageID:String){
         from=max(0,index-1);to=min(revisions.count-1,max(1,index))
         let edges=report["matches"].array
@@ -164,6 +188,7 @@ import Darwin
         do { _ = try await bridge.call("reorder", ["project_id": projectID, "order": order]); try await refresh(); status = "순서 변경은 재분석 후 새 보고서로 반영됩니다" } catch { fail(error) }
     }
     func navigateEvidence(_ evidence: JSON) {
+        guard !loadingChanges else{return}
         let occurrence=evidence["revision_occurrence_id"].string
         if occurrence == revision(from)["revision_occurrence_id"].string { leftPageID=evidence["page_id"].string }
         if occurrence == revision(to)["revision_occurrence_id"].string { rightPageID=evidence["page_id"].string }
