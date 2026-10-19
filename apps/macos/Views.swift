@@ -100,7 +100,7 @@ struct MainView: View {
                 VStack(spacing:0) {
                     if model.report.isNull { EmptyWorkspace() }
                     else {
-                        if !model.focus { ReportBar();Divider();VersionBar();Divider() }
+                        if !model.focus { ReportBar();Divider();if model.tab != "compare" { VersionBar();Divider() } }
                         if model.tab=="export" { ExportView() }
                         else if model.tab=="history" { HistoryView() }
                         else { CompareWorkspace() }
@@ -151,6 +151,81 @@ struct VersionBar: View {
     @EnvironmentObject var model: AppModel
     var body: some View {ScrollView(.horizontal,showsIndicators:false){HStack(spacing:12){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in Button{model.from=min(i,max(0,model.revisions.count-2));model.to=min(model.revisions.count-1,model.from+1);model.changeRange()}label:{VStack(spacing:5){Circle().fill(i==model.from||i==model.to ? Color.blue:Color.gray.opacity(0.3)).frame(width:11,height:11);Text("v\(i+1) "+r["label"].string).font(.caption.weight(.semibold));Text("\(model.primaryPages(r).count)쪽 · "+r["assets"].array.map{$0["format"].string.uppercased()}.joined(separator:"+")).font(.caption2).foregroundStyle(.secondary);if r["status"].string != "success"{Text("부분 실패 · 확인 필요").font(.caption2).foregroundStyle(.orange)}}.frame(minWidth:135).padding(7)}.buttonStyle(.plain)}}.padding(.horizontal,15).padding(.vertical,9)}}
 }
+// Native draggable document/change panes. Only UI geometry is persisted;
+// smoke libraries keep preferences in memory so validation cannot change user settings.
+struct WorkspaceSplit<Top:View,Bottom:View>:NSViewControllerRepresentable {
+    let name:String
+    var defaultBottomHeight:CGFloat
+    var compactTopHeight:CGFloat?=nil
+    let top:()->Top
+    let bottom:()->Bottom
+    init(name:String,defaultBottomHeight:CGFloat,compactTopHeight:CGFloat?=nil,@ViewBuilder top:@escaping ()->Top,@ViewBuilder bottom:@escaping ()->Bottom) {
+        self.name=name;self.defaultBottomHeight=defaultBottomHeight;self.compactTopHeight=compactTopHeight;self.top=top;self.bottom=bottom
+    }
+    func makeNSViewController(context:Context)->WorkspaceSplitController<Top,Bottom> {
+        WorkspaceSplitController(name:name,defaultBottomHeight:defaultBottomHeight,compactTopHeight:compactTopHeight,top:top(),bottom:bottom())
+    }
+    func updateNSViewController(_ controller:WorkspaceSplitController<Top,Bottom>,context:Context) {
+        controller.top.rootView=top();controller.bottom.rootView=bottom()
+    }
+}
+@MainActor enum WorkspaceGeometryPreferences {
+    private static var smokeHeights:[String:Double]=[:]
+    static func height(_ key:String)->Double? {
+        ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] == nil ? UserDefaults.standard.object(forKey:key) as? Double:smokeHeights[key]
+    }
+    static func save(_ height:Double,for key:String) {
+        if ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] == nil {UserDefaults.standard.set(height,forKey:key)}
+        else {smokeHeights[key]=height}
+    }
+}
+@MainActor final class WorkspaceSplitController<Top:View,Bottom:View>:NSSplitViewController {
+    let top:NSHostingController<Top>,bottom:NSHostingController<Bottom>
+    private let preferenceKey:String
+    private let defaultBottomHeight:CGFloat
+    private let compactTopHeight:CGFloat?
+    private var positioned=false
+    private var positioning=false
+    private var observer:NSObjectProtocol?
+    init(name:String,defaultBottomHeight:CGFloat,compactTopHeight:CGFloat?,top:Top,bottom:Bottom) {
+        self.top=NSHostingController(rootView:top);self.bottom=NSHostingController(rootView:bottom)
+        preferenceKey="Docver.workspace."+name+".changesHeight";self.defaultBottomHeight=defaultBottomHeight;self.compactTopHeight=compactTopHeight
+        super.init(nibName:nil,bundle:nil)
+        splitView.isVertical=false;splitView.dividerStyle = .thin;splitView.identifier=NSUserInterfaceItemIdentifier("Docver.workspace."+name)
+        let upper=NSSplitViewItem(viewController:self.top),lower=NSSplitViewItem(viewController:self.bottom)
+        upper.minimumThickness=150;lower.minimumThickness=105;lower.maximumThickness=900
+        upper.holdingPriority = .defaultLow;lower.holdingPriority=NSLayoutConstraint.Priority(260)
+        addSplitViewItem(upper);addSplitViewItem(lower)
+        observer=NotificationCenter.default.addObserver(forName:NSSplitView.didResizeSubviewsNotification,object:splitView,queue:.main) { [weak self] _ in
+            guard let self,self.positioned,!self.positioning,self.splitView.subviews.count==2 else{return}
+            let height=self.splitView.subviews[1].frame.height
+            if height>=105 && height.isFinite {WorkspaceGeometryPreferences.save(Double(height),for:self.preferenceKey)}
+        }
+    }
+    required init?(coder:NSCoder){fatalError("init(coder:) is not used")}
+    deinit {if let observer {NotificationCenter.default.removeObserver(observer)}}
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard !positioned,splitView.bounds.height>260,splitView.subviews.count==2 else{return}
+        positioning=true;positioned=true
+        let available=splitView.bounds.height-splitView.dividerThickness
+        let initial=compactTopHeight.map {available-$0} ?? defaultBottomHeight
+        let saved=WorkspaceGeometryPreferences.height(preferenceKey)
+        let height=min(max(105,CGFloat(saved ?? Double(initial))),max(105,available-150))
+        splitView.setPosition(available-height,ofDividerAt:0)
+        positioning=false
+    }
+}
+struct ComparePagesView:View {
+    @EnvironmentObject var model:AppModel
+    var body:some View {
+        HSplitView {
+            if model.pageMode != "after" {PageColumn(revision:model.revision(model.from),side:"이전",pageID:$model.leftPageID)}
+            if model.pageMode != "before" {PageColumn(revision:model.revision(model.to),side:"이후",pageID:$model.rightPageID)}
+        }.frame(maxWidth:.infinity,maxHeight:.infinity)
+    }
+}
+
 struct CompareWorkspace: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
@@ -168,12 +243,14 @@ struct CompareWorkspace: View {
                 Spacer();Button(model.showChanges ? "변경 목록 접기":"변경 목록 열기"){model.showChanges.toggle()}
             }.controlSize(.small).padding(.horizontal,16).padding(.vertical,10)
             HSplitView {
-                VStack(spacing:0){
-                    HSplitView{
-                        if model.pageMode != "after"{PageColumn(revision:model.revision(model.from),side:"이전",pageID:$model.leftPageID)}
-                        if model.pageMode != "before"{PageColumn(revision:model.revision(model.to),side:"이후",pageID:$model.rightPageID)}
-                    }.frame(maxHeight:.infinity)
-                    if model.showChanges {Divider();ChangeListView().frame(height:model.focus ? 190:240)}
+                Group {
+                    if model.showChanges {
+                        WorkspaceSplit(name:"compare",defaultBottomHeight:140) {
+                            ComparePagesView().environmentObject(model)
+                        } bottom: {
+                            ChangeListView().environmentObject(model)
+                        }
+                    } else { ComparePagesView() }
                 }.frame(maxWidth:.infinity,maxHeight:.infinity)
                 if model.inspector { InspectorView().frame(minWidth:275,idealWidth:300,maxWidth:360) }
             }
@@ -245,7 +322,15 @@ struct InspectorView: View {
 }
 struct HistoryView: View {
     @EnvironmentObject var model: AppModel
-    var body: some View {VStack(alignment:.leading,spacing:14){HStack{VStack(alignment:.leading){Text("전체 버전 이력").font(.title2.weight(.semibold));Text("중간에 생겼다가 사라진 페이지와 관측 공백을 함께 보존합니다.").font(.caption).foregroundStyle(.secondary)};Spacer()}.padding(.horizontal,18).padding(.top,20)
+    var body: some View {
+        WorkspaceSplit(name:"history",defaultBottomHeight:200,compactTopHeight:model.report["lineages"].array.count<6 ? CGFloat(model.report["lineages"].array.count)*65+115 : nil) {
+            HistoryGraphView().environmentObject(model)
+        } bottom: { ChangeListView().environmentObject(model) }
+    }
+}
+struct HistoryGraphView:View {
+    @EnvironmentObject var model:AppModel
+    var body:some View {VStack(alignment:.leading,spacing:14){HStack{VStack(alignment:.leading){Text("전체 버전 이력").font(.title2.weight(.semibold));Text("중간에 생겼다가 사라진 페이지와 관측 공백을 함께 보존합니다.").font(.caption).foregroundStyle(.secondary)};Spacer()}.padding(.horizontal,18).padding(.top,20)
         ScrollView([.vertical,.horizontal]){LazyVStack(alignment:.leading,spacing:1){HStack{Text("페이지 계보").frame(width:180,alignment:.leading);ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in Text("v\(i+1) "+r["label"].string).frame(width:130)}}.font(.caption.weight(.semibold)).padding(9)
             ForEach(model.report["lineages"].array){lineage in
                 let all=model.revisions.flatMap{model.primaryPages($0)},ids=lineage["page_ids"].array.map(\.string)
@@ -264,9 +349,8 @@ struct HistoryView: View {
                     }.padding(7);Divider()
                 }
             }
+            Text("— 관측 없음 · 실제 삭제 여부는 변경 이벤트와 원문 근거에서 확인하세요.").font(.caption).foregroundStyle(.secondary).padding(.top,8)
         }.padding(12)}
-        Text("— 관측 없음 · 실제 삭제 여부는 변경 이벤트와 원문 근거에서 확인하세요.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20)
-        ChangeListView().frame(height:230)
     }}
 }
 struct ExportView: View {

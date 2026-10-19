@@ -17,7 +17,7 @@ struct MappingSheet: View {
     @State private var saving = false
     @State private var failure = ""
     var validationMessage: String? {
-        if max(left.count,right.count)>32 { return "한 관계에서 최대 32쪽까지 선택할 수 있습니다." }
+        if max(left.count,right.count)>32 { return "한쪽에서 최대 32쪽까지 선택할 수 있습니다." }
         if mode == "split" && !(left.count==1 && right.count>=2) { return "분할은 이전 1쪽, 이후 2쪽 이상을 선택하세요." }
         if mode == "merge" && !(left.count>=2 && right.count==1) { return "병합은 이전 2쪽 이상, 이후 1쪽을 선택하세요." }
         if (mode == "continuation" || mode == "unlink") && !(left.count==1 && right.count==1) { return "양쪽 페이지를 하나씩 선택하세요." }
@@ -42,7 +42,7 @@ struct MappingSheet: View {
                 Image(systemName: mode == "split" ? "arrow.triangle.branch" : mode == "merge" ? "arrow.triangle.merge" : mode == "unlink" ? "scissors" : "arrow.right").foregroundStyle(.secondary)
                 pageList(after, search: $rightSearch, selection: $right, title: "이후 버전")
             }.disabled(saving)
-            Text("이전 \(left.count)쪽 → 이후 \(right.count)쪽 · 한 관계에서 최대 32쪽 선택").font(.callout.weight(.medium))
+            Text("이전 \(left.count)쪽 → 이후 \(right.count)쪽 · 한쪽 최대 32쪽 선택").font(.callout.weight(.medium))
             if !conflicts.isEmpty {
                 Text("기존 대응 \(conflicts.count)개가 해제됩니다. 남은 분기들은 유지되며, 한 쌍만 남으면 1:1 연결로 바뀝니다.").font(.caption).foregroundStyle(.orange)
                 ScrollView(.horizontal) { HStack { ForEach(Array(conflicts.enumerated()), id: \.offset) { _,edge in Text(edgeLabel(edge)).font(.caption2).padding(5).background(Color.orange.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 4)) } } }.frame(maxHeight: 34)
@@ -53,7 +53,7 @@ struct MappingSheet: View {
 
             if !failure.isEmpty { Text(failure).font(.caption).foregroundStyle(.red) }
             HStack { Text("적용 전 취소하면 저장하지 않습니다.").font(.caption).foregroundStyle(.secondary); Spacer(); if saving { ProgressView().controlSize(.small) }; Button("적용하고 재분석") { Task { await apply() } }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).disabled(!valid || saving || model.busy).accessibilityHint(Text(validationMessage ?? "선택한 관계를 적용하고 새 보고서로 분석합니다")) }
-        }.padding(24).frame(width: 900, height: 650)
+        }.padding(24).frame(width: 900, height: 650).background(Color(nsColor:.windowBackgroundColor))
     }
     func pageList(_ revision: JSON, search: Binding<String>, selection: Binding<Set<String>>, title: String) -> some View {
         let all=model.primaryPages(revision),selected=all.filter { selection.wrappedValue.contains($0["page_id"].string) }

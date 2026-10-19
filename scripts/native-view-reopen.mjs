@@ -1,0 +1,18 @@
+import {cp,mkdir,mkdtemp,readFile,writeFile} from 'node:fs/promises';
+import {join,resolve} from 'node:path';
+import {tmpdir} from 'node:os';
+import {createHash} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
+import {spawn} from 'node:child_process';
+import assert from 'node:assert/strict';
+const [sourceRun,output]=process.argv.slice(2).map(resolve);assert.ok(sourceRun&&output,'Pass previous own synthetic run folder and new output folder');
+const original=JSON.parse(await readFile(join(sourceRun,'result.json'),'utf8')),processInfo=JSON.parse(await readFile(join(sourceRun,'process.json'),'utf8'));
+const userData=await mkdtemp(join(tmpdir(),'docver-reopen-')),library=join(userData,'library');
+await cp(join(processInfo.userData,'library'),library,{recursive:true});await mkdir(output,{recursive:true});
+const state=()=>{const db=new DatabaseSync(join(library,'docver.sqlite'),{readOnly:true});try{return db.prepare('SELECT id,body FROM reports ORDER BY id').all().map(r=>({id:r.id,sha256:createHash('sha256').update(r.body).digest('hex')}));}finally{db.close();}};
+const before=state(),request=join(output,'request.json');await writeFile(request,JSON.stringify({output,existing_project_id:original.project_id,existing_report_id:original.report_id,layout_checks:true,files:[]}));
+const child=spawn(resolve('release/Docver.app/Contents/MacOS/Docver'),[],{cwd:'/',env:{...process.env,DOCVER_TEST_USER_DATA:userData,DOCVER_SMOKE_REQUEST:request,DOCVER_SMOKE_OUTPUT:join(output,'failure.json')},stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',d=>stdout+=d);child.stderr.on('data',d=>stderr+=d);
+const code=await new Promise((res,rej)=>{const timer=setTimeout(()=>{child.kill('SIGKILL');rej(new Error('Native view reopen timeout'));},90000);child.on('error',rej);child.on('exit',code=>{clearTimeout(timer);res(code);});});
+await writeFile(join(output,'process.json'),JSON.stringify({code,userData,stdout,stderr,scope:'New native app reopening copied own synthetic prior report; no reanalysis or new OCR latency claim.'},null,2));assert.equal(code,0,stderr);
+const result=JSON.parse(await readFile(join(output,'result.json'),'utf8'));assert.equal(result.error,'');assert.equal(result.report_id,original.report_id);assert.deepEqual(result.pages,original.pages);assert.equal(result.numeric_changes.length,original.numeric_changes.length);assert.equal(result.layout_checks.native_divider_and_height_reopen,true);assert.deepEqual(state(),before);
+await writeFile(join(output,'immutable-reopen.json'),JSON.stringify({before,after:state(),report_id:result.report_id,layout:result.layout_checks},null,2));console.log(JSON.stringify({output,userData,pages:result.pages,report_id:result.report_id,layout:result.layout_checks,report_bodies_unchanged:true,scope:'UI reopen only; not fresh analysis/OSinput automation'},null,2));

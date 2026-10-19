@@ -13,7 +13,7 @@ for(const f of ['result.json','failure.json','process.json'])await rm(join(outpu
 const slide=(key:string,body:string)=>({key,title:key,body}),versions=[[slide('통합 전략','설계 구현 검토'),slide('매출 전망','예상 매출 100억')],[slide('설계 전략','설계 검토'),slide('구현 전략','구현 검토'),slide('매출 전망','예상 매출 100억')],[slide('통합 전략','설계 구현 검토'),slide('매출 전망','예상 매출 120억')]];
 const files=[];
 for(const [i,slides] of versions.entries()){const file=join(fixtures,`v${i+1}.pptx`);await writeFile(file,await makePptx(slides));files.push(file);}
-const request=join(output,'request.json');await writeFile(request,JSON.stringify({output,files,manual_relations:true}));
+const request=join(output,'request.json');await writeFile(request,JSON.stringify({output,files,manual_relations:true,layout_checks:true}));
 const child=spawn(resolve('release/Docver.app/Contents/MacOS/Docver'),[],{cwd:'/',env:{...process.env,DOCVER_TEST_USER_DATA:userData,DOCVER_SMOKE_REQUEST:request,DOCVER_SMOKE_OUTPUT:join(output,'failure.json')},stdio:['ignore','pipe','pipe']});
 let stdout='',stderr='';child.stdout.on('data',d=>stdout+=d);child.stderr.on('data',d=>stderr+=d);
 const code=await new Promise<number|null>((res,rej)=>{const timer=setTimeout(()=>{child.kill('SIGKILL');rej(Error('Native relations app timeout'));},300000);child.on('error',rej);child.on('exit',c=>{clearTimeout(timer);res(c);});});

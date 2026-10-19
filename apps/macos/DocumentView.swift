@@ -80,7 +80,7 @@ struct OriginalPDFView: NSViewRepresentable {
     final class Coordinator { var path = ""; var pageNumber = -1; var zoom = -1.0; var marks: [(PDFPage, PDFAnnotation)] = [] }
     func makeNSView(context: Context) -> PDFView {
         let view = PDFView(); view.displayMode = .singlePage; view.displayDirection = .vertical
-        view.displaysPageBreaks = false; view.backgroundColor = NSColor.windowBackgroundColor
+        view.displaysPageBreaks = true; view.pageShadowsEnabled = true; view.backgroundColor = NSColor.underPageBackgroundColor
         view.minScaleFactor = 0.1; view.maxScaleFactor = 8; return view
     }
     func updateNSView(_ view: PDFView, context: Context) {

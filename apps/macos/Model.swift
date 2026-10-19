@@ -73,7 +73,7 @@ import Darwin
     }
     func selectProject(_ id: String, snapshot: String? = nil) async {
         guard libraryAvailable && !busy else { return }
-        selectionGeneration += 1;rangeGeneration += 1;pendingRange=nil;loadingChanges=false;let generation=selectionGeneration;pageNavigation=nil
+        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loadingChanges=false;let generation=selectionGeneration;pageNavigation=nil
         loading = true; error = ""; projectID = id; report = JSON(); changes = []; selectedChangeID = nil
         do {
             try await refresh();let loadedReports = try await bridge.call("reports", ["project_id": id]).array
@@ -100,6 +100,7 @@ import Darwin
         if let pending=pendingRange,pending.key==key {
             generation=pending.generation;task=pending.task
         } else {
+            pendingRange?.task.cancel()
             rangeGeneration += 1;generation=rangeGeneration;loadingChanges=true
             task=Task { try await self.bridge.call("changes",["project_id":project,"report_id":reportID,"from":before,"to":after,"mode":mode]).array }
             pendingRange=(key,generation,task)

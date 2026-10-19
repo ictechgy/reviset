@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import PDFKit
 
 @main struct DocverApp: App {
     @StateObject private var model=AppModel()
@@ -24,10 +25,13 @@ import AppKit
             for _ in 0..<200 {if !model.initializing{break};try await Task.sleep(nanoseconds:50_000_000)}
             guard !model.initializing else{throw BridgeError(code:"STARTUP_TIMEOUT",message:"초기화가 완료되지 않았습니다.")}
             let startedAt=Date()
-            if request["files"].array.isEmpty{await model.demo()}
+            if !request["existing_project_id"].string.isEmpty {
+                await model.selectProject(request["existing_project_id"].string,snapshot:request["existing_report_id"].string)
+            } else if request["files"].array.isEmpty{await model.demo()}
             else{let rows=request["files"].array.map{ImportRow(label:URL(fileURLWithPath:$0.string).deletingPathExtension().lastPathComponent,urls:[URL(fileURLWithPath:$0.string)])};let p=try await model.create(title:"수백 페이지 합성 검증",rows:rows);model.projectID=p["project_id"].string;await model.run(model.projectID)}
             guard !model.report.isNull else{throw BridgeError(code:"SMOKE_NO_REPORT",message:model.error)}
             let manualChecks=request["manual_relations"].bool ? try await exerciseManualRelations(model,output):[]
+            let layoutChecks=request["layout_checks"].bool ? try await exerciseLayout(model):[:]
             model.inspector=true
             try await Task.sleep(nanoseconds:700_000_000);try capture(output.appendingPathComponent("native-compare.png"))
             model.inspector=false;model.focus=true;model.showChanges=false;model.pageMode="after"
@@ -51,7 +55,7 @@ import AppKit
             model.tab="history";try await model.updateChanges()
             await model.loadMCP()
             let numeric=model.changes.filter{$0["kind"].string=="text_modified"}
-            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks]
+            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks]
             try JSON(result).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
         }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Docver native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
     }
@@ -80,6 +84,28 @@ import AppKit
         let old=try await model.bridge.call("view",["project_id":project,"report_id":original])
         guard old["mapping_relations"].array.isEmpty else { throw BridgeError(code:"MANUAL_IMMUTABILITY",message:"과거 보고서의 대응이 바뀌었습니다.") }
         return ["concurrent same-range awaits settle the immutable history response","native model split + merge persisted in3 immutable reports","every branch opens without async selection reset","actual paired native sheet rendered and dismissed without writes","original snapshot retains original topology"]
+    }
+    static func exerciseLayout(_ model:AppModel) async throws->[String:Any] {
+        model.tab="compare";model.focus=false;model.showChanges=true;try await model.updateChanges()
+        try await Task.sleep(nanoseconds:300_000_000)
+        func pane(_ view:NSView)->NSSplitView? {
+            if let split=view as? NSSplitView,split.identifier?.rawValue=="Docver.workspace.compare" {return split}
+            for child in view.subviews {if let split=pane(child){return split}};return nil
+        }
+        func current()throws->NSSplitView {
+            for window in NSApp.windows where window.isVisible {if let content=window.contentView,let split=pane(content){return split}}
+            throw BridgeError(code:"LAYOUT_SPLIT",message:"네이티브 문서·변경 분할 창을 찾지 못했습니다.")
+        }
+        let split=try current(),initial=split.subviews[1].frame.height,canvas=split.subviews[0].frame.height
+        guard initial>=105 && initial<=180 && canvas>initial else {throw BridgeError(code:"LAYOUT_DEFAULT",message:"문서 영역의 기본 높이가 충분하지 않습니다: \(canvas), \(initial)")}
+        split.setPosition(canvas-40,ofDividerAt:0);split.layoutSubtreeIfNeeded();try await Task.sleep(nanoseconds:100_000_000)
+        let resized=split.subviews[1].frame.height
+        guard resized>=initial+35 else{throw BridgeError(code:"LAYOUT_DRAG",message:"네이티브 분할선으로 변경 목록 크기를 바꾸지 못했습니다.")}
+        model.showChanges=false;try await Task.sleep(nanoseconds:150_000_000);model.showChanges=true;try await Task.sleep(nanoseconds:250_000_000)
+        let reopened=try current(),remembered=reopened.subviews[1].frame.height
+        guard abs(remembered-resized)<2 else{throw BridgeError(code:"LAYOUT_MEMORY",message:"변경 목록을 다시 열 때 높이가 유지되지 않았습니다.")}
+        reopened.setPosition(reopened.bounds.height-reopened.dividerThickness-initial,ofDividerAt:0)
+        return ["default_change_pane_points":initial,"default_document_pane_points":canvas,"resized_change_pane_points":resized,"reopened_change_pane_points":remembered,"native_divider_and_height_reopen":true,"existing_snapshot_reopen":!model.report.isNull]
     }
     static func captureView(_ window:NSWindow,_ url:URL) throws {
         guard let view=window.contentView,let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) else { throw BridgeError(code:"CAPTURE_FAILED",message:"앱 화면을 캡처할 수 없습니다.") }

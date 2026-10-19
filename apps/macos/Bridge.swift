@@ -23,6 +23,25 @@ struct BridgeError: LocalizedError {
     var code: String; var message: String
     var errorDescription: String? { message }
 }
+// Read-only range queries can be superseded by another interval. Each request
+// owns its process so cancelling one query never terminates another query or analysis.
+private final class RangeRequestCancellation: @unchecked Sendable {
+    private let lock=NSLock()
+    private var process: Process?
+    private var cancelled=false
+    func run(_ process:Process) throws {
+        lock.lock();defer {lock.unlock()}
+        if cancelled {throw CancellationError()}
+        try process.run();self.process=process
+    }
+    func cancel() {
+        lock.lock();defer {lock.unlock()};cancelled=true
+        if let process,process.isRunning {process.terminate()}
+    }
+    func finish() -> Bool {
+        lock.lock();defer {lock.unlock()};process=nil;return cancelled
+    }
+}
 final class Bridge: @unchecked Sendable {
     let resources: URL
     let library: URL
@@ -34,7 +53,9 @@ final class Bridge: @unchecked Sendable {
     func call(_ action: String, _ args: [String: Any] = [:], analysis: Bool = false, progress: (@Sendable (JSON) -> Void)? = nil) async throws -> JSON {
         let request = try JSON(["action": action, "args": args]).data()
         if analysis { lock.withLock { cancelled = false } }
-        return try await withCheckedThrowingContinuation { continuation in
+        let cancellation=action == "changes" && !analysis ? RangeRequestCancellation():nil
+        return try await withTaskCancellationHandler(operation: {
+          try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process(), input = Pipe(), output = Pipe(), errors = Pipe()
                 process.executableURL = self.resources.deletingLastPathComponent().appendingPathComponent("Helpers/node")
@@ -71,11 +92,12 @@ final class Bridge: @unchecked Sendable {
                 }
                 do {
                     if analysis { self.lock.lock(); let stopped = self.cancelled; self.lock.unlock(); if stopped { throw BridgeError(code:"CANCELLED",message:"분석을 취소했습니다.") } }
-                    try process.run()
+                    if let cancellation { try cancellation.run(process) } else { try process.run() }
                     if analysis { self.lock.lock(); self.analysisProcess = process; let stopped = self.cancelled; self.lock.unlock(); if stopped { process.terminate() } }
                     try input.fileHandleForWriting.write(contentsOf: request); try input.fileHandleForWriting.close()
                     let data = output.fileHandleForReading.readDataToEndOfFile()
                     process.waitUntilExit(); stderrDone.wait()
+                    if cancellation?.finish() == true {throw CancellationError()}
                     if analysis { self.lock.lock(); if self.analysisProcess === process { self.analysisProcess = nil }; self.lock.unlock() }
                     if process.terminationReason == .uncaughtSignal {
                         let requested=self.lock.withLock {self.cancelled}
@@ -89,10 +111,12 @@ final class Bridge: @unchecked Sendable {
                     continuation.resume(returning: reply["value"])
                 } catch {
                     if analysis { self.lock.lock(); if self.analysisProcess === process { self.analysisProcess = nil }; self.lock.unlock() }
+                    _ = cancellation?.finish()
                     try? input.fileHandleForWriting.close();try? errors.fileHandleForWriting.close()
                     continuation.resume(throwing: error)
                 }
             }
-        }
+          }
+        }, onCancel: { cancellation?.cancel() })
     }
 }
