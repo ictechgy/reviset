@@ -25,10 +25,16 @@ extension DocverVision {
     static func roiCompact(_ text:String)->String {
         text.precomposedStringWithCanonicalMapping.replacingOccurrences(of:"[\\p{White_Space}\\x{FEFF}]",with:"",options:.regularExpression).lowercased()
     }
-    static let reconsiderationPolicy="vision-roi-v3; 4 nonnumeric lines/page; weak then borderline then high-score Latin; 8 weak/borderline contexts or 2 en-US broad high-score contexts; 262144 core pixels; 4M pixels/crop; 12s/page best-effort cancellation; no language correction"
+    static let reconsiderationPolicy="vision-roi-v4; 4 nonnumeric lines/page; weak then borderline then high-score Latin; 8 correction/monoscript borderline contexts, 4 bilingual mixed-script counter-only contexts, or 2 en-US broad high-score contexts; 262144 core pixels; 4M pixels/crop; 12s/page best-effort cancellation; no language correction"
+    static func mixedScriptCounterOnly(_ text:String,_ confidence:Double,_ ambiguous:Bool)->Bool {
+        // At exactly0.5 without ambiguity, positive correction is ineligible.
+        // The consumer requires BOTH languages for mixed Hangul/Latin dissent;
+        // monolingual contexts contribute neither correction nor counterevidence.
+        confidence==0.5 && !ambiguous && text.range(of:"\\p{script=Hangul}",options:.regularExpression) != nil && text.range(of:"\\p{script=Latin}",options:.regularExpression) != nil
+    }
     static func reconsideredLines(_ image:CGImage,_ bitmap:NSBitmapImageRep,_ lines:[[String:Any]],_ observations:[VNRecognizedTextObservation]=[])->[[String:Any]] {
         let deadline=DispatchTime.now()+12.0
-        let eligible=lines.enumerated().compactMap { (index,line)->(index:Int,priority:Int,rect:CGRect,text:String,highLatin:Bool)? in
+        let eligible=lines.enumerated().compactMap { (index,line)->(index:Int,priority:Int,rect:CGRect,text:String,highLatin:Bool,mixedCounter:Bool)? in
             guard let text=line["text"] as? String,!text.isEmpty,text.utf16.count<=128,
                   text.range(of:"\\p{N}",options:.regularExpression)==nil,
                   line["numeric_consensus"] as? Bool == true,
@@ -42,7 +48,7 @@ extension DocverVision {
             }
             let highLatin=confidence>0.5 && !ambiguous && text.range(of:"^[\\p{script=Latin}\\p{White_Space}\\p{P}\\p{S}]+$",options:.regularExpression) != nil && text.range(of:"\\p{L}",options:.regularExpression) != nil
             guard confidence<=0.5 || ambiguous || highLatin else{return nil}
-            return (index,confidence<0.5 || ambiguous ? 0:highLatin ? 2:1,CGRect(x:b[0],y:b[1],width:b[2],height:b[3]),text,highLatin)
+            return (index,confidence<0.5 || ambiguous ? 0:highLatin ? 2:1,CGRect(x:b[0],y:b[1],width:b[2],height:b[3]),text,highLatin,mixedScriptCounterOnly(text,confidence,ambiguous))
         }.sorted {a,b in a.priority==b.priority ? a.index<b.index:a.priority<b.priority}
         var output=lines
         for (position,entry) in eligible.enumerated() {
@@ -51,13 +57,13 @@ extension DocverVision {
                 result["reconsideration"]=["status":"budget_exceeded","band_bbox":result["bbox"]!,"contexts":[]]
             }else{
                 let matches=observations.filter{ob in let r=ob.boundingBox;return CGRect(x:r.minX,y:1-r.maxY,width:r.width,height:r.height)==entry.rect && ob.topCandidates(1).first?.string==entry.text}
-                result["reconsideration"]=reconsider(image,bitmap,entry.rect,entry.text,!entry.highLatin && matches.count==1 ? matches[0].topCandidates(1).first:nil,deadline,entry.highLatin)
+                result["reconsideration"]=reconsider(image,bitmap,entry.rect,entry.text,!entry.highLatin && matches.count==1 ? matches[0].topCandidates(1).first:nil,deadline,entry.highLatin,entry.mixedCounter)
             }
             output[entry.index]=result
         }
         return output
     }
-    static func reconsider(_ image:CGImage,_ bitmap:NSBitmapImageRep,_ line:CGRect,_ primary:String,_ candidate:VNRecognizedText?=nil,_ deadline:DispatchTime=DispatchTime.now()+12.0,_ highScoreLatin:Bool=false)->[String:Any] {
+    static func reconsider(_ image:CGImage,_ bitmap:NSBitmapImageRep,_ line:CGRect,_ primary:String,_ candidate:VNRecognizedText?=nil,_ deadline:DispatchTime=DispatchTime.now()+12.0,_ highScoreLatin:Bool=false,_ mixedCounterOnly:Bool=false)->[String:Any] {
         let bounds=CGRect(x:0,y:0,width:image.width,height:image.height)
         let band=CGRect(x:line.minX*bounds.width,y:line.minY*bounds.height,width:line.width*bounds.width,height:line.height*bounds.height).integral.intersection(bounds)
         func normalized(_ r:CGRect)->[CGFloat]{[r.minX/bounds.width,r.minY/bounds.height,r.width/bounds.width,r.height/bounds.height]}
@@ -124,7 +130,7 @@ extension DocverVision {
         let latin=primary.unicodeScalars.filter{(65...90).contains($0.value)||(97...122).contains($0.value)}.count
         let mono=hangul>latin ? ["ko-KR"]:["en-US"]
         var contexts:[[String:Any]]=[]
-        for padding in (highScoreLatin ? [0.75]:[0.25,0.75]){for scale in [1,2]{for languages in (highScoreLatin ? [["en-US"]]:[mono,["ko-KR","en-US"]]){
+        for padding in (highScoreLatin ? [0.75]:[0.25,0.75]){for scale in [1,2]{for languages in (highScoreLatin ? [["en-US"]]:mixedCounterOnly ? [["ko-KR","en-US"]]:[mono,["ko-KR","en-US"]]){
             let pad=max(8,min(64,band.height*padding)),cropRect=band.insetBy(dx:-pad,dy:-pad).intersection(bounds).integral
             var context:[String:Any]=["languages":languages,"padding":padding,"scale":scale,"crop_bbox":normalized(cropRect),"status":"failed","observations":[]]
             defer{contexts.append(context)}

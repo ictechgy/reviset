@@ -4,6 +4,10 @@ import Vision
 
 @main struct OcrChecks {
     static func main() throws {
+        for text in ["계약 Contract","한 éÆ"] {precondition(DocverVision.mixedScriptCounterOnly(text,0.5,false))}
+        for text in ["Contract","éÆ","계약 검토","Δ"] {precondition(!DocverVision.mixedScriptCounterOnly(text,0.5,false))}
+        for score in [0.0,0.3,0.499,0.501,1.0] {precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",score,false),"Weak and high-score profiles retain their existing evidence contract")}
+        precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,true),"Ambiguous positive-correction eligibility still requires all eight contexts")
         typealias Reading=DocverVision.NumericReading
         let a=Reading(text:"100",rect:CGRect(x:0.1,y:0.1,width:0.2,height:0.05),sources:["whole:0"])
         let b=Reading(text:"100",rect:CGRect(x:0.5,y:0.1,width:0.2,height:0.05),sources:["whole:1"])

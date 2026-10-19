@@ -79,9 +79,10 @@ for(const mode of ['error','schema','mode','hash','dimensions','render_error']){
 test('raster reuse keeps cache-write diagnostics local and never persists operational warnings',()=>fixture(`
 const cacheRoot=await cache('warning'),environment=await ocrEnvironment();
 const path=(page,ocr)=>join(cacheRoot,'ocr',hash([byteHash(bytes),page,environment,ocr,'pdfkit-300dpi-4096-tiled-v4'])+'.json');
-await mkdir(path(1,true));await mkdir(path(2,false));
+await mkdir(path(1,true));await mkdir(path(2,false));await mkdir(path(3,false));
 const r=await captureNativePages(bytes,pages,pages,{cacheRoot});
 assert.equal(r.get(1).cache_write_failed,true);assert.equal(r.get(2).cache_write_failed,true);
+assert.equal(r.get(3).cache_write_failed,true,'An independently observed representative retains its own render-stage diagnostic');
 assert.equal(r.get(4).cache_write_failed,undefined);assert.equal(r.get(4).lines[0].text,'Revenue 100');
 const replay=await captureNativePages(bytes,[2,4],[2,4],{cacheRoot});for(const v of replay.values())assert.equal(v.cache_write_failed,undefined);
 `));

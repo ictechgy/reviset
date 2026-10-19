@@ -46,6 +46,13 @@ test('native high-score Latin diagnostics use two broad monolingual contexts wit
   assert.deepEqual(line.reconsideration?.contexts.map(c=>[c.padding,c.scale,c.languages]),[[.75,1,['en-US']],[.75,2,['en-US']]]);
   assert.equal(line.text,'Delivery status pending');assert.equal(line.alternatives[0].text,line.text);
 });
+test('native mixed-script borderline countercontexts retain all usable bilingual views and primary readings',native,async()=>{
+  const c=createCanvas(1600,900),ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1600,900);ctx.fillStyle='black';ctx.font='42px AppleGothic';ctx.fillText('사업 검토 · Document AAA',100,130);ctx.font='46px AppleGothic';ctx.fillText('예상 매출 100억',100,300);
+  const bytes=await pdf(d=>d.image(c.toBuffer('image/png'),0,0,{width:960,height:540})),result=await recognizePdf(bytes,1),line=result.lines.find(l=>l.text.includes('Document AAA'));
+  assert.ok(line);assert.equal(line.confidence,.5);assert.equal(line.text,'사업 검토 · Document AAA');assert.equal(line.reconsideration?.status,'available');
+  assert.deepEqual(line.reconsideration?.contexts.map(c=>[c.padding,c.scale,c.languages]),[[.25,1,['ko-KR','en-US']],[.25,2,['ko-KR','en-US']],[.75,1,['ko-KR','en-US']],[.75,2,['ko-KR','en-US']]]);
+  assert.ok(result.lines.some(l=>l.text==='예상 매출 100억'&&l.numeric_consensus));
+});
 test('native numeric slots, grayscale strikes and ruled-grid negative controls',native,async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-native-checks-'));
   try{const executable=join(folder,'checks');execFileSync('swiftc',['-swift-version','5','-O','-parse-as-library','-D','DOCVER_TEST','apps/helpers/Vision.swift','apps/helpers/Reconsideration.swift','tests/native/OcrChecks.swift','-o',executable],{cwd:resolve('.'),timeout:120000});const output=execFileSync(executable,[resolve('tests/fixtures/numeric-notation.json')],{encoding:'utf8',timeout:30000});assert.match(output,/PASS numeric position\/multiplicity\/conflict/);}finally{await rm(folder,{recursive:true,force:true});}

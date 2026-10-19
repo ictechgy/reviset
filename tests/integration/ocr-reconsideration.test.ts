@@ -33,6 +33,16 @@ test('supported-language contextual disagreement withholds borderline comparison
   assert.equal(hasContextualDisagreement(p,b=>b[0]<.1),false,'Blocked padding cannot supply comparable context');
   const source:ElementData={...structuredClone(p),observation_id:'source',method:'pdf_text',provenance:'observed',source_ref:'source',ocr:undefined};const sourcePage=page([source,structuredClone(p)]);selectHybridComparison(sourcePage);assert.equal(sourcePage.elements[0].comparison_role,'selected');assert.equal(sourcePage.elements[1].comparison_role,'shadowed');assert.equal(comparisonText(sourcePage),source.text);
 });
+test('bilingual-only borderline mixed-script evidence retains dissent and cannot authorize positive correction',()=>{
+  const p=primary('계약 Contract');p.visibility='visible';p.ocr!.confidence=.5;p.ocr!.alternatives=[];
+  p.ocr!.reconsideration_observation=observation(p.text);p.ocr!.reconsideration_observation.contexts=p.ocr!.reconsideration_observation.contexts.filter(c=>c.languages.length===2);
+  assert.equal(p.ocr!.reconsideration_observation.contexts.length,4);assert.equal(contextualAssessment(p,()=>false),'consistent');
+  const before=structuredClone(p);p.ocr!.reconsideration_observation.contexts[0].observations[0].text='계약 Revised';
+  assert.equal(contextualAssessment(p,()=>false),'disagrees');assert.equal(admitReconsideration(p,p.ocr!.reconsideration_observation,()=>false),undefined);
+  const pg=page([p]);selectHybridComparison(pg);assert.equal(comparisonText(pg),'');assert.equal(unresolvedComparisonText(pg),p.text);assert.equal(p.text,before.text);assert.equal(p.ocr!.confidence,before.ocr!.confidence);
+  for(const context of p.ocr!.reconsideration_observation.contexts)context.status='failed';assert.equal(contextualAssessment(p,()=>false),'unverified');
+  const weak=structuredClone(before);weak.ocr!.confidence=.3;assert.equal(admitReconsideration(weak,weak.ocr!.reconsideration_observation!,()=>false),undefined,'A partial annex cannot become an admitted weak-line correction');
+});
 test('missing or unusable borderline context evidence withholds selection without changing primary or numeric/source priority',()=>{
   for(const status of ['unsupported_background','unsupported_bitmap','budget_exceeded','failed','empty_ink',undefined] as const){
     const p=primary('계익 기간 변경');p.visibility='visible';p.ocr!.confidence=.5;p.ocr!.reconsideration_observation=status?{status,band_bbox:bbox,contexts:[]}:undefined;

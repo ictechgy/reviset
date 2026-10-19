@@ -490,3 +490,20 @@ as well as environment and image SHA. Optional annex availability can be shared;
 this optimization does not promise independent retry equivalence or accuracy
 improvement. Actual native primary/numeric/strike/token/raster preservation is
 covered separately from deterministic subprocess failure/cache controls.
+
+
+### Engine40/helper22: supported countercontext languages
+
+For exactly0.5,nonambiguous mixed Hangul/Latin lines,positive correction is
+ineligible under the unchanged admission contract. Contextual dissent requires
+both ko-KR and en-US,so monolingual contexts cannot contribute. Keep the four
+bilingual padding(.25/.75)×scale(1/2) contexts and omit four ignored monolingual
+calls. Weak or ambiguous lines retain all eight correction contexts;monoscript
+borderline and high-scoreLatin profiles retain their existing evidence. The
+four-line/12s ordering,budgets,primary readings and language correction=false
+remain. Helper22/ROIpolicyv4 are environment-bound. The32paired native component
+experiment preserves primary/raster/usable-context/canonical results with23.6094%
+median improvement;this does not measure app latency,unique-corpus p95 or
+universal OCR accuracy. Parent capture also retains a representative's own
+pre-render cache diagnostic after successful independent OCR,without sharing
+that execution-local warning across its peers.

@@ -609,3 +609,33 @@ through suite and commit,only evidence docs follow. The ignored uniform-tile
 prototype preserves88primary/raster pairs but its8.18%median component gain
 fails the preregistered10%gate;not adopted. Product remains OPEN for remaining
 OCR errors,strict PPTX fidelity,performance and missing manual split/merge.
+
+
+Complete original-base39 independent code APPROVE/READY and architectureWATCH
+returned for exactf25c3bb,96paths/9changed,with separately hashed raw reports.
+They do not approve40 or product completion. Both independently closed the
+Unicode mismatch and verified grouped failure/clone/progress boundaries.
+
+The38scan cache contains600page records,301unique native PNGs,598mixed-script
+borderline title records and4784ROIcontexts. Exactly0.5/nonambiguous mixed
+Hangul+Latin cannot receive a positive correction;the consumer rejects mono-
+language contextual dissent when either required script is unsupported. An
+ignored candidate therefore omits only these unused monolingual contexts.
+Preregistered32distinct-page AB/BA paired nativeprocess experiment retained
+all32primary numeric/strike/token fields,PNGhashes,currently usable bilingual
+contexts,and canonical selected/unresolved/roles/gaps. Median component gain
+23.6094%passes10%gate. No app/p95 claim;two warmups and cached-PDF reset each
+arm,stdio/optional async structure excluded. Sources,hashes,raw pairs and gate
+are preserved under mixed-context-prototype.
+
+40implements that profile as4bilingual contexts,keeping8for weak/ambiguous
+positive admission and monoscript borderline evidence,and2for high-scoreLatin.
+No primary/confidence rewrite or relaxed correction threshold. Helper22 and
+ROIpolicyv4 invalidate native environment caches. Native eligibility boundaries,
+actual natural0.5mixed scan and pure counterevidence/admission controls pass.
+An independently observed representative also retains its own render-stage
+cache warning;peer warnings remain separate and cached warnings stripped.
+Fullserial164/164PASS,0fail/skip/cancel,156.114s;runtime source fixed through
+suite/commit and only evidence docs follow. Actual current480/app/scale/ZIP
+and40complete original-base reviews follow;remaining OCR/PPTX/manual relation
+work remainsOPEN. Repeated test/review checkpoints are not product completion.
