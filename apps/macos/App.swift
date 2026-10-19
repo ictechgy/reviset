@@ -96,13 +96,13 @@ import PDFKit
             for window in NSApp.windows where window.isVisible {if let content=window.contentView,let split=pane(content){return split}}
             throw BridgeError(code:"LAYOUT_SPLIT",message:"네이티브 문서·변경 분할 창을 찾지 못했습니다.")
         }
-        let split=try current(),initial=split.subviews[1].frame.height,canvas=split.subviews[0].frame.height
-        guard initial>=105 && initial<=180 && canvas>initial else {throw BridgeError(code:"LAYOUT_DEFAULT",message:"문서 영역의 기본 높이가 충분하지 않습니다: \(canvas), \(initial)")}
+        let split=try current(),initial=split.arrangedSubviews[1].frame.height,canvas=split.arrangedSubviews[0].frame.height
+        guard abs(initial-140)<2 && canvas>initial else {throw BridgeError(code:"LAYOUT_DEFAULT",message:"문서 영역의 기본 높이가 충분하지 않습니다: \(canvas), \(initial)")}
         split.setPosition(canvas-40,ofDividerAt:0);split.layoutSubtreeIfNeeded();try await Task.sleep(nanoseconds:100_000_000)
-        let resized=split.subviews[1].frame.height
+        let resized=split.arrangedSubviews[1].frame.height
         guard resized>=initial+35 else{throw BridgeError(code:"LAYOUT_DRAG",message:"네이티브 분할선으로 변경 목록 크기를 바꾸지 못했습니다.")}
         model.showChanges=false;try await Task.sleep(nanoseconds:150_000_000);model.showChanges=true;try await Task.sleep(nanoseconds:250_000_000)
-        let reopened=try current(),remembered=reopened.subviews[1].frame.height
+        let reopened=try current(),remembered=reopened.arrangedSubviews[1].frame.height
         guard abs(remembered-resized)<2 else{throw BridgeError(code:"LAYOUT_MEMORY",message:"변경 목록 높이 유지 실패: 조절 \(resized), 다시 열기 \(remembered), 저장 \(WorkspaceGeometryPreferences.height("Docver.workspace.compare.changesHeight") ?? -1)")}
         reopened.setPosition(reopened.bounds.height-reopened.dividerThickness-initial,ofDividerAt:0)
         return ["default_change_pane_points":initial,"default_document_pane_points":canvas,"resized_change_pane_points":resized,"reopened_change_pane_points":remembered,"native_divider_and_height_reopen":true,"existing_snapshot_reopen":!model.report.isNull]
