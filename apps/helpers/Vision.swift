@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-5-ruled-grid"
+    static let version = "docver-vision-6-qualified-grid"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -25,7 +25,7 @@ struct DocverVision {
         text.range(of:"(?=\\p{N})[^0-9０-９]",options:.regularExpression)==nil
     }
     static func supportedPixels(_ image:NSBitmapImageRep)->Bool {
-        !image.isPlanar && image.bitsPerSample==8 && ((image.colorSpace.colorSpaceModel == .rgb && [3,4].contains(image.samplesPerPixel)) || (image.colorSpace.colorSpaceModel == .gray && [1,2].contains(image.samplesPerPixel)))
+        !image.isPlanar && image.bitsPerSample==8 && image.bitsPerPixel==image.samplesPerPixel*8 && ((image.colorSpace.colorSpaceModel == .rgb && [3,4].contains(image.samplesPerPixel)) || (image.colorSpace.colorSpaceModel == .gray && [1,2].contains(image.samplesPerPixel)))
     }
     struct NumericReading {var text:String;var rect:CGRect;var sources:[String]}
     static func sameNumericRegion(_ a:CGRect,_ b:CGRect)->Bool {
@@ -48,6 +48,26 @@ struct DocverVision {
         // crop cannot verify two distinct numeric positions.
         return required.allSatisfy{r in let matches=observed.filter{sameNumericRegion(r.rect,$0.rect)};return matches.count==1 && matches[0].text==r.text}
             && observed.allSatisfy{o in required.filter{sameNumericRegion(o.rect,$0.rect)}.count==1}
+    }
+    static func numericStatus(_ required:[NumericReading],_ readings:[NumericReading],missingBounds:Bool=false,formatSupported:Bool=true)->String {
+        if !formatSupported{return "unsupported_notation"}
+        let observed=uniqueNumbers(readings)
+        if !missingBounds && numericAgreement(required,observed){return required.isEmpty ? "not_applicable":"verified"}
+        if (!missingBounds && required.isEmpty && !observed.isEmpty) || required.contains(where:{r in observed.contains(where:{sameNumericRegion(r.rect,$0.rect) && r.text != $0.text})}){return "conflicted"}
+        return "unverified"
+    }
+    static func orderedLines(_ lines:[[String:Any]])->[[String:Any]] {
+        func rect(_ i:Int)->CGRect{let b=lines[i]["bbox"] as! [CGFloat];return CGRect(x:b[0],y:b[1],width:b[2],height:b[3])}
+        let order=lines.indices.sorted{let a=rect($0),b=rect($1);return a.minY != b.minY ? a.minY<b.minY : a.minX != b.minX ? a.minX<b.minX : $0<$1}
+        var bands:[[Int]]=[]
+        for i in order {
+            let b=rect(i)
+            if let anchor=bands.last?.first {let a=rect(anchor),overlap=min(a.maxY,b.maxY)-max(a.minY,b.minY)
+                if overlap>0.5*min(a.height,b.height){bands[bands.count-1].append(i);continue}
+            }
+            bands.append([i])
+        }
+        return bands.flatMap{$0.sorted{let a=rect($0),b=rect($1);return a.minX != b.minX ? a.minX<b.minX : a.minY != b.minY ? a.minY<b.minY : $0<$1}}.map{lines[$0]}
     }
     static func request() throws -> VNRecognizeTextRequest {
         let r = VNRecognizeTextRequest(); r.revision = VNRecognizeTextRequestRevision3
@@ -109,13 +129,12 @@ struct DocverVision {
                 }
             }}
         }}
-        let lines:[[String:Any]] = try (r.results ?? []).map { observation in
+        let lines:[[String:Any]] = orderedLines(try (r.results ?? []).map { observation in
             let candidates = observation.topCandidates(3)
             let b = observation.boundingBox
             let text = candidates.first?.string ?? ""
             let lineRect=CGRect(x:b.minX,y:1-b.maxY,width:b.width,height:b.height)
-            let strike=strikeCandidate(bitmap,lineRect)
-            let strikeStatus = !supportedPixels(bitmap) ? "unsupported_format" : lineRect.width*CGFloat(cg.width)<=20 || lineRect.height*CGFloat(cg.height)<=8 ? "too_small" : strike != nil ? "detected":"not_detected"
+            let strikeResult=strikeObservation(bitmap,lineRect),strike=strikeResult.bbox
             var recognized=tiles.filter{let intersection=$0.rect.intersection(lineRect);return !intersection.isNull && intersection.width*intersection.height>0.55*$0.rect.width*$0.rect.height}
             var required:[NumericReading]=[]
             var missingBounds=false
@@ -141,8 +160,8 @@ struct DocverVision {
                 }
             }
             recognized=uniqueNumbers(recognized)
-            let numericFormatOK=numericFormatSupported(text)
-            let consensus = numericFormatOK && !missingBounds && numericAgreement(required,recognized)
+            let status=numericStatus(required,recognized,missingBounds:missingBounds,formatSupported:numericFormatSupported(text))
+            let consensus=["verified","not_applicable"].contains(status)
             let tokens:[[String:Any]] = (try? NSRegularExpression(pattern:"\\S+").matches(in:text,range:NSRange(text.startIndex...,in:text)))?.compactMap { match in
                 guard let range=Range(match.range,in:text),let word=try? candidates.first?.boundingBox(for:range) else {return nil}
                 let b=word.boundingBox
@@ -150,14 +169,11 @@ struct DocverVision {
             } ?? []
             return ["text":text, "confidence":Double(candidates.first?.confidence ?? 0),
                     "bbox":[b.minX,1-b.maxY,b.width,b.height],
-                    "strike_candidate":strike != nil,"strike_status":strikeStatus,"strike_bbox":strike ?? [0,0,0,0],"numeric_consensus":consensus,"numeric_readings":recognized.map{$0.text},
-                    "numeric_status":!numericFormatOK ? "unsupported_notation" : required.isEmpty ? "not_applicable" : consensus ? "verified":"conflicted",
+                    "strike_candidate":strike != nil,"strike_status":strikeResult.status,"strike_bbox":strike ?? [0,0,0,0],"numeric_consensus":consensus,"numeric_readings":recognized.map{$0.text},
+                    "numeric_status":status,
                     "numeric_observations":recognized.map{["text":$0.text,"bbox":[$0.rect.minX,$0.rect.minY,$0.rect.width,$0.rect.height],"sources":$0.sources]},
                     "tokens":tokens,"alternatives":candidates.map { ["text":$0.string,"confidence":Double($0.confidence)] }]
-        }.sorted { a,b in
-            let x = a["bbox"] as! [CGFloat], y = b["bbox"] as! [CGFloat]
-            return x[1]==y[1] ? x[0]<y[0] : x[1]<y[1]
-        }
+        })
         return metadata.merging(["ocr_performed":true,"verification":"overlapping-1600px-tiles","lines":lines,
                                  "grid_tables":ruledTables(bitmap,lines),"grid_status":"complete_rectangular_grids_only_not_absence_proof"]){_,new in new}
     }
@@ -217,6 +233,21 @@ struct DocverVision {
                       zip(xs,xs.dropFirst()).allSatisfy({$1-$0>=12}),
                       !partial.contains(where:{x in !xs.contains(where:{abs($0-x)<=4})}),
                       (xs.count-1)*(ys.count-1)<=1000 else{continue}
+                // Equal-endpoint grouping excludes partial horizontal dividers.
+                // Inspect pixels between the accepted rows as well: otherwise a
+                // merged/partial row can silently become a larger regular cell.
+                let minColumn=zip(xs,xs.dropFirst()).map{$1-$0}.min()!,borderTolerance=max(4,h/600+2)
+                var partialHorizontal=false
+                for y in (top+1)..<bottom where !ys.contains(where:{abs($0-y)<=borderTolerance}) {
+                    var run=0,missing=0
+                    for x in x0...x1 {
+                        if dark[y*w+x]>0{run+=1;missing=0}
+                        else{missing+=1;if missing>2{run=0}}
+                        if Double(run)>=Double(minColumn)*0.85{partialHorizontal=true;break}
+                    }
+                    if partialHorizontal{break}
+                }
+                if partialHorizontal{continue}
                 var cells:[[String:Any]]=[],occupiedRows=Set<Int>(),occupiedColumns=Set<Int>()
                 for row in 0..<(ys.count-1) {for col in 0..<(xs.count-1) {
                     let cell=CGRect(x:CGFloat(xs[col])/CGFloat(w),y:CGFloat(ys[row])/CGFloat(h),width:CGFloat(xs[col+1]-xs[col])/CGFloat(w),height:CGFloat(ys[row+1]-ys[row])/CGFloat(h))
@@ -224,7 +255,7 @@ struct DocverVision {
                     for line in lines {for token in line["tokens"] as? [[String:Any]] ?? [] {
                         guard let text=token["text"] as? String,let b=token["bbox"] as? [CGFloat],b.count==4 else{continue}
                         let rect=CGRect(x:b[0],y:b[1],width:b[2],height:b[3]),intersection=cell.intersection(rect)
-                        if cell.contains(CGPoint(x:rect.midX,y:rect.midY)),!intersection.isNull,intersection.width*intersection.height>=rect.width*rect.height*0.6{words.append((text,rect,(line["confidence"] as? Double ?? 0)>=0.5 && (line["numeric_consensus"] as? Bool ?? false) && !(line["alternatives"] as? [[String:Any]] ?? []).contains(where:{($0["text"] as? String) != (line["text"] as? String) && ($0["confidence"] as? Double ?? 0)>=(line["confidence"] as? Double ?? 0)-0.15})))}
+                        if cell.contains(CGPoint(x:rect.midX,y:rect.midY)),!intersection.isNull,intersection.width*intersection.height>=rect.width*rect.height*0.6{words.append((text,rect,(line["confidence"] as? Double ?? 0)>=0.5 && (line["numeric_consensus"] as? Bool ?? false) && (line["strike_candidate"] as? Bool)==false && (line["strike_status"] as? String)=="not_detected" && !(line["alternatives"] as? [[String:Any]] ?? []).contains(where:{($0["text"] as? String) != (line["text"] as? String) && ($0["confidence"] as? Double ?? 0)>=(line["confidence"] as? Double ?? 0)-0.15})))}
                     }}
                     words.sort{$0.1.midY==$1.1.midY ? $0.1.minX<$1.1.minX : $0.1.midY<$1.1.midY}
                     var textRows:[[(String,CGRect,Bool)]]=[]
@@ -243,11 +274,14 @@ struct DocverVision {
         return tables
     }
     static func strikeCandidate(_ image:NSBitmapImageRep,_ line:CGRect)->[Double]?{
-        guard supportedPixels(image),let data=image.bitmapData else {return nil}
+        strikeObservation(image,line).bbox
+    }
+    static func strikeObservation(_ image:NSBitmapImageRep,_ line:CGRect)->(bbox:[Double]?,status:String){
+        guard supportedPixels(image),let data=image.bitmapData else {return (nil,"unsupported_format")}
         let w=image.pixelsWide,h=image.pixelsHigh,s=image.samplesPerPixel,offset=image.bitmapFormat.contains(.alphaFirst) ? 1:0
         let gray=image.colorSpace.colorSpaceModel == .gray
         let x0=max(0,Int(line.minX*CGFloat(w))),x1=min(w-1,Int(line.maxX*CGFloat(w))),y0=max(0,Int(line.minY*CGFloat(h))),y1=min(h-1,Int(line.maxY*CGFloat(h)))
-        guard x1-x0>20,y1-y0>8 else {return nil}
+        guard x1-x0>20,y1-y0>8 else {return (nil,"too_small")}
         func color(_ x:Int,_ y:Int)->[Int]{let p=max(0,min(h-1,y))*image.bytesPerRow+max(0,min(w-1,x))*s+offset;return gray ? [Int](repeating:Int(data[p]),count:3) : [Int(data[p]),Int(data[p+1]),Int(data[p+2])]}
         let samples=[x0,(x0+x1)/2,x1].flatMap{x in [color(x,y0-4),color(x,y1+4)]}
         let bg=(0..<3).map{c in samples.map{$0[c]}.sorted()[samples.count/2]}
@@ -257,8 +291,8 @@ struct DocverVision {
             for x in x0...x1 {let c=color(x,y);if zip(c,bg).reduce(0,{$0+abs($1.0-$1.1)})>135 {run+=1;if run>longest{longest=run;start=x-run+1}}else{run=0}}
             if Double(longest)>0.72*Double(x1-x0){band+=1;if band>bestBand{bestBand=band;bestX=start;bestY=y-band+1;bestWidth=longest}}else{band=0}
         }
-        guard bestBand>0,Double(bestBand)<=0.22*Double(y1-y0) else {return nil}
-        return [Double(bestX)/Double(w),Double(bestY)/Double(h),Double(bestWidth)/Double(w),Double(bestBand)/Double(h)]
+        guard bestBand>0,Double(bestBand)<=0.22*Double(y1-y0) else {return (nil,"not_detected")}
+        return ([Double(bestX)/Double(w),Double(bestY)/Double(h),Double(bestWidth)/Double(w),Double(bestBand)/Double(h)],"detected")
     }
     @available(macOS 26.0, *)
     static func structure(_ image:CGImage) async throws -> [String:Any] {

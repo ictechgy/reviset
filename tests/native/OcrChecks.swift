@@ -15,6 +15,16 @@ import AppKit
         precondition(!DocverVision.numericAgreement([a,b],[a,wrong]),"Text equality cannot substitute for position")
         let merged=Reading(text:"100",rect:CGRect(x:0.1,y:0.1,width:0.6,height:0.05),sources:["crop"])
         precondition(!DocverVision.numericAgreement([a,b],[merged]),"Merged crop cannot verify individual slots")
+        precondition(DocverVision.numericStatus([],[a])=="conflicted","Foo versus tile F00 must remain a contradiction")
+        precondition(DocverVision.numericStatus([a],[])=="unverified","Missing evidence is not a contradictory reading")
+        precondition(DocverVision.numericStatus([a],[conflict])=="conflicted")
+        let jitter:[[String:Any]]=[
+            ["text":"right","bbox":[CGFloat(0.7),CGFloat(0.100),CGFloat(0.2),CGFloat(0.02)]],
+            ["text":"left","bbox":[CGFloat(0.1),CGFloat(0.101),CGFloat(0.2),CGFloat(0.02)]],
+            ["text":"below","bbox":[CGFloat(0.1),CGFloat(0.14),CGFloat(0.2),CGFloat(0.02)]]
+        ]
+        precondition(DocverVision.orderedLines(jitter).map{$0["text"] as! String}==["left","right","below"],"Same-row jitter must not reverse column order")
+        precondition(DocverVision.orderedLines(Array(jitter.reversed())).map{$0["text"] as! String}==["left","right","below"])
         let expr=try DocverVision.numericExpression()
         func numbers(_ text:String)->[String]{expr.matches(in:text,range:NSRange(text.startIndex...,in:text)).map{DocverVision.canonicalNumber(String(text[Range($0.range,in:text)!]))}}
         precondition(numbers("1, 2, 3")==["1","2","3"],"List commas cannot fuse separate values")
@@ -32,6 +42,7 @@ import AppKit
         precondition(DocverVision.strikeCandidate(image,line) != nil,"8-bit grayscale strikes must be evaluated")
         clear();for x in 20...220{pixels[52*stride+x]=0}
         precondition(DocverVision.strikeCandidate(image,line)==nil,"Underline is not a strike")
+        precondition(DocverVision.strikeObservation(image,CGRect(x:20.1/240,y:30.0/160,width:20.5/240,height:20.0/160)).status=="too_small","Status must use the exact clamped integer detector bounds")
 
         clear();let xs=[20,85,150,220],ys=[40,70,100,130]
         for y in ys{for x in 20...220{pixels[y*stride+x]=0}}
@@ -39,7 +50,7 @@ import AppKit
         let words=[(0,0,"Name"),(0,1,"Corp"),(0,2,"Remark"),(1,0,"Foo"),(2,0,"Bar"),(2,1,"Microsoft"),(2,2,"Dummy")]
         let lines:[[String:Any]]=words.map{row,col,text in
             let box:[CGFloat]=[CGFloat(xs[col]+4)/240,CGFloat(ys[row]+7)/160,40.0/240,12.0/160]
-            return ["text":text,"confidence":1.0,"numeric_consensus":true,"alternatives":[["text":text,"confidence":1.0]],"tokens":[["text":text,"bbox":box]]]
+            return ["text":text,"confidence":1.0,"numeric_consensus":true,"strike_candidate":false,"strike_status":"not_detected","alternatives":[["text":text,"confidence":1.0]],"tokens":[["text":text,"bbox":box]]]
         }
         let tables=DocverVision.ruledTables(image,lines)
         precondition(tables.count==1)
@@ -47,8 +58,15 @@ import AppKit
         precondition(cells.count==9 && cells.filter{($0["text"] as! String).isEmpty}.count==2,"Empty cells and coordinates must survive")
         precondition((cells[7]["text"] as? String)=="Microsoft")
         precondition((cells[4]["text_confident"] as? Bool)==false,"Missing OCR is not proof of an empty value")
+        var struckLines=lines;struckLines[0]["strike_candidate"]=true;struckLines[0]["strike_status"]="detected"
+        let struckCells=DocverVision.ruledTables(image,struckLines)[0]["cells"] as! [[String:Any]]
+        precondition((struckCells[0]["text_confident"] as? Bool)==false,"Struck text cannot become a confident grid value")
         for y in 41..<70{pixels[y*stride+85]=255}
         precondition(DocverVision.ruledTables(image,lines).isEmpty,"Partial/merged border must not silently become a coarser grid")
+        clear();for y in [40,70,130]{for x in 20...220{pixels[y*stride+x]=0}}
+        for x in xs{for y in 40...130{pixels[y*stride+x]=0}}
+        for x in 85...220{pixels[100*stride+x]=0}
+        precondition(DocverVision.ruledTables(image,lines).isEmpty,"Partial horizontal divider must not collapse two distinct right-column rows")
         clear();for y in ys{for x in 20...220{pixels[y*stride+x]=0}}
         for y in 40...130{pixels[y*stride+20]=0;pixels[y*stride+220]=0}
         precondition(DocverVision.ruledTables(image,lines).isEmpty,"Parallel rules/axes without internal columns are not a grid")

@@ -71,12 +71,13 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
       const ambiguous=line.alternatives.some(c=>compact(c.text)!==compact(line.text)&&c.confidence>=line.confidence-0.15);
       const appearanceBlocked=original.some(e=>intersects(e)>0&&['struck_through','struck_inferred','partially_struck_through','occluded','partially_occluded'].includes(e.visibility??''));
       const strikeEvaluated=!line.strike_status||['detected','not_detected'].includes(line.strike_status);
-      const confident=geometryOK&&strikeEvaluated&&!appearanceBlocked&&line.confidence>=0.5&&!ambiguous&&(!/\p{N}/u.test(line.text)||line.numeric_consensus);
+      const confident=geometryOK&&strikeEvaluated&&!appearanceBlocked&&line.confidence>=0.5&&!ambiguous&&line.numeric_consensus;
       additions.push({observation_id:id('obs',[page.asset_id,page.page,'ocr',environment,i]),kind:'text',text:line.text,normalized_text:normalize(line.text),bbox:box(...line.bbox),reading_order:original.length+additions.length,availability:'available',method:'vision_ocr',source_ref:`page:${page.page}/raster/ocr:${i}`,provenance:'inferred',visibility:line.strike_candidate?'struck_inferred':confident?'visible':'uncertain',
         ...(line.strike_candidate?{visibility_evidence:[{method:'raster_horizontal_strike_candidate',bbox:line.strike_bbox,assessment:'inferred' as const,coverage:Math.min(1,line.strike_bbox[2]/Math.max(0.000001,line.bbox[2]))}]}:{}),
         ocr:{confidence:line.confidence,confidence_scope:'line',numeric_consensus:line.numeric_consensus,ambiguous,alternatives:line.alternatives.map(c=>({text:c.text,confidence:c.confidence,truncated:false}))}});
     }
     page.elements.push(...additions);
+    const appearanceBlockedAt=(b:number[])=>original.some(e=>['struck_through','struck_inferred','partially_struck_through','occluded','partially_occluded'].includes(e.visibility??'')&&Math.max(0,Math.min(e.bbox[0]+e.bbox[2],b[0]+b[2])-Math.max(e.bbox[0],b[0]))*Math.max(0,Math.min(e.bbox[1]+e.bbox[3],b[1]+b[3])-Math.max(e.bbox[1],b[1]))>0);
     const nativeTables=result.tables??[],gridTables=(result.grid_tables??[]).filter(grid=>!nativeTables.some(native=>tableOverlap(grid,native)));
     const tables=[...nativeTables.map(table=>({table,grid:false})),...gridTables.map(table=>({table,grid:true}))];
     page.ocr={status:lines.length?'available':'no_text',mode:scanned?'scan':rasterComparison?'verification':additions.length?'supplement':'verification',engine:result.version,environment,render_sha256:result.render_sha256,width:result.width,height:result.height,structure_status:result.structure_status,table_count:tables.length};
@@ -94,10 +95,10 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
     if(!geometryOK)page.coverage_gaps.push({feature:'ocr',reason:'native_raster_viewport_geometry_disagrees'});
     if(geometryOK){for(const [ti,{table,grid}] of tables.entries()){
       const seen=new Set<string>();for(const cell of table.cells){const key=cell.row+':'+cell.column;if(seen.has(key))continue;seen.add(key);
-        page.elements.push({observation_id:id('obs',[page.asset_id,page.page,grid?'grid-cell':'vision-cell',environment,ti,key]),kind:'table_cell',text:cell.text,normalized_text:normalize(cell.text),bbox:cell.bbox,reading_order:page.elements.length,availability:grid&&!cell.text.trim()?'unavailable':'available',method:grid?'raster_ruled_grid_cell':'vision_document_cell',source_ref:`page:${page.page}/raster/table:${ti}/cell:${key}`,provenance:'inferred',visibility:grid&&cell.text_confident!==true?'uncertain':'unverified',table:{table_id:id('table',[page.asset_id,page.page,environment,ti]),row:cell.row,column:cell.column,row_span:cell.row_span,column_span:cell.column_span,origin:grid?'pdf_grid_inferred':'vision_table_inferred',assessment:'inferred'}});
+        page.elements.push({observation_id:id('obs',[page.asset_id,page.page,grid?'grid-cell':'vision-cell',environment,ti,key]),kind:'table_cell',text:cell.text,normalized_text:normalize(cell.text),bbox:cell.bbox,reading_order:page.elements.length,availability:grid&&!cell.text.trim()?'unavailable':'available',method:grid?'raster_ruled_grid_cell':'vision_document_cell',source_ref:`page:${page.page}/raster/table:${ti}/cell:${key}`,provenance:'inferred',visibility:grid&&(cell.text_confident!==true||appearanceBlockedAt(cell.bbox))?'uncertain':'unverified',table:{table_id:id('table',[page.asset_id,page.page,environment,ti]),row:cell.row,column:cell.column,row_span:cell.row_span,column_span:cell.column_span,origin:grid?'pdf_grid_inferred':'vision_table_inferred',assessment:'inferred'}});
       }
     }}
-    if(gridTables.some(t=>t.cells.some(c=>c.text_confident!==true)))page.coverage_gaps.push({feature:'table_ocr',reason:'ruled_grid_cell_text_uncertain_or_not_observed'});
+    if(gridTables.some(t=>t.cells.some(c=>c.text_confident!==true||appearanceBlockedAt(c.bbox))))page.coverage_gaps.push({feature:'table_ocr',reason:'ruled_grid_cell_text_uncertain_or_not_observed'});
     if(gridTables.length)page.coverage_gaps.push({feature:'table_semantics',reason:'raster_ruled_grid_cells_inferred_complete_rectangles_only'});
     if(result.tables?.length)page.coverage_gaps.push({feature:'table_semantics',reason:'vision_table_cells_inferred_not_original_pptx_cells'});
     if(result.structure_status&&result.structure_status!=='available')page.coverage_gaps.push({feature:'table_ocr',reason:'document_structure_'+result.structure_status});

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {mkdir,readFile,writeFile,rename,rm} from 'node:fs/promises';
+import {mkdir,readFile,writeFile,rename,rm,lstat,readlink} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import PDFDocument from 'pdfkit';
@@ -14,6 +14,7 @@ import {validateRenderPackage,renderPdf} from '../packages/render/index.js';
 import {runTool,visionExecutable,visionInfo} from '../packages/runtime/tools.js';
 import {byteHash,normalize,ENGINE_VERSION} from '../packages/schema/index.js';
 import {DesktopService} from '../packages/desktop/service.js';
+import {fileSha256} from '../packages/runtime/file-hash.js';
 
 type Box=[number,number,number,number];
 type Region={text:string;bbox:Box};
@@ -22,7 +23,14 @@ const folder=resolve('output/public-corpus'),cache=join(folder,'cache'),download
 const manifest=JSON.parse(await readFile('docs/fixtures/public-corpus.json','utf8')) as {sources:Source[]};
 const truth=JSON.parse(await readFile('docs/fixtures/public-corpus-truth.json','utf8')) as {regions:Record<string,Region[]>};
 const head=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),patch=execFileSync('git',['diff','--binary','HEAD']);
-const run=join(folder,'runs',head.slice(0,8)+(patch.length?'-dirty-'+byteHash(patch).slice(0,8):''));await mkdir(run,{recursive:true});
+const untracked: {path:string;kind:string;sha256:string}[]=[];
+for(const path of execFileSync('git',['ls-files','--others','--exclude-standard','-z'],{encoding:'utf8'}).split('\0').filter(Boolean).sort()){
+  const stat=await lstat(path);
+  // Hash link text rather than reading a target that may be outside the repository.
+  untracked.push({path,kind:stat.isSymbolicLink()?'symlink':'file',sha256:stat.isSymbolicLink()?byteHash(Buffer.from(await readlink(path))):await fileSha256(path)});
+}
+const sourceClean=!patch.length&&!untracked.length,patchSha=patch.length?byteHash(patch):null,dirtySha=sourceClean?null:byteHash(Buffer.from(JSON.stringify({patchSha,untracked})));
+const run=join(folder,'runs',head.slice(0,8)+(dirtySha?'-dirty-'+dirtySha.slice(0,8):''));await mkdir(run,{recursive:true});
 const compact=(s:string)=>normalize(s).normalize('NFKC').toLowerCase().replace(/\s/gu,'').replace(/⁄/g,'/');
 function intersects(a:Box,b:Box){return Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));}
 function regionResult(native:NativePageResult,regions:Region[],occluded?:Box){return regions.map(region=>{
@@ -76,12 +84,12 @@ const service=new DesktopService(join(run,'control-library'));
 let controls:any;
 try{
   const source=manifest.sources.find(s=>s.id==='python-pptx-txt-text')!,original=(await bytesFor(source)).bytes,zip=unzipSync(original),part='ppt/slides/slide1.xml',xml=new TextDecoder().decode(zip[part]),needle=' Foo Bar ';assert.ok(xml.includes(needle));const paths:string[]=[];
-  for(const [name,value]of [['before',needle],['replacement',' Foo Bat '],['insertion',' Foo Bar Inserted '],['deletion',' ']]){const file=join(run,'control-'+name+'.pptx');await writeFile(file,zipSync({...zip,[part]:strToU8(xml.replace(needle,value))}));paths.push(file);}
+  for(const [name,value]of [['before',needle],['replacement',' Foo Bat '],['insertion',' Foo Bar Inserted '],['text-removal',' ']]){const file=join(run,'control-'+name+'.pptx');await writeFile(file,zipSync({...zip,[part]:strToU8(xml.replace(needle,value))}));paths.push(file);}
   const project=await service.create('Public source positive edit controls',paths.map((file,i)=>({label:String(i),files:[file]}))),report=(await service.run(project.project_id)).report;
   assert.ok(report.changes.some(c=>c.kind==='text_modified'&&c.before?.includes('Foo Bar')&&c.after?.includes('Foo Bat')));assert.ok(report.changes.some(c=>c.kind==='text_modified'&&c.after?.includes('Inserted')));assert.ok(report.changes.some(c=>c.kind==='text_modified'&&c.before?.includes('Inserted')&&!c.after?.includes('Inserted')));
   const before=join(run,'azure-invoice','flattened.pdf'),hidden=join(run,'azure-invoice','occluded.pdf'),uncertain=await service.create('Downloaded scan occlusion is not a deletion',[{label:'original raster',files:[before]},{label:'covered raster',files:[hidden]}]),gap=(await service.run(uncertain.project_id)).report;
   assert.ok(!gap.changes.some(c=>/deleted|removed/.test(c.kind)));assert.ok(gap.changes.some(c=>c.kind==='coverage_gap'),'Withheld comparison must be visible');
-  controls={source_report_id:report.report_id,source_text_events:report.changes.filter(c=>c.kind==='text_modified').length,occlusion_report_id:gap.report_id,occlusion_gap_events:gap.changes.filter(c=>c.kind==='coverage_gap').length,status:'PASS known source replacement/insertion/deletion and raster-occlusion negative control'};
+  controls={source_report_id:report.report_id,source_text_events:report.changes.filter(c=>c.kind==='text_modified').length,source_control_scope:'Text replacement/insertion/removal within a surviving OOXML text element, not whole-element deletion',occlusion_report_id:gap.report_id,occlusion_gap_events:gap.changes.filter(c=>c.kind==='coverage_gap').length,status:'PASS known source text replacement/insertion/removal and raster-occlusion negative control'};
 }finally{service.close();}
-const output={head,working_patch_sha256:patch.length?byteHash(patch):null,engine:ENGINE_VERSION,environment:await visionInfo(),source_manifest_sha256:byteHash(await readFile('docs/fixtures/public-corpus.json')),selected_truth_sha256:byteHash(await readFile('docs/fixtures/public-corpus-truth.json')),sources:results,variants,controls,scope:'Parse/structure/control gates passed; OCR selected-region misses retained. No universal accuracy, absence proof, security proof or strict PowerPoint pixel-equivalence claim. W3C prior OCR excluded from truth.'};
+const output={head,source_clean:sourceClean,working_patch_sha256:patchSha,untracked_sources:untracked,dirty_source_sha256:dirtySha,engine:ENGINE_VERSION,environment:await visionInfo(),source_manifest_sha256:byteHash(await readFile('docs/fixtures/public-corpus.json')),selected_truth_sha256:byteHash(await readFile('docs/fixtures/public-corpus-truth.json')),sources:results,variants,controls,scope:'Parse/structure/control gates passed; OCR selected-region misses retained. No universal accuracy, absence proof, security proof or strict PowerPoint pixel-equivalence claim. W3C prior OCR excluded from truth.'};
 await writeFile(join(run,'result.json'),JSON.stringify(output,null,2));await writeFile(join(folder,'latest.json'),JSON.stringify({run,result:join(run,'result.json')},null,2));console.log(JSON.stringify({run,sources:results.length,source_pages:results.reduce((n,r)=>n+r.pages,0),variant_pages:variants.length,controls}));
