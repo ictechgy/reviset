@@ -164,7 +164,7 @@ struct BundleHistorySheet:View {
             }
             if !failure.isEmpty{Text(failure).font(.caption).foregroundStyle(.red);if !loaded{Button("다시 불러오기"){Task{await load()}}.disabled(loading)}}
             Text("사용자 연결은 PDF 내보내기 출처나 PowerPoint 원본 충실도의 인증이 아닙니다.").font(.caption).foregroundStyle(.secondary)
-        }.padding(22).frame(width:800,height:580).task{await load()}
+        }.padding(22).frame(width:800,height:580).background(Color(nsColor:.windowBackgroundColor)).task{await load()}
     }
     func historyRow(_ entry:JSON)->some View {
         let id=entry["decision_id"].string
