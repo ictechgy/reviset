@@ -55,6 +55,13 @@ test('human scores are derived from observed pages and cannot be forged by rehas
  }
 });
 
+test('score replay separates targets and rechecks changed observations on every invocation',()=>{
+ const first=edited(fixture(false),selection()).report,second=edited(first,selection('source_a','pdf_a')).report,log=second.bundle_decisions!;
+ assert.notEqual(log[0].score,log[1].score);assert.equal(validBundleDecisionLog(second.revisions,log),true);
+ const target=second.revisions[0].pages.find(p=>p.page_id==='pdf_b')!,text=target.text;target.text=second.revisions[0].pages[0].text;assert.equal(validBundleDecisionLog(second.revisions,log),false);
+ target.text=text;const before=canonical(second);assert.equal(validBundleDecisionLog(second.revisions,log),true);assert.equal(canonical(second),before);
+});
+
 test('human association does not invent missing raster or transform, or erase reused-PDF and hidden-source limits',()=>{
  const original=fixture(false);original.revisions[0].pages[2].raster=undefined;original.revisions[0].pages[0].hidden=true;const entry=createBundleDecision(original,[],selection()),next=structuredClone(original);next.bundle_decisions=[entry];applyBundleDecisions(next.revisions[0],[entry],true);Report.parse(next);const a=next.revisions[0].pages[0];assert.equal(a.appearance?.raster,undefined);assert.equal(appearanceEnvironment(a),undefined);for(const reason of ['manual_reference_native_raster_unavailable','manual_reference_pdf_reused_for_different_pptx','manual_reference_linked_hidden_source_slide'])assert.ok(a.coverage_gaps.some(g=>g.reason===reason),reason);
  const invalid=fixture(false);invalid.revisions[0].pages[2].source_transform=[];const decision=createBundleDecision(invalid,[],selection());invalid.bundle_decisions=[decision];applyBundleDecisions(invalid.revisions[0],[decision],false);Report.parse(invalid);assert.equal(invalid.revisions[0].pages[0].appearance,undefined);assert.equal(invalid.revisions[0].bundle_mapping[0].association,'human_confirmed');assert.ok(invalid.revisions[0].pages[0].coverage_gaps.some(g=>g.reason==='manual_reference_transform_unavailable'));

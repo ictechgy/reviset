@@ -86,6 +86,9 @@ import PDFKit
             guard let page=model.primaryPages(revision).first else{throw BridgeError(code:"ASPECT_PAGE",message:"비율 검증 원문이 없습니다.")}
             model.navigatePage(page["page_id"].string,in:revision["revision_occurrence_id"].string)
         }
+        // Inspect the neutral page edge independently from the legitimate blue
+        // selected-evidence overlay, which is covered by the evidence checks.
+        model.selectedChangeID=nil
         try await Task.sleep(nanoseconds:650_000_000)
         func canvases(_ view:NSView)->[StructureCanvas.Canvas] {
             var found:[StructureCanvas.Canvas]=[];if let canvas=view as? StructureCanvas.Canvas{found.append(canvas)}

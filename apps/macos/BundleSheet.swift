@@ -66,11 +66,12 @@ struct BundleSheet: View {
             Text("같은 버전의 PPTX와 PDF를 한 쌍씩 연결합니다. 연결은 화면 참고용이며 PowerPoint 원본의 충실도를 보증하지 않습니다.").font(.caption).foregroundStyle(.secondary)
             HStack(spacing:16) {
                 pageList(sources,search:$sourceSearch,selection:$sourceID,title:"PPTX 원본 슬라이드")
-                Image(systemName:mode=="link" ? "link":"link.badge.plus").foregroundStyle(.secondary)
+                Image(systemName:mode=="link" ? "link":"link.badge.plus").foregroundStyle(.secondary).frame(width:20)
                 pageList(pdfs,search:$pdfSearch,selection:$pdfID,title:"제공 PDF 페이지").disabled(mode=="unlink")
             }.frame(height:170).disabled(saving)
             HStack(spacing:16) {
                 BundlePagePreview(projectID:projectID,reportID:reportID,pageID:sourceID,basis:"source",title:"PPTX 원본 · 구조 또는 별도 변환 화면")
+                Color.clear.frame(width:20)
                 BundlePagePreview(projectID:projectID,reportID:reportID,pageID:pdfID,basis:"source",title:"제공 PDF 원본")
             }.frame(maxHeight:.infinity)
             if !selectionWarnings.isEmpty {

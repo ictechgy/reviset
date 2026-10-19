@@ -104,6 +104,11 @@ export function bundleDirectiveState(entries:BundleDecisionData[]):Map<string,Bu
 }
 /** Full replay starts at raw automatic pairs, never at an already edited mapping. */
 export function replayBundleMappings(revisions:z.infer<typeof Revision>[],entries:BundleDecisionData[]):Map<string,z.infer<typeof BundlePriorPair>>|undefined {
+  // Pages stay fixed during a replay. Repeated confirmations must recheck the
+  // same derived score, without re-tokenizing long pages for every log entry.
+  // Keep this cache local: the caller may change observations between replays.
+  const scoreCache=new Map<PageData,Map<PageData,number>>();
+  const cachedSimilarity=(a:PageData,b:PageData):number=>{let row=scoreCache.get(a);if(!row){row=new Map();scoreCache.set(a,row);}const found=row.get(b);if(found!==undefined)return found;const score=pageSimilarity(a,b);row.set(b,score);return score;};
   const locations=new Map(revisions.flatMap(revision=>revision.pages.map(page=>[page.page_id,{revision,page}] as const))),known=new Map<string,BundleDecisionData>(),pairs=new Map<string,z.infer<typeof BundlePriorPair>>(),owners=new Map<string,string>(),affected=new Set(entries.map(d=>d.revision_occurrence_id));
   for(const revision of revisions.filter(r=>affected.has(r.revision_occurrence_id))){
     if(!revision.bundle_mapping_basis||revision.assets.length!==2)return undefined;
@@ -121,7 +126,7 @@ export function replayBundleMappings(revisions:z.infer<typeof Revision>[],entrie
     if(!source||source.revision.revision_occurrence_id!==entry.revision_occurrence_id||source.page.asset_id!==entry.source_asset_id||!source.revision.assets.some(a=>a.asset_id===entry.source_asset_id&&a.format==='pptx')||!source.revision.assets.some(a=>a.asset_id===entry.rendered_asset_id&&a.format==='pdf'))return undefined;
     if(entry.rendered_page_id&&(!target||target.revision!==source.revision||target.page.asset_id!==entry.rendered_asset_id))return undefined;
     if(entry.action==='link'&&(!target||entry.score===null)||entry.action==='unlink'&&entry.score!==null)return undefined;
-    if(entry.action==='link'&&entry.score!==pageSimilarity(source.page,target!.page))return undefined;
+    if(entry.action==='link'&&entry.score!==cachedSimilarity(source.page,target!.page))return undefined;
     const conflictSources=new Set([entry.source_page_id,...(entry.action==='link'&&entry.rendered_page_id?[owners.get(entry.rendered_page_id)??'']:[])]),conflicts=[...conflictSources].map(source=>pairs.get(source)).filter((p):p is z.infer<typeof BundlePriorPair>=>!!p),sort=(a:z.infer<typeof BundlePriorPair>,b:z.infer<typeof BundlePriorPair>)=>a.source_page_id.localeCompare(b.source_page_id,'en')||a.rendered_page_id.localeCompare(b.rendered_page_id,'en');
     if(canonical(conflicts.sort(sort))!==canonical([...entry.displaced].sort(sort)))return undefined;
     if(entry.action==='unlink'&&entry.rendered_page_id!==null&&!conflicts.some(p=>p.source_page_id===entry.source_page_id&&p.rendered_page_id===entry.rendered_page_id))return undefined;

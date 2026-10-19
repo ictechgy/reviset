@@ -123,9 +123,15 @@ struct StructureCanvas: NSViewRepresentable {
                 let rect = NSRect(x: b[0]*bounds.width, y: b[1]*bounds.height, width: b[2]*bounds.width, height: b[3]*bounds.height)
                 if e["kind"].string == "text" || e["kind"].string == "table_cell" {
                     if e["kind"].string == "table_cell" { NSColor.gridColor.setStroke(); NSBezierPath(rect: rect).stroke() }
-                    let font = NSFont.systemFont(ofSize: max(11,min(35,bounds.width*0.029)))
+                    let contentRect=rect.insetBy(dx:2,dy:1)
+                    guard contentRect.width>0,contentRect.height>0 else{continue}
+                    let text=e["text"].string,lines=max(1,text.split(separator:"\n",omittingEmptySubsequences:false).count)
+                    let initial=NSFont.systemFont(ofSize:max(0.1,min(35,bounds.width*0.029)))
+                    let lineHeight=initial.ascender-initial.descender+initial.leading
+                    let fit=min(1,contentRect.height/(CGFloat(lines)*lineHeight))
+                    let font=NSFont.systemFont(ofSize:initial.pointSize*fit*0.95)
                     let style = NSMutableParagraphStyle(); style.lineBreakMode = .byWordWrapping
-                    (e["text"].string as NSString).draw(in: rect.insetBy(dx: 2, dy: 1), withAttributes: [.font:font,.foregroundColor:NSColor.black,.paragraphStyle:style])
+                    (text as NSString).draw(in: contentRect, withAttributes: [.font:font,.foregroundColor:NSColor.black,.paragraphStyle:style])
                 } else if e["kind"].string == "image" || e["kind"].string == "unsupported" {
                     NSColor.systemGray.withAlphaComponent(0.12).setFill(); rect.fill()
                     ((e["kind"].string == "image" ? "이미지" : "의미 추출 미지원") as NSString).draw(in: rect, withAttributes: [.font:NSFont.systemFont(ofSize:11),.foregroundColor:NSColor.gray])
