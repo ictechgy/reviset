@@ -92,7 +92,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     }
   }
   const textRuns=new Map<number,Box>();
-  for(const g of glyphs){if(g.hidden)continue;const b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],g.bbox[0]),Math.min(b[1],g.bbox[1]),Math.max(b[0]+b[2],g.bbox[0]+g.bbox[2])-Math.min(b[0],g.bbox[0]),Math.max(b[1]+b[3],g.bbox[1]+g.bbox[3])-Math.min(b[1],g.bbox[1])):g.bbox);}
+  for(const g of glyphs){if(g.hidden)continue;const footprint=g.reliable&&g.clip_ink?g.clip_ink:g.bbox,b=textRuns.get(g.order);textRuns.set(g.order,b?box(Math.min(b[0],footprint[0]),Math.min(b[1],footprint[1]),Math.max(b[0]+b[2],footprint[0]+footprint[2])-Math.min(b[0],footprint[0]),Math.max(b[1]+b[3],footprint[1]+footprint[3])-Math.min(b[1],footprint[1])):footprint);}
   for(const [order,bbox] of textRuns)regions.push({bbox,order,kind:'text',opaque:false,axisAligned:false});
   const verticalBuckets=new Map<number,Region[]>(),connectedCache=new Map<Region,boolean>();
   for(const v of regions.filter(v=>v.kind==='line'&&v.bbox[2]<0.002&&v.bbox[3]>0.02)){const key=Math.floor(v.bbox[0]*100);verticalBuckets.set(key,[...(verticalBuckets.get(key)??[]),v]);}

@@ -15,6 +15,10 @@ import {runTool,visionExecutable,visionInfo} from '../packages/runtime/tools.js'
 import {byteHash,normalize,ENGINE_VERSION,comparisonRegions,type PageData} from '../packages/schema/index.js';
 import {DesktopService} from '../packages/desktop/service.js';
 import {fileSha256} from '../packages/runtime/file-hash.js';
+import {preparePdfjs} from './prepare-pdfjs.js';
+import {pdfWorkerEnvironment} from '../packages/runtime/pdfjs-environment.js';
+
+await preparePdfjs();
 
 type Box=[number,number,number,number];
 type Region={text:string;bbox:Box};
@@ -96,5 +100,5 @@ try{
   assert.ok(!gap.changes.some(c=>/deleted|removed/.test(c.kind)));assert.ok(gap.changes.some(c=>c.kind==='coverage_gap'),'Withheld comparison must be visible');
   controls={source_report_id:report.report_id,source_text_events:report.changes.filter(c=>c.kind==='text_modified').length,source_control_scope:'Text replacement/insertion/removal within a surviving OOXML text element, not whole-element deletion',occlusion_report_id:gap.report_id,occlusion_gap_events:gap.changes.filter(c=>c.kind==='coverage_gap').length,status:'PASS known source text replacement/insertion/removal and raster-occlusion negative control'};
 }finally{service.close();}
-const output={head,source_clean:sourceClean,working_patch_sha256:patchSha,untracked_sources:untracked,dirty_source_sha256:dirtySha,engine:ENGINE_VERSION,environment:await visionInfo(),source_manifest_sha256:byteHash(await readFile('docs/fixtures/public-corpus.json')),selected_truth_sha256:byteHash(await readFile('docs/fixtures/public-corpus-truth.json')),sources:results,variants,controls,scope:'Parse/structure/control gates passed; OCR selected-region misses retained. No universal accuracy, absence proof, security proof or strict PowerPoint pixel-equivalence claim. W3C prior OCR excluded from truth.'};
+const output={head,source_clean:sourceClean,working_patch_sha256:patchSha,untracked_sources:untracked,dirty_source_sha256:dirtySha,engine:ENGINE_VERSION,pdfjs_worker_sha256:await pdfWorkerEnvironment(),environment:await visionInfo(),source_manifest_sha256:byteHash(await readFile('docs/fixtures/public-corpus.json')),selected_truth_sha256:byteHash(await readFile('docs/fixtures/public-corpus-truth.json')),sources:results,variants,controls,scope:'Parse/structure/control gates passed; OCR selected-region misses retained. No universal accuracy, absence proof, security proof or strict PowerPoint pixel-equivalence claim. W3C prior OCR excluded from truth.'};
 await writeFile(join(run,'result.json'),JSON.stringify(output,null,2));await writeFile(join(folder,'latest.json'),JSON.stringify({run,result:join(run,'result.json')},null,2));console.log(JSON.stringify({run,sources:results.length,source_pages:results.reduce((n,r)=>n+r.pages,0),variant_pages:variants.length,controls}));

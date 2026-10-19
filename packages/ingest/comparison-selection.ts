@@ -2,7 +2,7 @@ import {normalize,type PageData,type ElementData,type Box} from '../schema/index
 import {rowOrderedRegions} from './reading-order.js';
 
 const appearanceBlocked=new Set(['occluded','partially_occluded','struck_through','struck_inferred','partially_struck_through']);
-const readable=(e:ElementData)=>e.provenance==='observed'&&e.availability==='available'&&['visible','struck_through'].includes(e.visibility??'')&&!(e.visibility_spans??[]).some(s=>['occluded','partially_occluded','struck_inferred','partially_struck_through'].includes(s.state));
+const readable=(e:ElementData)=>e.provenance==='observed'&&e.availability==='available'&&['visible','struck_through'].includes(e.visibility??'')&&!(e.visibility_spans??[]).some(s=>['occluded','partially_occluded','struck_inferred','partially_struck_through'].includes(s.state))&&(e.visibility!=='struck_through'||!!e.visibility_spans?.length&&e.visibility_spans.every(s=>s.state==='struck_through'&&s.assessment==='observed'));
 export function sourceAppearanceBlocks(e:ElementData,region:Box):boolean{
   if(e.visibility==='hidden_render_mode')return false;
   return appearanceBlocked.has(e.visibility??'')&&intersection(e.bbox,region)>0||(e.visibility_spans??[]).some(s=>appearanceBlocked.has(s.state)&&intersection(s.bbox,region)>0);
@@ -55,10 +55,14 @@ export function selectHybridComparison(page:PageData):void{
     // inferred, mixed or covered strikes still block the entire OCR line.
     if(raw.some(r=>sourceAppearanceBlocks(r,e.bbox)&&!(r.visibility==='struck_through'&&readable(r)))){e.comparison_reason='source_appearance_blocks_ocr';continue;}
     if(clear.length){
-      if(!unknown.length&&coveredByUnion(clear.map(r=>boxes.get(r)!),e.bbox,dx,dy)){
+      const source=normalize(clear.map(r=>r.text).join(' ')),sameContent=source.replace(/\s/gu,'')===normalize(e.text).replace(/\s/gu,''),covered=coveredByUnion(clear.map(r=>boxes.get(r)!),e.bbox,dx,dy);
+      if(source!==normalize(e.text))page.coverage_gaps.push({feature:'ocr_verification',reason:'raw_ocr_region_disagreement_source_priority'});
+      // Even one source run may span whitespace/TJ gaps containing raster text.
+      // Only matching content AND covered geometry make the OCR redundant.
+      // Reliable raw source remains selected when the OCR line disagrees.
+      if(!unknown.length&&covered&&sameContent){
         e.comparison_role='shadowed';e.comparison_reason='readable_source_priority';
-        if(normalize(clear.map(r=>r.text).join(' '))!==normalize(e.text))page.coverage_gaps.push({feature:'ocr_verification',reason:'raw_ocr_region_disagreement_source_priority'});
-      }else{e.comparison_reason=clear.length>256?'readable_source_coverage_union_budget_exceeded':'ocr_crosses_mixed_or_uncovered_source_regions';page.coverage_gaps.push({feature:'ocr',reason:e.comparison_reason});}
+      }else{e.comparison_reason=clear.length>256?'readable_source_coverage_union_budget_exceeded':!unknown.length&&covered&&!sameContent?'ocr_text_disagreement_whole_line_unresolved':'ocr_crosses_mixed_or_uncovered_source_regions';page.coverage_gaps.push({feature:'ocr',reason:e.comparison_reason});}
       continue;
     }
     if(e.visibility==='visible'&&e.availability==='available'){

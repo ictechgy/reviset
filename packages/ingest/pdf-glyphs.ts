@@ -4,7 +4,7 @@ import { box, type Box } from '../schema/index.js';
 export interface PaintedGlyph {text:string;bbox:Box;order:number;hidden:boolean;reliable:boolean;run:number;color:string;clip_ink?:Box}
 const inkBounds=new WeakMap<object,Map<string,number[]|null>>();
 function outlineBounds(font:any,objects:any,glyph:any):number[]|undefined{
-  if(font.missingFile||font.isType3Font||font.remeasure||font.isInvalidPDFjsFont||glyph.isInFont!==true||glyph.accent||typeof glyph.fontChar!=='string'||typeof font.getPathGenerator!=='function')return;
+  if(font.docverEmbeddedFontProgram!==true||font.missingFile||font.isType3Font||font.remeasure||font.isInvalidPDFjsFont||glyph.isInFont!==true||glyph.accent||typeof glyph.fontChar!=='string'||typeof font.getPathGenerator!=='function')return;
   let cache=inkBounds.get(font);if(!cache){cache=new Map();inkBounds.set(font,cache);}
   const known=cache.get(glyph.fontChar);if(known!==undefined)return known??undefined;
   if(cache.size>=4096)return;
@@ -72,13 +72,19 @@ export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Rec
       // Metric ascenders/descenders are not painted ink. A known rectangular
       // clip may cut that empty margin while preserving the complete outline.
       // Use the loaded PDF.js glyph path, never a larger clip or a percent epsilon.
-      if(!clipOK&&Array.isArray(s.clip)&&metricsKnown&&standardMatrix&&font&&!font.vertical&&s.mode===0&&s.size>0&&s.hscale>0){
+      const determinant=m[0]*m[3]-m[1]*m[2];
+      if(!clipOK&&Array.isArray(s.clip)&&metricsKnown&&standardMatrix&&font&&!font.vertical&&s.mode===0&&s.size>0&&s.hscale>0&&Number.isFinite(determinant)&&determinant!==0){
         const ink=outlineBounds(font,page.commonObjs,glyph);
         if(ink){const corners=[[ink[0],ink[1]],[ink[2],ink[1]],[ink[0],ink[3]],[ink[2],ink[3]]].map(([x,y])=>{const p=[base+x*s.size*s.hscale,s.rise+y*s.size];Util.applyTransform(p,m);return p;});
           const xx=corners.map(p=>p[0]/viewport.width),yy=corners.map(p=>p[1]/viewport.height);
           if(xx.concat(yy).every(n=>Number.isFinite(n)&&n>=0&&n<=1)){
             const candidate=box(Math.min(...xx),Math.min(...yy),Math.max(...xx)-Math.min(...xx),Math.max(...yy)-Math.min(...yy));
-            if(insideClip(s.clip,candidate)){clipOK=true;clipInk=candidate;}
+            // The existing metric-box check has a compatibility tolerance.
+            // A complete-outline proof must not inherit any expanded clip.
+            // Only document-embedded font programs qualify. Require an inward
+            // native-pixel clearance as well; boundary contact cannot prove ink.
+            const pixel=Math.max(72/300,Math.max(viewport.width,viewport.height)/4096),px=pixel/viewport.width,py=pixel/viewport.height;
+            if(candidate[2]>0&&candidate[3]>0&&candidate[0]>=s.clip[0]+px&&candidate[1]>=s.clip[1]+py&&candidate[0]+candidate[2]<=s.clip[0]+s.clip[2]-px&&candidate[1]+candidate[3]<=s.clip[1]+s.clip[3]-py){clipOK=true;clipInk=candidate;}
           }
         }
       }

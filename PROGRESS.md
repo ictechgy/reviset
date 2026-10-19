@@ -1,3 +1,11 @@
+# 품질 반복 2 · pass5 · 2026-10-19
+
+엔진14: glyph outline의 clip 증명은 문서에 실제 포함된 font program만 허용하고, 직사각 clip 안쪽 한 네이티브 픽셀 여유를 요구한다. 미포함 Helvetica에서 PDF.js 대체 외곽선과 실제 PDFKit 화면의 차이가 재현되어 포함 여부를 이름이나 missingFile로 추측하지 않도록 고쳤다. 고정 PDF.js worker의 빌드 시 boolean 전달 패치·정확한 upstream/수정 SHA·report 환경 SHA를 추가했다. 서명된 앱 실행 중에는 worker를 수정하지 않는다.
+
+텍스트 요소 하나의 공백 안 이미지 숫자도 OCR에서 누락하지 않도록 전체 문구 일치와 영역 합집합을 함께 검사한다. 확실한 인접 원문 비교와 미확인 OCR 공백은 동시에 보존한다. 빈 visibility_spans가 관측 취소선으로 통과하는 경로, 인접 줄의 빈 글꼴 여백이 다른 줄을 가린다고 오인하는 경로도 닫았다.
+
+`npm run check`: **102/102 통과, 실패/skip0**, 56.253초 (`.omx/artifacts/quality-loop-02/pass5-check.txt`). 양성 clip/인접 줄의 실제 PDFKit 픽셀 동일성, 잉크 절단 및 대체 글꼴 음성 대조군, worker idempotence/변조·버전 거절을 포함한다. 현재 릴리스 앱/ZIP은 이 소스의 최종 검증본이 아니다. 독립 full-diff 재리뷰와 새 앱 대용량/공개 corpus/이동 실행 검증 뒤 다시 묶는다. 범용 OCR 정확도와 PowerPoint 엄격 픽셀 동일성은 계속 OPEN이다.
+
 # 품질 반복 2 · 2026-10-19
 
 사용자가 완벽해질 때까지 반복하도록 요청했다. review-loop로 알려진 실패를 합격 기준으로 낮추지 않고 재현·수정·재검증한다. 첫 수정 묶음은 읽기 순서만 다른 OCR의 거짓 텍스트 수정, 흐린/점선 내부 경계가 합쳐지는 표, 표 검출 상태 누락, 페이지 전체 OCR 대체로 확실한 원문이 사라지는 문제다.

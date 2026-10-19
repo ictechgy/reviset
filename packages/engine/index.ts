@@ -8,6 +8,7 @@ import { matchPages, similarity } from '../matching/index.js';
 import { diffRevisions } from '../diff/index.js';
 import { Store } from '../storage/index.js';
 import { fileSha256 } from '../runtime/file-hash.js';
+import {pdfWorkerEnvironment} from '../runtime/pdfjs-environment.js';
 import { ocrEnvironment } from '../ingest/ocr.js';
 import { officeEnvironment,preparePptxPreview } from '../render/pptx-preview.js';
 const require=createRequire(import.meta.url);
@@ -24,7 +25,7 @@ export interface AnalyzeProgress {analysis_run_id:string;phase:'extract'|'match'
 export async function analyze(input:InputManifest,baseDir:string,store:Store,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,options:{persist?:boolean;ocr?:'off'|'auto'|'all';pptxPreview?:boolean}={}):Promise<{report:ReportData,analysis_run_id:string}> {
   const manifest=Manifest.parse(input);
   const environment:Record<string,string>={node:process.version,platform:process.platform,arch:process.arch,engine:ENGINE_VERSION,
-    pdfjs:dependencyVersion('pdfjs-dist'),xml:dependencyVersion('fast-xml-parser'),fflate:dependencyVersion('fflate'),
+    pdfjs:dependencyVersion('pdfjs-dist'),pdfjs_worker_sha256:await pdfWorkerEnvironment(),xml:dependencyVersion('fast-xml-parser'),fflate:dependencyVersion('fflate'),
     renderer:options.pptxPreview===false?'disabled':manifest.revisions.some(r=>r.files.some(f=>/\.pptx$/i.test(f)))?await officeEnvironment()??'unavailable':'not_used',ocr:options.ocr==='off'?'disabled':await ocrEnvironment(),settings:`ocr:${options.ocr??'auto'};max-input-512MiB;max-pdf-pages-1000`};
   const run=store.beginRun(manifest.project_id,manifest.title);
   try {

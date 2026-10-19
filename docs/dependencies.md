@@ -22,3 +22,5 @@
 네이티브 앱 UI는 시스템 SwiftUI·AppKit·PDFKit을 사용한다. Electron/React는 포함하지 않는다. esbuild 0.28.2(MIT)는 backend/MCP 번들 생성에만 사용한다. build는 root package-lock.json을 복사하고 npm ci --omit=dev로 운영 의존성을 재현한다. 현재 로컬 앱에는 Node 24.19.0 arm64 실행 파일을 복사하며 실행 환경의 libc++/시스템 dylib을 사용한다. 다른 장비의 최소 OS 검증과 공개 재배포 notice/라이선스 검토는 아직 완료되지 않았다.
 
 OCR/표 구조는 macOS 시스템 Vision·PDFKit·CoreText를 사용한다. 모델·시스템 글꼴을 저장소나 설치본에 복사하지 않는다. Swift helper는 앱에 포함하며 macOS26+ 구조 API는 availability guard로 분리한다. 개발 검증 자료의 PowerPoint PDF는 upstream의 독립 참조이며 제품 번들에 포함하지 않는다.
+
+PDF.js의 legacy worker는 `scripts/prepare-pdfjs.ts`로 빌드 시에만 수정한다. 문서에 실제 포함된 글꼴 프로그램인지 나타내는 boolean만 전달하며 전체 fontExtraProperties는 켜지 않는다. upstream/수정본 SHA를 고정하고 다른 버전·바이트는 거절한다. worker 변경 고지·재현 소스·라이선스를 앱에 보존하며 서명 후에는 쓰지 않는다. 개발 테스트 준비와 공개 corpus 명령도 같은 준비 함수를 사용한다. 미수정 worker에서는 포함 여부를 확정하지 않으며 실제 worker SHA를 report 관측 환경에 남긴다.

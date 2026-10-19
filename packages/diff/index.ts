@@ -63,7 +63,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     const sourcePdfAppearance=formatA==='pdf'&&formatB==='pdf';
     if(textDiffers&&!sameRaster&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){
       const left=regionElements(a),right=regionElements(b),leftText=new Set(left.map(e=>normalize(e.text))),rightText=new Set(right.map(e=>normalize(e.text))),pattern=(s:string)=>normalize(s).replace(/[+−-]?\s*[0-9]+(?:[.,][0-9]+)*/g,'#');
-      const observedStrike=(e:ElementData)=>e.provenance==='observed'&&e.visibility==='struck_through'&&(e.visibility_spans??[]).every(s=>s.state==='struck_through'&&s.assessment==='observed');
+      const observedStrike=(e:ElementData)=>e.provenance==='observed'&&e.visibility==='struck_through'&&!!e.visibility_spans?.length&&e.visibility_spans.every(s=>s.state==='struck_through'&&s.assessment==='observed');
       const supported=(e:ElementData)=>e.comparison_role!=='unresolved'&&(e.visibility===undefined||e.visibility==='visible'||observedStrike(e))&&e.bbox[2]*e.bbox[3]<0.8;
       // Pair geometry before looking at values, including unchanged and uncertain observations.
       // Repeated/overlapping rows and an unreadable counterpart cannot become a replacement.
