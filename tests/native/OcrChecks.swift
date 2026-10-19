@@ -183,6 +183,10 @@ import Vision
         let untouched=DocverVision.reconsideredLines(white.cgImage!,white,ineligible)
         precondition(NSDictionary(dictionary:untouched[0]).isEqual(to:ineligible[0]) && NSDictionary(dictionary:untouched[1]).isEqual(to:ineligible[1]) && NSDictionary(dictionary:untouched[2]).isEqual(to:ineligible[2]))
         white.bitmapData!.initialize(repeating:255,count:240*160)
+        let prioritized:[[String:Any]]=[0.5,0.3,0.3,0.3,0.3].enumerated().map{i,score in ["text":i==0 ? "borderline":"weak","confidence":score,"bbox":[CGFloat(0.1),0.1,0.5,0.3],"numeric_consensus":true,"strike_candidate":false,"strike_status":"not_detected","alternatives":[]]}
+        let priorityResults=DocverVision.reconsideredLines(white.cgImage!,white,prioritized)
+        precondition((priorityResults[0]["reconsideration"] as? [String:Any])?["status"] as? String == "budget_exceeded","Borderline lines cannot consume existing weak-line budget")
+        for index in 1..<5 {precondition((priorityResults[index]["reconsideration"] as? [String:Any])?["status"] as? String == "empty_ink");precondition(priorityResults[index]["text"] as? String == "weak" && priorityResults[index]["confidence"] as? Double == 0.3)}
         precondition(DocverVision.uniformWhitePixels(white,CGRect(x:49,y:49,width:3,height:3)))
         white.bitmapData![50*240+50]=254
         precondition(!DocverVision.uniformWhitePixels(white,CGRect(x:49,y:49,width:3,height:3)),"One faint nonwhite pixel must veto empty-character proof")

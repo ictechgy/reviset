@@ -387,3 +387,74 @@ SwiftUI typecheck PASS. Runtime source fixed during this run through snapshot;
 only evidence notes followed. Frozen full-base re-review, actual packaged helper
 resolution/UI/runtime, fresh Office/public qualification and measured Korean OCR
 errors remain separate active gates. The product is not marked complete.
+
+
+Engine34 clean09b05e72 package built with bundled office-input.mjs and strict
+local signature validation. Actual5-version native smoke13.867s and900-page
+workflow56.223s PASS, including real packaged conversion from cwd /. These
+remain exact34 runtime evidence; working35 OCR changes receive no runtime
+credit. Actual600-scan package qualification is running separately.
+
+Engine35 actual borderline diagnostic reuses PNGs verified by SHA against the
+stored native render and extends only diagnostic ROI eligibility to natural
+score<=0.5. Three correct score0.5 primaries keep mixed-language agreement,
+while three incorrect selected Korean readings have spatially matched,
+supported-language counter-readings. The working policy adds bounded borderline
+context observation after existing weak/ambiguous priority and withholds an
+inferred comparison on supported-language disagreement. Original OCR strings,
+scores, visibility, alternatives and raw projections remain untouched; no
+replacement text is inferred from the veto. Missing/failed/edge-cut contexts do
+not supply disagreement. Positive correction admission remains stricter.
+Actual production/helper and broader heldout qualification remain required.
+
+Engine34 actual600-scan native workflow190.215s PASS (300+300pages, inferred
+100억→120억). Source34 runtime/screenshot/keybinary/backend evidence archived
+under output/checkpoints/09b05e72; no35 runtime credit. Independent completebase
+code APPROVE and architecture WATCH plus Claude namedclosure APPROVE are retained
+separately. Screen Recording permission and native UI automation are unavailable;
+expanded drawer OS interaction remains unverified, without blocking other work.
+
+Engine35 actual production helper on the16original low-resolution Korean controls
+plus production supplement/Page schema/selection retains7previous correct selected
+readings and reduces incorrect nonempty selections3→0 by retaining them unresolved.
+All primary line JSON fields and native raster hashes are unchanged; a Swift
+NSArray comparison across in-memory CGFloat/decoded NSNumber falsely differed,
+so persisted JSON values were independently compared recursively. Initial failed
+harness/log is retained. These are bounded controls, not whole-document OCR
+accuracy, an automatic correction result or latency qualification. Overall product
+work remains open; final35 serial suite and frozen independent reviews follow.
+
+
+Initial35 full serial regression143/144 PASS,1failure: the new OCR conflict veto
+withheld a title; regional diff then missed readable100/120swaps because those
+amounts also occurred in distant rows. Failure log retained. Fix permits only
+unique bidirectional selected-raster numeric pairs with matching number pattern
+and exactly one supported numeric slot to survive a distant same-text veto.
+Overlapping/unknown/partial geometry still withholds inference. Events remain
+regional/inferred, not semantic entity movement. Native swap and synthetic
+unresolved-header/overlapping-peer controls pass4/4; final full run is rerun.
+
+The16 native OCR controls call the actual production DocverVision.process path
+including primary/tile/numeric/strike/grid/ROI; the DOCVER_TEST driver bypasses
+the stdio wrapper and optional asynchronous document-structure observer. Canonical
+supplement/schema/selection are production functions. Full helper protocol and
+packaged runtime are tested separately; the bounded result is not a whole-app
+or latency certification.
+
+
+Engine35 final serial full regression145/145 PASS,0fail/skip/cancel,123.992s;
+SwiftUI/TypeScript checks PASS. Runtime source fixed for this final run through
+snapshot; evidence notes appended afterward. The initial144-case failure remains
+separately retained. Native16control selection replay and preserved primary/raster
+checks are bounded evidence; fresh prespecified32-case heldout/public/Office/
+packaged qualification remain active. Correct Contract review can be withheld
+when one contextual crop hallucinates a registered-sign suffix: conservative
+recall remains an explicit quality concern, not a claim of OCR correctness.
+
+Actual34bundled bridge page read from cwd/ with minimalPATH retained the full
+historical31W3C canonical page (76elements,2ROIannexes). An isolated native
+NSHostingView harness uses that exact returned element and the unchanged product
+OCR-evidence view; posting a mouse event inside its own window opens the group
+and internal bitmap shows all8conditions/languages/scales/statuses/scores. This
+is component rendering/interaction plus separate packaged-payload validation;
+full packaged OS-input interaction and Screen Recording remain unverified.

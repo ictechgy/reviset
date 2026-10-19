@@ -1,4 +1,4 @@
-import {admitReconsideration,matchesReconsiderationPrimary} from './ocr-reconsideration.js';
+import {admitReconsideration,matchesReconsiderationPrimary,hasContextualDisagreement} from './ocr-reconsideration.js';
 import {annotationBlocksRegion} from './pdf-annotation-regions.js';
 import {normalize,type PageData,type ElementData,type Box} from '../schema/index.js';
 import {rowOrderedRegions} from './reading-order.js';
@@ -102,6 +102,10 @@ export function selectHybridComparison(page:PageData):void{
       continue;
     }
     if(annotationBlocksRegion(page.elements,e.bbox)){e.comparison_reason='page_annotation_blocks_independent_raster';page.coverage_gaps.push({feature:'pdf_annotations',reason:'page_annotation_blocks_independent_raster'});continue;}
+    if(geometryOK&&hasContextualDisagreement(e,blocks)){
+      e.comparison_reason='contextual_ocr_disagreement_primary_retained';
+      page.coverage_gaps.push({feature:'ocr_reconsideration',reason:e.comparison_reason});continue;
+    }
     if(e.visibility==='visible'&&e.availability==='available'){
       e.comparison_role='selected';e.comparison_reason='independent_inferred_raster_region';
       // Coverage is directional: seeing a prefix cannot resolve an unread tail.

@@ -90,7 +90,13 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
         const current=neighbors[0];if(!supported(current)||rasterPair&&!selectedRaster(current)||pairingLeft.filter(e=>regionOverlap(e,current)>0.6).length!==1)continue;
         if(pairingRight.some(e=>!supported(e)&&regionOverlap(old,e)>0.05)||pairingLeft.some(e=>!supported(e)&&regionOverlap(e,current)>0.05))continue;
         const oldElsewhere=sourcePair?pairingRight.some(e=>normalize(e.text)===normalize(old.text)):rightText.has(normalize(old.text)),currentElsewhere=sourcePair?pairingLeft.some(e=>normalize(e.text)===normalize(current.text)):leftText.has(normalize(current.text));
-        if(oldElsewhere||currentElsewhere||normalize(old.text)===normalize(current.text))continue;
+        // The same amount can occur at another independently readable row.
+        // For a unique bidirectional raster pair, compare the numeric value
+        // at this location; do not let a distant occurrence erase a swap.
+        // This remains an inferred regional comparison, never entity movement
+        // proof. Mixed/overlapping/unreadable pairs still fail the guards above.
+        const numericRasterPair=rasterPair&&selectedRaster(current)&&numericNotationSupported(old.text)&&numericNotationSupported(current.text)&&numericPattern(old.text)===numericPattern(current.text)&&numericSlots(old.text).length===1&&numericSlots(current.text).length===1;
+        if((oldElsewhere||currentElsewhere)&&!numericRasterPair||normalize(old.text)===normalize(current.text))continue;
         if(rasterPair&&(annotationBlocksRegion(a.elements,old.bbox)||annotationBlocksRegion(b.elements,current.bbox))){add('coverage_gap',a,b,m,'page_annotation_prevents_inferred_raster_edit');continue;}
         if((old.provenance==='inferred'||current.provenance==='inferred')&&(!numericNotationSupported(old.text)||!numericNotationSupported(current.text)||numericPattern(old.text)!==numericPattern(current.text)||numericSlots(old.text).length!==1||numericSlots(current.text).length!==1))continue;
         const sourceReviews=rasterPair?[{revision:from,page:a,ocr:old,review:reviewEstimatedSource(old,left)},{revision:to,page:b,ocr:current,review:reviewEstimatedSource(current,right)}]:[];

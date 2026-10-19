@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-19-bounded-character-ink-roi"
+    static let version = "docver-vision-20-borderline-context-evidence"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?

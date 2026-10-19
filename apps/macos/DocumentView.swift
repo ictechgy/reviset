@@ -18,7 +18,7 @@ func comparisonRoleName(_ element:JSON)->String {
     if element["method"].string == "pdf_page_annotation" {return "주석 메타데이터 · 텍스트 비교 제외"}
     switch element["comparison_role"].string {
     case "selected":return "비교에 사용"
-    case "unresolved":return "비교 보류"
+    case "unresolved":return element["comparison_reason"].string == "contextual_ocr_disagreement_primary_retained" ? "판독 충돌 · 비교 보류":"비교 보류"
     case "excluded":return element["provenance"].string == "inferred" ? "추정값 보존 · 비교 제외":"숨은 원문 · 비교 제외"
     case "shadowed":
         if element["comparison_reason"].string == "roi_context_primary_superseded" {return "최초 OCR 보존 · 재판독으로 비교"}

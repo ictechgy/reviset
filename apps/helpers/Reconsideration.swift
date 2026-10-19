@@ -25,31 +25,36 @@ extension DocverVision {
     static func roiCompact(_ text:String)->String {
         text.precomposedStringWithCanonicalMapping.replacingOccurrences(of:"[\\p{White_Space}\\x{FEFF}]",with:"",options:.regularExpression).lowercased()
     }
-    static let reconsiderationPolicy="vision-roi-v1; 4 weak nonnumeric lines/page; 8 contexts; 262144 core pixels; 4M pixels/crop; 12s/page best-effort cancellation; no language correction"
+    static let reconsiderationPolicy="vision-roi-v2; 4 weak/borderline nonnumeric lines/page; weak first; 8 contexts; 262144 core pixels; 4M pixels/crop; 12s/page best-effort cancellation; no language correction"
     static func reconsideredLines(_ image:CGImage,_ bitmap:NSBitmapImageRep,_ lines:[[String:Any]],_ observations:[VNRecognizedTextObservation]=[])->[[String:Any]] {
-        var budget=4
         let deadline=DispatchTime.now()+12.0
-        return lines.map { line in
+        let eligible=lines.enumerated().compactMap { (index,line)->(index:Int,priority:Int,rect:CGRect,text:String)? in
             guard let text=line["text"] as? String,!text.isEmpty,text.utf16.count<=128,
                   text.range(of:"\\p{N}",options:.regularExpression)==nil,
                   line["numeric_consensus"] as? Bool == true,
                   line["strike_candidate"] as? Bool == false,
-                  ["not_detected"].contains(line["strike_status"] as? String ?? ""),
-                  let confidence=line["confidence"] as? Double,let b=line["bbox"] as? [CGFloat],b.count==4 else{return line}
+                  line["strike_status"] as? String == "not_detected",
+                  let confidence=line["confidence"] as? Double,let b=line["bbox"] as? [CGFloat],b.count==4 else{return nil}
             let alternatives=line["alternatives"] as? [[String:Any]] ?? []
             let ambiguous=alternatives.contains{candidate in
                 guard let value=candidate["text"] as? String,let score=candidate["confidence"] as? Double else{return false}
                 return roiCompact(value) != roiCompact(text) && score>=confidence-0.15
             }
-            guard confidence<0.5 || ambiguous else{return line}
-            var result=line
-            if budget==0 {result["reconsideration"]=["status":"budget_exceeded","band_bbox":b,"contexts":[]];return result}
-            budget-=1
-            let rect=CGRect(x:b[0],y:b[1],width:b[2],height:b[3])
-            let matches=observations.filter{ob in let r=ob.boundingBox;return CGRect(x:r.minX,y:1-r.maxY,width:r.width,height:r.height)==rect && ob.topCandidates(1).first?.string==text}
-            result["reconsideration"]=reconsider(image,bitmap,rect,text,matches.count==1 ? matches[0].topCandidates(1).first:nil,deadline)
-            return result
+            guard confidence<=0.5 || ambiguous else{return nil}
+            return (index,confidence<0.5 || ambiguous ? 0:1,CGRect(x:b[0],y:b[1],width:b[2],height:b[3]),text)
+        }.sorted {a,b in a.priority==b.priority ? a.index<b.index:a.priority<b.priority}
+        var output=lines
+        for (position,entry) in eligible.enumerated() {
+            var result=lines[entry.index]
+            if position>=4 {
+                result["reconsideration"]=["status":"budget_exceeded","band_bbox":result["bbox"]!,"contexts":[]]
+            }else{
+                let matches=observations.filter{ob in let r=ob.boundingBox;return CGRect(x:r.minX,y:1-r.maxY,width:r.width,height:r.height)==entry.rect && ob.topCandidates(1).first?.string==entry.text}
+                result["reconsideration"]=reconsider(image,bitmap,entry.rect,entry.text,matches.count==1 ? matches[0].topCandidates(1).first:nil,deadline)
+            }
+            output[entry.index]=result
         }
+        return output
     }
     static func reconsider(_ image:CGImage,_ bitmap:NSBitmapImageRep,_ line:CGRect,_ primary:String,_ candidate:VNRecognizedText?=nil,_ deadline:DispatchTime=DispatchTime.now()+12.0)->[String:Any] {
         let bounds=CGRect(x:0,y:0,width:image.width,height:image.height)

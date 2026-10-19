@@ -389,3 +389,34 @@ selections. Independent sandboxed OCR disagrees with three erroneous primary
 values, reading two correctly; the prototype remains outside the product.
 Neither a higher threshold nor another recognizer score alone establishes truth.
 Broader observed disagreement and preservation qualification remains active.
+
+
+Engine35 observes borderline score0.5 nonnumeric lines within the same four-line
+and12-second budget, after weak/ambiguous lines in original order. Primary line
+strings, confidences, alternatives, numeric/strike metadata and raw visibility
+remain separate from selection. A positive spatially matched contextual reading
+in languages that support the primary Latin/Hangul scripts can withhold an
+inferred comparison when its token text disagrees; English-only readings cannot
+contradict Hangul. Failed, empty, edge-cut, contaminated and unsupported contexts
+are not counter-readings. No replacement is admitted by this veto and stronger
+positive correction guards remain unchanged. Non-unit ink coverage may retain
+uncertainty; it cannot certify a substitution/deletion. Bounded controls and
+later heldout qualification are separate from universal OCR correctness.
+
+Preview native capture now reads a private copy of the verified PDF bytes even
+on cache hits, avoiding shared-path replacement between hash validation and the
+helper read. Cache staging cleanup failure has its own warning, and raw native
+rows cannot claim the parent's operational cache-write warning. Renderer input
+cache environment additionally fingerprints the Node version and pinned dependency
+lock; this is not a full integrity hash of every installed dependency file.
+The Office reference verifier requires unchanged clean source, pins the upstream
+manifest, writes head-specific runs, retains per-asset preparation metadata and
+reports both any-RGB and >24-channel pixel differences including exact geometry.
+
+When another page region becomes unresolved, distant copies of an amount cannot
+suppress a uniquely paired selected raster numeric edit at this location.
+The exception requires unique bidirectional geometry, available selected raster
+observations, supported numeric notation, an identical pattern and exactly one
+numeric slot on both sides. Overlapping/unknown neighbors and annotation/source
+vetoes remain. The result explicitly carries inferred regional pairing; it is
+not evidence that an entity was semantically modified instead of moved.

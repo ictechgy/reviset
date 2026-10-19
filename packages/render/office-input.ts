@@ -9,13 +9,13 @@ import {byteHash,hash,OfficeInputPreparation,MAX_INPUT_BYTES,DocverError,type Of
 import {officeInputPolicy} from './pptx-default-insets.js';
 function helper(){
   const source=new URL('../../apps/helpers/OfficeInput.ts',import.meta.url),bundled=new URL('./office-input.mjs',import.meta.url);
-  if(existsSync(source))return {path:fileURLToPath(source),args:['--import',import.meta.resolve('tsx'),fileURLToPath(source)],sources:[source,new URL('./pptx-default-insets.ts',import.meta.url),new URL('../schema/index.ts',import.meta.url)]};
-  if(existsSync(bundled))return {path:fileURLToPath(bundled),args:[fileURLToPath(bundled)],sources:[bundled]};
+  if(existsSync(source))return {path:fileURLToPath(source),args:['--import',import.meta.resolve('tsx'),fileURLToPath(source)],sources:[source,new URL('./pptx-default-insets.ts',import.meta.url),new URL('../schema/index.ts',import.meta.url)],lock:new URL('../../package-lock.json',import.meta.url)};
+  if(existsSync(bundled))return {path:fileURLToPath(bundled),args:[fileURLToPath(bundled)],sources:[bundled],lock:new URL('../package-lock.json',import.meta.url)};
   throw new DocverError('CONVERTER_UNAVAILABLE','Renderer input helper is unavailable');
 }
-export async function officeInputEnvironment():Promise<{policy:string;helper_fingerprint:string}>{
+export async function officeInputEnvironment():Promise<{policy:string;helper_fingerprint:string;node:string;dependency_lock_sha256:string}>{
   const current=helper(),fingerprints=await Promise.all(current.sources.map(async path=>byteHash(await readFile(path))));
-  return {policy:officeInputPolicy,helper_fingerprint:hash(fingerprints)};
+  return {policy:officeInputPolicy,helper_fingerprint:hash(fingerprints),node:process.version,dependency_lock_sha256:byteHash(await readFile(current.lock))};
 }
 export function parseOfficeInputMetadata(value:unknown,sourceHash:string):OfficeInputPreparationData{
   const metadata=OfficeInputPreparation.parse(value);

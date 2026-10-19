@@ -8,7 +8,7 @@ import {readFile,mkdtemp,rm,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {OcrReconsideration,Page,Report,ENGINE_VERSION,SCHEMA_VERSION,SCHEMA_HASH,comparisonText,unresolvedComparisonText,type ElementData,type PageData,type OcrReconsiderationData,type ReportData} from '../../packages/schema/index.js';
-import {admitReconsideration} from '../../packages/ingest/ocr-reconsideration.js';
+import {admitReconsideration,hasContextualDisagreement} from '../../packages/ingest/ocr-reconsideration.js';
 import {selectHybridComparison} from '../../packages/ingest/comparison-selection.js';
 import {supplementPdfOcr,type NativePageResult} from '../../packages/ingest/ocr.js';
 import {Store} from '../../packages/storage/index.js';
@@ -20,6 +20,19 @@ function observation(text='Pineapple'):OcrReconsiderationData{return {status:'av
 function primary(text='Pineapple옓'):ElementData{return {observation_id:'primary',kind:'text',text,normalized_text:text,bbox,reading_order:0,availability:'available',method:'vision_ocr',source_ref:'page:1/raster/ocr:0',provenance:'inferred',visibility:'uncertain',ocr:{confidence:.3,confidence_scope:'line',strike_status:'not_detected',numeric_consensus:true,ambiguous:false,alternatives:[{text,confidence:.3,truncated:false}],reconsideration_observation:observation()}};}
 function derived(p:ElementData):ElementData{const data=p.ocr!.reconsideration_observation!,r=admitReconsideration(p,data,()=>false)!;assert.ok(r);return {...p,observation_id:'derived',source_ref:'page:1/raster/roi:0',text:r.text,normalized_text:r.text,bbox:r.bbox,visibility:'visible',reading_order:1,ocr:{confidence:r.confidence,confidence_scope:'line',strike_status:'not_detected',numeric_consensus:true,ambiguous:false,alternatives:r.alternatives,reconsideration:{method:'vision_multicontext_roi',primary_source_ref:p.source_ref,primary_text:p.text,primary_confidence:p.ocr!.confidence,primary_bbox:p.bbox,observation:data}}};}
 function page(elements:ElementData[]):PageData{return {page_id:'page_a',asset_id:'asset_a',page:1,width:960,height:540,coordinate_system:'normalized',source_transform:[],hidden:null,text:'',elements,notes:null,capabilities:{text:'available',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},coverage_gaps:[],ocr:{status:'available',engine:'fixture',environment:'fixture',width:1920,height:1080}};}
+test('supported-language contextual disagreement withholds borderline comparison while preserving primary projections and source priority',()=>{
+  const p=primary('Pineapple 주스');p.visibility='visible';p.ocr!.confidence=.5;p.ocr!.reconsideration_observation=observation(p.text);
+  for(const context of p.ocr!.reconsideration_observation!.contexts){context.observations[0].text=context.languages.length===1?'Pineapple FA':p.text;}
+  assert.equal(hasContextualDisagreement(p,()=>false),false,'English-only crops cannot veto mixed Hangul');
+  const changed=p.ocr!.reconsideration_observation!.contexts[7];changed.observations[0].text='Pineapple 무스';changed.observations[0].ink_coverage=.8;
+  assert.equal(hasContextualDisagreement(p,()=>false),true,'Positive overlapping counterevidence can retain uncertainty without proving replacement text');
+  const original=structuredClone(p),pg=page([p]);pg.ocr_text=p.text;selectHybridComparison(pg);Page.parse(pg);
+  assert.equal(comparisonText(pg),'');assert.equal(unresolvedComparisonText(pg),p.text);assert.equal(p.comparison_reason,'contextual_ocr_disagreement_primary_retained');assert.deepEqual(p.ocr,original.ocr);assert.equal(p.text,original.text);assert.equal(p.visibility,'visible');assert.equal(pg.ocr_text,p.text);
+  for(const status of ['failed','edge_cut','not_detected','budget_exceeded','contaminated','ambiguous'] as const){const q=structuredClone(p);q.ocr!.reconsideration_observation!.contexts[7].status=status;assert.equal(hasContextualDisagreement(q,()=>false),false);}
+  for(const mutate of [(q:ElementData)=>{q.ocr!.confidence=1;},(q:ElementData)=>{q.ocr!.reconsideration_observation!.band_bbox=[.6,.6,.2,.1];},(q:ElementData)=>{q.ocr!.reconsideration_observation!.contexts[7].observations[0].bbox=[.7,.7,.1,.1];},(q:ElementData)=>{q.ocr!.reconsideration_observation!.contexts[7].observations[0].confidence=.3;},(q:ElementData)=>{q.ocr!.reconsideration_observation!.contexts[7].observations[0].ink_coverage=0;},(q:ElementData)=>{q.ocr!.reconsideration_observation!.contexts[7].observations[0].token_bboxes=[];},(q:ElementData)=>{q.ocr!.reconsideration_observation!.contexts[7]=q.ocr!.reconsideration_observation!.contexts[0];}]){const q=structuredClone(p);mutate(q);assert.equal(hasContextualDisagreement(q,()=>false),false);}
+  assert.equal(hasContextualDisagreement(p,b=>b[0]<.1),false,'Blocked padding cannot supply comparable context');
+  const source:ElementData={...structuredClone(p),observation_id:'source',method:'pdf_text',provenance:'observed',source_ref:'source',ocr:undefined};const sourcePage=page([source,structuredClone(p)]);selectHybridComparison(sourcePage);assert.equal(sourcePage.elements[0].comparison_role,'selected');assert.equal(sourcePage.elements[1].comparison_role,'shadowed');assert.equal(comparisonText(sourcePage),source.text);
+});
 test('ROI admission requires eight distinct complete contexts and preserves numeric, script, punctuation and ink vetoes',()=>{
   const p=primary();assert.equal(admitReconsideration(p,observation(),()=>false)?.text,'Pineapple');
   const reject=(change:(d:OcrReconsiderationData)=>void)=>{const d=observation();change(d);assert.equal(admitReconsideration(p,d,()=>false),undefined);};

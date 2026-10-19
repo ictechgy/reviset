@@ -31,14 +31,14 @@ export async function preparePptxPreview(source:string,bytes:Uint8Array,pages:Pa
   validateRenderPackage(bytes);
   const environment=await officeEnvironment();if(!environment){for(const p of pages)p.coverage_gaps.push({feature:'preview',reason:'CONVERTER_UNAVAILABLE'});return;}
   const sourceHash=byteHash(bytes),key=hash([sourceHash,environment,'fixed-metadata-v1']),folder=join(cacheRoot,'pptx');
-  const path=join(folder,key+'.pdf'),metadata=join(folder,key+'.json');let pdf:Buffer|undefined,inputInfo:OfficeInputPreparationData|undefined,cached=false,cacheWriteFailed=false;
-  try{const saved=JSON.parse(await readFile(metadata,'utf8')),candidate=await readFile(path),input=parseOfficeInputMetadata(saved.input,sourceHash);if(saved.key===key&&saved.sha256===byteHash(candidate)&&saved.input_hash===hash(input)){pdf=candidate;inputInfo=input;cached=true;}}catch{/* cache miss or corruption */}
+  const path=join(folder,key+'.pdf'),metadata=join(folder,key+'.json');let pdf:Buffer|undefined,inputInfo:OfficeInputPreparationData|undefined,cacheWriteFailed=false,cacheCleanupFailed=false;
+  try{const saved=JSON.parse(await readFile(metadata,'utf8')),candidate=await readFile(path),input=parseOfficeInputMetadata(saved.input,sourceHash);if(saved.key===key&&saved.sha256===byteHash(candidate)&&saved.input_hash===hash(input)){pdf=candidate;inputInfo=input;}}catch{/* cache miss or corruption */}
   if(!pdf){
     const converted=await convertPptxDetailed(source,undefined,120_000,signal,bytes);pdf=converted.pdf;inputInfo=converted.input;
     let staging:string|undefined;
-    try{await mkdir(folder,{recursive:true,mode:0o700});staging=await mkdtemp(join(folder,'stage-'));await writeFile(join(staging,'preview.pdf'),pdf,{mode:0o600,signal});await writeFile(join(staging,'metadata.json'),JSON.stringify({key,sha256:byteHash(pdf),input:inputInfo,input_hash:hash(inputInfo)}),{mode:0o600,signal});signal?.throwIfAborted();await rename(join(staging,'preview.pdf'),path);await rename(join(staging,'metadata.json'),metadata);cached=true;}
+    try{await mkdir(folder,{recursive:true,mode:0o700});staging=await mkdtemp(join(folder,'stage-'));await writeFile(join(staging,'preview.pdf'),pdf,{mode:0o600,signal});await writeFile(join(staging,'metadata.json'),JSON.stringify({key,sha256:byteHash(pdf),input:inputInfo,input_hash:hash(inputInfo)}),{mode:0o600,signal});signal?.throwIfAborted();await rename(join(staging,'preview.pdf'),path);await rename(join(staging,'metadata.json'),metadata);}
     catch(error){if(signal?.aborted||(error instanceof DocverError&&error.code==='CANCELLED'))throw error;cacheWriteFailed=true;}
-    finally{if(staging)await rm(staging,{recursive:true,force:true}).catch(()=>{cacheWriteFailed=true;});}
+    finally{if(staging)await rm(staging,{recursive:true,force:true}).catch(()=>{cacheCleanupFailed=true;});}
   }
   const task=getDocument({...pdfOptions,data:new Uint8Array(pdf)});
   try{
@@ -64,9 +64,12 @@ export async function preparePptxPreview(source:string,bytes:Uint8Array,pages:Pa
       if(inputInfo?.skip_reason)p.coverage_gaps.push({feature:'render_fidelity',reason:'standard_text_insets_skipped_'+inputInfo.skip_reason});
       if(inputInfo?.unsupported_parts)p.coverage_gaps.push({feature:'render_fidelity',reason:'standard_text_insets_unsupported_slide_parts_unchanged'});
       if(cacheWriteFailed)p.coverage_gaps.push({feature:'preview_cache',reason:'optional_cache_write_failed_render_retained'});
+      if(cacheCleanupFailed)p.coverage_gaps.push({feature:'preview_cache',reason:'optional_cache_cleanup_failed_render_retained'});
       rendered.cleanup();
     }
-    try{const environment=await ocrEnvironment(),rasters=await captureNativePages(pdf,pages.map(p=>p.page),[],{sourceFile:cached?path:undefined,sourceHash:byteHash(pdf),cacheRoot,signal});for(const p of pages){const r=rasters.get(p.page);if(r){p.raster={sha256:r.render_sha256,width:r.width,height:r.height,renderer:r.renderer,environment};if(r.cache_write_failed)p.coverage_gaps.push({feature:'native_cache',reason:'optional_cache_write_failed_observations_retained'});}else p.coverage_gaps.push({feature:'raster_verification',reason:rasters.failures.get(p.page)??'native_preview_observation_failed'});}}
+    // The shared cache can be atomically replaced by another process. Native
+    // observation must read a private copy of these exact verified PDF bytes.
+    try{const environment=await ocrEnvironment(),rasters=await captureNativePages(pdf,pages.map(p=>p.page),[],{sourceHash:byteHash(pdf),cacheRoot,signal});for(const p of pages){const r=rasters.get(p.page);if(r){p.raster={sha256:r.render_sha256,width:r.width,height:r.height,renderer:r.renderer,environment};if(r.cache_write_failed)p.coverage_gaps.push({feature:'native_cache',reason:'optional_cache_write_failed_observations_retained'});}else p.coverage_gaps.push({feature:'raster_verification',reason:rasters.failures.get(p.page)??'native_preview_observation_failed'});}}
     catch(e){if(signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;for(const p of pages)p.coverage_gaps.push({feature:'raster_verification',reason:e instanceof DocverError?e.code:'native_preview_observation_failed'});}
     return pdf;
   }finally{await task.destroy();}

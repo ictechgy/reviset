@@ -17,6 +17,24 @@ function altered(a:string,b:string):{changes:string[];cost:number;deleted:{index
   return {changes,cost:cost[x.length][y.length],deleted};
 }
 export type ReconsideredReading={text:string;confidence:number;bbox:Box;alternatives:{text:string;confidence:number;truncated:boolean}[]};
+// A conflicting contextual reading only withholds an inferred comparison. It
+// never changes the primary, supplies replacement text or proves hidden ink.
+// English-only crops cannot contradict a line containing genuine Hangul.
+export function hasContextualDisagreement(primary:ElementData,blocked:(bbox:Box)=>boolean):boolean{
+  const ocr=primary.ocr,parsed=OcrReconsideration.safeParse(ocr?.reconsideration_observation);
+  if(primary.method!=='vision_ocr'||primary.provenance!=='inferred'||primary.availability!=='available'||ocr?.reconsideration||!ocr||ocr.confidence>.5||!ocr.numeric_consensus||ocr.strike_status!=='not_detected'||primary.text.length>128||/[\p{N}]/u.test(primary.text)||!parsed.success)return false;
+  const data=parsed.data,hangul=/\p{Script=Hangul}/u.test(primary.text),latin=/[A-Za-z]/u.test(primary.text);
+  if(!hangul&&!latin||data.status!=='available'||!sameBox(data.band_bbox,primary.bbox)||!data.ink_pixels||data.threshold===undefined||blocked(primary.bbox))return false;
+  const seen=new Set<string>();
+  for(const context of data.contexts){const key=[context.padding,context.scale,...context.languages].join(':');if(seen.has(key))return false;seen.add(key);}
+  return data.contexts.some(context=>{
+    if(context.status!=='available'||context.observations.length!==1||hangul&&!context.languages.includes('ko-KR')||latin&&!context.languages.includes('en-US')||!contains(context.crop_bbox,primary.bbox)||blocked(context.crop_bbox))return false;
+    const reading=context.observations[0];
+    // Counterevidence need not cover every ink pixel; unlike admission, it can
+    // only retain uncertainty. Require a positive, spatially matched reading.
+    return reading.confidence>=.5&&reading.ink_coverage>0&&reading.token_bboxes.length>0&&reading.token_bboxes.every(b=>contains(context.crop_bbox,b))&&contains(context.crop_bbox,reading.bbox)&&iou(primary.bbox,reading.bbox)>=.5&&tokenText(reading.text)!==tokenText(primary.text);
+  });
+}
 // This is correlated Vision evidence, never a calibrated probability or source
 // visibility proof. Numeric and punctuation/confusable edits remain withheld.
 export function admitReconsideration(primary:ElementData,input:OcrReconsiderationData,blocked:(bbox:Box)=>boolean):ReconsideredReading|undefined{
