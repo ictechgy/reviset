@@ -1,3 +1,4 @@
+import {annotationBlocksRegion} from './pdf-annotation-regions.js';
 import { z } from 'zod';
 import { existsSync } from 'node:fs';
 import { mkdtemp,mkdir,readFile,writeFile,rm,rename } from 'node:fs/promises';
@@ -70,7 +71,7 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
       const intersects=(e:ElementData)=>Math.max(0,Math.min(e.bbox[0]+e.bbox[2],line.bbox[0]+line.bbox[2])-Math.max(e.bbox[0],line.bbox[0]))*Math.max(0,Math.min(e.bbox[1]+e.bbox[3],line.bbox[1]+line.bbox[3])-Math.max(e.bbox[1],line.bbox[1]));
       if(!rasterComparison&&original.some(e=>intersects(e)>0||compact(e.text).includes(compact(line.text))))continue;
       const ambiguous=line.alternatives.some(c=>compact(c.text)!==compact(line.text)&&c.confidence>=line.confidence-0.15);
-      const appearanceBlocked=original.some(e=>sourceAppearanceBlocks(e,line.bbox));
+      const appearanceBlocked=original.some(e=>sourceAppearanceBlocks(e,line.bbox))||annotationBlocksRegion(original,line.bbox);
       const strikeEvaluated=!line.strike_status||['detected','not_detected'].includes(line.strike_status);
       const confident=geometryOK&&strikeEvaluated&&!appearanceBlocked&&line.confidence>=0.5&&!ambiguous&&line.numeric_consensus;
       additions.push({observation_id:id('obs',[page.asset_id,page.page,'ocr',environment,i]),kind:'text',text:line.text,normalized_text:normalize(line.text),bbox:box(...line.bbox),reading_order:original.length+additions.length,availability:'available',method:'vision_ocr',source_ref:`page:${page.page}/raster/ocr:${i}`,provenance:'inferred',visibility:line.strike_candidate?'struck_inferred':confident?'visible':'uncertain',
@@ -78,7 +79,7 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
         ocr:{confidence:line.confidence,confidence_scope:'line',numeric_consensus:line.numeric_consensus,ambiguous,alternatives:line.alternatives.map(c=>({text:c.text,confidence:c.confidence,truncated:false}))}});
     }
     page.elements.push(...additions);
-    const appearanceBlockedAt=(b:Box)=>original.some(e=>sourceAppearanceBlocks(e,b));
+    const appearanceBlockedAt=(b:Box)=>original.some(e=>sourceAppearanceBlocks(e,b))||annotationBlocksRegion(original,b);
     const nativeTables=result.tables??[],gridTables=(result.grid_tables??[]).filter(grid=>!nativeTables.some(native=>tableOverlap(grid,native)));
     const tables=[...nativeTables.map(table=>({table,grid:false})),...gridTables.map(table=>({table,grid:true}))];
     page.ocr={status:lines.length?'available':'no_text',mode:scanned?'scan':rasterComparison?'verification':additions.length?'supplement':'verification',engine:result.version,environment,render_sha256:result.render_sha256,width:result.width,height:result.height,structure_status:result.structure_status,grid_status:result.grid_status,grid_reasons:result.grid_reasons,bitmap_format:result.bitmap_format,bitmap_bits_per_sample:result.bitmap_bits_per_sample,bitmap_bits_per_pixel:result.bitmap_bits_per_pixel,table_count:tables.length};

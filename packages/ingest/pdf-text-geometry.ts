@@ -8,3 +8,5 @@ export function pdfFontMetrics(metrics:any){
   const known=Number.isFinite(metrics?.ascent)&&Number.isFinite(metrics?.descent)&&metrics.ascent>0&&metrics.descent<=0&&metrics.ascent-metrics.descent>=0.5;
   return {known,ascent:known?metrics.ascent:0.8,descent:known?metrics.descent:-0.2};
 }
+
+export const isEstimatedPdfSource=(e:ElementData)=>e.method==='pdf_text'&&e.provenance==='observed'&&hasUnverifiedPdfGeometry(e);

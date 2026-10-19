@@ -1,3 +1,4 @@
+import {annotationBlocksRegion} from './pdf-annotation-regions.js';
 import {normalize,type PageData,type ElementData,type Box} from '../schema/index.js';
 import {rowOrderedRegions} from './reading-order.js';
 import {hasUnverifiedPdfGeometry} from './pdf-text-geometry.js';
@@ -87,6 +88,7 @@ export function selectHybridComparison(page:PageData):void{
       }else{e.comparison_reason=source.reason??(!unknown.length&&covered&&!sameContent?'ocr_text_disagreement_whole_line_unresolved':'ocr_crosses_mixed_or_uncovered_source_regions');page.coverage_gaps.push({feature:'ocr',reason:e.comparison_reason});}
       continue;
     }
+    if(annotationBlocksRegion(page.elements,e.bbox)){e.comparison_reason='page_annotation_blocks_independent_raster';page.coverage_gaps.push({feature:'pdf_annotations',reason:'page_annotation_blocks_independent_raster'});continue;}
     if(e.visibility==='visible'&&e.availability==='available'){
       e.comparison_role='selected';e.comparison_reason='independent_inferred_raster_region';
       // Coverage is directional: seeing a prefix cannot resolve an unread tail.

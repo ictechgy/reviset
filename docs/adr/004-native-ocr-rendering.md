@@ -100,3 +100,29 @@ Times-Roman32 Revenue100→120 native control exercises this boundary through
 coordinator commit and reopened report/native-page storage. Identical unknown
 paint extents are aggregated at the last visible unknown order; earlier and
 intermediate paint stays uncertain, later reliable paint retains its checks.
+
+Engine24 records page annotation metadata as empty `pdf_page_annotation` shape
+observations, excluded from comparison text/rows/pairing. Inferred zero-coverage
+annotation-region evidence is a withholding signal, never proof of visible
+strikeout or applied deletion. Hidden/NoView and no-appearance Link/Popup follow
+the existing exclusions; unapplied Redact intent remains available. The pure
+region accessor scans complete page observations and actual annotation bounds,
+independent of estimated glyph bounds. OCR admission/grid cells, independent
+hybrid fallback and inferred OCR regional edits check those regions. Readable
+observed-source/observed-strike priority is preserved. Carriers do not append
+empty source-text lines or turn an image-only page into a text-layer page.
+Annotation count2048, aggregate quad coordinates32768 and per-annotation geometry
+limits fail conservatively with a full-page review carrier and explicit gaps;
+they do not silently truncate intent or promote unsupported source visibility.
+
+Estimated raw source also remains text evidence. Before an inferred OCR numeric
+edit, nearby estimated source runs are checked only in the withholding direction.
+Disagreement is recorded with exact raw/OCR quotes; a single numeric-slot conflict
+in the same literal context (including fraction/decimal class disagreement)
+withholds the edit. No reading is rewritten and no agreement resolves source
+geometry. Split-run text is retained in source reading order;256 runs/16384 chars
+bound the check and exceeding that budget withholds with a gap. Unrelated textual
+context remains explicitly unresolved rather than being treated as a proven
+source-to-raster correspondence. Native pale-StrikeOut and unapplied-Redact
+controls now retain their source intent and withhold numeric edits after commit
+and reopened report/native-page retrieval.

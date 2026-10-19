@@ -1,5 +1,6 @@
 import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } from './pdf-geometry.js';
 import { paintedGlyphs,supportedGraphicsStateKey } from './pdf-glyphs.js';
+import {annotationCarriers} from './pdf-annotations.js';
 import {hasUnverifiedPdfGeometry,PDF_GEOMETRY_UNVERIFIED} from './pdf-text-geometry.js';
 import { OPS, AnnotationType, AnnotationMode, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, normalize, type Box, type ElementData } from '../schema/index.js';
@@ -8,9 +9,10 @@ const area=(b:Box)=>b[2]*b[3];
 const overlap=(a:Box,b:Box)=>Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
 const coverageOf=(target:Box,region:Box)=>area(target)>0?Math.min(1,overlap(target,region)/area(target)):0;
 const compact=(s:string)=>normalize(s).replace(/\s/gu,'');
-export async function inspectAppearance(page:any,viewport:any,elements:ElementData[],fontStyles:Record<string,any>={}):Promise<{regions:Region[];gaps:{feature:string;reason:string}[]}> {
+export async function inspectAppearance(page:any,viewport:any,elements:ElementData[],fontStyles:Record<string,any>,assetId:string):Promise<{regions:Region[];gaps:{feature:string;reason:string}[]}> {
   const operators=await page.getOperatorList({annotationMode:AnnotationMode.DISABLE}),annotations=await page.getAnnotations({intent:'display'}),regions:Region[]=[],gaps:{feature:string;reason:string}[]=[];
-  if(operators.fnArray.length>250000){for(const e of elements)e.visibility='unverified';return{regions,gaps:[{feature:'pdf_visibility',reason:'operator_limit_exceeded_visibility_unverified'}]};}
+  const annotationEvidence=annotationCarriers(annotations,viewport,assetId,page.pageNumber,elements.length);gaps.push(...annotationEvidence.gaps);
+  if(operators.fnArray.length>250000||annotationEvidence.budgetExceeded){for(const e of elements)e.visibility='unverified';elements.push(...annotationEvidence.elements);gaps.push({feature:'pdf_visibility',reason:operators.fnArray.length>250000?'operator_limit_exceeded_visibility_unverified':'source_annotation_budget_exceeded'});return{regions,gaps};}
   let state={matrix:[1,0,0,1,0,0],alpha:1,strokeAlpha:1,lineWidth:1,lineCap:0,lineJoin:0,miterLimit:10,blend:'Normal',mask:false,clip:null as Clip,pendingClip:false,textMode:0,textClipPending:false,color:'#000000',unsupportedState:false},stack:typeof state[]=[],marked:boolean[]=[];let sawComplexClipOrMask=false,optional=false;
   const glyphs=paintedGlyphs(page,viewport,operators,fontStyles);
   const bounds=(rect:number[],matrix=state.matrix)=>transformedBounds(rect,matrix,viewport);
@@ -199,6 +201,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     }
   }
 
+  elements.push(...annotationEvidence.elements);
   if(sawComplexClipOrMask||state.mask||state.clip==='unknown'||state.pendingClip)gaps.push({feature:'pdf_visibility',reason:'clipping_or_soft_mask_visibility_not_fully_verified'});
   return{regions,gaps:[...new Map(gaps.map(g=>[g.reason,g])).values()]};
 }

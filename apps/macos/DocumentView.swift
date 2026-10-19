@@ -135,7 +135,7 @@ struct PageColumn: View {
                     ForEach(payload["source"]["warnings"].array.indices,id:\.self){i in Text(renderWarningName(payload["source"]["warnings"].array[i].string)).font(.caption).foregroundStyle(.orange)}
                     ForEach(payload["page"]["elements"].array) { e in
                         VStack(alignment:.leading,spacing:4) {
-                            Text(e["text"].string).textSelection(.enabled)
+                            Text(e["method"].string == "pdf_page_annotation" ? (e["source_ref"].string.hasSuffix("/StrikeOut") ? "취소선 주석 · 표시 상태 미검증" : e["source_ref"].string.hasSuffix("/Redact") ? "삭제 의도 주석 · 적용 여부 확인" : "PDF 주석 영역 · 원본 확인 필요") : e["text"].string).textSelection(.enabled)
                             if hasEstimatedPDFGeometry(e) { Text("원문 위치·표시 상태 미검증 · 글꼴 좌표는 추정값입니다.").font(.caption).foregroundStyle(.orange) }
                             HStack { Text(e["visibility"].string.isEmpty ? "원본 구조" : e["visibility"].string)
                                 if e["method"].string == "vision_ocr" {Text("OCR 추정 · \(Int(e["ocr"]["confidence"].number*100))점")}

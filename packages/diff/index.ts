@@ -1,10 +1,11 @@
+import {annotationBlocksRegion} from '../ingest/pdf-annotation-regions.js';
 import { SCHEMA_VERSION, normalize,comparisonText,unresolvedComparisonText,comparisonRegions, type ElementData,type RevisionData, type MatchData, type ChangeData, type PageData } from '../schema/index.js';
 import {numericSlots,numericPattern,numericShape,numericNotationSupported} from '../ingest/numeric-slots.js';
-import {hasUnverifiedPdfGeometry} from '../ingest/pdf-text-geometry.js';
+import {isEstimatedPdfSource} from '../ingest/pdf-text-geometry.js';
+import {reviewEstimatedSource} from './estimated-source-review.js';
 function regionElements(p:PageData):ElementData[]{return p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p):p.elements.filter(e=>p.comparison_basis==='raster_ocr'?e.method==='vision_ocr':(e.kind==='text'||e.kind==='table_cell')&&e.method!=='vision_document_cell');}
 function comparisonElements(p:PageData):ElementData[]{return regionElements(p).filter(e=>p.comparison_basis==='hybrid_regions_v1'?e.comparison_role==='selected':p.comparison_basis==='raster_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));}
 const selectedRaster=(e:ElementData)=>e.method==='vision_ocr'&&e.provenance==='inferred'&&e.visibility==='visible'&&e.comparison_role==='selected';
-const estimatedPdfSource=(e:ElementData)=>e.method==='pdf_text'&&e.provenance==='observed'&&hasUnverifiedPdfGeometry(e);
 function regionOverlap(a:ElementData,b:ElementData):number{const x=a.bbox,y=b.bbox;return Math.max(0,Math.min(x[0]+x[2],y[0]+y[2])-Math.max(x[0],y[0]))*Math.max(0,Math.min(x[1]+x[3],y[1]+y[3])-Math.max(x[1],y[1]))/Math.max(0.000001,Math.max(x[2]*x[3],y[2]*y[3]));}
 function ocrRegionsPaired(a:PageData,b:PageData):boolean{
   const all=(p:PageData)=>regionElements(p).filter(e=>p.comparison_basis==='hybrid_regions_v1'||e.method==='vision_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));
@@ -83,17 +84,27 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
         // independently selected raster pairs. Localized uncertainty still vetoes
         // them; the raw source and its page-level unresolved gap remain intact.
         const rasterPair=selectedRaster(old)&&right.some(e=>selectedRaster(e)&&supported(e)&&regionOverlap(old,e)>.6);
-        const geometryRelevant=(e:ElementData)=>!rasterPair||!estimatedPdfSource(e);
+        const geometryRelevant=(e:ElementData)=>!rasterPair||!isEstimatedPdfSource(e);
         const pairingLeft=sourcePair?left.filter(e=>e.provenance==='observed'):left.filter(geometryRelevant),pairingRight=sourcePair?right.filter(e=>e.provenance==='observed'):right.filter(geometryRelevant);
         const neighbors=pairingRight.filter(e=>regionOverlap(old,e)>0.6);if(neighbors.length!==1)continue;
         const current=neighbors[0];if(!supported(current)||rasterPair&&!selectedRaster(current)||pairingLeft.filter(e=>regionOverlap(e,current)>0.6).length!==1)continue;
         if(pairingRight.some(e=>!supported(e)&&regionOverlap(old,e)>0.05)||pairingLeft.some(e=>!supported(e)&&regionOverlap(e,current)>0.05))continue;
         const oldElsewhere=sourcePair?pairingRight.some(e=>normalize(e.text)===normalize(old.text)):rightText.has(normalize(old.text)),currentElsewhere=sourcePair?pairingLeft.some(e=>normalize(e.text)===normalize(current.text)):leftText.has(normalize(current.text));
         if(oldElsewhere||currentElsewhere||normalize(old.text)===normalize(current.text))continue;
+        if(rasterPair&&(annotationBlocksRegion(a.elements,old.bbox)||annotationBlocksRegion(b.elements,current.bbox))){add('coverage_gap',a,b,m,'page_annotation_prevents_inferred_raster_edit');continue;}
         if((old.provenance==='inferred'||current.provenance==='inferred')&&(!numericNotationSupported(old.text)||!numericNotationSupported(current.text)||numericPattern(old.text)!==numericPattern(current.text)||numericSlots(old.text).length!==1||numericSlots(current.text).length!==1))continue;
+        const sourceReviews=rasterPair?[{revision:from,page:a,ocr:old,review:reviewEstimatedSource(old,left)},{revision:to,page:b,ocr:current,review:reviewEstimatedSource(current,right)}]:[];
+        const disagreement=sourceReviews.some(s=>s.review.disagrees),budgetExceeded=sourceReviews.some(s=>s.review.budgetExceeded);
+        if(disagreement||budgetExceeded){
+          add('coverage_gap',a,b,m,budgetExceeded?'unlocalized_source_text_review_budget_exceeded':'ocr_disagrees_with_unlocalized_source_text');
+          const gap=changes.at(-1)!;gap.before=old.text;gap.after=current.text;
+          gap.evidence=sourceReviews.flatMap(s=>[...s.review.runs.slice(0,16).map(e=>evidence(s.revision,s.page,false,e)),evidence(s.revision,s.page,false,s.ocr)]);
+        }
+        if(budgetExceeded||sourceReviews.some(s=>s.review.numericConflict))continue;
         add('text_modified',a,b,m,'other_page_regions_unresolved');const change=changes.at(-1)!;change.before=old.text;change.after=current.text;change.text_scope='region';change.region_pairing_assessment='inferred';change.text_assessment=old.provenance==='inferred'||current.provenance==='inferred'?'inferred':'observed';
         change.evidence=[evidence(from,a,false,old),evidence(to,b,false,current)];
-        if(rasterPair&&left.concat(right).some(estimatedPdfSource))change.coverage_gaps.push({feature:'pdf_geometry',reason:'estimated_source_geometry_not_used_for_raster_pairing'});
+        if(rasterPair&&left.concat(right).some(isEstimatedPdfSource))change.coverage_gaps.push({feature:'pdf_geometry',reason:'estimated_source_geometry_not_used_for_raster_pairing'});
+        if(disagreement)change.coverage_gaps.push({feature:'ocr',reason:'ocr_disagrees_with_unlocalized_source_text'});
         if(change.text_assessment==='inferred')change.coverage_gaps.push({feature:'ocr',reason:'ocr_inferred_text_requires_source_review'});
       }
     }
