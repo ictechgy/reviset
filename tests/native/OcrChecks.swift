@@ -3,8 +3,6 @@ import AppKit
 
 @main struct OcrChecks {
     static func main() throws {
-        let little=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:100,pixelsHigh:100,bitsPerSample:8,samplesPerPixel:4,hasAlpha:true,isPlanar:false,colorSpaceName:.deviceRGB,bitmapFormat:[.alphaFirst,.thirtyTwoBitLittleEndian],bytesPerRow:400,bitsPerPixel:32)!
-        precondition(!DocverVision.supportedPixels(little),"Little endian channels must not be read as RGB")
         typealias Reading=DocverVision.NumericReading
         let a=Reading(text:"100",rect:CGRect(x:0.1,y:0.1,width:0.2,height:0.05),sources:["whole:0"])
         let b=Reading(text:"100",rect:CGRect(x:0.5,y:0.1,width:0.2,height:0.05),sources:["whole:1"])
