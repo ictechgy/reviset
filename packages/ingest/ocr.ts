@@ -5,14 +5,15 @@ import { mkdtemp,mkdir,readFile,writeFile,rm,rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Bbox,GridStatus,box,byteHash,hash,id,normalize,type PageData,type ElementData,type Box,DocverError } from '../schema/index.js';
+import { Bbox,GridStatus,OcrReconsideration,box,byteHash,hash,id,normalize,type PageData,type ElementData,type Box,DocverError } from '../schema/index.js';
 import { runTool,visionExecutable,visionInfo } from '../runtime/tools.js';
+import {admitReconsideration} from './ocr-reconsideration.js';
 import {selectHybridComparison,sourceAppearanceBlocks} from './comparison-selection.js';
 
 const Candidate=z.object({text:z.string(),confidence:z.number().min(0).max(1)});
 const NativeTable=z.object({cells:z.array(z.object({row:z.number().int().nonnegative(),column:z.number().int().nonnegative(),row_span:z.number().int().positive(),column_span:z.number().int().positive(),text:z.string(),text_confident:z.boolean().optional(),bbox:Bbox})).max(20000)});
 const Result=z.object({version:z.string(),revision:z.number(),languages:z.array(z.string()),language_correction:z.literal(false),ocr_performed:z.boolean(),renderer:z.string(),verification:z.string(),viewport_width:z.number().positive(),viewport_height:z.number().positive(),rotation:z.number(),width:z.number().int().positive().max(4096),height:z.number().int().positive().max(4096),render_sha256:z.string().regex(/^[a-f0-9]{64}$/),structure_status:z.string().optional(),structure_engine:z.string().optional(),tables:z.array(NativeTable).max(200).optional(),grid_tables:z.array(NativeTable).max(50).optional(),grid_status:GridStatus.optional(),grid_reasons:z.array(z.string()).max(20).optional(),bitmap_format:z.number().int().nonnegative().optional(),bitmap_bits_per_sample:z.number().int().positive().optional(),bitmap_bits_per_pixel:z.number().int().positive().optional(),
-  lines:z.array(Candidate.extend({bbox:Bbox,strike_candidate:z.boolean(),strike_status:z.string().optional(),strike_bbox:Bbox,numeric_consensus:z.boolean(),numeric_status:z.string().optional(),numeric_readings:z.array(z.string()),numeric_observations:z.array(z.object({text:z.string(),bbox:Bbox,sources:z.array(z.string())})).optional(),tokens:z.array(z.object({text:z.string(),bbox:Bbox})),alternatives:z.array(Candidate).max(3)})).max(20000)});
+  lines:z.array(Candidate.extend({bbox:Bbox,strike_candidate:z.boolean(),strike_status:z.string().optional(),strike_bbox:Bbox,numeric_consensus:z.boolean(),numeric_status:z.string().optional(),numeric_readings:z.array(z.string()),numeric_observations:z.array(z.object({text:z.string(),bbox:Bbox,sources:z.array(z.string())})).optional(),tokens:z.array(z.object({text:z.string(),bbox:Bbox})),alternatives:z.array(Candidate).max(3),reconsideration:OcrReconsideration.optional()})).max(20000)});
 export type NativePageResult=z.infer<typeof Result>;
 export type OcrOptions={cacheRoot?:string;signal?:AbortSignal;sourceFile?:string;sourceHash?:string;reuseRasterOcr?:boolean;nativeResult?:NativePageResult;onPage?:(current:number,total:number)=>void};
 export async function ocrEnvironment():Promise<string>{const info=await visionInfo();return info?hash(info):'unavailable';}
@@ -76,7 +77,15 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
       const confident=geometryOK&&strikeEvaluated&&!appearanceBlocked&&line.confidence>=0.5&&!ambiguous&&line.numeric_consensus;
       additions.push({observation_id:id('obs',[page.asset_id,page.page,'ocr',environment,i]),kind:'text',text:line.text,normalized_text:normalize(line.text),bbox:box(...line.bbox),reading_order:original.length+additions.length,availability:'available',method:'vision_ocr',source_ref:`page:${page.page}/raster/ocr:${i}`,provenance:'inferred',visibility:line.strike_candidate?'struck_inferred':confident?'visible':'uncertain',
         ...(line.strike_candidate?{visibility_evidence:[{method:'raster_horizontal_strike_candidate',bbox:line.strike_bbox,assessment:'inferred' as const,coverage:Math.min(1,line.strike_bbox[2]/Math.max(0.000001,line.bbox[2]))}]}:{}),
-        ocr:{confidence:line.confidence,confidence_scope:'line',numeric_consensus:line.numeric_consensus,ambiguous,alternatives:line.alternatives.map(c=>({text:c.text,confidence:c.confidence,truncated:false}))}});
+        ocr:{...(line.reconsideration?{reconsideration_observation:line.reconsideration}:{}),confidence:line.confidence,confidence_scope:'line',numeric_consensus:line.numeric_consensus,ambiguous,alternatives:line.alternatives.map(c=>({text:c.text,confidence:c.confidence,truncated:false}))}});
+    }
+    const primaryAdditions=additions.slice();
+    for(const [i,primary]of primaryAdditions.entries()){
+      const observation=primary.ocr?.reconsideration_observation;if(!observation||!geometryOK)continue;
+      const accepted=admitReconsideration(primary,observation,b=>original.some(e=>sourceAppearanceBlocks(e,b))||annotationBlocksRegion(original,b));
+      if(!accepted)continue;
+      additions.push({observation_id:id('obs',[page.asset_id,page.page,'roi',environment,i]),kind:'text',text:accepted.text,normalized_text:normalize(accepted.text),bbox:accepted.bbox,reading_order:original.length+additions.length,availability:'available',method:'vision_ocr',source_ref:`page:${page.page}/raster/roi:${i}`,provenance:'inferred',visibility:'visible',
+        ocr:{confidence:accepted.confidence,confidence_scope:'line',numeric_consensus:true,ambiguous:false,alternatives:accepted.alternatives,reconsideration:{method:'vision_multicontext_roi',primary_source_ref:primary.source_ref,primary_text:primary.text,primary_confidence:primary.ocr!.confidence,primary_bbox:primary.bbox,observation}}});
     }
     page.elements.push(...additions);
     const appearanceBlockedAt=(b:Box)=>original.some(e=>sourceAppearanceBlocks(e,b))||annotationBlocksRegion(original,b);
@@ -85,7 +94,7 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
     page.ocr={status:lines.length?'available':'no_text',mode:scanned?'scan':rasterComparison?'verification':additions.length?'supplement':'verification',engine:result.version,environment,render_sha256:result.render_sha256,width:result.width,height:result.height,structure_status:result.structure_status,grid_status:result.grid_status,grid_reasons:result.grid_reasons,bitmap_format:result.bitmap_format,bitmap_bits_per_sample:result.bitmap_bits_per_sample,bitmap_bits_per_pixel:result.bitmap_bits_per_pixel,table_count:tables.length};
     if(additions.length){
       page.capabilities.text='available';
-      const good=additions.filter(e=>e.visibility==='visible').map(e=>e.text).join('\n'),uncertain=additions.filter(e=>e.visibility!=='visible').map(e=>e.text).join('\n');
+      const good=primaryAdditions.filter(e=>e.visibility==='visible').map(e=>e.text).join('\n'),uncertain=primaryAdditions.filter(e=>e.visibility!=='visible').map(e=>e.text).join('\n');
       page.ocr_text=good;page.ocr_unresolved_text=uncertain;
       if(rasterComparison)page.comparison_basis='raster_ocr';
       page.coverage_gaps.push({feature:'ocr',reason:'ocr_inferred_text_requires_source_review'});
@@ -109,7 +118,7 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
     for(const status of new Set(lines.map(l=>l.strike_status).filter(s=>s&&!['detected','not_detected'].includes(s))))page.coverage_gaps.push({feature:'strike_ocr',reason:'raster_strike_'+status});
     if(lines.some(l=>l.numeric_status==='unsupported_notation'))page.coverage_gaps.push({feature:'ocr_numeric',reason:'unsupported_numeric_notation_requires_source_review'});
     if(!lines.length)page.coverage_gaps.push({feature:'ocr',reason:'ocr_no_text_detected_not_proof_of_blank_page'});
-    if(additions.length&&original.some(e=>e.provenance==='observed'&&e.text.trim()&&e.visibility!=='hidden_render_mode')){
+    if(additions.some(e=>e.ocr?.reconsideration)||additions.length&&original.some(e=>e.provenance==='observed'&&e.text.trim()&&e.visibility!=='hidden_render_mode')){
       selectHybridComparison(page);
       if(!rasterComparison&&additions.every(e=>e.comparison_role==='shadowed'))page.ocr.mode='verification';
     }

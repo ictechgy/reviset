@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 
 export const SCHEMA_VERSION = '0.2.0';
 const StoredSchemaVersion=z.enum(['0.1.0','0.2.0']);
-export const ENGINE_VERSION = '0.2.0-native.ocr-render.29';
+export const ENGINE_VERSION = '0.2.0-native.ocr-render.30';
 export const MAX_INPUT_BYTES=512*1024*1024;
 export const MAX_PPTX_EXPANDED_BYTES=512*1024*1024;
 export const MAX_PPTX_PART_BYTES=64*1024*1024;
@@ -18,6 +18,16 @@ export const Availability = z.enum(['available', 'unavailable', 'unsupported', '
 export const Bbox = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1)])
   .refine(([x,y,w,h]) => x+w <= 1.000001 && y+h <= 1.000001, 'bbox exceeds page');
 export type Box = z.infer<typeof Bbox>;
+const RoiCandidate=z.object({text:z.string().min(1).max(128),confidence:z.number().min(0).max(1)});
+export const OcrReconsideration=z.object({
+  status:z.enum(['available','budget_exceeded','unsupported_bitmap','unsupported_background','empty_ink','failed']),
+  band_bbox:Bbox,ink_pixels:z.number().int().positive().max(4_000_000).optional(),threshold:z.number().int().min(0).max(240).optional(),
+  contexts:z.array(z.object({languages:z.array(z.enum(['en-US','ko-KR'])).min(1).max(2),padding:z.union([z.literal(.25),z.literal(.75)]),scale:z.union([z.literal(1),z.literal(2)]),crop_bbox:Bbox,
+    status:z.enum(['available','not_detected','contaminated','edge_cut','ambiguous','failed','budget_exceeded']),
+    observations:z.array(RoiCandidate.extend({bbox:Bbox,token_bboxes:z.array(Bbox).max(32),alternatives:z.array(RoiCandidate).max(3),ink_coverage:z.number().min(0).max(1)})).max(8)
+  })).max(8)
+});
+export type OcrReconsiderationData=z.infer<typeof OcrReconsideration>;
 export const Capability = z.object({ text: Availability, notes: Availability, hidden_slides: Availability,
   animation: Availability, structure: Availability, preview: Availability });
 export const GridStatus=z.enum(['available','not_detected','insufficient_text','unsupported_format','unsupported_dimensions','budget_exceeded','ambiguous_boundaries','partial']);
@@ -26,7 +36,10 @@ export const Element = z.object({ observation_id: z.string(), kind: z.enum(['tex
   text: z.string(), normalized_text: z.string(), bbox: Bbox, reading_order: z.number().int().nonnegative(),
   availability: Availability, method: z.string(), source_ref: z.string(), provenance: z.enum(['observed','inferred']),
   comparison_role:z.enum(['selected','unresolved','shadowed','excluded']).optional(),comparison_reason:z.string().optional(),comparison_order:z.number().int().nonnegative().optional(),
-  ocr:z.object({confidence:z.number().min(0).max(1),confidence_scope:z.literal('line'),numeric_consensus:z.boolean(),ambiguous:z.boolean(),alternatives:z.array(z.object({text:z.string(),confidence:z.number().min(0).max(1),truncated:z.boolean()})).max(3)}).optional(),
+  ocr:z.object({confidence:z.number().min(0).max(1),confidence_scope:z.literal('line'),numeric_consensus:z.boolean(),ambiguous:z.boolean(),alternatives:z.array(z.object({text:z.string(),confidence:z.number().min(0).max(1),truncated:z.boolean()})).max(3),
+    reconsideration_observation:OcrReconsideration.optional(),
+    reconsideration:z.object({method:z.literal('vision_multicontext_roi'),primary_source_ref:z.string(),primary_text:z.string().max(128),primary_confidence:z.number().min(0).max(1),primary_bbox:Bbox,observation:OcrReconsideration}).optional()
+  }).optional(),
   media_hash: z.string().optional(),
   visibility:z.enum(['visible','occluded','partially_occluded','struck_through','struck_inferred','partially_struck_through','hidden_render_mode','uncertain','unverified']).optional(),
   visibility_spans:z.array(z.object({text:z.string(),state:z.string(),bbox:Bbox,paint_index:z.number().int().nonnegative(),assessment:z.enum(['observed','inferred'])})).optional(),

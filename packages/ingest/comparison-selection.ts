@@ -1,3 +1,4 @@
+import {admitReconsideration,matchesReconsiderationPrimary} from './ocr-reconsideration.js';
 import {annotationBlocksRegion} from './pdf-annotation-regions.js';
 import {normalize,type PageData,type ElementData,type Box} from '../schema/index.js';
 import {rowOrderedRegions} from './reading-order.js';
@@ -70,7 +71,19 @@ export function selectHybridComparison(page:PageData):void{
   const ocr=page.elements.filter(e=>e.method==='vision_ocr'),boxes=new Map(raw.map(e=>[e,envelope(e)]));
   for(const e of raw){e.comparison_role=e.visibility==='hidden_render_mode'?'excluded':readable(e)?'selected':'unresolved';e.comparison_reason=e.visibility==='hidden_render_mode'?'prior_hidden_layer':readable(e)?'readable_observed_source':'unresolved_source';}
   const dx=2/(page.ocr?.width??4096),dy=2/(page.ocr?.height??4096);
+  const verifiedRoi=new Map<ElementData,ElementData>();
+  const roiClaims=new Map<string,number>();for(const e of ocr){const ref=e.ocr?.reconsideration?.primary_source_ref;if(ref)roiClaims.set(ref,(roiClaims.get(ref)??0)+1);}
+  const geometryOK=!!page.ocr?.width&&!!page.ocr.height&&Math.abs((page.width/page.height)/(page.ocr.width/page.ocr.height)-1)<.003;
+  const blocks=(b:Box)=>page.elements.some(e=>sourceAppearanceBlocks(e,b))||annotationBlocksRegion(page.elements,b);
   for(const e of ocr){
+    if(e.ocr?.reconsideration){
+      const matches=ocr.filter(p=>matchesReconsiderationPrimary(e,p)),primary=matches.length===1?matches[0]:undefined;
+      const accepted=primary?admitReconsideration(primary,e.ocr.reconsideration.observation,blocks):undefined;
+      if(!geometryOK||roiClaims.get(e.ocr.reconsideration.primary_source_ref)!==1||!e.ocr.numeric_consensus||e.ocr.ambiguous||!accepted||accepted.text!==e.text||accepted.confidence!==e.ocr.confidence||!accepted.bbox.every((n,i)=>Math.abs(n-e.bbox[i])<1e-9)){
+        e.comparison_role='unresolved';e.comparison_reason='roi_evidence_or_primary_relationship_unverified';continue;
+      }
+      verifiedRoi.set(e,primary!);
+    }
     const nearby=raw.filter(r=>r.visibility!=='hidden_render_mode'&&intersection(boxes.get(r)!,e.bbox)>0),clear=nearby.filter(readable),unknown=nearby.filter(r=>!readable(r));
     e.comparison_role='unresolved';e.comparison_reason='unresolved_ocr';
     // A complete observed strike is readable source. Redundant OCR can be
@@ -98,6 +111,13 @@ export function selectHybridComparison(page:PageData):void{
         if(contains(e.bbox,extent,dx,dy)||corroboratesCompleteText(r,e,extent)){r.comparison_role='shadowed';r.comparison_reason='unverified_source_compared_by_inferred_raster';}
         else page.coverage_gaps.push({feature:'ocr',reason:'partial_raster_coverage_source_remains_unresolved'});
       }
+    }
+  }
+  for(const [derived,primary]of verifiedRoi){
+    // Two derived claims cannot silently settle the same original observation.
+    if([...verifiedRoi.values()].filter(p=>p===primary).length!==1)continue;
+    if(['selected','shadowed'].includes(derived.comparison_role??'')){
+      primary.comparison_role='shadowed';primary.comparison_reason='roi_context_primary_superseded';
     }
   }
   // Roles persist per observation, so occurrence-ID stamping needs no new

@@ -110,6 +110,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
   if(lastUnknownTextOrder>=0)regions.push({bbox:box(0,0,1,1),order:lastUnknownTextOrder,kind:'unknown_text',opaque:false,axisAligned:false});
   for(const [order,run] of textRuns)regions.push({bbox:run.bbox,order,kind:'text',opaque:false,axisAligned:false,...(run.complete&&!unknownRuns.has(order)&&run.ink?{ink:run.ink}:{})});
   const [px,py]=nativePixelMargins(viewport),paddedInk=(b:Box)=>box(b[0]-px,b[1]-py,b[2]+2*px,b[3]+2*py);
+  const regionInk=new Map(regions.filter(r=>r.ink).map(r=>[r,paddedInk(r.ink!)]));
   const verticalBuckets=new Map<number,Region[]>(),connectedCache=new Map<Region,boolean>();
   for(const v of regions.filter(v=>v.kind==='line'&&v.bbox[2]<0.002&&v.bbox[3]>0.02)){const key=Math.floor(v.bbox[0]*100);verticalBuckets.set(key,[...(verticalBuckets.get(key)??[]),v]);}
   function connectedLine(r:Region):boolean{if(connectedCache.has(r))return connectedCache.get(r)!;const lineY=r.bbox[1]+r.bbox[3]/2;let connected=false;
@@ -145,7 +146,9 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
       const backgrounds=regions.filter(r=>r.kind==='fill'&&r.opaque&&r.axisAligned&&r.order<g.order&&area(footprint)>0&&overlap(footprint,r.bbox)/area(footprint)>=0.95);
       const background=backgrounds.at(-1)?.color??'#ffffff';
       if(g.color!=='unknown'&&background!=='unknown'&&g.color===background){state='uncertain';e.visibility_evidence.push({method:'text_color_matches_background',bbox:g.bbox,assessment:'inferred',coverage:1});}
+      const targetInk=g.reliable&&g.paint_ink?paddedInk(g.paint_ink):undefined;
       for(const r of regions){
+        if(r.order<=g.order)continue;
         const coverage=coverageOf(footprint,r.bbox);
         // A decimal point can occupy less than 5% of its font-metric box.
         // Any positive overlap is uncertain unless a stronger assessment applies.
@@ -159,8 +162,8 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
         // target advance metrics misses overhangs (f/j/italics). Pad EACH ink
         // envelope by the existing native-pixel floor before clearing overlap.
         // Incomplete later runs retain their entire original metric footprint.
-        const inkPair=r.kind==='text'&&g.reliable&&g.paint_ink&&r.ink;
-        const textTarget=inkPair?paddedInk(g.paint_ink!):footprint,textRegion=inkPair?paddedInk(r.ink!):r.bbox;
+        const inkPair=r.kind==='text'&&targetInk&&regionInk.has(r);
+        const textTarget=inkPair?targetInk!:footprint,textRegion=inkPair?regionInk.get(r)!:r.bbox;
         const textCoverage=r.kind==='text'&&state==='visible'?coverageOf(textTarget,textRegion):0;
         if(((r.kind==='image'||r.kind==='unknown_text')&&coverage>0||shortStroke||r.kind==='text'&&textCoverage>0)&&r.order>g.order){state='uncertain';e.visibility_evidence.push({method:r.kind==='unknown_text'?'later_text_geometry_unverified':shortStroke?'short_stroke_glyph_overlap_unverified':r.kind==='text'?(inkPair?'later_embedded_text_ink_clearance_unverified':'later_text_glyph_overlap_unverified'):'later_image_opacity_unverified',bbox:r.kind==='text'?textRegion:r.bbox,assessment:'inferred',coverage:r.kind==='text'?textCoverage:coverage});}
       }

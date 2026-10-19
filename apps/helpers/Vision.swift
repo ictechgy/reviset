@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-17-complete-fraction-operands"
+    static let version = "docver-vision-18-bounded-roi-observations"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -113,7 +113,7 @@ struct DocverVision {
         return ["version":version, "os":ProcessInfo.processInfo.operatingSystemVersionString,
                 "revision":r.revision, "languages":r.recognitionLanguages, "supported_languages":try r.supportedRecognitionLanguages(),
                 "language_correction":false,"automatic_language_detection":false,"target_dpi":300,"max_dimension":4096,"tile_size":1600,"tile_overlap":240,"compute_device":"Vision automatic; same OS/build keyed", "renderer":"PDFKit.thumbnail.cropBox", "font_families":families,
-                "document_structure":ProcessInfo.processInfo.operatingSystemVersion.majorVersion>=26,
+                "reconsideration_policy":reconsiderationPolicy,"document_structure":ProcessInfo.processInfo.operatingSystemVersion.majorVersion>=26,
                 "ruled_grid_inference":"complete-dark-solid-rectangles-v4; local-contrast interior-boundary rejection; OCR tokens; inferred only",
                 "font_inventory_sha256":digest(Data(inventory.utf8))]
     }
@@ -153,7 +153,7 @@ struct DocverVision {
                 }
             }}
         }}
-        let lines:[[String:Any]] = orderedLines(try (r.results ?? []).map { observation in
+        let primaryLines:[[String:Any]] = orderedLines(try (r.results ?? []).map { observation in
             let candidates = observation.topCandidates(3)
             let b = observation.boundingBox
             let text = candidates.first?.string ?? ""
@@ -198,6 +198,7 @@ struct DocverVision {
                     "numeric_observations":recognized.map{["text":$0.text,"bbox":[$0.rect.minX,$0.rect.minY,$0.rect.width,$0.rect.height],"sources":$0.sources]},
                     "tokens":tokens,"alternatives":candidates.map { ["text":$0.string,"confidence":Double($0.confidence)] }]
         })
+        let lines=reconsideredLines(cg,bitmap,primaryLines)
         let grid=gridObservation(bitmap,lines)
         return metadata.merging(["ocr_performed":true,"verification":"overlapping-1600px-tiles","lines":lines,
                                  "grid_tables":grid.tables,"grid_status":grid.status,"grid_reasons":grid.reasons,

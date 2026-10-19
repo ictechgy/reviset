@@ -250,3 +250,27 @@ The public training example involves `1` followed by Korean `시`, whose
 actual outlines are19.6459 native pixels apart despite slightly overlapping
 metric margins. The parenthesis is the independent synthetic control, not
 the glyph in that public example. Primary OCR remains unchanged in both.
+
+Engine30 adds bounded, additive multi-context Vision ROI observations. Up to4
+weak nonnumeric lines/page receive2 relative paddings x2 scales x2 language
+sets, with4M pixels/crop,128 characters and32 tokens/context. The helper keeps
+primary strings, alternatives, confidence, numeric and strike metadata intact.
+Unsupported/transparent/dark backgrounds, empty ink, crop boundaries, multiple
+lines, failed requests and budgets remain explicit statuses. The original
+primary-band Otsu core ink must be entirely inside mapped token envelopes.
+This envelope test is a geometric coverage check, not character-shape proof.
+
+Admission requires all8 distinct contexts to agree at confidence>=0.5 without
+strong alternative dissent. Numeric readings/contradictions and changed
+punctuation/confusable characters are withheld. Korean-capable contexts must
+support changed Hangul. Original/crop source appearance, annotation, strike
+and page-geometry vetoes remain. A new inferred vision_ocr observation stores
+full support and the page-local primary reference; raw primary projections
+stay exact. Selection rechecks evidence, unique relationship and duplicate
+claims before shadowing the original primary. Same-engine votes remain
+correlated evidence and are never advertised as calibrated certainty or
+perfect OCR. Full JSON/native page projections/export retain both readings;
+bounded queries summarize support and expose one context via
+get_element.ocr_context_index. Helper18 source/policy participates in cache
+identity. Pairwise embedded-ink padding is cached and earlier paint is skipped
+without changing its visibility contract.

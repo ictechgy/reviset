@@ -169,6 +169,18 @@ import AppKit
             let observed=DocverVision.gridObservation(high,highLines)
             precondition(observed.status=="ambiguous_boundaries","Maximum-thickness faint partial dividers must withhold a coarse grid: vertical=\(vertical),gray=\(gray),status=\(observed.status)")
         }}
+        // Reconsideration must fail closed on unsupported/empty/dark pixels;
+        // skipped numeric/strike lines retain every original primary field.
+        let roiBand=CGRect(x:0.1,y:0.1,width:0.5,height:0.3)
+        let white=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:240,pixelsHigh:160,bitsPerSample:8,samplesPerPixel:1,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceWhite,bytesPerRow:240,bitsPerPixel:8)!
+        white.bitmapData!.initialize(repeating:255,count:240*160)
+        precondition(DocverVision.reconsider(white.cgImage!,unsupported,roiBand,"weak")["status"] as? String == "unsupported_bitmap")
+        precondition(DocverVision.reconsider(white.cgImage!,white,roiBand,"weak")["status"] as? String == "empty_ink")
+        white.bitmapData!.initialize(repeating:0,count:240*160)
+        precondition(DocverVision.reconsider(white.cgImage!,white,roiBand,"weak")["status"] as? String == "unsupported_background")
+        let ineligible:[[String:Any]]=["F00","A 123","Name"].enumerated().map{i,text in ["text":text,"confidence":0.3,"bbox":[CGFloat(0.1),0.1,0.5,0.3],"numeric_consensus":true,"strike_candidate":i==2,"strike_status":i==2 ? "detected":"not_detected","alternatives":[["text":text,"confidence":0.3]]]}
+        let untouched=DocverVision.reconsideredLines(white.cgImage!,white,ineligible)
+        precondition(NSDictionary(dictionary:untouched[0]).isEqual(to:ineligible[0]) && NSDictionary(dictionary:untouched[1]).isEqual(to:ineligible[1]) && NSDictionary(dictionary:untouched[2]).isEqual(to:ineligible[2]))
         print("PASS numeric position/multiplicity/conflict and lexical controls; grayscale strike/underline; ruled grid empty cells/partial-border/negative controls")
     }
 }

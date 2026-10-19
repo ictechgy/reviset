@@ -244,3 +244,14 @@ Engine29 repairs this using complete pairwise embedded ink with both-side
 native-pixel clearance, retaining all other target geometry and raw values.
 Nine focused controls pass; full regression/re-review pending. Work continues
 on the remaining OCR region and PPTX fidelity; no completion checkpoint.
+
+Engine29 independent code APPROVE/architecture WATCH closed the actual
+embedded f-overhang defect; product work stayed active. The training fixture's
+later overlapping metric margin belonged to Korean 시, not a parenthesis.
+Engine30 now implements the bounded additive ROI path described in ADR004.
+Actual W3C primary Pineapple옓/.3 is unchanged; all8 native contexts read
+Pineapple with full2058-core-pixel envelope coverage. Pure admission/selection,
+canonical SQLite report/native-page reopen and paged evidence/export controls
+pass. Current whole-suite regression is running. This is selected inferred
+evidence recovery, not corrected primary OCR or whole-document perfection.
+PPTX strict pixel fidelity remains an active failure to investigate next.

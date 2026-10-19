@@ -3,7 +3,7 @@ import {matchPages as legacyOcr9Match} from '../matching/legacy-ocr-9.js';
 import {matchPages as legacyNativeMatch} from '../matching/legacy-native-1.js';
 import { z } from 'zod';
 import { Store } from '../storage/index.js';
-import { SCHEMA_VERSION,ENGINE_VERSION, canonical, hash, id,comparisonText,textChunk, DocverError, Gap, Change, type ChangeData, type ReportData } from '../schema/index.js';
+import { SCHEMA_VERSION,ENGINE_VERSION, canonical, hash, id,comparisonText,textChunk, DocverError, Gap, Change, type ChangeData, type ReportData,type ElementData } from '../schema/index.js';
 import { matchPages } from '../matching/index.js';
 import { diffRevisions } from '../diff/index.js';
 import { diffRevisions as legacyNativeDiff } from '../diff/legacy-native-1.js';
@@ -18,7 +18,7 @@ export const querySchemas={
   list_revisions:base,
   list_pages:base.extend({revision_id:internalId}),
   get_page:base.extend({revision_id:internalId,page_id:internalId}),
-  get_element:base.extend({observation_id:internalId,text_offset:z.number().int().nonnegative().default(0),text_length:z.number().int().min(1).max(1000).default(500),span_offset:z.number().int().nonnegative().default(0),span_limit:z.number().int().min(0).max(20).default(0),appearance_evidence_offset:z.number().int().nonnegative().default(0),appearance_evidence_limit:z.number().int().min(0).max(10).default(0),ocr_alternative_index:z.number().int().min(0).max(2).default(0),ocr_alternative_offset:z.number().int().nonnegative().default(0),ocr_alternative_length:z.number().int().min(1).max(1000).default(256)}),
+  get_element:base.extend({observation_id:internalId,text_offset:z.number().int().nonnegative().default(0),text_length:z.number().int().min(1).max(1000).default(500),span_offset:z.number().int().nonnegative().default(0),span_limit:z.number().int().min(0).max(20).default(0),appearance_evidence_offset:z.number().int().nonnegative().default(0),appearance_evidence_limit:z.number().int().min(0).max(10).default(0),ocr_context_index:z.number().int().min(0).max(7).optional(),ocr_alternative_index:z.number().int().min(0).max(2).default(0),ocr_alternative_offset:z.number().int().nonnegative().default(0),ocr_alternative_length:z.number().int().min(1).max(1000).default(256)}),
   list_changes:base.extend({from:internalId.optional(),to:internalId.optional(),mode:z.enum(['adjacent','range_net','history']).default('history'),kind:z.string().max(60).optional(),change_id:internalId.optional(),entity_id:internalId.optional(),text:z.string().max(500).optional()}),
   get_entity_history:base.extend({entity_id:internalId}),
   get_evidence:base.extend({change_id:internalId.optional(),observation_id:internalId.optional(),text_offset:z.number().int().nonnegative().default(0),text_length:z.number().int().min(1).max(1000).default(500)})
@@ -27,6 +27,13 @@ export type QueryName=keyof typeof querySchemas;
 export const Envelope=z.object({schema_version:z.literal(SCHEMA_VERSION),report_id:z.string().nullable(),items:z.array(z.record(z.string(),z.unknown())),
   next_cursor:z.string().nullable(),coverage_gaps:z.array(Gap),truncated:z.boolean(),omitted_fields:z.array(z.string()),token_estimation:z.string()});
 export type QueryResult=z.infer<typeof Envelope>;
+function ocrSummary(ocr:ElementData['ocr']){
+  if(!ocr)return undefined;
+  const {reconsideration_observation:observation,reconsideration,...rest}=ocr;
+  return {...rest,alternatives:ocr.alternatives.map(a=>({confidence:a.confidence,text_length:a.text.length,truncated:a.truncated})),
+    ...(observation?{reconsideration_observation:{status:observation.status,band_bbox:observation.band_bbox,ink_pixels:observation.ink_pixels,threshold:observation.threshold,context_count:observation.contexts.length}}:{}),
+    ...(reconsideration?{reconsideration:{method:reconsideration.method,primary_source_ref:reconsideration.primary_source_ref,primary_text:reconsideration.primary_text,primary_confidence:reconsideration.primary_confidence,primary_bbox:reconsideration.primary_bbox,context_count:reconsideration.observation.contexts.length}}:{})};
+}
 const resource=(r:ReportData,kind:string,key?:string)=>`docver://projects/${r.project_id}/reports/${r.report_id}/${kind}${key?'/'+key:''}`;
 export class QueryService {
   constructor(readonly store:Store,readonly allowedProjects:Set<string>,private readonly loadSnapshot?:(projectId:string,reportId:string)=>ReportData) {}
@@ -66,14 +73,15 @@ export class QueryService {
       case 'get_page': {
         const p=revision().pages.find(p=>p.page_id===args.page_id);if(!p)throw new DocverError('PAGE_NOT_FOUND','Page is outside this revision');
         // One item per element allows even a large page to be traversed without a monolithic payload.
-        return p.elements.length?p.elements.map(e=>({page_id:p.page_id,page:p.page,capabilities:p.capabilities,...e,ocr:e.ocr?{...e.ocr,alternatives:e.ocr.alternatives.map(a=>({confidence:a.confidence,text_length:a.text.length,truncated:a.truncated}))}:undefined,visibility_spans:undefined,visibility_evidence:undefined,visibility_span_count:e.visibility_spans?.length??0,visibility_evidence_count:e.visibility_evidence?.length??0,resource_uri:resource(r,'evidence',e.observation_id)})):
+        return p.elements.length?p.elements.map(e=>({page_id:p.page_id,page:p.page,capabilities:p.capabilities,...e,ocr:ocrSummary(e.ocr),visibility_spans:undefined,visibility_evidence:undefined,visibility_span_count:e.visibility_spans?.length??0,visibility_evidence_count:e.visibility_evidence?.length??0,resource_uri:resource(r,'evidence',e.observation_id)})):
           [{page_id:p.page_id,page:p.page,capabilities:p.capabilities,coverage_gaps:p.coverage_gaps,elements:[],text:''}];
       }
       case 'get_element': {
         const {v,p,e}=element();const text=textChunk(e.text,args.text_offset,args.text_length);
         const spans=e.visibility_spans??[],appearance=e.visibility_evidence??[],chunk=spans.slice(args.span_offset,args.span_offset+args.span_limit),evidence=appearance.slice(args.appearance_evidence_offset,args.appearance_evidence_offset+args.appearance_evidence_limit);
+        const roi=e.ocr?.reconsideration_observation??e.ocr?.reconsideration?.observation,context=args.ocr_context_index===undefined?undefined:roi?.contexts[args.ocr_context_index];
         const alternative=e.ocr?.alternatives[args.ocr_alternative_index],alternativeText=alternative?textChunk(alternative.text,args.ocr_alternative_offset,args.ocr_alternative_length):undefined;
-        return [{...e,text,normalized_text:undefined,ocr:e.ocr?{...e.ocr,alternatives:e.ocr.alternatives.map(a=>({confidence:a.confidence,text_length:a.text.length,truncated:a.truncated}))}:undefined,ocr_alternative:alternative?{index:args.ocr_alternative_index,confidence:alternative.confidence,text:alternativeText,text_length:alternative.text.length,text_offset:args.ocr_alternative_offset,next_text_offset:args.ocr_alternative_offset+alternativeText!.length<alternative.text.length?args.ocr_alternative_offset+alternativeText!.length:null}:undefined,visibility_spans:args.span_limit?chunk:undefined,visibility_evidence:args.appearance_evidence_limit?evidence:undefined,visibility_span_count:spans.length,visibility_evidence_count:appearance.length,span_offset:args.span_offset,next_span_offset:args.span_offset+chunk.length<spans.length?args.span_offset+chunk.length:null,appearance_evidence_offset:args.appearance_evidence_offset,next_appearance_evidence_offset:args.appearance_evidence_offset+evidence.length<appearance.length?args.appearance_evidence_offset+evidence.length:null,text_offset:args.text_offset,next_text_offset:args.text_offset+text.length<e.text.length?args.text_offset+text.length:null,
+        return [{...e,text,normalized_text:undefined,ocr:ocrSummary(e.ocr),ocr_context:context?{index:args.ocr_context_index,...context,next_index:args.ocr_context_index+1<roi!.contexts.length?args.ocr_context_index+1:null}:undefined,ocr_alternative:alternative?{index:args.ocr_alternative_index,confidence:alternative.confidence,text:alternativeText,text_length:alternative.text.length,text_offset:args.ocr_alternative_offset,next_text_offset:args.ocr_alternative_offset+alternativeText!.length<alternative.text.length?args.ocr_alternative_offset+alternativeText!.length:null}:undefined,visibility_spans:args.span_limit?chunk:undefined,visibility_evidence:args.appearance_evidence_limit?evidence:undefined,visibility_span_count:spans.length,visibility_evidence_count:appearance.length,span_offset:args.span_offset,next_span_offset:args.span_offset+chunk.length<spans.length?args.span_offset+chunk.length:null,appearance_evidence_offset:args.appearance_evidence_offset,next_appearance_evidence_offset:args.appearance_evidence_offset+evidence.length<appearance.length?args.appearance_evidence_offset+evidence.length:null,text_offset:args.text_offset,next_text_offset:args.text_offset+text.length<e.text.length?args.text_offset+text.length:null,
           revision_id:v.revision_id,page_id:p.page_id,page:p.page,resource_uri:resource(r,'evidence',e.observation_id)}];
       }
       case 'list_changes': {
@@ -111,7 +119,7 @@ export class QueryService {
         if(args.change_id) {const c=r.changes.find(c=>c.change_id===args.change_id);if(!c)throw new DocverError('CHANGE_NOT_FOUND','Change is outside this report');
           return c.evidence.map(e=>{const quote=textChunk(e.quote,args.text_offset,args.text_length);return {...e,quote,text_offset:args.text_offset,next_text_offset:args.text_offset+quote.length<e.quote.length?args.text_offset+quote.length:null};});}
         const {v,p,e}=element(),quote=textChunk(e.text,args.text_offset,args.text_length);
-        return [{revision_id:v.revision_id,revision_occurrence_id:v.revision_occurrence_id,asset_id:p.asset_id,page_id:p.page_id,page:p.page,observation_id:e.observation_id,bbox:e.bbox,quote,method:e.method,provenance:e.provenance,ocr:e.ocr?{confidence:e.ocr.confidence,numeric_consensus:e.ocr.numeric_consensus,ambiguous:e.ocr.ambiguous,confidence_scope:e.ocr.confidence_scope,alternative_count:e.ocr.alternatives.length}:undefined,
+        return [{revision_id:v.revision_id,revision_occurrence_id:v.revision_occurrence_id,asset_id:p.asset_id,page_id:p.page_id,page:p.page,observation_id:e.observation_id,bbox:e.bbox,quote,method:e.method,provenance:e.provenance,ocr:e.ocr?{confidence:e.ocr.confidence,numeric_consensus:e.ocr.numeric_consensus,ambiguous:e.ocr.ambiguous,confidence_scope:e.ocr.confidence_scope,alternative_count:e.ocr.alternatives.length,...(e.ocr.reconsideration?{reconsideration:{method:e.ocr.reconsideration.method,primary_source_ref:e.ocr.reconsideration.primary_source_ref,primary_text:e.ocr.reconsideration.primary_text,primary_confidence:e.ocr.reconsideration.primary_confidence,context_count:e.ocr.reconsideration.observation.contexts.length}}:{})}:undefined,
           text_offset:args.text_offset,next_text_offset:args.text_offset+quote.length<e.text.length?args.text_offset+quote.length:null}];
       }
       default:throw new DocverError('UNKNOWN_QUERY','Unsupported query');
