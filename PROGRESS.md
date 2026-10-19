@@ -317,3 +317,41 @@ The separate explicit-inset prototype lowers mean RGB error on all26 pages,
 but3 gt24 and6 any-difference metrics regress; font-alias prototype regresses
 7/10 Korean pages and is not adopted. Standards/default and text-coordinate
 checks are required before adopting a renderer-only inset materialization.
+
+Engine32 package clean9418 built with strict local signature verification;
+actual5-version native workflow13.604s,900pages55.205s/RSS816037888bytes,
+600scans196.653s/RSS864059392bytes PASS. These are source32 package results.
+Internal code APPROVE and architecture WATCH remain exact32 evidence; Claude
+scoped REQUEST_CHANGES finds zero-cost token-boundary relocation, so combined
+readiness stays BLOCKED despite the internal gate. No failed review is hidden.
+
+Engine33 requires context and high-score alternative agreement on aligned
+tokens, with exactly one original token carrying an edit; certified partial
+deletions and substitutions cannot move boundaries. Aligned certified deletion
+remains accepted. Persisted invalid-annex flags now force that annex empty,
+preventing contradictory valid tables plus an ignored-metadata diagnostic.
+Mandatory page-schema/mode/helper/protocol failures get specific per-page
+diagnostics in canonical pages while successful neighbors remain usable.
+
+Renderer-only input preparation materializes omitted ECMA text margins
+(l/r91440EMU,t/b45720EMU) for ordinary nonplaceholder slide shapes. Original
+assets and raw source semantics are preserved; explicit values, placeholder
+inheritance, tables, signed/ambiguous packages and unrelated namespaces are
+not rewritten. Namespace-aware byte edits are deterministic, depth/count
+bounded and cache policy versioned. The actual Impress control now starts
+text at72+7.2pt and implicit/explicit defaults render identically;8focused
+contracts passed. The mean-color error improvement on26reference pages is
+not strict pixel equality, and3gt24/6any metrics regressed in the experiment.
+The alternative renderer/font-alias experiments remain unadopted.
+
+The native source drawer now distinguishes original OCR and inferred context
+readings, shows the preserved primary value/score and per-context results,
+and does not label withheld OCR as hidden original text. Rows are lazy.
+Swift typecheck and current TypeScript build pass; final33 regression, exact
+references, native UI/runtime/package and independent reviews remain required.
+
+Engine33 final serial full regression140/140 PASS,0fail/skip/cancel,113.234s;
+SwiftUI typecheck PASS. Runtime sources fixed for this run through snapshot;
+only evidence notes follow. Fresh frozen independent fullbase reviews, actual
+Office/public/native package qualification and weak genuine-Hangul expansion
+remain active. Code checks are not treated as task completion.

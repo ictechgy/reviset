@@ -13,6 +13,48 @@ func hasEstimatedPDFGeometry(_ element:JSON)->Bool {
     element["visibility_evidence"].array.contains { $0["method"].string == "pdf_text_geometry_estimated_or_unavailable" }
 }
 
+func comparisonRoleName(_ element:JSON)->String {
+    if element["method"].string == "pdf_page_annotation" {return "주석 메타데이터 · 텍스트 비교 제외"}
+    switch element["comparison_role"].string {
+    case "selected":return "비교에 사용"
+    case "unresolved":return "비교 보류"
+    case "excluded":return element["provenance"].string == "inferred" ? "추정값 보존 · 비교 제외":"숨은 원문 · 비교 제외"
+    case "shadowed":
+        if element["comparison_reason"].string == "roi_context_primary_superseded" {return "최초 OCR 보존 · 재판독으로 비교"}
+        return element["provenance"].string == "inferred" ? "참고 OCR · 원문 우선":"원문 보존 · OCR로 비교"
+    default:return ""
+    }
+}
+
+struct OcrContextEvidence: View {
+    let element:JSON
+    var reconsideration:JSON {element["ocr"]["reconsideration"]}
+    var observation:JSON {reconsideration.isNull ? element["ocr"]["reconsideration_observation"]:reconsideration["observation"]}
+    var body: some View {
+        if !observation.isNull {
+            DisclosureGroup("문맥 재판독 근거") {
+                VStack(alignment:.leading,spacing:7) {
+                    if !reconsideration.isNull {
+                        Text("최초 OCR · \(Int(reconsideration["primary_confidence"].number*100))점").font(.caption2).foregroundStyle(.secondary)
+                        Text(reconsideration["primary_text"].string).textSelection(.enabled)
+                    }
+                    Text("같은 인식기의 여러 조건에서 얻은 추정입니다. 원본 화면과 대조하세요.").font(.caption2).foregroundStyle(.secondary)
+                    ForEach(observation["contexts"].array.indices,id:\.self){i in
+                        let context=observation["contexts"].array[i]
+                        let names=["available":"인식 완료","not_detected":"판독값 없음","contaminated":"주변 내용 혼입","edge_cut":"경계 잘림","ambiguous":"대안 충돌","failed":"인식 실패","budget_exceeded":"처리 한도 도달"]
+                        VStack(alignment:.leading,spacing:3) {
+                            Text("조건 \(i+1) · "+(names[context["status"].string] ?? "상태 미상")).font(.caption2).foregroundStyle(.secondary)
+                            ForEach(context["observations"].array.indices,id:\.self){n in
+                                Text(context["observations"].array[n]["text"].string).font(.caption).textSelection(.enabled)
+                            }
+                        }
+                    }
+                }.padding(.top,4).frame(maxWidth:.infinity,alignment:.leading)
+            }.font(.caption)
+        }
+    }
+}
+
 func canHighlightEvidence(_ evidence:JSON,page:JSON)->Bool {
     let b=evidence["bbox"].array.map(\.number)
     guard b.count==4 && b.allSatisfy({$0.isFinite}) && b[2]>0 && b[3]>0 else{return false}
@@ -127,9 +169,9 @@ struct PageColumn: View {
                     }
                 }
             }.background(Color(nsColor:.windowBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:5))
-            DisclosureGroup("추출 원문·표·표시 상태",isExpanded:$rawOpen) {
-                ScrollView { VStack(alignment:.leading,spacing:10) {
-                    Text("원문은 보이는 텍스트와 별도로 보존합니다.").font(.caption).foregroundStyle(.secondary)
+            DisclosureGroup("추출 내용·표·표시 상태",isExpanded:$rawOpen) {
+                ScrollView { LazyVStack(alignment:.leading,spacing:10) {
+                    Text("원문 추출과 OCR 추정을 각각 보존합니다.").font(.caption).foregroundStyle(.secondary)
                     if !payload["page"]["ocr"].isNull {Text("로컬 OCR · \(payload["page"]["ocr"]["status"].string) · 인식 결과는 원본 화면으로 확인하세요.").font(.caption).foregroundStyle(.orange)}
                     if ["unsupported_format","unsupported_dimensions","budget_exceeded","ambiguous_boundaries","partial"].contains(payload["page"]["ocr"]["grid_status"].string) {Text("표의 격자 경계가 미확정이거나 검출 범위를 벗어났습니다. 행·열을 원본 화면에서 확인하세요.").font(.caption).foregroundStyle(.orange)}
                     ForEach(payload["source"]["warnings"].array.indices,id:\.self){i in Text(renderWarningName(payload["source"]["warnings"].array[i].string)).font(.caption).foregroundStyle(.orange)}
@@ -138,10 +180,11 @@ struct PageColumn: View {
                             Text(e["method"].string == "pdf_page_annotation" ? (e["source_ref"].string.hasSuffix("/StrikeOut") ? "취소선 주석 · 표시 상태 미검증" : e["source_ref"].string.hasSuffix("/Redact") ? "삭제 의도 주석 · 적용 여부 확인" : "PDF 주석 영역 · 원본 확인 필요") : e["text"].string).textSelection(.enabled)
                             if hasEstimatedPDFGeometry(e) { Text(e["visibility"].string == "hidden_render_mode" ? "원문 위치 미검증 · 좌표는 추정값 · 비표시 모드 관측" : "원문 위치·표시 상태 미검증 · 글꼴 좌표는 추정값입니다.").font(.caption).foregroundStyle(.orange) }
                             HStack { Text(e["visibility"].string.isEmpty ? "원본 구조" : e["visibility"].string)
-                                if e["method"].string == "vision_ocr" {Text("OCR 추정 · \(Int(e["ocr"]["confidence"].number*100))점")}
-                                if !e["comparison_role"].string.isEmpty {Text(e["method"].string == "pdf_page_annotation" ? "주석 메타데이터 · 텍스트 비교 제외" : e["comparison_role"].string == "selected" ? "비교에 사용" : e["comparison_role"].string == "unresolved" ? "비교 보류" : e["comparison_role"].string == "excluded" ? "숨은 원문 · 비교 제외" : e["provenance"].string == "inferred" ? "참고 OCR · 원문 우선" : "원문 보존 · OCR로 비교")}
+                                if e["method"].string == "vision_ocr" {Text((e["ocr"]["reconsideration"].isNull ? "최초 OCR 추정":"문맥 재판독 추정")+" · \(Int(e["ocr"]["confidence"].number*100))점")}
+                                if !e["comparison_role"].string.isEmpty {Text(comparisonRoleName(e))}
                                 if !e["table"].isNull { Text(e["table"]["origin"].string == "ooxml_table" ? "PPTX 셀 · 구조 관측" : e["table"]["origin"].string == "vision_table_inferred" ? "화면 OCR 표 셀 · 추정" : "PDF 격자 · 추정") }
                             }.font(.caption2).foregroundStyle(e["visibility"].string.contains("occluded") || e["visibility"].string.contains("struck") ? .orange : .secondary)
+                            if e["method"].string == "vision_ocr" {OcrContextEvidence(element:e)}
                         }.padding(8).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:4))
                     }
                     Text("발표자 노트").font(.headline); Text(payload["page"]["notes"].isNull ? "관측 불가 · 이 형식에는 노트 정보가 없습니다." : payload["page"]["notes"].string)

@@ -58,7 +58,7 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
       const environment=await ocrEnvironment();
       try{
         const observations=await captureNativePages(bytes,pages.map(p=>p.page),ocrPages,options);
-        for(const p of pages){const result=observations.get(p.page);if(!result){p.coverage_gaps.push({feature:'raster_verification',reason:'native_page_observation_failed'});if(ocrPages.includes(p.page))p.ocr={status:'failed',engine:'native-vision-helper',environment,reason:'NATIVE_PAGE_FAILED'};continue;}
+        for(const p of pages){const result=observations.get(p.page);if(!result){const reason=observations.failures.get(p.page)??'NATIVE_PAGE_FAILED';p.coverage_gaps.push({feature:'raster_verification',reason});if(ocrPages.includes(p.page))p.ocr={status:'failed',engine:'native-vision-helper',environment,reason};continue;}
           p.raster={sha256:result.render_sha256,width:result.width,height:result.height,renderer:result.renderer,environment};
           if(ocrPages.includes(p.page))await supplementPdfOcr(p,bytes,{...options,nativeResult:result});
         }

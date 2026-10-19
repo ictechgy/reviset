@@ -24,19 +24,20 @@ const Result=z.object({version:z.string(),revision:z.number(),languages:z.array(
     const errors=new Set(result.structure_metadata_errors??[]);
     if(!document.success)errors.add('document');if(!grid.success)errors.add('grid');
     const {structure_status,structure_engine,tables,grid_tables,grid_status,grid_reasons,structure_metadata_errors,...primary}=result;
-    return {...primary,...(document.success?document.data:{structure_status:'invalid_metadata'}),...(grid.success?grid.data:{}),
+    return {...primary,...(document.success&&!errors.has('document')?document.data:{structure_status:'invalid_metadata'}),...(grid.success&&!errors.has('grid')?grid.data:{}),
       ...(errors.size?{structure_metadata_errors:[...errors]}:{})};
   });
 export type NativePageResult=z.infer<typeof Result>;
+export class NativePageObservations extends Map<number,NativePageResult>{readonly failures=new Map<number,string>();}
 export type OcrOptions={cacheRoot?:string;signal?:AbortSignal;sourceFile?:string;sourceHash?:string;reuseRasterOcr?:boolean;nativeResult?:NativePageResult;onPage?:(current:number,total:number)=>void};
 export async function ocrEnvironment():Promise<string>{const info=await visionInfo();return info?hash(info):'unavailable';}
 export async function recognizePdf(bytes:Uint8Array,page:number,options:OcrOptions={}):Promise<z.infer<typeof Result>>{
-  const result=(await captureNativePages(bytes,[page],[page],options)).get(page);if(!result)throw new DocverError('OCR_FAILED','Native page observation failed');return result;
+  const observations=await captureNativePages(bytes,[page],[page],options),result=observations.get(page);if(!result)throw new DocverError(observations.failures.get(page)??'OCR_FAILED','Native page observation failed');return result;
 }
-export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPages:number[],options:OcrOptions={}):Promise<Map<number,NativePageResult>>{
+export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPages:number[],options:OcrOptions={}):Promise<NativePageObservations>{
   const executable=visionExecutable();if(!executable)throw new DocverError('OCR_UNAVAILABLE','Native OCR helper is unavailable');
   const environment=await ocrEnvironment();if(environment==='unavailable')throw new DocverError('OCR_UNAVAILABLE','Native OCR environment could not be verified');
-  const sourceHash=options.sourceHash??byteHash(bytes),wanted=new Set(ocrPages),results=new Map<number,NativePageResult>(),missing:number[]=[];
+  const sourceHash=options.sourceHash??byteHash(bytes),wanted=new Set(ocrPages),results=new NativePageObservations(),missing:number[]=[];
   const cache=options.cacheRoot?join(options.cacheRoot,'ocr'):undefined;
   const keyFor=(page:number)=>hash([sourceHash,page,environment,wanted.has(page),'pdfkit-300dpi-4096-tiled-v4']);
   for(const page of pages){const path=cache?join(cache,keyFor(page)+'.json'):undefined;try{if(path){const saved=JSON.parse(await readFile(path,'utf8'));if(saved.key===keyFor(page)&&saved.sha256===hash(saved.value)){const value=Result.parse(saved.value);if(value.ocr_performed===wanted.has(page)){results.set(page,value);continue;}}}}catch{/* missing or corrupt cache is recomputed */}missing.push(page);}
@@ -59,10 +60,13 @@ export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPage
     for(let start=0;start<pending.length;start+=16){
       options.signal?.throwIfAborted();const chunk=pending.slice(start,start+16);try{const response=z.object({pages:z.array(z.object({page:z.number().int().positive(),result:z.unknown().optional(),error:z.string().optional()}).refine(row=>Boolean(row.result)!==Boolean(row.error))).max(16)}).parse(JSON.parse(await runTool(executable,[],{input:JSON.stringify({path:source,pages:chunk,ocr_pages:chunk.filter(n=>wanted.has(n))}),signal:options.signal,timeout:60_000*chunk.length,maxBytes:32*1024*1024})));
       if(response.pages.length!==chunk.length||new Set(response.pages.map(p=>p.page)).size!==chunk.length||response.pages.some(p=>!chunk.includes(p.page)))throw new DocverError('OCR_PROTOCOL','Native observation page set mismatch');
-      for(const row of response.pages){if(!row.result)continue;const parsed=Result.safeParse(row.result);if(!parsed.success)continue;const result=parsed.data;if(result.ocr_performed!==wanted.has(row.page))continue;results.set(row.page,result);await save(row.page,result);
+      for(const row of response.pages){if(!row.result){results.failures.set(row.page,'NATIVE_PAGE_HELPER_ERROR');continue;}const parsed=Result.safeParse(row.result);if(!parsed.success){results.failures.set(row.page,'NATIVE_RESULT_SCHEMA_INVALID');continue;}const result=parsed.data;if(result.ocr_performed!==wanted.has(row.page)){results.failures.set(row.page,'NATIVE_OCR_MODE_MISMATCH');continue;}results.set(row.page,result);await save(row.page,result);
         if(cache&&result.ocr_performed){const key=hash([environment,result.render_sha256]),folder=join(cache,'raster');await mkdir(folder,{recursive:true});const staging=join(folder,key+'-'+randomUUID()+'.tmp');await writeFile(staging,JSON.stringify({key,sha256:hash(result),value:result}),{flag:'wx'});await rename(staging,join(folder,key+'.json'));}
       }
-      }catch(e){if(options.signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;}
+      }catch(e){if(options.signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;
+        const reason=e instanceof DocverError&&['TOOL_TIMEOUT','TOOL_OUTPUT_LIMIT','TOOL_FAILED','OCR_PROTOCOL'].includes(e.code)?e.code:e instanceof SyntaxError||e instanceof z.ZodError?'OCR_PROTOCOL':'NATIVE_BATCH_FAILED';
+        for(const page of chunk)if(!results.has(page)&&!results.failures.has(page))results.failures.set(page,reason);
+      }
       options.onPage?.(Math.min(start+16,pending.length),pending.length);
     }
     return results;

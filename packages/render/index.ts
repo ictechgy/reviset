@@ -11,6 +11,7 @@ import { DocverError,MAX_PPTX_EXPANDED_BYTES,MAX_PPTX_PART_BYTES } from '../sche
 import { runTool,officeExecutable } from '../runtime/tools.js';
 import { unzipSync } from 'fflate';
 import { XMLParser,XMLValidator } from 'fast-xml-parser';
+import {materializeOfficeInsets} from './pptx-default-insets.js';
 export const officeFilter='pdf:impress_pdf_Export:'+JSON.stringify({ExportHiddenSlides:{type:'boolean',value:'true'},ExportNotesPages:{type:'boolean',value:'false'}});
 export function validateRenderPackage(bytes:Uint8Array,depth=0,budget={total:0}):void{
   if(depth>2)throw new DocverError('ZIP_LIMIT','Nested render package exceeds limit');
@@ -74,7 +75,7 @@ export async function convertPptx(path:string,executable=officeExecutable()??'so
   const folder=await realpath(await mkdtemp(join(tmpdir(),'docver-render-')));
   try {
     const output=join(folder,'output'); await mkdir(output);
-    const input=sourceBytes??await readFile(path);validateRenderPackage(input);const copiedSource=join(folder,'input.pptx');await writeFile(copiedSource,input,{mode:0o600});
+    const input=sourceBytes??await readFile(path);validateRenderPackage(input);const copiedSource=join(folder,'input.pptx');await writeFile(copiedSource,materializeOfficeInsets(input).bytes,{mode:0o600});
     const profile=join(folder,'profile');await mkdir(join(profile,'user'),{recursive:true});
     const xml=(s:string)=>s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
     const fontConfig=join(folder,'fonts.conf');

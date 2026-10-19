@@ -7,6 +7,7 @@ import { pdfOptions } from '../ingest/pdf.js';
 import { officeExecutable,visionInfo } from '../runtime/tools.js';
 import { hash,byteHash,normalize,DocverError,type PageData,type ElementData } from '../schema/index.js';
 import { captureNativePages,ocrEnvironment } from '../ingest/ocr.js';
+import {officeInputPolicy} from './pptx-default-insets.js';
 
 export function missingRenderedText(elements:ElementData[],fragments:{text:string;bbox:number[]}[]):boolean{
   const compact=(s:string)=>normalize(s).replace(/\s/gu,''),numbers=(s:string):string[]=>compact(s).match(/[+−-]?[0-9]+(?:[.,][0-9]+)*/g)??[];
@@ -20,7 +21,7 @@ let environmentPromise:Promise<string|undefined>|undefined;
 export function officeEnvironment():Promise<string|undefined>{
   if(!environmentPromise){const pending=(async()=>{const executable=officeExecutable();if(!executable)return undefined;
     try{const version=await isolatedOfficeVersion(executable),vision=await visionInfo();if(!vision)return undefined;
-      return JSON.stringify({version,binary_sha256:byteHash(await readFile(executable)),font_inventory_sha256:vision?.font_inventory_sha256??'unavailable',font_policy:'mac-system-and-user-fontconfig-v2',metadata_policy:'xref-scoped-direct-info-and-trailer-v4',input_policy:'source-copy-svg-and-read-allowlist-v5',os:vision?.os??process.platform,filter:officeFilter});
+      return JSON.stringify({version,binary_sha256:byteHash(await readFile(executable)),font_inventory_sha256:vision?.font_inventory_sha256??'unavailable',font_policy:'mac-system-and-user-fontconfig-v2',metadata_policy:'xref-scoped-direct-info-and-trailer-v4',input_policy:officeInputPolicy,os:vision?.os??process.platform,filter:officeFilter});
     }catch(e){if(e instanceof DocverError&&e.code==='CANCELLED')throw e;return undefined;}})();environmentPromise=pending;
     pending.then(value=>{if(!value&&environmentPromise===pending)environmentPromise=undefined;},()=>{if(environmentPromise===pending)environmentPromise=undefined;});}
   return environmentPromise;

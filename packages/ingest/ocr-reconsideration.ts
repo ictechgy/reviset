@@ -1,6 +1,8 @@
 import {OcrReconsideration,hash,type OcrReconsiderationData,type ElementData,type Box} from '../schema/index.js';
 
 const compact=(s:string)=>s.normalize('NFC').replace(/\s/gu,'');
+const tokens=(s:string)=>s.normalize('NFC').trim().split(/\s+/u);
+const tokenText=(s:string)=>tokens(s).join(' ');
 const contains=(a:Box,b:Box)=>b[0]>=a[0]-1e-9&&b[1]>=a[1]-1e-9&&b[0]+b[2]<=a[0]+a[2]+1e-9&&b[1]+b[3]<=a[1]+a[3]+1e-9;
 const sameBox=(a:Box,b:Box)=>a.every((n,i)=>Math.abs(n-b[i])<1e-9);
 function iou(a:Box,b:Box){const area=Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));return area/(a[2]*a[3]+b[2]*b[3]-area);}
@@ -28,12 +30,15 @@ export function admitReconsideration(primary:ElementData,input:OcrReconsideratio
     const languages=context.languages.join(','),key=[context.padding,context.scale,languages].join(':');
     if(seen.has(key)||![mono,'ko-KR,en-US'].includes(languages)||context.status!=='available'||context.observations.length!==1||!contains(context.crop_bbox,data.band_bbox)||blocked(context.crop_bbox))return;
     seen.add(key);const reading=context.observations[0];
-    if(reading.confidence<.5||reading.ink_coverage!==1||!reading.token_bboxes.length||!reading.token_bboxes.every(b=>contains(context.crop_bbox,b))||!contains(context.crop_bbox,reading.bbox)||iou(primary.bbox,reading.bbox)<.5||/[\p{N}]/u.test(reading.text)||reading.alternatives.some(a=>compact(a.text)!==compact(reading.text)&&a.confidence>=reading.confidence-.15))return;
+    if(reading.confidence<.5||reading.ink_coverage!==1||!reading.token_bboxes.length||!reading.token_bboxes.every(b=>contains(context.crop_bbox,b))||!contains(context.crop_bbox,reading.bbox)||iou(primary.bbox,reading.bbox)<.5||/[\p{N}]/u.test(reading.text)||reading.alternatives.some(a=>tokenText(a.text)!==tokenText(reading.text)&&a.confidence>=reading.confidence-.15))return;
     readings.push({text:reading.text,confidence:reading.confidence,bbox:reading.bbox,alternatives:reading.alternatives.map(a=>({...a,truncated:false}))});
   }
   // Eight unique keys drawn from exactly 2 paddings x2 scales x2 language sets.
-  const first=readings[0];if(readings.some(r=>compact(r.text)!==compact(first.text))||compact(first.text)===compact(primary.text))return;
-  if(primary.text.trim().split(/\s+/u).length!==first.text.trim().split(/\s+/u).length)return;
+  const first=readings[0];if(readings.some(r=>tokenText(r.text)!==tokenText(first.text))||compact(first.text)===compact(primary.text))return;
+  const before=tokens(primary.text),after=tokens(first.text);
+  // One aligned token may carry the edit. Whitespace compaction must not let
+  // a character edit silently remove and invent boundaries in other tokens.
+  if(before.length!==after.length||before.filter((word,i)=>word!==after[i]).length!==1)return;
   const {changes,cost,deleted}=altered(primary.text,first.text);if(cost>1)return;
   if(deleted.length){
     if(primary.text!==primary.text.normalize('NFC'))return;

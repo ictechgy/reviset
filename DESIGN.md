@@ -69,6 +69,7 @@
 - Tone: 간결하고 구체적인 한국어.
 - Terminology: 버전, 페이지, 변경, 대응, 관측 한계, 고정 보고서.
 - Microcopy rules: 구조 보기는 원본 렌더와 구분, 추정 점수를 확률이라고 하지 않는다.
+- OCR 근거: 최초 판독과 문맥 재판독을 따로 표시한다. 재판독이 비교에 쓰여도 최초 문자열·점수와 각 조건의 결과를 열어 볼 수 있다. 보류한 재판독을 숨은 원문으로 표시하지 않는다. 수많은 추출 행은 지연 생성한다.
 
 ## Implementation constraints
 - Framework/styling system: SwiftUI + AppKit + PDFKit. 별도 Node helper가 TypeScript 공통 엔진을 실행. 외부 CDN·폰트 없음.

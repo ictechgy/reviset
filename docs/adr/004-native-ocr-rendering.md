@@ -339,3 +339,28 @@ evidence, correlated with its recognition. Native genuine-Hangul controls
 establish eight retained context slots and no Korean empty certificate; a
 slot may carry a budget status, so slot count alone does not establish eight
 completed Vision requests.
+
+Engine33 closes the broader boundary-edit class: all supporting readings and
+competitive alternatives must agree on normalized token structure, and exactly
+one aligned original token may differ. A same-count word split elsewhere
+cannot hide a certified deletion or substitution. The one-edit/certificate,
+script/numeric/appearance vetoes and immutable primary evidence remain.
+Persisted optional-annex error flags force that annex empty on every decode;
+mandatory native page failures expose schema/mode/helper/protocol reasons
+through canonical page gaps rather than silently becoming a generic absence.
+
+PPTX preview input policyv6 materializes standard omitted DrawingML bodyPr
+text insets only on ordinary, nonplaceholder slide shapes: lIns/rIns91440EMU
+and tIns/bIns45720EMU. Microsoft OpenXML documentation specifies these values;
+LibreOffice's implicit250/125hundredth-mm defaults differ from254/127. This
+is a source-preserving renderer derivative, never a rewrite of stored original
+assets or inferred source semantics. Namespace scopes, explicit values,
+placeholder inheritance and unrelated parts are preserved; signed/ambiguous
+packages and unsupported XML fall back unchanged. Repacking is deterministic,
+input/cache policy versioned and bounded by existing package limits.
+Actual native preview and reference qualification remain separate from source
+review; lower average RGB error is not strict PowerPoint pixel equivalence.
+
+Primary sources for standard margin defaults:
+https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.bodyproperties.leftinset?view=openxml-3.0.1
+https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.bodyproperties.topinset?view=openxml-3.0.1

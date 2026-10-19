@@ -14,6 +14,7 @@ import {supplementPdfOcr,type NativePageResult} from '../../packages/ingest/ocr.
 import {Store} from '../../packages/storage/index.js';
 import {QueryService} from '../../packages/query/index.js';
 import {exportReport} from '../../packages/export/index.js';
+import PDFDocument from 'pdfkit';
 const bbox=[.1,.2,.3,.05] as [number,number,number,number];
 function observation(text='Pineapple'):OcrReconsiderationData{return {status:'available',band_bbox:bbox,primary_empty_characters:[{offset:9,text:'옓',bbox:[.39,.2,.01,.05],ink_pixels:0,method:'uniform_white_pixels_with_1px_margin'}],ink_pixels:2000,threshold:135,contexts:[.25,.75].flatMap(padding=>[1,2].flatMap(scale=>[['en-US'],['ko-KR','en-US']].map(languages=>({padding,scale,languages,crop_bbox:[.08,.18,.34,.09],status:'available',observations:[{text,confidence:1,bbox,token_bboxes:[bbox],alternatives:[{text,confidence:1}],ink_coverage:1}]}))))} as OcrReconsiderationData;}
 function primary(text='Pineapple옓'):ElementData{return {observation_id:'primary',kind:'text',text,normalized_text:text,bbox,reading_order:0,availability:'available',method:'vision_ocr',source_ref:'page:1/raster/ocr:0',provenance:'inferred',visibility:'uncertain',ocr:{confidence:.3,confidence_scope:'line',strike_status:'not_detected',numeric_consensus:true,ambiguous:false,alternatives:[{text,confidence:.3,truncated:false}],reconsideration_observation:observation()}};}
@@ -29,6 +30,12 @@ test('ROI admission requires eight distinct complete contexts and preserves nume
     const before='Pineapple'+space+'옓',d=observation('Pine apple');d.primary_empty_characters![0].offset=10;
     assert.equal(admitReconsideration(primary(before),d,()=>false),undefined,'A certified one-scalar token cannot disappear while another word splits');
   }
+  const certified=observation('Pine applex');certified.primary_empty_characters![0].offset=10;
+  assert.equal(admitReconsideration(primary('Pineapple 옓x'),certified,()=>false),undefined,'A certified partial-token deletion cannot relocate boundaries');
+  assert.equal(admitReconsideration(primary('Cat dog'),observation('Ca tdoq'),()=>false),undefined,'A substitution cannot relocate boundaries either');
+  const aligned=observation('Pineapple x');aligned.primary_empty_characters![0].offset=10;
+  assert.equal(admitReconsideration(primary('Pineapple 옓x'),aligned,()=>false)?.text,'Pineapple x','The same certified deletion in its original aligned token remains admissible');
+  reject(d=>{d.contexts[0].observations[0].text='Pine apple';d.contexts[0].observations[0].alternatives=[];});
   const numeric=primary();numeric.ocr!.numeric_consensus=false;assert.equal(admitReconsideration(numeric,observation(),()=>false),undefined);
   const unevaluated=primary();unevaluated.ocr!.strike_status='unsupported_bitmap';assert.equal(admitReconsideration(unevaluated,observation(),()=>false),undefined);
   const struck=primary();struck.visibility='struck_inferred';assert.equal(admitReconsideration(struck,observation(),()=>false),undefined);
@@ -64,6 +71,10 @@ test('ROI native supplementation keeps primary projections exact and canonical e
 test('invalid optional ROI and table annexes preserve primary OCR, independent tables and cached diagnostics',async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-roi-fault-'));
   try{
+    const document=new PDFDocument({size:[960,540],margin:0}),chunks:Buffer[]=[];
+    const complete=new Promise<Buffer>((resolve,reject)=>{document.on('data',chunk=>chunks.push(chunk));document.on('end',()=>resolve(Buffer.concat(chunks)));document.on('error',reject);});
+    for(let n=0;n<3;n++){if(n)document.addPage();document.text('Mandatory OCR failure diagnostic page '+(n+1),50,50);}document.end();
+    const diagnosticPdf=join(folder,'diagnostic.pdf');await writeFile(diagnosticPdf,await complete);
     const helper=join(folder,'fake-vision.mjs'),module=new URL('../../packages/ingest/ocr.ts',import.meta.url).href;
     const line={text:'Primary stays exact',confidence:.3,bbox,strike_candidate:false,strike_status:'not_detected',strike_bbox:[0,0,0,0],numeric_consensus:true,numeric_readings:[],tokens:[],alternatives:[]};
     const valid={version:'roi-fault',revision:3,languages:['ko-KR','en-US'],language_correction:false,ocr_performed:true,renderer:'fixture',verification:'fixture',viewport_width:960,viewport_height:540,rotation:0,width:960,height:540,render_sha256:'a'.repeat(64),lines:[line]};
@@ -71,16 +82,16 @@ test('invalid optional ROI and table annexes preserve primary OCR, independent t
     const oversized=observation('e\u0301'.repeat(70));
     const cell={row:0,column:0,row_span:1,column_span:1,text:'table stays',text_confident:true,bbox:[.1,.65,.2,.1]},gridCell={...cell,text:'grid stays',bbox:[.6,.65,.2,.1]},badCell={...cell,bbox:[-.1,.65,.2,.1]};
     const structure={structure_status:'available',tables:[{cells:[cell]}],grid_status:'available',grid_tables:[{cells:[gridCell]}]};
-    const variants={1:{...valid,lines:[{...line,reconsideration:bad}]},2:{...valid,width:0},3:{...valid,lines:[{...line,reconsideration:oversized}]},5:{...valid,...structure,tables:[{cells:[badCell]}]},6:{...valid,...structure,grid_tables:[{cells:[badCell]}]},7:{...valid,...structure,tables:null,grid_reasons:Array(21).fill('invalid')}};
-    await writeFile(helper,`#!${process.execPath}\nif(process.argv.includes('--info')){console.log(JSON.stringify({version:'fixture',os:'fixture',revision:3,languages:['ko-KR','en-US'],language_correction:false,font_inventory_sha256:'a'.repeat(64),font_families:[]}));}else{let input='';for await(const b of process.stdin)input+=b;const query=JSON.parse(input),valid=${JSON.stringify({...valid,...structure})},variants=${JSON.stringify(variants)};console.log(JSON.stringify({pages:query.pages.map(page=>({page,result:variants[page]??valid}))}));}`,{mode:0o755});
-    const child=`import assert from 'node:assert/strict';import {captureNativePages} from ${JSON.stringify(module)};const pages=[1,2,3,4,5,6,7,8],options={cacheRoot:${JSON.stringify(join(folder,'cache'))},reuseRasterOcr:false};const result=await captureNativePages(new Uint8Array(),pages,pages,options),cached=await captureNativePages(new Uint8Array(),pages,pages,options);assert.deepEqual(JSON.parse(JSON.stringify([...cached])),JSON.parse(JSON.stringify([...result])));console.log(JSON.stringify([...result]));`;
+    const variants={1:{...valid,lines:[{...line,reconsideration:bad}]},2:{...valid,width:0},3:{...valid,lines:[{...line,reconsideration:oversized}]},5:{...valid,...structure,tables:[{cells:[badCell]}]},6:{...valid,...structure,grid_tables:[{cells:[badCell]}]},7:{...valid,...structure,tables:null,grid_reasons:Array(21).fill('invalid')},9:{...valid,...structure,structure_metadata_errors:['document']},10:{...valid,...structure,structure_metadata_errors:['grid']},11:{...valid,...structure,structure_metadata_errors:['document','grid']},12:{...valid,ocr_performed:false}};
+    await writeFile(helper,`#!${process.execPath}\nif(process.argv.includes('--info')){console.log(JSON.stringify({version:'fixture',os:'fixture',revision:3,languages:['ko-KR','en-US'],language_correction:false,font_inventory_sha256:'a'.repeat(64),font_families:[]}));}else{let input='';for await(const b of process.stdin)input+=b;const query=JSON.parse(input),valid=${JSON.stringify({...valid,...structure})},variants=${JSON.stringify(variants)};console.log(JSON.stringify({pages:query.pages.map(page=>page===13?{page,error:'fixture failure'}:{page,result:variants[page]??valid})}));}`,{mode:0o755});
+    const child=`import assert from 'node:assert/strict';import {captureNativePages,recognizePdf} from ${JSON.stringify(module)};const pages=[1,2,3,4,5,6,7,8,9,10,11,12,13],options={cacheRoot:${JSON.stringify(join(folder,'cache'))},reuseRasterOcr:false};const result=await captureNativePages(new Uint8Array(),pages,pages,options),cached=await captureNativePages(new Uint8Array(),pages,pages,options);assert.deepEqual(JSON.parse(JSON.stringify([...cached])),JSON.parse(JSON.stringify([...result])));assert.equal(result.failures.get(2),'NATIVE_RESULT_SCHEMA_INVALID');assert.equal(cached.failures.get(2),'NATIVE_RESULT_SCHEMA_INVALID');assert.equal(result.failures.get(12),'NATIVE_OCR_MODE_MISMATCH');assert.equal(result.failures.get(13),'NATIVE_PAGE_HELPER_ERROR');assert.equal(result.failures.size,3);await assert.rejects(()=>recognizePdf(new Uint8Array(),2),e=>e.code==='NATIVE_RESULT_SCHEMA_INVALID');const {extractPdf}=await import(${JSON.stringify(new URL('../../packages/ingest/pdf.ts',import.meta.url).href)}),{readFile}=await import('node:fs/promises');const canonical=await extractPdf(await readFile(${JSON.stringify(diagnosticPdf)}),'sha256:fault-diagnostic',{ocr:'all'});assert.equal(canonical[1].ocr.reason,'NATIVE_RESULT_SCHEMA_INVALID');assert.ok(canonical[1].coverage_gaps.some(g=>g.reason==='NATIVE_RESULT_SCHEMA_INVALID'));assert.equal(canonical[0].ocr.status,'available');console.log(JSON.stringify([...result]));`;
     const rows=JSON.parse(execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',child],{encoding:'utf8',env:{...process.env,DOCVER_VISION:helper},timeout:15000}));
-    assert.deepEqual(rows.map((r:any)=>r[0]),[1,3,4,5,6,7,8]);for(const [number,result]of rows){assert.equal(result.lines[0].text,line.text);if(number<4){assert.equal(result.lines[0].reconsideration,undefined);assert.equal(result.lines[0].reconsideration_error,'invalid_metadata');}}
+    assert.deepEqual(rows.map((r:any)=>r[0]),[1,3,4,5,6,7,8,9,10,11]);for(const [number,result]of rows){assert.equal(result.lines[0].text,line.text);if(number<4){assert.equal(result.lines[0].reconsideration,undefined);assert.equal(result.lines[0].reconsideration_error,'invalid_metadata');}}
     for(const [number,result]of rows.filter((r:any)=>r[0]>=5)){
       const p=page([]);await supplementPdfOcr(p,new Uint8Array(),{nativeResult:result});Page.parse(p);assert.equal(p.ocr?.status,'available');assert.equal(p.elements[0].text,line.text);assert.equal(p.elements[0].ocr!.confidence,line.confidence);
       const texts=p.elements.filter(e=>e.kind==='table_cell').map(e=>e.text).sort();
-      assert.deepEqual(texts,number===5?['grid stays']:number===6?['table stays']:number===7?[]:['grid stays','table stays']);
-      const expected=number===5?['document']:number===6?['grid']:number===7?['document','grid']:[];
+      assert.deepEqual(texts,[5,9].includes(number)?['grid stays']:[6,10].includes(number)?['table stays']:[7,11].includes(number)?[]:['grid stays','table stays']);
+      const expected=[5,9].includes(number)?['document']:[6,10].includes(number)?['grid']:[7,11].includes(number)?['document','grid']:[];
       assert.deepEqual(result.structure_metadata_errors??[],expected);for(const annex of expected)assert.ok(p.coverage_gaps.some(g=>g.reason==='invalid_optional_'+annex+'_metadata_ignored_primary_retained'));
     }
     const p=page([]);await supplementPdfOcr(p,new Uint8Array(),{nativeResult:rows[0][1]});assert.equal(p.ocr?.status,'available');assert.equal(p.elements[0].text,line.text);assert.ok(p.coverage_gaps.some(g=>g.reason==='invalid_optional_roi_metadata_ignored_primary_retained'));
@@ -108,7 +119,7 @@ test('actual MCP transport traverses retained components using their own Unicode
     let emptyValue='',offset:number|null=0;
     while(offset!==null){
       const response=await client.callTool({name:'get_element',arguments:{project_id:r.project_id,report_id:r.report_id,observation_id:p.observation_id,ocr_empty_character_index:0,text_offset:offset,text_length:32,max_output_tokens:8000}});
-      assert.ok(!response.isError,JSON.stringify(response));const character=(response.structuredContent as any).items[0].ocr_empty_character;
+      assert.ok(!response.isError,JSON.stringify(response));assert.ok(Buffer.byteLength(JSON.stringify(response))<=8000);const character=(response.structuredContent as any).items[0].ocr_empty_character;
       emptyValue+=character.text;offset=character.next_text_offset;
     }
     assert.equal(emptyValue,emptyText);
