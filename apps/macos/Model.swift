@@ -332,8 +332,9 @@ struct ImportRow: Identifiable,Equatable {
         rows.swapAt(index,index+delta);return true
     }
 }
-func fittedPageSize(width:Double,height:Double,available:CGSize)->CGSize? {
-    let boundsWidth=Double(available.width),boundsHeight=Double(available.height)
+func fittedPageSize(width:Double,height:Double,available:CGSize,inset:CGFloat=0)->CGSize? {
+    guard inset.isFinite,inset>=0 else{return nil}
+    let boundsWidth=Double(available.width-2*inset),boundsHeight=Double(available.height-2*inset)
     guard [width,height,boundsWidth,boundsHeight].allSatisfy({$0.isFinite && $0>0}) else{return nil}
     let scale=min(boundsWidth/width,boundsHeight/height),w=width*scale,h=height*scale
     guard scale.isFinite,scale>0,w.isFinite,h.isFinite,w>0,h>0 else{return nil}

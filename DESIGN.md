@@ -124,3 +124,5 @@ Actual48fivecaptureClaude review confirms largerdocumentcanvas/pageedges/compact
 - Actual53 app captures and Claude visual review are pending; earlier52 visual REQUEST_CHANGES stays open until new evidence closes its scope.
 
 - Structure fallback previews use a light contrasting well and a neutral one-device-pixel page outline. The blue overlay remains reserved for selected change evidence; neutral-edge inspection deselects evidence without removing that feature. Bundle page lists and preview wells share the same fixed center gutter. Schematic text uses actual font line-height within its inset element height to reduce small-preview clipping; it does not claim original fonts or complete PowerPoint layout fidelity.
+
+- Structure fit leaves8pt inside the canvas on every edge, including extreme page ratios. Bundle preview captions reserve equal two-line height so the two wells start and end together. Full-fit extreme-page text may be tiny; page identity, zoom and extracted-text controls remain the reading paths, without stretching or fabricating the source.

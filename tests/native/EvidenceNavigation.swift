@@ -13,6 +13,12 @@ import SwiftUI
   for (width,height) in [(0.0,100.0),(-1.0,100.0),(Double.nan,100.0),(100.0,Double.infinity)] {
    guard fittedPageSize(width:width,height:height,available:CGSize(width:400,height:250))==nil else{throw NSError(domain:"PageFitAcceptedInvalidDimensions",code:15)}
   }
+  for (width,height,expectedWidth,expectedHeight) in [(960.0,540.0,384.0,216.0),(100.0,2000.0,11.7,234.0),(2000.0,100.0,384.0,19.2)] {
+   guard let fitted=fittedPageSize(width:width,height:height,available:CGSize(width:400,height:250),inset:8),abs(fitted.width-expectedWidth)<0.000001,abs(fitted.height-expectedHeight)<0.000001 else{throw NSError(domain:"PageInsetDistortedAcceptedAspect",code:16)}
+  }
+  for inset in [CGFloat(-1),CGFloat.nan,CGFloat.infinity,CGFloat(200)] {
+   guard fittedPageSize(width:960,height:540,available:CGSize(width:400,height:250),inset:inset)==nil else{throw NSError(domain:"PageFitAcceptedInvalidInset",code:17)}
+  }
   let revisions:[[String:Any]]=[
    ["revision_occurrence_id":"occ_before","assets":[["asset_id":"pptx_before","format":"pptx"],["asset_id":"pdf_before","format":"pdf"]],"pages":[["page_id":"source_before","asset_id":"pptx_before","appearance":["source_page_id":"reference_before"]],["page_id":"reference_before","asset_id":"pdf_before"],["page_id":"source_before_b","asset_id":"pptx_before"]]],
    ["revision_occurrence_id":"occ_after","assets":[["asset_id":"pptx_after","format":"pptx"],["asset_id":"pdf_after","format":"pdf"]],"pages":[["page_id":"source_after","asset_id":"pptx_after","appearance":["source_page_id":"reference_after"]],["page_id":"reference_after","asset_id":"pdf_after"]]]]

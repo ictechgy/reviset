@@ -180,7 +180,7 @@ struct PageColumn: View {
                 else if payload.isNull { ProgressView("원문 페이지 로딩…").frame(maxWidth:.infinity,maxHeight:.infinity) }
                 else if payload["source"]["kind"].string == "pdf" {
                     OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:payload["source"]["origin"].string == "original" ? evidence : JSON(),page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
-                } else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size) {
+                } else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size,inset:8) {
                     ScrollView([.horizontal,.vertical]) {
                         let scale = model.zoom == 0 ? 1 : model.zoom
                         VStack { Spacer(minLength:0); StructureCanvas(page:payload["page"],evidence:evidence).frame(width:size.width*scale,height:size.height*scale).shadow(color:.black.opacity(0.08),radius:5); Spacer(minLength:0) }.frame(minWidth:geometry.size.width,minHeight:geometry.size.height)

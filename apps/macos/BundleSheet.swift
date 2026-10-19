@@ -204,16 +204,17 @@ struct BundlePagePreview:View {
     let title:String
     @State private var payload=JSON()
     @State private var failure=""
+    var sourceCaption:String {payload["source"]["origin"].string=="pptx_converted" ? "LibreOffice 렌더":payload["source"]["kind"].string=="pptx" ? "구조 보기 · 원본 화면 미검증":" "}
     var body:some View {
         VStack(alignment:.leading,spacing:5){
-            VStack(alignment:.leading,spacing:3){Text(title);if payload["source"]["origin"].string=="pptx_converted"{Text("LibreOffice 렌더")}else if payload["source"]["kind"].string=="pptx"{Text("구조 보기 · 원본 화면 미검증")}}.font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
+            VStack(alignment:.leading,spacing:3){Text(title);Text(sourceCaption).accessibilityHidden(sourceCaption==" ")}.font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
             if !payload["source"]["warnings"].array.isEmpty {Text(payload["source"]["warnings"].array.map{renderWarningName($0.string)}.joined(separator:" · ")).font(.caption2).foregroundStyle(.orange).lineLimit(2)}
             GeometryReader{geometry in
                 if pageID.isEmpty {ContentUnavailableView("페이지를 선택하세요",systemImage:"doc")}
                 else if !failure.isEmpty {Text(failure).foregroundStyle(.red).font(.caption)}
                 else if payload.isNull {ProgressView().frame(maxWidth:.infinity,maxHeight:.infinity)}
                 else if payload["source"]["kind"].string=="pdf" {OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["page"]["page"].int,zoom:0,evidence:JSON(),page:payload["display_page"])}
-                else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size) {StructureCanvas(page:payload["page"],evidence:JSON()).frame(width:size.width,height:size.height).frame(maxWidth:.infinity,maxHeight:.infinity)}
+                else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size,inset:8) {StructureCanvas(page:payload["page"],evidence:JSON()).frame(width:size.width,height:size.height).frame(maxWidth:.infinity,maxHeight:.infinity)}
                 else {ContentUnavailableView("페이지 크기를 확인할 수 없습니다",systemImage:"exclamationmark.triangle")}
             }.background(Color(nsColor:.windowBackgroundColor).overlay(Color.primary.opacity(0.045))).clipShape(RoundedRectangle(cornerRadius:5))
         }.frame(maxWidth:.infinity).task(id:projectID+reportID+pageID+basis){
