@@ -45,6 +45,47 @@ func lineageReasonText(_ reasons:[JSON],humanConfirmed:Bool)->String {
     return reasons.map { matchingReasonName($0.string,humanConfirmed:humanConfirmed) }.filter { seen.insert($0).inserted }.joined(separator:" · ")
 }
 
+func coverageReasonName(_ value:String)->String {
+    switch value {
+    case "ocr_fragment_reflow_region_withheld": return "단어가 다른 줄이나 영역으로 이어졌을 가능성이 있어 이 문구의 수정 판정을 보류했습니다."
+    case "other_page_regions_unresolved": return "페이지의 다른 영역은 판독을 보류했습니다. 표시된 문구만 영역별로 비교했습니다."
+    case "ocr_inferred_text_requires_source_review": return "OCR로 추정한 문구입니다. 원문 화면을 확인하세요."
+    case "pdf_visibility_unresolved_text_comparison_withheld": return "가림이나 판독 불확실성이 있어 페이지 전체의 텍스트 비교를 보류했습니다."
+    case "contextual_ocr_disagreement_primary_retained": return "같은 영역의 판독 결과가 서로 달라 최초 OCR을 보존하고 비교를 보류했습니다."
+    case "borderline_ocr_context_unverified_primary_retained": return "문맥 판독을 완료하지 못해 최초 OCR을 보존하고 비교를 보류했습니다."
+    case "page_annotation_prevents_inferred_raster_edit": return "PDF 주석이 이 영역에 영향을 줄 수 있어 OCR 수정 판정을 보류했습니다."
+    case "ocr_or_text_disagrees_for_identical_native_raster": return "같은 화면에서 텍스트 판독이 달라 실제 수정으로 판정하지 않았습니다."
+    case "ocr_region_missing_or_numeric_ambiguity_withheld": return "대응 영역이 누락되거나 숫자 판독이 불확실해 텍스트 비교를 보류했습니다."
+    case "ocr_reading_order_changed_without_text_region_change": return "문구 영역은 같지만 OCR의 읽기 순서가 달라 수정 판정을 보류했습니다."
+    case "ocr_disagrees_with_unlocalized_source_text": return "OCR과 위치가 불확실한 원문 텍스트가 달라 확인이 필요합니다."
+    case "estimated_source_geometry_not_used_for_raster_pairing": return "원문 텍스트의 위치가 불확실해 화면에서 판독한 영역을 기준으로 대응했습니다."
+    case "unlocalized_source_text_review_budget_exceeded": return "위치가 불확실한 원문 텍스트를 모두 검토하지 못해 비교를 보류했습니다."
+    case "revision_interval_render_appearance_not_comparable": return "두 버전의 형식이나 렌더링 환경이 달라 화면 차이를 직접 비교할 수 없습니다."
+    case "native_raster_difference_is_not_semantic_deletion": return "화면 차이는 관측했지만 내용의 삭제 여부는 확정하지 않았습니다."
+    case "render_difference_may_include_renderer_substitution": return "화면 차이에 글꼴이나 변환기의 대체 결과가 포함될 수 있습니다."
+    case "failed_revision_no_comparison": return "버전 처리에 실패해 비교하지 못했습니다."
+    case "raw_text_changed_in_suppressed_layer": return "표시되지 않는 텍스트 계층에서 차이가 발견됐습니다."
+    default: return "이 정보의 관측 범위가 충분하지 않습니다. 원문과 내보낸 상세 근거를 확인하세요."
+    }
+}
+
+struct CoverageGapEvidence:View {
+    let gaps:[JSON]
+    var body:some View {
+        if !gaps.isEmpty {
+            VStack(alignment:.leading,spacing:8) {
+                Text("관측 공백 · 판독 보류 사유").font(.headline)
+                ForEach(Array(gaps.enumerated()),id:\.offset){_,gap in
+                    Label(coverageReasonName(gap["reason"].string),systemImage:"exclamationmark.circle")
+                        .font(.caption).fixedSize(horizontal:false,vertical:true).textSelection(.enabled)
+                }
+            }
+            .padding(10).frame(maxWidth:.infinity,alignment:.leading)
+            .background(Color.orange.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius:6))
+        }
+    }
+}
+
 struct MainView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
@@ -154,7 +195,7 @@ struct ChangeRow: View {
 struct InspectorView: View {
     @EnvironmentObject var model: AppModel
     @State private var reason="원문 확인 후 대응 수정"
-    var body: some View {ScrollView{VStack(alignment:.leading,spacing:16){Text("선택한 변경").font(.caption).foregroundStyle(.secondary);Text(changeNames[model.selected["kind"].string] ?? "변경을 선택하세요").font(.title3.weight(.semibold));if !model.selected.isNull{Text("이전 원문").font(.caption).foregroundStyle(.secondary);Text(model.selected["before"].isNull ? "해당 버전에서 원문 없음":model.selected["before"].string).foregroundStyle(.red).textSelection(.enabled);Text("이후 원문").font(.caption).foregroundStyle(.secondary);Text(model.selected["after"].isNull ? "해당 버전에서 원문 없음":model.selected["after"].string).foregroundStyle(.green).textSelection(.enabled);Divider();Text("원문 근거").font(.headline);ForEach(Array(model.selected["evidence"].array.enumerated()),id:\.offset){_,e in VStack(alignment:.leading,spacing:6){Text("page \(e["page"].int) · "+evidenceMethodName(e["method"].string,provenance:e["provenance"].string)).font(.caption);Text(e["quote"].string).font(.caption).textSelection(.enabled)}.padding(9).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:6))};if !model.selected["appearance_assessment"].string.isEmpty{Text(model.selected["appearance_assessment"].string=="observed" ? "표시 상태: 관측":"표시 상태: 추정").font(.caption).foregroundStyle(.orange)};Text(lineageReasonText(model.selected["lineage"]["reasons"].array,humanConfirmed:model.selected["lineage"]["status"].string == "human_confirmed")).font(.caption2).foregroundStyle(.secondary)}
+    var body: some View {ScrollView{VStack(alignment:.leading,spacing:16){Text("선택한 변경").font(.caption).foregroundStyle(.secondary);Text(changeNames[model.selected["kind"].string] ?? "변경을 선택하세요").font(.title3.weight(.semibold));if !model.selected.isNull{Text("이전 원문").font(.caption).foregroundStyle(.secondary);Text(model.selected["before"].isNull ? "해당 버전에서 원문 없음":model.selected["before"].string).foregroundStyle(.red).textSelection(.enabled);Text("이후 원문").font(.caption).foregroundStyle(.secondary);Text(model.selected["after"].isNull ? "해당 버전에서 원문 없음":model.selected["after"].string).foregroundStyle(.green).textSelection(.enabled);Divider();Text("원문 근거").font(.headline);ForEach(Array(model.selected["evidence"].array.enumerated()),id:\.offset){_,e in VStack(alignment:.leading,spacing:6){Text("page \(e["page"].int) · "+evidenceMethodName(e["method"].string,provenance:e["provenance"].string)).font(.caption);Text(e["quote"].string).font(.caption).textSelection(.enabled)}.padding(9).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:6))};if !model.selected["appearance_assessment"].string.isEmpty{Text(model.selected["appearance_assessment"].string=="observed" ? "표시 상태: 관측":"표시 상태: 추정").font(.caption).foregroundStyle(.orange)};Text(lineageReasonText(model.selected["lineage"]["reasons"].array,humanConfirmed:model.selected["lineage"]["status"].string == "human_confirmed")).font(.caption2).foregroundStyle(.secondary);CoverageGapEvidence(gaps:model.selected["coverage_gaps"].array)}
         Divider();Text("페이지 대응 검토").font(.headline);Text("인접 버전의 양쪽 페이지를 고르고 이유를 남기면 새 보고서를 만듭니다.").font(.caption).foregroundStyle(.secondary);TextField("수정 이유",text:$reason);HStack{Button("연결 확정"){Task{await model.correctMapping("link",reason:reason)}};Button("연결 해제"){Task{await model.correctMapping("unlink",reason:reason)}}}.disabled(model.busy||model.project["dirty"].bool||model.project["last_report_id"].string != model.report["report_id"].string||model.to != model.from+1||model.leftPageID.isEmpty||model.rightPageID.isEmpty||reason.trimmingCharacters(in:.whitespaces).isEmpty)
         Divider();Label("관측 한계",systemImage:"exclamationmark.triangle").font(.headline);Text("가려진 텍스트와 취소선은 표시 상태로 보존합니다. 박스나 선이 삭제 의도인지는 시각 근거와 함께 검토하세요. PDF에서 추정한 표 구조는 PPTX의 원래 표와 동일하다고 보장하지 않습니다.").font(.caption);Text("OCR 추정 값은 원본 화면과 대조하세요. PDF에 없는 노트·숨김 정보는 삭제로 집계하지 않습니다. PPTX는 LibreOffice 변환 화면이며 폰트 대체·변환 경고를 근거 패널에서 확인할 수 있습니다.").font(.caption).foregroundStyle(.secondary)
     }.padding(17).frame(maxWidth:.infinity,alignment:.leading)}}

@@ -498,3 +498,37 @@ Pure replay of32actual frozen35/helper20 heldout observations through current36
 selection retains16correct selected readings and reduces wrong selected3→2.
 The two remaining errors have Vision score1.0; no universal OCR accuracy,
 fresh native latency, packaged36 or current Office fidelity claim is made.
+
+Engine36 actual clean f876 native build passed strict ad-hoc/vendor signature
+verification, bundled dependency-lock parity and8 packaged backend checks
+including cancel/recovery, immutable snapshots, export parity and scoped read-only
+MCP/unchanged SQLite hash. Actual five-version13.725s,900mixedpages55.294s and
+600repeatedscanpages294.195s pass. Last is slower than34's190.215s; it is an
+active performance concern, not unique-page p95 qualification. Bundle stayed
+frozen36;37working source edits began during600scan without a rebuild.
+An isolated actual native OCR-evidence component shows unavailable context
+status even with zero rows. Full packaged OS-input interaction remains unverified.
+
+Independent complete original-base36code REQUEST_CHANGES and architecture BLOCK
+found own-footprint overlap slivers and split-word reflow false regional edits.
+37rejects peers overlapping either own or paired footprint, and uses a bounded
+negative-only continuation search for a changed token's prefix/suffix, including
+a terminal line-break hyphen. Monotonic nearby boundary tokens may complete up
+to3fragments; branch/character/depth budget uncertainty withholds that pair.
+It emits an explicit possible-reflow gap with original quotes/boxes, preserving
+other independent edits. Native change details now display localized coverage
+reasons, previously missing from the drawer.152/152full serial tests pass,
+0fail/skip/cancel,122.450s;SwiftUI typecheck passes. Only evidence docs follow.
+
+Unchanged20observer research on32prior native-raster-hash-verified controls at
+all natural scores found positive high-score English counterreadings for29/30,
+but allscript/bilingual broad disagreement would also lose correct11/25.
+All26nonempty fresh primary strings matched;4 exact box comparisons missed
+after persisted floating-point roundtrip, and the initial failed harness is
+retained. This is diagnostic crop research, not new production eligibility.
+Claude/Grok exit0 DISCUSSION_COMPLETE evidence is separate from code approvals.
+Grok highlighted dictionary-veto risk; local Tesseract remains ignored research,
+with actual Vision-context pixel and dictionary-off tests being prepared.
+A prospective480page/20newphrase/3hostfont/8samplingcondition set is preregistered;
+no results or accuracy bound claimed. Product completion, high-score OCR,
+PPTX strict fidelity, unique-page performance and manual split/merge remain OPEN.

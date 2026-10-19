@@ -40,3 +40,30 @@ test('pre-hybrid numeric regional evidence retains the existing single-slot cont
  const a=page('a','Revenue 100'),b=page('b','Revenue 120');for(const p of [a,b]){p.comparison_basis='raster_ocr';p.ocr_text=p.elements[1].text;p.ocr_unresolved_text='Unresolved header';for(const e of p.elements){delete e.comparison_role;delete e.comparison_reason;}}
  assert.equal(edits(a,b).length,1);
 });
+test('shifted regional text pairs reject extra observations on either same-page footprint',()=>{
+ for(const side of ['old','new'] as const){
+  const a=page('a','Customer approved'),b=page('b','Customer declined');b.elements[1].bbox=[.18,.3,.4,.05];
+  const extra=line('sliver','additional words');extra.bbox=side==='old'?[.1,.3,.05,.05]:[.53,.3,.05,.05];
+  (side==='old'?a:b).elements.push(extra);selectHybridComparison(a);selectHybridComparison(b);
+  assert.equal(edits(a,b).length,0,side+' own-footprint ambiguity');
+ }
+});
+test('wrapped word fragments withhold partial replacements while retaining an independent edit',()=>{
+ for(const reverse of [false,true])for(const mode of ['following','preceding','hyphen','multiple','budget','characters','horizontal'] as const){
+  const a=page('a','Customer approved'),b=page('b',mode==='preceding'?'Customer proved':mode==='hyphen'?'Customer appro-':mode==='budget'?'Customer a':'Customer appro');b.elements[1].bbox=[.1,.3,.3,.05];
+  const tails=mode==='preceding'?[line('head','earlier ap',.24)]:mode==='multiple'?[line('tail1','ve',.36),line('tail2','d immediately',.42)]:mode==='budget'?[line('tail1','p',.36),line('tail2','p',.42),line('tail3','r',.48)]:[line('tail',mode==='characters'?'ved '+ 'x'.repeat(128):'ved immediately',.36)];
+  for(const tail of tails){tail.bbox[2]=.08;b.elements.push(tail);}
+  if(mode==='horizontal'){a.elements[1].bbox=[.1,.3,.3,.05];b.elements[1].bbox=[.1,.3,.24,.05];tails[0].bbox=[.41,.3,.08,.05];}
+  a.elements.push(line('a-manager','Manager accepted',.7));b.elements.push(line('b-manager','Manager rejected',.7));selectHybridComparison(a);selectHybridComparison(b);
+  const result=reverse?edits(b,a):edits(a,b);assert.equal(result.length,1,mode+' reverse='+reverse);assert.match(String(result[0].before),/^Manager /u);assert.match(String(result[0].after),/^Manager /u);
+  const gaps=diffRevisions(rev(reverse?b:a,'r1'),rev(reverse?a:b,'r2'),[{from_page_id:(reverse?b:a).page_id,to_page_id:(reverse?a:b).page_id,score:1,status:'human_confirmed',reasons:[]}],[],()=> 'entity').filter(c=>c.coverage_gaps.some(g=>g.reason==='ocr_fragment_reflow_region_withheld'));
+  assert.equal(gaps.length,1);assert.equal(gaps[0].kind,'coverage_gap');assert.equal(gaps[0].evidence[0].quote,reverse?b.elements[1].text:a.elements[1].text);assert.deepEqual(gaps[0].evidence[0].bbox,(reverse?b:a).elements[1].bbox);
+ }
+});
+test('a token shortening without a nearby matching continuation remains a regional edit',()=>{
+ for(const mode of ['absent','unrelated','far'] as const){
+  const a=page('a','Customer approved'),b=page('b','Customer approve');b.elements[1].bbox=[.1,.3,.3,.05];
+  if(mode!=='absent')b.elements.push(line('tail',mode==='far'?'d immediately':'different words',mode==='far'?.8:.36));selectHybridComparison(b);
+  assert.equal(edits(a,b).length,1,mode);
+ }
+});

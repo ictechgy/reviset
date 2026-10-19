@@ -442,3 +442,15 @@ elsewhere-text/movement, annotation/source and estimated-source disagreement
 vetoes remain. This is inferred change at a location, not semantic entity edit
 rather than motion. Reflow/multi-token/unanchored edits stay explicitly incomplete.
 The prior single-slot numeric fallback and historical schemas remain compatible.
+
+### Engine37 regional ambiguity repair
+Lexical inferred fallback rejects peers touching either the same-page or paired
+footprint. Equal token counts do not exclude a split word: when the changed token
+is a prefix/suffix and nearby monotonic boundary fragments can complete it, the
+pair is withheld with `ocr_fragment_reflow_region_withheld` and unchanged raw
+quotes/boxes. A trailing line-break hyphen is ignored only for this negative
+check; primary/source strings are never rewritten. Search is limited to3fragments,
+8candidate branches and128UTF16 per neighbor; budget uncertainty also withholds.
+This is possible reflow, not a positive layout/semantic claim. Unrelated regional
+edits survive. Native change details render the selected change's coverage
+reasons in Korean, including contextual incompleteness and possible reflow.
