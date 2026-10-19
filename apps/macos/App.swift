@@ -78,6 +78,15 @@ import PDFKit
     }
     static func exerciseAspectRatios(_ model:AppModel,_ output:URL) async throws->[[String:Any]] {
         model.focus=true;model.pageMode="both";model.showChanges=false;model.inspector=false;model.tab="compare";try await model.updateChanges();try await Task.sleep(nanoseconds:650_000_000)
+        // The first change can be one-sided (these pages intentionally differ).
+        // Select both fixture pages through the same production navigation as
+        // the page picker before measuring the two visible source canvases.
+        for index in [model.from,model.to] {
+            let revision=model.revision(index)
+            guard let page=model.primaryPages(revision).first else{throw BridgeError(code:"ASPECT_PAGE",message:"비율 검증 원문이 없습니다.")}
+            model.navigatePage(page["page_id"].string,in:revision["revision_occurrence_id"].string)
+        }
+        try await Task.sleep(nanoseconds:650_000_000)
         func canvases(_ view:NSView)->[StructureCanvas.Canvas] {
             var found:[StructureCanvas.Canvas]=[];if let canvas=view as? StructureCanvas.Canvas{found.append(canvas)}
             for child in view.subviews{found += canvases(child)};return found
@@ -95,8 +104,8 @@ import PDFKit
             }
         }
         guard let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}),let content=window.contentView else{throw BridgeError(code:"ASPECT_WINDOW",message:"페이지 비율 검증 창을 찾지 못했습니다.")}
-        let main=try checks(content);guard main.count==2,main.contains(where:{$0["source_width"] as? Double ?? 0 < ($0["source_height"] as? Double ?? 0)/10}),main.contains(where:{$0["source_width"] as? Double ?? 0 > ($0["source_height"] as? Double ?? 0)*10}) else{throw BridgeError(code:"ASPECT_FIXTURE",message:"세로·가로로 긴 두 원본 구조를 표시하지 못했습니다.")}
         try capture(output.appendingPathComponent("native-aspect-main.png"))
+        let main=try checks(content);try JSON(["canvases":main]).data().write(to:output.appendingPathComponent("aspect-main-bounds.json"));guard main.count==2,main.contains(where:{$0["source_width"] as? Double ?? 0 < ($0["source_height"] as? Double ?? 0)/10}),main.contains(where:{$0["source_width"] as? Double ?? 0 > ($0["source_height"] as? Double ?? 0)*10}) else{throw BridgeError(code:"ASPECT_FIXTURE",message:"세로·가로로 긴 두 원본 구조를 표시하지 못했습니다. \(main)")}
         let source=model.primaryPages(model.revision(0))[0],payload=try await model.page(source["page_id"].string);guard payload["source"]["kind"].string=="pptx",payload["page"]["preview"].isNull else{throw BridgeError(code:"ASPECT_STRUCTURE",message:"구조 보기 검증에 별도 PDF 렌더를 사용했습니다.")}
         model.openBundle(model.revision(0),source:source["page_id"].string);try await Task.sleep(nanoseconds:700_000_000)
         guard let sheet=window.sheets.first,let sheetContent=sheet.contentView else{throw BridgeError(code:"ASPECT_BUNDLE_SHEET",message:"긴 페이지의 제공 PDF 연결 창을 열지 못했습니다.")}
