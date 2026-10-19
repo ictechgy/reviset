@@ -10,7 +10,7 @@ import { createCanvas } from '@napi-rs/canvas';
 import { zipSync,unzipSync,strToU8 } from 'fflate';
 import { extractPdf } from '../../packages/ingest/pdf.js';
 import { extractPptx } from '../../packages/ingest/pptx.js';
-import { recognizePdf,captureNativePages } from '../../packages/ingest/ocr.js';
+import { recognizePdf,captureNativePages,supplementPdfOcr } from '../../packages/ingest/ocr.js';
 import { convertPptx,validateRenderPackage,normalizeConvertedPdf,rendererSandbox } from '../../packages/render/index.js';
 import { preparePptxPreview,missingRenderedText } from '../../packages/render/pptx-preview.js';
 import { officeExecutable,visionExecutable,visionInfo,runTool } from '../../packages/runtime/tools.js';
@@ -31,6 +31,17 @@ const office={skip:!officeExecutable()};
 async function pdf(draw:(d:PDFKit.PDFDocument)=>void):Promise<Buffer>{const d=new PDFDocument({size:[960,540],margin:0}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(resolve=>d.on('end',()=>resolve(Buffer.concat(chunks))));draw(d);d.end();return done;}
 function scan(text:string):Buffer{const c=createCanvas(1920,1080),ctx=c.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,c.width,c.height);ctx.fillStyle='black';ctx.font='48px AppleGothic';ctx.fillText('계약 검토 · Contract review',120,140);ctx.font='40px AppleGothic';ctx.fillText(text,120,300);return c.toBuffer('image/png');}
 const scanned=(text:string)=>pdf(d=>d.image(scan(text),0,0,{width:960,height:540}));
+test('native numeric slots, grayscale strikes and ruled-grid negative controls',native,async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-native-checks-'));
+  try{const executable=join(folder,'checks');execFileSync('swiftc',['-swift-version','5','-O','-parse-as-library','-D','DOCVER_TEST','apps/helpers/Vision.swift','tests/native/OcrChecks.swift','-o',executable],{cwd:resolve('.'),timeout:120000});const output=execFileSync(executable,{encoding:'utf8',timeout:30000});assert.match(output,/PASS numeric position\/multiplicity\/conflict/);}finally{await rm(folder,{recursive:true,force:true});}
+});
+test('ruled grid supplement retains blank cells and inferred provenance when native table recognition misses',native,async()=>{
+  const bytes=await pdf(d=>{d.font('Helvetica').fontSize(16);for(const y of [100,150,200,250])d.moveTo(100,y).lineTo(700,y).stroke();for(const x of [100,300,500,700])d.moveTo(x,100).lineTo(x,250).stroke();for(const [row,col,text]of [[0,0,'Name'],[0,1,'Corp'],[0,2,'Remark'],[1,0,'Foo'],[2,0,'Bar'],[2,1,'Microsoft'],[2,2,'Dummy']] as [number,number,string][])d.text(text,110+col*200,112+row*50,{lineBreak:false});});
+  const nativeResult=await recognizePdf(bytes,1);assert.equal(nativeResult.grid_tables?.length,1);assert.equal(nativeResult.grid_tables?.[0].cells.length,9);
+  const [p]=await extractPdf(bytes,'sha256:'+byteHash(bytes));await supplementPdfOcr(p,bytes,{nativeResult:{...nativeResult,tables:[]}});
+  const cells=p.elements.filter(e=>e.method==='raster_ruled_grid_cell');assert.equal(cells.length,9);assert.equal(cells.filter(e=>!e.text.trim()).length,2);assert.ok(cells.filter(e=>!e.text.trim()).every(e=>e.availability==='unavailable'&&e.visibility==='uncertain'));assert.ok(cells.every(e=>e.provenance==='inferred'&&e.table?.assessment==='inferred'&&e.method==='raster_ruled_grid_cell'));assert.ok(cells.some(e=>e.table?.row===2&&e.table.column===1&&e.text==='Microsoft'));
+  const duplicate=[...nativeResult.grid_tables![0].cells];const [same]=await extractPdf(bytes,'sha256:'+byteHash(bytes));await supplementPdfOcr(same,bytes,{nativeResult:{...nativeResult,tables:[{cells:duplicate}]}});assert.equal(same.elements.filter(e=>e.method==='raster_ruled_grid_cell').length,0,'Overlapping native table must take priority over duplicate grid');
+});
 const rev=(p:PageData,key:string):RevisionData=>({revision_id:key,revision_occurrence_id:key,label:key,assets:[{asset_id:p.asset_id,format:'pdf',bytes:0}],status:'success',pages:[p],coverage_gaps:p.coverage_gaps,errors:[],bundle_mapping:[]});
 function changes(a:PageData,b:PageData){const m=matchPages([a],[b]);assert.equal(m.matches.length,1);return diffRevisions(rev(a,'v1'),rev(b,'v2'),m.matches,m.candidates,()=> 'entity');}
 

@@ -19,7 +19,8 @@
     "mac:smoke": "node scripts/native-smoke.mjs",
     "native:helpers": "tsx scripts/build-native-helpers.ts",
     "native:office": "tsx scripts/prepare-office.ts",
-    "pretest": "tsx scripts/check-native-runtime.ts"
+    "pretest": "tsx scripts/check-native-runtime.ts",
+    "corpus:public": "tsx scripts/verify-public-corpus.ts"
   },
   "keywords": [],
   "author": "",

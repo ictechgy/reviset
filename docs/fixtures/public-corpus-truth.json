@@ -1,0 +1,44 @@
+{
+  "scope": "Selected visually transcribed regions, not whole-page accuracy or a complete transcription. W3C prior OCR text is not ground truth. Born-digital source text remains separate.",
+  "transcription": "Author inspected native PDFKit page rasters. Independent review is recorded separately in the snapshot-bound review artifacts.",
+  "normalization": "NFKC, lowercase, whitespace removal, fraction slash to ASCII slash; no O/0 or l/1 substitutions",
+  "regions": {
+    "office-quarterly-ko": [
+      {"text":"2025년 4분기 실적 보고","bbox":[0.07,0.38,0.70,0.10]},
+      {"text":"전사 경영 회의 · 대외비","bbox":[0.07,0.52,0.60,0.08]},
+      {"text":"2026. 1. 15.","bbox":[0.07,0.87,0.40,0.06]}
+    ],
+    "office-training-ko": [
+      {"text":"신입사원 보안 교육","bbox":[0.07,0.38,0.55,0.10]},
+      {"text":"정보보호팀 · 필수 이수 과정 (1시간)","bbox":[0.07,0.52,0.60,0.08]},
+      {"text":"2026년 하반기 정기 교육","bbox":[0.07,0.87,0.45,0.06]}
+    ],
+    "azure-layout": [
+      {"text":"This is title","bbox":[0.38,0.10,0.25,0.07]},
+      {"text":"Name","bbox":[0.117,0.499,0.12,0.020]},
+      {"text":"Corp","bbox":[0.235,0.499,0.12,0.020]},
+      {"text":"Remark","bbox":[0.352,0.499,0.12,0.020]},
+      {"text":"Foo","bbox":[0.117,0.519,0.12,0.020]},
+      {"text":"Bar","bbox":[0.117,0.538,0.12,0.020]},
+      {"text":"Microsoft","bbox":[0.235,0.538,0.12,0.020]},
+      {"text":"Dummy","bbox":[0.352,0.538,0.12,0.020]}
+    ],
+    "azure-invoice": [
+      {"text":"CONTOSO LTD.","bbox":[0.05,0.05,0.30,0.05]},
+      {"text":"INV-100","bbox":[0.75,0.12,0.20,0.03]},
+      {"text":"$100.00","bbox":[0.85,0.55,0.095,0.025]},
+      {"text":"$10.00","bbox":[0.85,0.627,0.095,0.025]},
+      {"text":"$110.00","bbox":[0.85,0.655,0.095,0.025]},
+      {"text":"$500.00","bbox":[0.85,0.682,0.095,0.025]},
+      {"text":"$610.00","bbox":[0.85,0.709,0.095,0.025]}
+    ],
+    "w3c-ocr": [
+      {"text":"Schnitzelbank Pot","bbox":[0.04,0.02,0.20,0.04]},
+      {"text":"1 ripe Camembert cheese","bbox":[0.05,0.06,0.25,0.03]},
+      {"text":"⅛ pound imported Roquefort","bbox":[0.05,0.10,0.30,0.03]},
+      {"text":"¼ pound butter","bbox":[0.05,0.125,0.25,0.03]},
+      {"text":"Minnesota Blue","bbox":[0.0,0.52,0.20,0.05]},
+      {"text":"Pineapple","bbox":[0.0,0.67,0.20,0.05]}
+    ]
+  }
+}

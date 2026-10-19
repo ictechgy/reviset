@@ -1,0 +1,342 @@
+{
+  "usage": "Local validation cache only; no upstream code executed, no cloud document analysis used",
+  "sources": [
+    {
+      "id": "w3c-ocr",
+      "url": "https://www.w3.org/WAI/WCAG22/working-examples/pdf-ocr/ocr-example.pdf",
+      "format": "pdf",
+      "sha256": "7a161be656c7e82986a1959890eadbdcd0876e15e01b28fd00900190de15eed5",
+      "bytes": 481118,
+      "description": "W3C accessibility OCR example; prior OCR layer, image and printed recipe",
+      "passive_scan": {
+        "active_features": [],
+        "result": "PASS",
+        "limit": "Passive active-content checks, not proof against every parser vulnerability"
+      },
+      "pages": 1
+    },
+    {
+      "id": "azure-layout",
+      "url": "https://raw.githubusercontent.com/Azure-Samples/document-intelligence-code-samples/66364dd9562934d5a55cfdc629336a691c60a219/.NET(v4.0)/Quickstarts/Assets/layout-pageobject.pdf",
+      "format": "pdf",
+      "sha256": "362ff45b41e4844a7169051cc461e7273ff6e5f47393d3b2cbc8493770b76464",
+      "bytes": 78452,
+      "description": "Microsoft synthetic multi-column layout, table, selection marks and figure",
+      "passive_scan": {
+        "active_features": [],
+        "result": "PASS",
+        "limit": "Passive active-content checks, not proof against every parser vulnerability"
+      },
+      "pages": 1
+    },
+    {
+      "id": "azure-sample-layout",
+      "url": "https://raw.githubusercontent.com/Azure-Samples/document-intelligence-code-samples/66364dd9562934d5a55cfdc629336a691c60a219/Data/layout/sample-layout.pdf",
+      "format": "pdf",
+      "sha256": "7697ef618528ba19dd0deb1956f04489cfaf9b2562c0935886c079d1cd8a1186",
+      "bytes": 212406,
+      "description": "Microsoft layout analysis sample",
+      "passive_scan": {
+        "active_features": [],
+        "result": "PASS",
+        "limit": "Passive active-content checks, not proof against every parser vulnerability"
+      },
+      "pages": 1
+    },
+    {
+      "id": "azure-invoice",
+      "url": "https://raw.githubusercontent.com/Azure-Samples/document-intelligence-code-samples/66364dd9562934d5a55cfdc629336a691c60a219/Data/invoice/sample-invoice.pdf",
+      "format": "pdf",
+      "sha256": "c2ce1edcbb91cf8f6685f4749a5eedcb752795e5e8f0a126f13953a0f3974f69",
+      "bytes": 104430,
+      "description": "Microsoft sample invoice; tabular amounts",
+      "passive_scan": {
+        "active_features": [],
+        "result": "PASS",
+        "limit": "Passive active-content checks, not proof against every parser vulnerability"
+      },
+      "pages": 1
+    },
+    {
+      "id": "mozilla-paper",
+      "url": "https://raw.githubusercontent.com/mozilla/pdf.js/28e406a46fcca6591b96f943d98a739b8866da78/test/pdfs/tracemonkey.pdf",
+      "format": "pdf",
+      "sha256": "3662ff519e485810520552bf301d8c3b2b917fd2f83303f4965d7abed367e113",
+      "bytes": 1016315,
+      "description": "Mozilla ordinary academic example, 14 pages, columns/formulas/figures",
+      "passive_scan": {
+        "active_features": [],
+        "result": "PASS",
+        "limit": "Passive active-content checks, not proof against every parser vulnerability"
+      },
+      "pages": 14
+    },
+    {
+      "id": "python-pptx-txt-text",
+      "url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/txt-text.pptx",
+      "format": "pptx",
+      "sha256": "cef8bba88769e3799cab29299860bffdf598bab178d3efb8666ac83686614c68",
+      "bytes": 16051,
+      "description": "Upstream functional example, passive OOXML feature sample",
+      "passive_scan": {
+        "active_features": [],
+        "result": "PASS",
+        "limit": "Passive active-content checks, not proof against every parser vulnerability"
+      },
+      "expanded_bytes": 38829,
+      "zip_members": 19,
+      "expected_pages": 2,
+      "expected_nonempty_table_cells": [
+        [],
+        [
+          {
+            "row": 0,
+            "column": 0,
+            "text": "Text run in table cell",
+            "row_span": 1,
+            "column_span": 1
+          }
+        ]
+      ]
+    },
+    {
+      "id": "python-pptx-shp-groupshape",
+      "url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/shp-groupshape.pptx",
+      "format": "pptx",
+      "sha256": "37c9a0bd919f9fc4e89600939cbaf798e79c6aaf96406aee5bba2828cea3e3a6",
+      "bytes": 23786,
+      "description": "Upstream ordinary functional example",
+      "passive_scan": {
+        "active_features": [],
+        "recognized_non_executable_data": [
+          "ppt/printerSettings/printerSettings1.bin"
+        ],
+        "result": "PASS",
+        "limit": "Passive package checks plus app XML/resource validation; not proof against every parser vulnerability",
+        "initial_scan_correction": "Standard OOXML printer settings binary was initially overflagged solely by .bin extension; it is serialized print configuration, not a macro or executable."
+      },
+      "expected_pages": 1,
+      "expected_nonempty_table_cells": [
+        []
+      ]
+    },
+    {
+      "id": "python-pptx-cht-charts",
+      "url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/cht-charts.pptx",
+      "format": "pptx",
+      "sha256": "fce05dd2945e8566865a62b48e122e4d2be51f7ca55b124f9bd6821a50819218",
+      "bytes": 77751,
+      "description": "Upstream ordinary functional example",
+      "passive_scan": {
+        "active_features": [],
+        "recognized_non_executable_data": [
+          "ppt/printerSettings/printerSettings1.bin"
+        ],
+        "result": "PASS",
+        "limit": "Passive package checks plus app XML/resource validation; not proof against every parser vulnerability",
+        "initial_scan_correction": "Standard OOXML printer settings binary was initially overflagged solely by .bin extension; it is serialized print configuration, not a macro or executable."
+      },
+      "expected_pages": 1,
+      "expected_nonempty_table_cells": [
+        []
+      ]
+    },
+    {
+      "id": "python-pptx-shp-shapes",
+      "url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/shp-shapes.pptx",
+      "format": "pptx",
+      "sha256": "302dc642b791f49da6057b69a7ef2a0804f61d9469e7e49e9e734ae3305951cc",
+      "bytes": 125205,
+      "description": "Upstream ordinary functional example",
+      "passive_scan": {
+        "active_features": [],
+        "recognized_non_executable_data": [
+          "ppt/printerSettings/printerSettings1.bin"
+        ],
+        "result": "PASS",
+        "limit": "Passive package checks plus app XML/resource validation; not proof against every parser vulnerability",
+        "initial_scan_correction": "Standard OOXML printer settings binary was initially overflagged solely by .bin extension; it is serialized print configuration, not a macro or executable."
+      },
+      "expected_pages": 2,
+      "expected_nonempty_table_cells": [
+        [
+          {
+            "row": 0,
+            "column": 0,
+            "text": "shapes[3]",
+            "row_span": 1,
+            "column_span": 1
+          }
+        ],
+        []
+      ]
+    },
+    {
+      "id": "python-pptx-tbl-cell",
+      "url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/tbl-cell.pptx",
+      "format": "pptx",
+      "sha256": "02df45aad4927c4c471d76d4f638e82e14c42d4db773103cf8f950f73b0ae976",
+      "bytes": 28247,
+      "description": "Upstream ordinary functional example",
+      "passive_scan": {
+        "active_features": [],
+        "recognized_non_executable_data": [
+          "ppt/printerSettings/printerSettings1.bin"
+        ],
+        "result": "PASS",
+        "limit": "Passive package checks plus app XML/resource validation; not proof against every parser vulnerability",
+        "initial_scan_correction": "Standard OOXML printer settings binary was initially overflagged solely by .bin extension; it is serialized print configuration, not a macro or executable."
+      },
+      "expected_pages": 3,
+      "expected_nonempty_table_cells": [
+        [
+          {
+            "row": 0,
+            "column": 0,
+            "text": "having custom margins",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 0,
+            "column": 1,
+            "text": "vert anchor is inherited",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 0,
+            "column": 2,
+            "text": "vert anchor is top",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 0,
+            "column": 3,
+            "text": "vert anchor is bottom",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 1,
+            "column": 0,
+            "text": "unladen swallows",
+            "row_span": 1,
+            "column_span": 1
+          }
+        ],
+        [
+          {
+            "row": 0,
+            "column": 0,
+            "text": "merged cell",
+            "row_span": 2,
+            "column_span": 2
+          },
+          {
+            "row": 0,
+            "column": 0,
+            "text": "merged cell",
+            "row_span": 2,
+            "column_span": 3
+          }
+        ],
+        [
+          {
+            "row": 0,
+            "column": 0,
+            "text": "a",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 0,
+            "column": 1,
+            "text": "b",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 0,
+            "column": 2,
+            "text": "c",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 1,
+            "column": 0,
+            "text": "d",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 1,
+            "column": 1,
+            "text": "e",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 1,
+            "column": 2,
+            "text": "f",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 2,
+            "column": 0,
+            "text": "g",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 2,
+            "column": 1,
+            "text": "h",
+            "row_span": 1,
+            "column_span": 1
+          },
+          {
+            "row": 2,
+            "column": 2,
+            "text": "i",
+            "row_span": 1,
+            "column_span": 1
+          }
+        ]
+      ]
+    },
+    {
+      "id": "office-quarterly-ko",
+      "url": "https://raw.githubusercontent.com/developer0hye/office2pdf/faeca2bc29598744a62f787076d9e340e5095b8b/tests/golden_mocks/business/expected/pptx/02_quarterly_review_ko.pdf",
+      "format": "pdf",
+      "sha256": "f7dd18e696a6f1993d723894a1b10fcee25c57f151b887a54d28067d80f8f8cb",
+      "bytes": 151646,
+      "pages": 3,
+      "description": "Synthetic Korean business sample, upstream-declared independent PowerPoint16.111.1/macOS26.5.2 export; fictional data",
+      "passive_scan": {
+        "active_features": [],
+        "result": "PASS",
+        "limit": "Passive object scan, not proof against every parser vulnerability"
+      }
+    },
+    {
+      "id": "office-training-ko",
+      "url": "https://raw.githubusercontent.com/developer0hye/office2pdf/faeca2bc29598744a62f787076d9e340e5095b8b/tests/golden_mocks/business/expected/pptx/04_training_deck_ko.pdf",
+      "format": "pdf",
+      "sha256": "301f36ebabc5edb25d3fb7bd2314a283eb652bfc1fec1be3164660099bb72962",
+      "bytes": 95232,
+      "pages": 3,
+      "description": "Synthetic Korean business sample, upstream-declared independent PowerPoint16.111.1/macOS26.5.2 export; fictional data",
+      "passive_scan": {
+        "active_features": [],
+        "result": "PASS",
+        "limit": "Passive object scan, not proof against every parser vulnerability"
+      }
+    }
+  ],
+  "scope": "Pinned ordinary public samples. Private validation cache only; no upstream code executed or third-party fixture bytes redistributed in source/app. No claim of absence of all parser vulnerabilities."
+}
