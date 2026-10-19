@@ -265,7 +265,7 @@ struct HistoryView: View {
 }
 struct HistoryGraphView:View {
     @EnvironmentObject var model:AppModel
-    var body:some View {VStack(alignment:.leading,spacing:14){HStack{VStack(alignment:.leading){Text("전체 버전 이력").font(.title2.weight(.semibold));Text("중간에 생겼다가 사라진 페이지와 관측 공백을 함께 보존합니다.").font(.caption).foregroundStyle(.secondary)};Spacer()}.padding(.horizontal,18).padding(.top,20)
+    var body:some View {VStack(alignment:.leading,spacing:14){HStack{VStack(alignment:.leading){Text("전체 버전 이력").font(.title2.weight(.semibold));Text("중간에 생겼다가 사라진 페이지와 관측 공백을 함께 보존합니다.").font(.caption).foregroundStyle(.secondary);Text("— 관측 없음 · 실제 삭제 여부는 변경 이벤트와 원문 근거에서 확인하세요.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)};Spacer()}.padding(.horizontal,18).padding(.top,20)
         ScrollView([.vertical,.horizontal]){LazyVStack(alignment:.leading,spacing:1){HStack{Text("페이지 계보").frame(width:180,alignment:.leading);ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in Text("v\(i+1) "+r["label"].string).frame(width:130)}}.font(.caption.weight(.semibold)).padding(9)
             ForEach(model.report["lineages"].array){lineage in
                 let all=model.revisions.flatMap{model.primaryPages($0)},ids=lineage["page_ids"].array.map(\.string)
@@ -284,7 +284,6 @@ struct HistoryGraphView:View {
                     }.padding(7);Divider()
                 }
             }
-            Text("— 관측 없음 · 실제 삭제 여부는 변경 이벤트와 원문 근거에서 확인하세요.").font(.caption).foregroundStyle(.secondary).padding(.top,8)
         }.padding(12)}
     }}
 }
