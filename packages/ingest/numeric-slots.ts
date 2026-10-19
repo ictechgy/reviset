@@ -7,17 +7,26 @@ function tokens(text:string){return Array.from(text.matchAll(token),m=>{const va
 export const numericSlots=(text:string)=>tokens(text).map(t=>t.value);
 export function numericNotationSupported(text:string):boolean{
   if(/(?=\p{N})[^0-9０-９]/u.test(text.replace(/[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞↉]/gu,'')))return false;
+  // Invisible formatting, numeric combining marks and unsupported slash glyphs
+  // cannot be verified as a different collection of independent digit slots.
+  if(/\p{N}/u.test(text)&&(/\p{Cf}|[∕⧸╱]/u.test(text)||/[\p{N}/⁄／]\p{M}|\p{M}[/⁄／\p{N}]/u.test(text)))return false;
   if(!/[/⁄／]/u.test(text))return true;
-  const values=tokens(text);let next=0;
+  const values=tokens(text),dates=Array.from(text.matchAll(/(?<![0-9０-９.,，．/⁄／])[0-9０-９]{1,4}\s*[/⁄／]\s*[0-9０-９]{1,2}\s*[/⁄／]\s*[0-9０-９]{1,4}(?![0-9０-９.,，．/⁄／])/gu),m=>({start:m.index,end:m.index+m[0].length}));
+  let next=0,date=0;
   for(const match of text.matchAll(/[/⁄／]/gu)){
-    while(next<values.length&&values[next].end<=match.index)next++;
-    if(match.index>0&&match.index+1<text.length&&/\s/u.test(text[match.index-1])&&/\s/u.test(text[match.index+1])&&next>0&&next<values.length&&values[next].start>match.index&&/^[\p{L}\p{Sc}%％\s]*$/u.test(text.slice(values[next-1].end,match.index))&&/^\s*$/u.test(text.slice(match.index+1,values[next].start)))continue;
-    let before=match.index-1,after=match.index+1;
-    while(before>=0&&/\s/u.test(text[before]))before--;
-    while(after<text.length&&/\s/u.test(text[after]))after++;
-    const low=before>=0?text.charCodeAt(before):0,left=before>=0?text.slice(before-(low>=0xdc00&&low<=0xdfff?1:0),before+1):undefined,right=after<text.length?String.fromCodePoint(text.codePointAt(after)!):undefined,digit=(c:string|undefined)=>!!c&&/^[0-9０-９]$/u.test(c);
-    if(digit(right)&&!digit(left))return false;
-    if(left&&/^\p{N}$/u.test(left)&&(!right||!/[\p{L}\p{N}]/u.test(right)))return false;
+    const at=match.index;
+    while(next<values.length&&values[next].end<=at)next++;
+    while(date<dates.length&&dates[date].end<=at)date++;
+    // A slash must belong to a complete fraction/date token, an explicit
+    // spaced list delimiter, or a literal unit/text expression. No repair.
+    if(next<values.length&&values[next].start<at&&at<values[next].end&&values[next].kind==='fraction')continue;
+    if(date<dates.length&&dates[date].start<at&&at<dates[date].end)continue;
+    const left=next>0?text.slice(values[next-1].end,at):null,right=next<values.length?text.slice(at+1,values[next].start):null;
+    if(at>0&&/\s/u.test(text[at-1])&&/\s/u.test(text[at+1]??'')&&left!==null&&right!==null&&/^[\p{L}\p{Sc}%％\s]*$/u.test(left)&&/^[\s\p{Sc}]*$/u.test(right))continue;
+    const numericLeft=left!==null&&/^[\p{L}\p{Sc}%％\s+＋−.,，．-]*$/u.test(left),numericRight=right!==null&&/^[\s\p{Sc}+＋−.,，．-]*$/u.test(right);
+    // Labels such as1/day and100원/월 retain their literal denominator.
+    if(numericLeft&&/^\p{L}+(?=$|[^\p{L}\p{N}\p{M}])/u.test(text.slice(at+1)))continue;
+    if(numericLeft||numericRight)return false;
   }
   return true;
 }

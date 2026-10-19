@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-13-fraction-separators"
+    static let version = "docver-vision-14-slash-token-boundaries"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -21,26 +21,30 @@ struct DocverVision {
     }
     static func canonicalNumber(_ text:String)->String{text.precomposedStringWithCompatibilityMapping.replacingOccurrences(of:"−",with:"-").replacingOccurrences(of:"⁄",with:"/").filter{!$0.isWhitespace}}
     static func numericFormatSupported(_ text:String)->Bool {
-        // Complete vulgar/slash fractions are one spatial slot, never a loose
-        // agreement on numerator/denominator digits. Other numeric scripts,
-        // superscripts, Roman and incomplete fraction numerators stay unsupported.
-        if text.replacingOccurrences(of:vulgarFractions,with:"",options:.regularExpression).range(of:"(?=\\p{N})[^0-9０-９]",options:.regularExpression) != nil{return false}
-        if !text.contains(where:{"/⁄／".contains($0)}){return true}
-        let slots=(try? numericExpression().matches(in:text,range:NSRange(text.startIndex...,in:text))) ?? [],ns=text as NSString
-        var nextSlot=0
-        for index in text.indices where "/⁄／".contains(text[index]) {
-            let position=index.utf16Offset(in:text),after=text.index(after:index)
-            while nextSlot<slots.count && NSMaxRange(slots[nextSlot].range)<=position{nextSlot+=1}
-            // A spaced separator between two complete numeric observations is
-            // a list delimiter, including signed values and literal units.
-            if index>text.startIndex && after<text.endIndex && text[text.index(before:index)].isWhitespace && text[after].isWhitespace && nextSlot>0 && nextSlot<slots.count && slots[nextSlot].range.location>position {
-                let end=NSMaxRange(slots[nextSlot-1].range),suffix=ns.substring(with:NSRange(location:end,length:position-end)),prefix=ns.substring(with:NSRange(location:position+1,length:slots[nextSlot].range.location-position-1))
-                if suffix.range(of:"^[\\p{L}\\p{Sc}%％\\s]*$",options:.regularExpression) != nil && prefix.range(of:"^\\s*$",options:.regularExpression) != nil{continue}
-            }
-            let left=text[..<index].last(where:{!$0.isWhitespace}),right=text[text.index(after:index)...].first(where:{!$0.isWhitespace})
-            func digit(_ c:Character?)->Bool{c.map{"0123456789０１２３４５６７８９".contains($0)} ?? false}
-            if digit(right) && !digit(left){return false}
-            if left?.isNumber == true && !(right.map{$0.isLetter || $0.isNumber} ?? false){return false}
+        func matches(_ pattern:String,_ value:String)->Bool{value.range(of:pattern,options:.regularExpression) != nil}
+        if matches("(?=\\p{N})[^0-9０-９]",text.replacingOccurrences(of:vulgarFractions,with:"",options:.regularExpression)){return false}
+        if matches("\\p{N}",text) && (matches("\\p{Cf}|[∕⧸╱]",text) || matches("[\\p{N}/⁄／]\\p{M}|\\p{M}[/⁄／\\p{N}]",text)){return false}
+        // Regex ranges are UTF-16 scalar boundaries in both implementations;
+        // Character iteration would hide slashes joined to combining marks.
+        let ns=text as NSString,range=NSRange(location:0,length:(text as NSString).length)
+        let slashes=try! NSRegularExpression(pattern:"[/⁄／]").matches(in:text,range:range)
+        if slashes.isEmpty{return true}
+        let slots=(try? numericExpression().matches(in:text,range:range)) ?? []
+        let dates=try! NSRegularExpression(pattern:"(?<![0-9０-９.,，．/⁄／])[0-9０-９]{1,4}\\s*[/⁄／]\\s*[0-9０-９]{1,2}\\s*[/⁄／]\\s*[0-9０-９]{1,4}(?![0-9０-９.,，．/⁄／])").matches(in:text,range:range)
+        var next=0,date=0
+        for slash in slashes {
+            let at=slash.range.location
+            while next<slots.count && NSMaxRange(slots[next].range)<=at{next+=1}
+            while date<dates.count && NSMaxRange(dates[date].range)<=at{date+=1}
+            if next<slots.count && slots[next].range.location<at && at<NSMaxRange(slots[next].range) && canonicalNumber(ns.substring(with:slots[next].range)).contains("/"){continue}
+            if date<dates.count && dates[date].range.location<at && at<NSMaxRange(dates[date].range){continue}
+            let left:String?=next>0 ? ns.substring(with:NSRange(location:NSMaxRange(slots[next-1].range),length:at-NSMaxRange(slots[next-1].range))) : nil
+            let right:String?=next<slots.count ? ns.substring(with:NSRange(location:at+1,length:slots[next].range.location-at-1)) : nil
+            if at>0 && at+1<ns.length && matches("\\s",ns.substring(with:NSRange(location:at-1,length:1))) && matches("\\s",ns.substring(with:NSRange(location:at+1,length:1))) && left.map({matches("^[\\p{L}\\p{Sc}%％\\s]*$",$0)}) == true && right.map({matches("^[\\s\\p{Sc}]*$",$0)}) == true{continue}
+            let numericLeft=left.map{matches("^[\\p{L}\\p{Sc}%％\\s+＋−.,，．-]*$",$0)} ?? false
+            let numericRight=right.map{matches("^[\\s\\p{Sc}+＋−.,，．-]*$",$0)} ?? false
+            if numericLeft && matches("^\\p{L}+(?=$|[^\\p{L}\\p{N}\\p{M}])",ns.substring(from:at+1)){continue}
+            if numericLeft || numericRight{return false}
         }
         return true
     }

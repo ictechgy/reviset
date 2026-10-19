@@ -41,7 +41,7 @@ function scan(text:string):Buffer{const c=createCanvas(1920,1080),ctx=c.getConte
 const scanned=(text:string)=>pdf(d=>d.image(scan(text),0,0,{width:960,height:540}));
 test('native numeric slots, grayscale strikes and ruled-grid negative controls',native,async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-native-checks-'));
-  try{const executable=join(folder,'checks');execFileSync('swiftc',['-swift-version','5','-O','-parse-as-library','-D','DOCVER_TEST','apps/helpers/Vision.swift','tests/native/OcrChecks.swift','-o',executable],{cwd:resolve('.'),timeout:120000});const output=execFileSync(executable,{encoding:'utf8',timeout:30000});assert.match(output,/PASS numeric position\/multiplicity\/conflict/);}finally{await rm(folder,{recursive:true,force:true});}
+  try{const executable=join(folder,'checks');execFileSync('swiftc',['-swift-version','5','-O','-parse-as-library','-D','DOCVER_TEST','apps/helpers/Vision.swift','tests/native/OcrChecks.swift','-o',executable],{cwd:resolve('.'),timeout:120000});const output=execFileSync(executable,[resolve('tests/fixtures/numeric-notation.json')],{encoding:'utf8',timeout:30000});assert.match(output,/PASS numeric position\/multiplicity\/conflict/);}finally{await rm(folder,{recursive:true,force:true});}
 });
 test('ruled grid supplement retains blank cells and inferred provenance when native table recognition misses',native,async()=>{
   const bytes=await pdf(d=>{d.font('Helvetica').fontSize(16);for(const y of [100,150,200,250])d.moveTo(100,y).lineTo(700,y).stroke('red');for(const x of [100,300,500,700])d.moveTo(x,100).lineTo(x,250).stroke('red');for(const [row,col,text]of [[0,0,'Name'],[0,1,'Corp'],[0,2,'Remark'],[1,0,'Foo'],[2,0,'Bar'],[2,1,'Microsoft'],[2,2,'Dummy']] as [number,number,string][])d.text(text,110+col*200,112+row*50,{lineBreak:false});});
@@ -220,15 +220,23 @@ test('substituted standard font outlines cannot certify native clipped ink',nati
   assert.notEqual(await render(bytes),await render(await make(false)),'Real PDFKit ink differs even when the PDF.js substitute outline fits');
 });
 
-test('fraction slot boundaries retain mixed numbers, units and ambiguity in regional comparisons',()=>{
+test('fraction slot boundaries retain mixed numbers, units and ambiguity in regional comparisons',async()=>{
   assert.deepEqual(numericSlots('⅛ pound ¼ butter ½ olives １／２'),['1/8','1/4','1/2','1/2']);assert.deepEqual(numericSlots('1½ 1 1/2 -¼'),['1','1/2','1','1/2','-1/4']);assert.notEqual(numericPattern('½ cup'),numericPattern('½ kg'));
   const page=(key:string,text:string,uncertain=false):PageData=>({page_id:key,asset_id:key,page:1,width:960,height:540,coordinate_system:'normalized',source_transform:[],hidden:false,text:'',comparison_basis:'raster_ocr',ocr_text:text,ocr_unresolved_text:uncertain?'Unknown region':'',raster:{sha256:key.repeat(64),width:960,height:540,renderer:'fixture',environment:'fixture'},elements:[{observation_id:key,kind:'text',text,normalized_text:text,bbox:[.1,.1,.4,.05],reading_order:0,availability:'available',method:'vision_ocr',source_ref:key,provenance:'inferred',visibility:'visible'},...(uncertain?[{observation_id:key+'u',kind:'text' as const,text:'Unknown region',normalized_text:'Unknown region',bbox:[.1,.5,.4,.05] as [number,number,number,number],reading_order:1,availability:'available' as const,method:'vision_ocr',source_ref:key+'u',provenance:'inferred' as const,visibility:'uncertain' as const}]:[])],notes:null,capabilities:{text:'available',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},coverage_gaps:[]});
   const a=page('a','½ cup olives',true),b=page('b','1/4 cup olives',true),regional=changes(a,b).filter(c=>c.kind==='text_modified');assert.equal(regional.length,1);assert.equal(regional[0].text_scope,'region');assert.equal(regional[0].text_assessment,'inferred');assert.deepEqual(regional[0].evidence.map(e=>e.quote),['½ cup olives','1/4 cup olives']);
   assert.equal(changes(a,page('c','1 4 cup olives',true)).filter(c=>c.kind==='text_modified').length,0,'Separate digits cannot verify one fractional slot');assert.equal(changes(a,page('d','¼ kg olives',true)).filter(c=>c.kind==='text_modified').length,0,'Regional numeric matching must preserve units');
   for(const [fraction,integer,key]of [['1/2 cup olives','12 cup olives','e'],['½ cup olives','14 cup olives','f']]){assert.equal(changes(page('a',fraction,true),page(key,integer,true)).filter(c=>c.kind==='text_modified').length,0,'A dropped fraction slash cannot become a regional value edit');const full=changes(page('a',fraction),page(key,integer));assert.ok(!full.some(c=>c.kind==='text_modified'));assert.ok(full.some(c=>c.coverage_gaps.some(g=>g.reason==='ocr_region_missing_or_numeric_ambiguity_withheld')));}
-  for(const text of ['1/','/2','Amount /2 cup','1 /','／２','1//2','1/-2']){assert.equal(numericNotationSupported(text),false);assert.equal(numericShape(text),null);assert.equal(changes(page('a',text,true),page('g','2 cup olives',true)).filter(c=>c.kind==='text_modified').length,0);}
-  for(const text of ['1 / 2','１ ／ ２','10/19/2026','100원/월','1/day','km/h','금액 -1,234.50 / +1.25% / 120억','100 USD / +120 USD'])assert.equal(numericNotationSupported(text),true,text);
+  const notationCases=JSON.parse(await readFile('tests/fixtures/numeric-notation.json','utf8')) as {text:string,supported:boolean}[];
+  for(const {text,supported}of notationCases){assert.equal(numericNotationSupported(text),supported,text);if(!supported)assert.equal(numericShape(text),null,text);}
+  for(const [before,after]of [['/½ cup olives','/¼ cup olives'],['/+2 cup olives','/+3 cup olives'],['/ .2 cup olives','/ .3 cup olives']])for(const uncertain of [false,true]){const delta=changes(page('a',before,uncertain),page('g',after,uncertain));assert.ok(!delta.some(c=>c.kind==='text_modified'),before);assert.ok(delta.some(c=>c.coverage_gaps.length));}
   assert.equal(numericShape('1½'),'decimal,fraction');assert.equal(numericPattern('1½'),'##/#');assert.equal(numericPattern('1 1/2'),'# #/#');
+});
+
+test('actual native OCR withholds incomplete fraction lines at the production call site',native,async()=>{
+  const bytes=await pdf(d=>{d.font(resolve('node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf')).fontSize(32);for(const [i,text]of ['Amount /2 cup olives','Amount 1/ cup olives','Amount /+2 cup olives'].entries())d.text(text,80,150+i*120,{lineBreak:false});});
+  const result=await recognizePdf(bytes,1),lines=result.lines.filter(l=>/olives/i.test(l.text));
+  assert.equal(lines.length,3,JSON.stringify(result.lines));
+  for(const line of lines){assert.ok(line.text.includes('/'),JSON.stringify(line));assert.equal(line.numeric_status,'unsupported_notation',JSON.stringify(line));assert.equal(line.numeric_consensus,false);}
 });
 
 test('native fractional scan changes retain original readings and inferred evidence',native,async()=>{

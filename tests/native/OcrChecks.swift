@@ -45,11 +45,12 @@ import AppKit
         precondition(numbers("1½ 1 1/2 -¼")==["1","1/2","1","1/2","-1/4"],"Mixed integer/fraction slots must not fuse into11/2")
         precondition(DocverVision.numericFormatSupported("⅛ pound ¼ pound 1/2"))
         precondition(!DocverVision.numericFormatSupported("⅟ x² Ⅲ ١"),"Incomplete numerators and unsupported numeric scripts remain unverified")
-        for text in ["1/","/2","Amount /2 cup","1 /","／２","1//2","1/-2"]{
-            precondition(!DocverVision.numericFormatSupported(text),"Incomplete slash form must stay unsupported: \(text)")
-            precondition(DocverVision.numericStatus([a],[a],formatSupported:DocverVision.numericFormatSupported(text))=="unsupported_notation")
+        let cases=try JSONSerialization.jsonObject(with:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[1]))) as! [[String:Any]]
+        for item in cases {
+            let text=item["text"] as! String,supported=item["supported"] as! Bool
+            precondition(DocverVision.numericFormatSupported(text)==supported,"Shared notation contract: \(text)")
+            if !supported {precondition(DocverVision.numericStatus([a],[a],formatSupported:DocverVision.numericFormatSupported(text))=="unsupported_notation")}
         }
-        for text in ["1 / 2","１ ／ ２","10/19/2026","100원/월","1/day","km/h","금액 -1,234.50 / +1.25% / 120억","100 USD / +120 USD"]{precondition(DocverVision.numericFormatSupported(text),"Complete tokens, numeric list separators and literal unit slashes remain supported: \(text)")}
         let half=Reading(text:"1/2",rect:a.rect,sources:["whole"]),halfTile=Reading(text:DocverVision.canonicalNumber("½"),rect:a.rect,sources:["tile"]),third=Reading(text:"1/3",rect:a.rect,sources:["tile"])
         precondition(DocverVision.numericAgreement([half],[halfTile]))
         precondition(DocverVision.numericStatus([half],[third])=="conflicted","Fraction denominator changes must not pass agreement")

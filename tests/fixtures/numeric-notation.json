@@ -1,0 +1,234 @@
+[
+  {
+    "text": "1 / 2",
+    "supported": true
+  },
+  {
+    "text": "１ ／ ２",
+    "supported": true
+  },
+  {
+    "text": "10/19/2026",
+    "supported": true
+  },
+  {
+    "text": "2026/10/19",
+    "supported": true
+  },
+  {
+    "text": "100원/월",
+    "supported": true
+  },
+  {
+    "text": "1/day",
+    "supported": true
+  },
+  {
+    "text": "km/h",
+    "supported": true
+  },
+  {
+    "text": "금액 -1,234.50 / +1.25% / 120억",
+    "supported": true
+  },
+  {
+    "text": "100 USD / +120 USD",
+    "supported": true
+  },
+  {
+    "text": "₩12,000 / ₩13,000",
+    "supported": true
+  },
+  {
+    "text": "$1 / $2",
+    "supported": true
+  },
+  {
+    "text": "€5 / €6",
+    "supported": true
+  },
+  {
+    "text": "-1/2 cup",
+    "supported": true
+  },
+  {
+    "text": "−½ cup",
+    "supported": true
+  },
+  {
+    "text": "1½",
+    "supported": true
+  },
+  {
+    "text": "abc/def",
+    "supported": true
+  },
+  {
+    "text": "💰100 / +120",
+    "supported": true
+  },
+  {
+    "text": "💰 / tea",
+    "supported": true
+  },
+  {
+    "text": "1/",
+    "supported": false
+  },
+  {
+    "text": "/2",
+    "supported": false
+  },
+  {
+    "text": "Amount /2 cup",
+    "supported": false
+  },
+  {
+    "text": "1 /",
+    "supported": false
+  },
+  {
+    "text": "／２",
+    "supported": false
+  },
+  {
+    "text": "1//2",
+    "supported": false
+  },
+  {
+    "text": "1/-2",
+    "supported": false
+  },
+  {
+    "text": "/+2",
+    "supported": false
+  },
+  {
+    "text": "/ +2",
+    "supported": false
+  },
+  {
+    "text": "/−2",
+    "supported": false
+  },
+  {
+    "text": "/½",
+    "supported": false
+  },
+  {
+    "text": "/¼",
+    "supported": false
+  },
+  {
+    "text": "/+½",
+    "supported": false
+  },
+  {
+    "text": "/−½",
+    "supported": false
+  },
+  {
+    "text": "/ .2",
+    "supported": false
+  },
+  {
+    "text": "/−.5",
+    "supported": false
+  },
+  {
+    "text": "/++2",
+    "supported": false
+  },
+  {
+    "text": "Amount /+2 cup",
+    "supported": false
+  },
+  {
+    "text": "／＋２",
+    "supported": false
+  },
+  {
+    "text": "1/½",
+    "supported": false
+  },
+  {
+    "text": "½/¼",
+    "supported": false
+  },
+  {
+    "text": "1/2/3/4",
+    "supported": false
+  },
+  {
+    "text": "1 / / 2",
+    "supported": false
+  },
+  {
+    "text": "1 / 2/",
+    "supported": false
+  },
+  {
+    "text": "100 / ₩",
+    "supported": false
+  },
+  {
+    "text": "₩ / 2",
+    "supported": false
+  },
+  {
+    "text": "1​/​2",
+    "supported": false
+  },
+  {
+    "text": "1∕2",
+    "supported": false
+  },
+  {
+    "text": "1⧸2",
+    "supported": false
+  },
+  {
+    "text": "1╱2",
+    "supported": false
+  },
+  {
+    "text": "1/́2",
+    "supported": false
+  },
+  {
+    "text": "a/2́",
+    "supported": false
+  },
+  {
+    "text": "1﻿/2",
+    "supported": false
+  },
+  {
+    "text": "1⁠/2",
+    "supported": false
+  },
+  {
+    "text": "docs/2024",
+    "supported": false
+  },
+  {
+    "text": "A/2",
+    "supported": false
+  },
+  {
+    "text": "w/ 10",
+    "supported": false
+  },
+  {
+    "text": "Amount 1/ cup olives",
+    "supported": false
+  },
+  {
+    "text": "1/ day",
+    "supported": false
+  },
+  {
+    "text": "100원/ 월",
+    "supported": false
+  }
+]
