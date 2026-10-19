@@ -700,3 +700,11 @@ failed log is retained. Focused native guard pass10.618s. Helper24/policyv6
 invalidate caches. Fullserial165/165PASS0fail/skip/cancel,158.408s;runtime fixed
 through suite/commit,only evidence docs follow. Current42native480/app/latency
 and complete original-base reviews follow;no currentpackage/perfection claim.
+
+
+### 2026-10-19 engine43 working — conservative literal raw profile guard
+- Claude42 focused key-contract review: valid exit0 REQUEST_CHANGES. Adopted raw UTF16 equality instead of native NFC equality for four-context eligibility; unknown alternatives containers also retain eight contexts. Unicode-version example was hypothetical, not an observed installed-runtime disagreement or OCR accuracy result.
+- Helper25/policyv7 invalidates profile caches. Native boundary tests cover precomposed/decomposed and malformed containers. Engine43 typecheck PASS; serial full/native validation pending frozen42 app qualification completion.
+- Independent complete original-base42 code and architecture lanes found no blocker at their depth (code APPROVE, architecture WATCH). This does not override Claude's narrower guard finding or mark product complete.
+- Actual frozen42 native480:218 full-page correct,22 nonempty-not-fulltruth,240empty;0 previously correct lost;all480 primary/PNG unchanged. Actual frozen42 600-scan app PASS269.908820s,sampled driver-treepeak1121.125MiB;single-run workload evidence only,not p95/universal performance. Other42 app jobs ongoing. Manual split/merge and PPTX fidelity still open; continue implementing.
+- Engine43 full serial `npm run check`:165/165 PASS,0fail/skip/cancel,161429.145417ms. Native producer checks exercised raw-distinct NFC and malformed-container8-context guards. Runtime source held fixed during suite. No43app/native480claim; latest actualapp42 jobs allpass (600scan269.908820s,5versions14.831088s,900mixed57.370262s,backend13.939517s), continuous artifact hashes preserved.

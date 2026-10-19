@@ -543,3 +543,17 @@ confidence,positive-admission semantics and source visibility remain intact.
 Helper24/policyv6 are separate observation identities. Component timings from40
 and ordinary480counts do not certify current42app performance or everyUnicode
 case;current packaged verification remains required.
+
+
+### Engine43: literal raw guard across normalization versions
+
+Claude's focused42 review requested a stricter raw-input guarantee: platform NFC
+normalization tables may differ for newly assigned combining characters. No
+actual Vision misreading or concrete installed-version disagreement was supplied;
+this is a guard-contract finding, not an observed accuracy regression. Competitive
+alternatives now must be literally equal UTF16 raw inputs for the four-context
+profile. NFC-equivalent, case/spacing-distinct or unknown containers keep eight
+contexts. Native producer regressions include decomposed/precomposed alternatives
+and malformed containers. Primary readings and comparison admission are unchanged.
+Helper25/vision-roi-v7 invalidate old cached profile observations. Actual42 app and
+480 results belong to frozen42 only;43 qualification remains separate.

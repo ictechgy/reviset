@@ -13,7 +13,9 @@ import Vision
         for text in ["Contract","éÆ","계약 검토","Δ"] {precondition(!DocverVision.mixedScriptCounterOnly(text,0.5,false))}
         for score in [0.0,0.3,0.499,0.501,1.0] {precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",score,false),"Weak and high-score profiles retain their existing evidence contract")}
         precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,true),"Ambiguous positive-correction eligibility still requires all eight contexts")
-        precondition(DocverVision.mixedScriptCounterOnly("계약 é",0.5,false,[["text":"계약 e\u{0301}","confidence":0.5]]),"Exactly equal NFC inputs establish consumer nonambiguity")
+        precondition(!DocverVision.mixedScriptCounterOnly("계약 é",0.5,false,[["text":"계약 e\u{0301}","confidence":0.5]]),"NFC-equivalent but raw-distinct alternatives retain8 across Unicode table versions")
+        precondition(DocverVision.mixedScriptCounterOnly("계약 é",0.5,false,[["text":"계약 é","confidence":0.5]]))
+        precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,false,nil),"Unknown alternatives container retains8 contexts")
         for alternative in ["계약  Contract","계약 contract","계약\u{0085}Contract"] {precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,false,[["text":alternative,"confidence":0.5]]),"Unproven cross-runtime equality retains all correction contexts")}
         precondition(!DocverVision.mixedScriptCounterOnly("계약 Contract",0.5,false,[["text":"계약 Contract"]]))
         typealias Reading=DocverVision.NumericReading
@@ -241,7 +243,12 @@ import Vision
                     precondition(((result["reconsideration"] as! [String:Any])["contexts"] as! [[String:Any]]).count==count,"Actual producer preserves ambiguity and the competitive-score cutoff")
                     precondition(result["text"] as? String==text && result["confidence"] as? Double==0.5)
                 }
-                for (primary,alternative) in [("계익 J\u{030C}","계익 ǰ"),("계익 H\u{0331}","계익 ẖ"),("계익 T\u{0308}","계익 ẗ"),("계익 W\u{030A}","계익 ẘ"),("계익 Y\u{030A}","계익 ẙ")] {
+                for container:Any in [NSNull(),[NSNull(),["text":"Pineapple\u{0085}주스","confidence":0.5]] as [Any]] {
+                    let row:[String:Any]=["text":text,"confidence":0.5,"bbox":[CGFloat(b.minX),1-b.maxY,b.width,b.height],"numeric_consensus":true,"strike_candidate":false,"strike_status":"not_detected","alternatives":container]
+                    let result=DocverVision.reconsideredLines(image,bitmap,[row])[0]
+                    precondition(((result["reconsideration"] as! [String:Any])["contexts"] as! [[String:Any]]).count==8,"Malformed alternatives containers cannot prune correction contexts")
+                }
+                for (primary,alternative) in [("계익 é","계익 e\u{0301}"),("계익 J\u{030C}","계익 ǰ"),("계익 H\u{0331}","계익 ẖ"),("계익 T\u{0308}","계익 ẗ"),("계익 W\u{030A}","계익 ẘ"),("계익 Y\u{030A}","계익 ẙ")] {
                     let row:[String:Any]=["text":primary,"confidence":0.5,"bbox":[CGFloat(b.minX),1-b.maxY,b.width,b.height],"numeric_consensus":true,"strike_candidate":false,"strike_status":"not_detected","alternatives":[["text":primary,"confidence":0.5],["text":alternative,"confidence":0.5]]]
                     let result=DocverVision.reconsideredLines(image,bitmap,[row])[0]
                     precondition(((result["reconsideration"] as! [String:Any])["contexts"] as! [[String:Any]]).count==8,"Canonical-equivalent but code-unit-different keys preserve correction eligibility")
