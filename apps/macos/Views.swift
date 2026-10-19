@@ -209,7 +209,7 @@ struct ChangeListView: View {
 
 struct ChangeRow: View {
     let change: JSON
-    var kindName: String {changeNames[change["kind"].string] ?? change["kind"].string}
+    var kindName: String {changeDisplayName(change)}
     var text: String {(change["after"].isNull ? change["before"].string:change["after"].string).replacingOccurrences(of:"\n",with:" ")}
     var status: String {let value=change["lineage"]["status"].string;return value=="human_confirmed" ? "사용자 확정":value=="needs_review" ? "검토 필요":"추정 대응"}
     var body: some View {HStack(spacing:10){Text(kindName).font(.caption).foregroundStyle(change["kind"].string=="coverage_gap" ? Color.secondary:Color.blue).frame(width:85,alignment:.leading);VStack(alignment:.leading,spacing:3){Text(text).lineLimit(1).font(.caption);Text(change["evidence"].array.map{"p.\($0["page"].int)"}.joined(separator:" → ")).font(.caption2).foregroundStyle(.secondary)};Spacer();if change["region_pairing_assessment"].string == "inferred"{Text("영역 대응 추정").font(.caption2).foregroundStyle(.orange)};if change["text_assessment"].string == "inferred"{Text("OCR 추정 · 원문 확인").font(.caption2).foregroundStyle(.orange)};if !change["appearance_assessment"].string.isEmpty{Text(change["appearance_assessment"].string=="observed" ? "표시 관측":"표시 추정").font(.caption2).foregroundStyle(.orange)};Text(status).font(.caption2).foregroundStyle(.secondary)}.padding(.vertical,3)}
@@ -228,16 +228,17 @@ struct InspectorView: View {
     }
     var editable: Bool { mappingUnavailableReason == nil }
     var structural: Bool { !model.selected["topology"].isNull }
+    var neutralText:Bool {structural || model.selected["kind"].string == "coverage_gap" || isReferenceAppearanceChange(model.selected)}
     var body: some View {
         ScrollView {
             LazyVStack(alignment:.leading,spacing:16) {
                 Text("선택한 변경").font(.caption).foregroundStyle(.secondary)
-                Text(changeNames[model.selected["kind"].string] ?? "변경을 선택하세요").font(.title3.weight(.semibold))
+                Text(changeDisplayName(model.selected)).font(.title3.weight(.semibold))
                 if !model.selected.isNull {
                     Text(structural ? "이전 구성" : "이전 원문").font(.caption).foregroundStyle(.secondary)
-                    Text(model.selected["before"].isNull ? "해당 버전에서 원문 없음" : model.selected["before"].string).foregroundStyle(structural ? Color.primary : Color.red).textSelection(.enabled)
+                    Text(model.selected["before"].isNull ? "해당 버전에서 원문 없음" : model.selected["before"].string).foregroundStyle(neutralText ? Color.primary : Color.red).textSelection(.enabled)
                     Text(structural ? "이후 구성" : "이후 원문").font(.caption).foregroundStyle(.secondary)
-                    Text(model.selected["after"].isNull ? "해당 버전에서 원문 없음" : model.selected["after"].string).foregroundStyle(structural ? Color.primary : Color.green).textSelection(.enabled)
+                    Text(model.selected["after"].isNull ? "해당 버전에서 원문 없음" : model.selected["after"].string).foregroundStyle(neutralText ? Color.primary : Color.green).textSelection(.enabled)
                     if structural { Text("아래의 각 페이지를 눌러 원문을 확인하세요. 계보의 같은 묶음에 있어도 모든 페이지가 서로 직접 연결되는 것은 아닙니다.").font(.caption).foregroundStyle(.secondary) }
                     Divider();Text("원문 근거").font(.headline)
                     ForEach(Array(model.selected["evidence"].array.enumerated()),id:\.offset) { _,e in

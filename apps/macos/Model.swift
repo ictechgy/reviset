@@ -195,8 +195,16 @@ import Darwin
     func navigateEvidence(_ evidence: JSON) {
         guard !loadingChanges else{return}
         let occurrence=evidence["revision_occurrence_id"].string
-        if occurrence == revision(from)["revision_occurrence_id"].string { leftPageID=evidence["page_id"].string }
-        if occurrence == revision(to)["revision_occurrence_id"].string { rightPageID=evidence["page_id"].string }
+        if occurrence == revision(from)["revision_occurrence_id"].string {
+            let id=displayPageID(evidence["page_id"].string,in:revision(from))
+            guard primaryPages(revision(from)).contains(where:{$0["page_id"].string==id}) else{status="이 근거에 대응하는 원문 페이지를 확인할 수 없습니다.";return}
+            leftPageID=id
+        }
+        if occurrence == revision(to)["revision_occurrence_id"].string {
+            let id=displayPageID(evidence["page_id"].string,in:revision(to))
+            guard primaryPages(revision(to)).contains(where:{$0["page_id"].string==id}) else{status="이 근거에 대응하는 원문 페이지를 확인할 수 없습니다.";return}
+            rightPageID=id
+        }
         pageNavigation=(report["report_id"].string,from,to,leftPageID,rightPageID)
     }
     func applyRelation(project: String, report: String, draftHash: String, before: String, after: String, left: [String], right: [String], kind: String, reason: String) async throws {
@@ -215,3 +223,10 @@ import Darwin
 }
 struct ImportRow: Identifiable { let id = UUID(); var label: String; var urls: [URL] }
 let changeNames = ["text_modified": "텍스트 수정", "page_moved": "페이지 이동", "page_added": "페이지 추가", "page_deleted": "페이지 삭제", "text_struck_through": "취소선 표시", "text_occluded": "텍스트 가림", "text_revealed": "텍스트 다시 표시", "visual_region_changed": "화면 변경", "coverage_gap": "관측 공백", "page_split": "페이지 분할", "page_merged": "페이지 병합", "page_lineage_changed": "페이지 계보 변경"]
+func isReferenceAppearanceChange(_ change:JSON)->Bool {
+    change["kind"].string == "visual_region_changed" && change["evidence"].array.contains { $0["method"].string == "provided_pdf_native_raster" }
+}
+func changeDisplayName(_ change:JSON)->String {
+    if isReferenceAppearanceChange(change) { return "제공 PDF 화면 차이" }
+    return changeNames[change["kind"].string] ?? "변경을 선택하세요"
+}

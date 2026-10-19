@@ -43,6 +43,7 @@ test('provided appearance creates qualified PDF evidence without exact-source ra
  const different={...structuredClone(right.source),text:'Completely unrelated material'};assert.ok(matchPages([left.source],[different]).matches.every(m=>!m.reasons.includes('exact_native_raster')));
  const a=revision('a',left),b=revision('b',right),edge={from_page_id:left.source.page_id,to_page_id:right.source.page_id,score:1,status:'human_confirmed' as const,reasons:['source_pair']};
  const changes=diffRevisions({...a,pages:[left.source]},{...b,pages:[right.source]},[edge],[],()=> 'family');const visual=changes.find(c=>c.kind==='visual_region_changed')!;assert.ok(visual);assert.equal(visual.appearance_assessment,'inferred');assert.deepEqual(visual.evidence.map(e=>[e.asset_id,e.page_id,e.render_sha256,e.provenance]),[[left.pdf.asset_id,left.pdf.page_id,left.pdf.raster.sha256,'inferred'],[right.pdf.asset_id,right.pdf.page_id,right.pdf.raster.sha256,'inferred']]);assert.ok(!changes.some(c=>c.kind==='text_modified'));Report.parse(report([a,b]));
+ assert.ok(visual.coverage_gaps.every(g=>g.feature==='visual_comparison'),'Supplied-PDF visual uncertainty must not be labelled text uncertainty');
  const tampered=structuredClone(report([a,b]));tampered.revisions[0].pages[0].appearance!.asset_id=right.pdf.asset_id;assert.equal(Report.safeParse(tampered).success,false);
  const c=structuredClone(right);c.source.text='Unique topic 120';c.source.elements[0].text=c.source.text;c.source.elements[0].normalized_text=c.source.text;c.pdf.raster.sha256=left.pdf.raster.sha256;c.source.appearance!.raster.sha256=left.pdf.raster.sha256;
  const sourceChange=diffRevisions({...a,pages:[left.source]},{...revision('c',c),pages:[c.source]},[{...edge,to_page_id:c.source.page_id}],[],()=> 'family');assert.ok(sourceChange.some(c=>c.kind==='text_modified'));assert.ok(sourceChange.some(c=>c.coverage_gaps.some(g=>g.reason==='pptx_source_changed_despite_identical_reference_pixels')));
@@ -65,6 +66,13 @@ test('historical44/45 complete net events, selector IDs and evidence replay exac
  for(const item of fixture.fixtures){Report.parse(item.report);const q=new QueryService({} as Store,new Set([item.report.project_id]),()=>item.report);
   for(const request of item.requests){assert.equal(canonical(q.changeSet(request.args)),canonical(request.events));for(const [index,event]of request.events.entries()){const {mode,...args}=request.args;assert.equal(canonical(q.query('get_evidence',{...args,change_id:event.change_id})),canonical(request.evidence[index]));}}
  }
+});
+
+test('historical50 supplied-PDF event bytes stay exact while current visual warnings use the correct scope',async()=>{
+ const fixture=JSON.parse(await readFile(new URL('../fixtures/bundle-50-golden.json',import.meta.url),'utf8'));assert.equal(fixture.source_head,'a52b651b77be72037323c3e8ace8b0c28a02a80e');Report.parse(fixture.report);
+ const old=new QueryService({} as Store,new Set([fixture.report.project_id]),()=>fixture.report);
+ for(const request of fixture.requests){const events=old.changeSet(request.args);assert.equal(canonical(events),canonical(request.events));assert.equal(events[0].coverage_gaps[0].feature,'text');for(const [i,event]of events.entries()){const {mode,...args}=request.args;assert.equal(canonical(old.query('get_evidence',{...args,change_id:event.change_id})),canonical(request.evidence[i]));}}
+ const current={...fixture.report,engine_version:ENGINE_VERSION},query=new QueryService({} as Store,new Set([current.project_id]),()=>current),events:ReturnType<QueryService['changeSet']>[]=fixture.requests.map((r:{args:unknown})=>query.changeSet(r.args));assert.ok(events.every(rows=>canonical(rows)===canonical(events[0])));assert.equal(events[0][0].coverage_gaps[0].feature,'visual_comparison');assert.equal(events[0][0].appearance_assessment,'inferred');assert.ok(events[0][0].evidence.every(e=>e.method==='provided_pdf_native_raster'&&e.asset_id!==current.revisions[0].pages[0].asset_id));assert.notEqual(events[0][0].change_id,fixture.requests[0].events[0].change_id);
 });
 
 test('actual supplied PDF reordered/hidden bundle skips LO, keeps raw parse cache separate, and persists exact reference through export/reopen',async()=>{

@@ -75,7 +75,12 @@ import PDFKit
         guard let visual=model.changes.first(where:{$0["kind"].string=="visual_region_changed" || $0["coverage_gaps"].array.contains(where:{$0["reason"].string=="reference_pdf_changed_without_pptx_source_change"})}) else{throw BridgeError(code:"REFERENCE_VISUAL",message:"제공 PDF의 화면 차이 근거가 없습니다.")}
         model.selectedChangeID=visual["change_id"].string;model.selectEvidence()
         guard model.primaryPages(model.revision(0)).contains(where:{$0["page_id"].string==model.leftPageID}),model.primaryPages(model.revision(1)).contains(where:{$0["page_id"].string==model.rightPageID}),visual["appearance_assessment"].string=="inferred",visual["evidence"].array.allSatisfy({$0["method"].string=="provided_pdf_native_raster"}) else{throw BridgeError(code:"REFERENCE_NAVIGATION",message:"PDF 화면 근거에서 원본 슬라이드로 이동하지 못했습니다.")}
-        return ["reference_pages":references,"hash_verified_pdf_source":true,"source_slide_navigation":true,"visual_association_inferred":true,"source_unchanged_reference_difference_withheld":visual["kind"].string=="coverage_gap"]
+        model.leftPageID="";model.rightPageID=""
+        for evidence in visual["evidence"].array {model.navigateEvidence(evidence)}
+        model.selectEvidence()
+        guard model.primaryPages(model.revision(0)).contains(where:{$0["page_id"].string==model.leftPageID}),model.primaryPages(model.revision(1)).contains(where:{$0["page_id"].string==model.rightPageID}) else{throw BridgeError(code:"REFERENCE_BUTTON_NAVIGATION",message:"근거 버튼에서 원본 슬라이드로 이동하지 못했습니다.")}
+        for id in [model.leftPageID,model.rightPageID]{let payload=try await model.page(id);guard payload["source"]["origin"].string=="reference_pdf" else{throw BridgeError(code:"REFERENCE_BUTTON_SOURCE",message:"근거 버튼 이동 후 PDF 화면을 열지 못했습니다.")}}
+        return ["reference_pages":references,"hash_verified_pdf_source":true,"source_slide_navigation":true,"evidence_button_navigation":true,"visual_association_inferred":true,"source_unchanged_reference_difference_withheld":visual["kind"].string=="coverage_gap"]
     }
     static func exerciseManualRelations(_ model:AppModel,_ output:URL) async throws -> [String] {
         let project=model.projectID,original=model.report["report_id"].string

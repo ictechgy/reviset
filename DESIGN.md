@@ -100,3 +100,8 @@ Actual48fivecaptureClaude review confirms largerdocumentcanvas/pageedges/compact
 - A qualified supplied PDF may provide the native PPTX display while raw OOXML text/notes/hidden slides remain primary source observations. Show `제공 PDF · 페이지 대응 추정`, not a PowerPoint fidelity certificate.
 - Distinguish supplied-PDF pixel differences from source edits. If unchanged PPTX bytes have different PDFs, explain the export/source inconsistency as a review gap. Missing one page's appearance is a page gap; it does not cancel other page comparisons.
 - Selecting PDF appearance evidence must navigate to the associated primary PPTX slide. Keep source coordinate overlays withheld across an inferred relation. Count provided PDF display separately from missing/conversion previews.
+
+### Native51 supplied-PDF evidence actions
+- The explicit evidence button and automatic change selection both resolve supplied-PDF page IDs to the primary PPTX slide. Preserve explicit navigation through subsequent selection updates; an unmapped PDF page keeps the current source selection and shows a Korean explanation.
+- Label inferred supplied-PDF visual events `제공 PDF 화면 차이`. Identical source text in these events and coverage gaps uses neutral text color, while actual text edit before/after retains its edit colors. The supplied-PDF association label and source warning remain visible.
+- Actual production AppModel regression covers left/right evidence actions, persisted navigation pins, unmapped secondary guards, direct source and PDF-only navigation. Packaged-app smoke must execute the explicit action as well as automatic selection; source tests alone do not qualify visible app behavior.

@@ -188,7 +188,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
       }else if(comparable&&formatA==='pptx'&&formatB==='pptx'&&a.asset_id===b.asset_id&&left!.sha256!==right!.sha256){
         add('coverage_gap',a,b,m,'reference_pdf_changed_without_pptx_source_change');const gap=changes.at(-1)!;gap.coverage_gaps[0].feature='visual_comparison';gap.appearance_assessment='inferred';gap.evidence=[appearanceEvidence(from,a),appearanceEvidence(to,b)];
       }else if(comparable&&left!.sha256!==right!.sha256&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){
-        add('visual_region_changed',a,b,m,'provided_pdf_visual_difference_with_inferred_source_association');const change=changes.at(-1)!;change.appearance_assessment='inferred';change.evidence=[appearanceEvidence(from,a),appearanceEvidence(to,b)];
+        add('visual_region_changed',a,b,m,'provided_pdf_visual_difference_with_inferred_source_association');const change=changes.at(-1)!;change.coverage_gaps[0].feature='visual_comparison';change.appearance_assessment='inferred';change.evidence=[appearanceEvidence(from,a),appearanceEvidence(to,b)];
       }else if(comparable&&left!.sha256===right!.sha256&&formatA==='pptx'&&formatB==='pptx'&&a.asset_id!==b.asset_id){
         add('coverage_gap',a,b,m,'pptx_source_changed_despite_identical_reference_pixels');const gap=changes.at(-1)!;gap.coverage_gaps[0].feature='visual_comparison';gap.evidence=[appearanceEvidence(from,a),appearanceEvidence(to,b)];
       }
