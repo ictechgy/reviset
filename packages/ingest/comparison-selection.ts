@@ -32,6 +32,24 @@ function coveredByUnion(regions:Box[],target:Box,dx:number,dy:number):boolean{
   }
   return true;
 }
+const compact=(text:string)=>normalize(text).replace(/\s/gu,'');
+function sourceTextInside(regions:ElementData[],target:Box):{text?:string;reason?:string}{
+  if(regions.length>256)return {reason:'readable_source_coverage_union_budget_exceeded'};
+  const units:{text:string;bbox:Box}[]=[];let count=0;
+  for(const e of regions){
+    const spans=e.visibility_spans;
+    if(!spans?.length){units.push(e);continue;}
+    count+=spans.length;
+    if(count>8192)return {reason:'readable_source_glyph_agreement_budget_exceeded'};
+    if(compact(spans.map(s=>s.text).join(''))!==compact(e.text))return {reason:'readable_source_glyph_text_correlation_unverified'};
+    // A neighboring line's metric margin can intersect the target. Its glyph
+    // centers remain outside. Conversely a source run may cover several OCR
+    // pieces: compare only source glyphs centered in this target, never a
+    // substring guessed from OCR text. Raw source remains selected in full.
+    units.push(...spans.filter(s=>{const b=s.bbox,x=b[0]+b[2]/2,y=b[1]+b[3]/2;return x>=target[0]&&x<=target[0]+target[2]&&y>=target[1]&&y<=target[1]+target[3];}));
+  }
+  return {text:rowOrderedRegions(units).map(s=>s.text).join('')};
+}
 function corroboratesCompleteText(raw:ElementData,ocr:ElementData,a:Box):boolean{
   // Font-metric boxes include ascender/side-bearing space absent from raster
   // ink. Only an exact full-string reading can bridge that metric difference;
@@ -55,14 +73,14 @@ export function selectHybridComparison(page:PageData):void{
     // inferred, mixed or covered strikes still block the entire OCR line.
     if(raw.some(r=>sourceAppearanceBlocks(r,e.bbox)&&!(r.visibility==='struck_through'&&readable(r)))){e.comparison_reason='source_appearance_blocks_ocr';continue;}
     if(clear.length){
-      const source=normalize(clear.map(r=>r.text).join(' ')),sameContent=source.replace(/\s/gu,'')===normalize(e.text).replace(/\s/gu,''),covered=coveredByUnion(clear.map(r=>boxes.get(r)!),e.bbox,dx,dy);
-      if(source!==normalize(e.text))page.coverage_gaps.push({feature:'ocr_verification',reason:'raw_ocr_region_disagreement_source_priority'});
+      const source=sourceTextInside(clear,e.bbox),sameContent=source.text!==undefined&&compact(source.text)===compact(e.text),covered=coveredByUnion(clear.map(r=>boxes.get(r)!),e.bbox,dx,dy);
+      if(source.text!==undefined&&!sameContent)page.coverage_gaps.push({feature:'ocr_verification',reason:'raw_ocr_region_disagreement_source_priority'});
       // Even one source run may span whitespace/TJ gaps containing raster text.
       // Only matching content AND covered geometry make the OCR redundant.
       // Reliable raw source remains selected when the OCR line disagrees.
       if(!unknown.length&&covered&&sameContent){
         e.comparison_role='shadowed';e.comparison_reason='readable_source_priority';
-      }else{e.comparison_reason=clear.length>256?'readable_source_coverage_union_budget_exceeded':!unknown.length&&covered&&!sameContent?'ocr_text_disagreement_whole_line_unresolved':'ocr_crosses_mixed_or_uncovered_source_regions';page.coverage_gaps.push({feature:'ocr',reason:e.comparison_reason});}
+      }else{e.comparison_reason=source.reason??(!unknown.length&&covered&&!sameContent?'ocr_text_disagreement_whole_line_unresolved':'ocr_crosses_mixed_or_uncovered_source_regions');page.coverage_gaps.push({feature:'ocr',reason:e.comparison_reason});}
       continue;
     }
     if(e.visibility==='visible'&&e.availability==='available'){

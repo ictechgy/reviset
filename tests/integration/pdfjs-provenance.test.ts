@@ -6,6 +6,14 @@ import {join,resolve} from 'node:path';
 import {preparePdfjs,PDFJS_VERSION,PDFJS_WORKER_UPSTREAM_SHA256,PDFJS_WORKER_PATCHED_SHA256} from '../../scripts/prepare-pdfjs.js';
 import {createHash} from 'node:crypto';
 import {pdfWorkerEnvironment} from '../../packages/runtime/pdfjs-environment.js';
+import {analyze} from '../../packages/engine/index.js';
+import {Store} from '../../packages/storage/index.js';
+import {id} from '../../packages/schema/index.js';
+import PDFDocument from 'pdfkit';
+import {getDocument,OPS} from 'pdfjs-dist/legacy/build/pdf.mjs';
+import {pdfOptions} from '../../packages/ingest/pdf.js';
+
+await preparePdfjs();
 
 test('PDF.js origin patch is pinned, idempotent, tamper rejecting and part of snapshot identity',async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-pdfjs-origin-'));
@@ -27,4 +35,25 @@ test('PDF.js origin patch is pinned, idempotent, tamper rejecting and part of sn
     await writeFile(join(folder,'package.json'),JSON.stringify({version:'6.4.300'}));
     await assert.rejects(preparePdfjs(folder),/Unsupported PDF.js patch version/);
   }finally{await rm(folder,{recursive:true,force:true});}
+});
+
+test('worker exports only a bounded origin marker for embedded and substitute fonts',async()=>{
+  for(const embedded of [false,true]){
+    const doc=new PDFDocument(),chunks:Buffer[]=[];doc.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(r=>doc.on('end',()=>r(Buffer.concat(chunks))));if(embedded)doc.font(resolve('node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf'));doc.text('Embedded origin');doc.end();
+    const task=getDocument({...pdfOptions,disableFontFace:true,data:new Uint8Array(await done)});
+    try{const pdf=await task.promise,page=await pdf.getPage(1),ops=await page.getOperatorList(),i=ops.fnArray.indexOf(OPS.setFont),font=(page.commonObjs as any).get(ops.argsArray[i][0]);assert.equal(font.docverEmbeddedFontProgram,embedded);for(const key of ['cMap','vmetrics','systemFontInfo','data','tables'])assert.ok(!Object.hasOwn(font,key),'Full font metadata must not be exported: '+key);}
+    finally{await task.destroy();}
+  }
+});
+
+test('actual worker hash is present in an analyzed immutable report identity',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-worker-report-')),store=new Store(join(folder,'store'));
+  try{
+    const doc=new PDFDocument(),chunks:Buffer[]=[];doc.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(r=>doc.on('end',()=>r(Buffer.concat(chunks))));doc.text('Worker identity');doc.end();await writeFile(join(folder,'input.pdf'),await done);
+    const {report}=await analyze({project_id:'prj_worker_identity',title:'Worker identity',revisions:[{label:'v1',files:['input.pdf']}],mapping_decisions:[]},folder,store,undefined,undefined,{ocr:'off'});
+    assert.equal(report.observation_environment.pdfjs_worker_sha256,PDFJS_WORKER_PATCHED_SHA256);assert.equal(report.changes.length,0);
+    const {report_id,...base}=report;assert.equal(report_id,id('rpt',base));
+    assert.notEqual(report_id,id('rpt',{...base,observation_environment:{...base.observation_environment,pdfjs_worker_sha256:PDFJS_WORKER_UPSTREAM_SHA256}}),'Worker bytes change identity even without any text/visibility delta');
+    assert.equal(store.report(report.project_id,report.report_id).observation_environment.pdfjs_worker_sha256,PDFJS_WORKER_PATCHED_SHA256);
+  }finally{store.close();await rm(folder,{recursive:true,force:true});}
 });

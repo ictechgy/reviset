@@ -1,3 +1,11 @@
+# 품질 반복 2 · pass6 · 2026-10-19
+
+Claude가 pass5의 문구 일치 범위가 주변 줄 전체 또는 OCR로 나뉜 원문 전체를 포함하는 재현을 추가 지적했다. 실제 포함 글꼴 PDF 두 줄과 한 원문 두 OCR 조각에서 확인하고, OCR 대상 안에 중심이 있는 상관된 glyph만 공간 순서로 대조하도록 고쳤다. 원문은 전체 선택을 유지하며 합집합/정확한 문자 일치/8192glyph·256run 예산을 모두 적용한다. OCR 내부 이미지 숫자와 불명확한 원문은 계속 보류한다.
+
+엔진15/helper11은 완전한 vulgar/slash 분수를 위치별 한 숫자 항목으로 검증한다. 혼합 정수·분수는 따로 세고 분모·부호·항목 수 충돌을 보류한다. diff의 항목 수/지역 비교도 같은 경계를 사용하고 단위는 유지한다. 공개 W3C PDF의 분수4행이 실제 교차검증을 통과했다. AppleGothic½ 행 신뢰도0.3과 다른 글꼴의 상충 판독은 확실하다고 올리지 않고 실패/음성 대조군으로 보존한다. 판독 가능한 별도1/2→1/4 스캔의 추정 변경은 통과했다. 테스트의 최초 강제 승격 기대가 잘못됐으며 제품 threshold를 낮추지 않았다.
+
+직전99444dd(엔진14)의 전체102검사/독립 코드APPROVE·설계WATCH, 실제900쪽55.699초/RSS817512448bytes,600쪽190.911초/RSS885702656bytes,공개12자료33쪽+20변형·backend8·SwiftBridge·공개PPTX UI가 통과했다. Claude의 범위 precision 문제를 받아들여 이 head의 release 준비는 BLOCKED로 기록했다. 새 소스는 `npm run check` **107/107 통과, 실패/skip0,57.179초** (`pass6-check-final.txt`). 최초106/107 실패와 잘못된 테스트 기대/원인도 보존했다. full-diff 양 lane과 새 패키지 QA를 다시 수행한다. Agy는 사용량 한도, Grok 코드 검토는 무응답 timeout으로 최종 승인에 포함하지 않는다. 이전 Grok 레이아웃 논의와 Agy의 유효한 범위 리뷰 원문은 별도로 유지한다.
+
 # 품질 반복 2 · pass5 · 2026-10-19
 
 엔진14: glyph outline의 clip 증명은 문서에 실제 포함된 font program만 허용하고, 직사각 clip 안쪽 한 네이티브 픽셀 여유를 요구한다. 미포함 Helvetica에서 PDF.js 대체 외곽선과 실제 PDFKit 화면의 차이가 재현되어 포함 여부를 이름이나 missingFile로 추측하지 않도록 고쳤다. 고정 PDF.js worker의 빌드 시 boolean 전달 패치·정확한 upstream/수정 SHA·report 환경 SHA를 추가했다. 서명된 앱 실행 중에는 worker를 수정하지 않는다.

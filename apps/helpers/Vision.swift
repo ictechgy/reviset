@@ -10,19 +10,21 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-10-local-grid-contrast"
+    static let version = "docver-vision-11-fraction-slots"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
     static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format:"%02x", $0) }.joined() }
+    static let vulgarFractions="[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞↉]"
     static func numericExpression() throws->NSRegularExpression {
-        try NSRegularExpression(pattern:"(?:(?<![\\p{L}\\p{N}])[+＋−-]\\s*)?[0-9０-９]+(?:[.,，．][0-9０-９]+)*(?:\\s*(?:[%％]|억|만|원))?")
+        try NSRegularExpression(pattern:"(?:(?<![\\p{L}\\p{N}])[+＋−-]\\s*)?(?:[0-9０-９]+\\s*[/⁄／]\\s*[0-9０-９]+|\(vulgarFractions)|[0-9０-９]+(?:[.,，．][0-9０-９]+)*)(?:\\s*(?:[%％]|억|만|원))?")
     }
-    static func canonicalNumber(_ text:String)->String{text.precomposedStringWithCompatibilityMapping.replacingOccurrences(of:"−",with:"-").filter{!$0.isWhitespace}}
+    static func canonicalNumber(_ text:String)->String{text.precomposedStringWithCompatibilityMapping.replacingOccurrences(of:"−",with:"-").replacingOccurrences(of:"⁄",with:"/").filter{!$0.isWhitespace}}
     static func numericFormatSupported(_ text:String)->Bool {
-        // Fractions, superscripts and Roman numerals are preserved as text, but
-        // agreement on decimal slots does not verify those other number forms.
-        text.range(of:"(?=\\p{N})[^0-9０-９]",options:.regularExpression)==nil
+        // Complete vulgar/slash fractions are one spatial slot, never a loose
+        // agreement on numerator/denominator digits. Other numeric scripts,
+        // superscripts, Roman and incomplete fraction numerators stay unsupported.
+        text.replacingOccurrences(of:vulgarFractions,with:"",options:.regularExpression).range(of:"(?=\\p{N})[^0-9０-９]",options:.regularExpression)==nil
     }
     static func supportedPixels(_ image:NSBitmapImageRep)->Bool {
         !image.isPlanar && image.bitsPerSample==8 && image.bitsPerPixel==image.samplesPerPixel*8 && !image.bitmapFormat.contains(.sixteenBitLittleEndian) && !image.bitmapFormat.contains(.thirtyTwoBitLittleEndian) && ((image.colorSpace.colorSpaceModel == .rgb && [3,4].contains(image.samplesPerPixel)) || (image.colorSpace.colorSpaceModel == .gray && [1,2].contains(image.samplesPerPixel)))

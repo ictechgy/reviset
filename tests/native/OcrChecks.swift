@@ -41,6 +41,14 @@ import AppKit
         precondition(numbers("2026-10-19")==["2026","10","19"],"Date separators cannot become negative signs")
         precondition(numbers("−５００원 ＋１０％")==["-500원","+10%"],"Full width digits and signed units")
         precondition(DocverVision.numericFormatSupported("−５００원 100 100"))
+        precondition(numbers("⅛ pound ¼ butter ½ olives １／２")==["1/8","1/4","1/2","1/2"],"Each complete fraction is one canonical spatial slot")
+        precondition(numbers("1½ 1 1/2 -¼")==["1","1/2","1","1/2","-1/4"],"Mixed integer/fraction slots must not fuse into11/2")
+        precondition(DocverVision.numericFormatSupported("⅛ pound ¼ pound 1/2"))
+        precondition(!DocverVision.numericFormatSupported("⅟ x² Ⅲ ١"),"Incomplete numerators and unsupported numeric scripts remain unverified")
+        let half=Reading(text:"1/2",rect:a.rect,sources:["whole"]),halfTile=Reading(text:DocverVision.canonicalNumber("½"),rect:a.rect,sources:["tile"]),third=Reading(text:"1/3",rect:a.rect,sources:["tile"])
+        precondition(DocverVision.numericAgreement([half],[halfTile]))
+        precondition(DocverVision.numericStatus([half],[third])=="conflicted","Fraction denominator changes must not pass agreement")
+        precondition(!DocverVision.numericAgreement([half],[Reading(text:"1",rect:a.rect,sources:["tile"]),Reading(text:"2",rect:b.rect,sources:["tile"])]),"Separate decimal digits do not verify a fraction")
         precondition(!DocverVision.numericFormatSupported("⅛ pound ¼ pound x² Ⅲ"),"Unverified fractions/exponents cannot claim decimal consensus")
 
         let image=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:240,pixelsHigh:160,bitsPerSample:8,samplesPerPixel:1,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceWhite,bytesPerRow:0,bitsPerPixel:0)!

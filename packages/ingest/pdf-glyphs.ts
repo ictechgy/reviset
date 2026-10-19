@@ -83,7 +83,7 @@ export function paintedGlyphs(page:any,viewport:any,operators:any,fontStyles:Rec
             // A complete-outline proof must not inherit any expanded clip.
             // Only document-embedded font programs qualify. Require an inward
             // native-pixel clearance as well; boundary contact cannot prove ink.
-            const pixel=Math.max(72/300,Math.max(viewport.width,viewport.height)/4096),px=pixel/viewport.width,py=pixel/viewport.height;
+            const pixel=Math.max(72/300*(viewport.scale??1),Math.max(viewport.width,viewport.height)/4096),px=pixel/viewport.width,py=pixel/viewport.height;
             if(candidate[2]>0&&candidate[3]>0&&candidate[0]>=s.clip[0]+px&&candidate[1]>=s.clip[1]+py&&candidate[0]+candidate[2]<=s.clip[0]+s.clip[2]-px&&candidate[1]+candidate[3]<=s.clip[1]+s.clip[3]-py){clipOK=true;clipInk=candidate;}
           }
         }

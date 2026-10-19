@@ -1,17 +1,18 @@
 import { SCHEMA_VERSION, normalize,comparisonText,unresolvedComparisonText,comparisonRegions, type ElementData,type RevisionData, type MatchData, type ChangeData, type PageData } from '../schema/index.js';
+import {numericSlots,numericPattern} from '../ingest/numeric-slots.js';
 function regionElements(p:PageData):ElementData[]{return p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p):p.elements.filter(e=>p.comparison_basis==='raster_ocr'?e.method==='vision_ocr':(e.kind==='text'||e.kind==='table_cell')&&e.method!=='vision_document_cell');}
 function comparisonElements(p:PageData):ElementData[]{return regionElements(p).filter(e=>p.comparison_basis==='hybrid_regions_v1'?e.comparison_role==='selected':p.comparison_basis==='raster_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));}
 function regionOverlap(a:ElementData,b:ElementData):number{const x=a.bbox,y=b.bbox;return Math.max(0,Math.min(x[0]+x[2],y[0]+y[2])-Math.max(x[0],y[0]))*Math.max(0,Math.min(x[1]+x[3],y[1]+y[3])-Math.max(x[1],y[1]))/Math.max(0.000001,Math.max(x[2]*x[3],y[2]*y[3]));}
 function ocrRegionsPaired(a:PageData,b:PageData):boolean{
   const all=(p:PageData)=>regionElements(p).filter(e=>p.comparison_basis==='hybrid_regions_v1'||e.method==='vision_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));
-  const left=all(a),right=all(b),numbers=(s:string)=>(s.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length;
+  const left=all(a),right=all(b),numbers=(s:string)=>numericSlots(s).length;
   const overlap=(a:ElementData,b:ElementData)=>{const x=a.bbox,y=b.bbox;return Math.max(0,Math.min(x[0]+x[2],y[0]+y[2])-Math.max(x[0],y[0]))*Math.max(0,Math.min(x[1]+x[3],y[1]+y[3])-Math.max(x[1],y[1]))/Math.max(0.000001,Math.min(x[2]*x[3],y[2]*y[3]));};
   const compatible=(e:ElementData,f:ElementData)=>e.comparison_role!=='unresolved'&&f.comparison_role!=='unresolved'&&(e.method!=='vision_ocr'||e.visibility==='visible')&&(f.method!=='vision_ocr'||f.visibility==='visible')&&overlap(e,f)>0.4&&numbers(e.text)===numbers(f.text);
   const paired=(from:ElementData[],to:ElementData[])=>from.filter(e=>e.method==='vision_ocr').every(e=>{const neighbors=to.filter(f=>compatible(e,f));return neighbors.length===1&&from.filter(old=>compatible(old,neighbors[0])).length===1;});
   return paired(left,right)&&paired(right,left);
 }
 export function evidence(revision:RevisionData,page:PageData,focusText=false,focusElement?:ElementData):ChangeData['evidence'][number] {
-  const selected=comparisonElements(page),element=focusElement??(focusText?(selected.find(e=>/[0-9]/.test(e.text))??selected[0]):undefined);
+  const selected=comparisonElements(page),element=focusElement??(focusText?(selected.find(e=>numericSlots(e.text).length)??selected[0]):undefined);
   return {revision_id:revision.revision_id,revision_occurrence_id:revision.revision_occurrence_id,asset_id:page.asset_id,page_id:page.page_id,page:page.page,
     bbox:element?.bbox??[0,0,1,1],quote:element?.text??(focusText?comparisonText(page):page.text||page.ocr_text||''),method:element?.method??page.elements[0]?.method??'page_observation',provenance:element?.provenance??(page.comparison_basis==='raster_ocr'?'inferred':'observed'),...(element?{observation_id:element.observation_id}:{})};
 }
@@ -62,7 +63,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     if(samePixels&&!sameRaster&&textDiffers)add('coverage_gap',a,b,m,'ooxml_source_changed_while_libreoffice_appearance_unchanged');
     const sourcePdfAppearance=formatA==='pdf'&&formatB==='pdf';
     if(textDiffers&&!sameRaster&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){
-      const left=regionElements(a),right=regionElements(b),leftText=new Set(left.map(e=>normalize(e.text))),rightText=new Set(right.map(e=>normalize(e.text))),pattern=(s:string)=>normalize(s).replace(/[+−-]?\s*[0-9]+(?:[.,][0-9]+)*/g,'#');
+      const left=regionElements(a),right=regionElements(b),leftText=new Set(left.map(e=>normalize(e.text))),rightText=new Set(right.map(e=>normalize(e.text)));
       const observedStrike=(e:ElementData)=>e.provenance==='observed'&&e.visibility==='struck_through'&&!!e.visibility_spans?.length&&e.visibility_spans.every(s=>s.state==='struck_through'&&s.assessment==='observed');
       const supported=(e:ElementData)=>e.comparison_role!=='unresolved'&&(e.visibility===undefined||e.visibility==='visible'||observedStrike(e))&&e.bbox[2]*e.bbox[3]<0.8;
       // Pair geometry before looking at values, including unchanged and uncertain observations.
@@ -80,7 +81,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
         if(pairingRight.some(e=>!supported(e)&&regionOverlap(old,e)>0.05)||pairingLeft.some(e=>!supported(e)&&regionOverlap(e,current)>0.05))continue;
         const oldElsewhere=sourcePair?pairingRight.some(e=>normalize(e.text)===normalize(old.text)):rightText.has(normalize(old.text)),currentElsewhere=sourcePair?pairingLeft.some(e=>normalize(e.text)===normalize(current.text)):leftText.has(normalize(current.text));
         if(oldElsewhere||currentElsewhere||normalize(old.text)===normalize(current.text))continue;
-        if((old.provenance==='inferred'||current.provenance==='inferred')&&(pattern(old.text)!==pattern(current.text)||(old.text.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length!==1||(current.text.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length!==1))continue;
+        if((old.provenance==='inferred'||current.provenance==='inferred')&&(numericPattern(old.text)!==numericPattern(current.text)||numericSlots(old.text).length!==1||numericSlots(current.text).length!==1))continue;
         add('text_modified',a,b,m,'other_page_regions_unresolved');const change=changes.at(-1)!;change.before=old.text;change.after=current.text;change.text_scope='region';change.region_pairing_assessment='inferred';change.text_assessment=old.provenance==='inferred'||current.provenance==='inferred'?'inferred':'observed';
         change.evidence=[evidence(from,a,false,old),evidence(to,b,false,current)];
         if(change.text_assessment==='inferred')change.coverage_gaps.push({feature:'ocr',reason:'ocr_inferred_text_requires_source_review'});

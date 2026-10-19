@@ -1,8 +1,8 @@
-import type {ElementData} from '../schema/index.js';
+import type {Box} from '../schema/index.js';
 
 // Match the native observer's mutual-center row rule. A tall neighboring block
 // must not absorb several short rows; a larger KPI can still share its label's row.
-export function rowOrderedRegions(regions:ElementData[]):ElementData[]{
+export function rowOrderedRegions<T extends {bbox:Box}>(regions:T[]):T[]{
   const ordered=regions.map((e,i)=>({e,i})).sort((a,b)=>a.e.bbox[1]-b.e.bbox[1]||a.e.bbox[0]-b.e.bbox[0]||a.i-b.i);
   const bands:typeof ordered[]=[];
   for(const item of ordered){
