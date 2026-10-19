@@ -10,6 +10,10 @@ import { createCanvas } from '@napi-rs/canvas';
 import { zipSync,unzipSync,strToU8 } from 'fflate';
 import { extractPdf } from '../../packages/ingest/pdf.js';
 import { extractPptx } from '../../packages/ingest/pptx.js';
+import {selectHybridComparison} from '../../packages/ingest/comparison-selection.js';
+import {unresolvedComparisonText,comparisonRegions} from '../../packages/schema/index.js';
+import {diffRevisions as legacyOcr9Diff} from '../../packages/diff/legacy-ocr-9.js';
+import {matchPages as legacyOcr9Match} from '../../packages/matching/legacy-ocr-9.js';
 import { recognizePdf,captureNativePages,supplementPdfOcr } from '../../packages/ingest/ocr.js';
 import { convertPptx,validateRenderPackage,normalizeConvertedPdf,rendererSandbox } from '../../packages/render/index.js';
 import { preparePptxPreview,missingRenderedText } from '../../packages/render/pptx-preview.js';
@@ -59,6 +63,40 @@ test('unique native raster anchors survive identical-text reorders without overr
   const sameSource=right.map((p,i)=>({...p,asset_id:'sourceA',page:i+1}));assert.deepEqual(matchPages(left,sameSource).matches.map(m=>[m.from_page_id,m.to_page_id]),[['a1','b1'],['a2','b2']],'Exact immutable source identity takes priority over raster evidence');
 });
 
+test('OCR order-only differences retain layout evidence and archived engine9 replay semantics',async()=>{
+  const page=(key:string,rows:[string,number][]):PageData=>({page_id:key,asset_id:key,page:1,width:960,height:540,coordinate_system:'normalized',source_transform:[],hidden:false,text:'',comparison_basis:'raster_ocr',ocr_text:rows.map(r=>r[0]).join('\n'),elements:rows.map(([text,y],i)=>({observation_id:key+i,kind:'text',text,normalized_text:text,bbox:[.1,y,.3,.06],reading_order:i,availability:'available',method:'vision_ocr',source_ref:'line'+i,provenance:'inferred',visibility:'visible'})),notes:null,capabilities:{text:'available',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},coverage_gaps:[],raster:{sha256:key.repeat(64),width:960,height:540,renderer:'fixture',environment:'fixture'}});
+  const a=page('a',[['Revenue 100',.1],['Cost 50',.3]]),b=page('b',[['Cost 50',.3],['Revenue 100',.1]]),order=changes(a,b);
+  assert.equal(order.filter(c=>c.kind==='text_modified').length,0);assert.ok(order.some(c=>c.kind==='coverage_gap'&&c.coverage_gaps.some(g=>g.reason==='ocr_reading_order_changed_without_text_region_change')));assert.ok(order.some(c=>c.kind==='visual_region_changed'));
+  const folder=await mkdtemp(join(tmpdir(),'docver-legacy9-')),store=new Store(folder);
+  try{const left=rev(a,'v1'),right=rev(b,'v2'),matching=legacyOcr9Match([a],[b]),rangeMatches=[{...matching.matches[0],reasons:['snapshot_lineage_range_net']}],original=legacyOcr9Diff(left,right,rangeMatches,matching.candidates,()=> 'entity_legacy9');assert.equal(original.filter(c=>c.kind==='text_modified').length,1,'Archived9 must retain its exact old behavior');
+    const report:ReportData={schema_version:'0.2.0',engine_version:'0.2.0-native.ocr-render.9',report_id:'rpt_legacy9',project_id:'prj_legacy9',timeline_revision_id:'timeline',mapping_revision_id:'mapping',schema_hash:'historical9',observation_environment:{fixture:'engine9'},revisions:[left,right],matches:matching.matches,candidates:matching.candidates,mapping_decisions:[],lineages:[{entity_id:'entity_legacy9',page_ids:[a.page_id,b.page_id],status:'inferred'}],changes:[],coverage_gaps:[]};store.finishRun(store.beginRun(report.project_id,'Archived9'),report);
+    const before=store.db.prepare('SELECT body FROM reports WHERE id=?').get(report.report_id)?.body,q=new QueryService(store,new Set([report.project_id])),net=q.changeSet({project_id:report.project_id,report_id:report.report_id,mode:'range_net',from:'v1',to:'v2'});assert.deepEqual(net.map(c=>c.kind),original.map(c=>c.kind));assert.deepEqual(net.map(c=>c.change_id),original.map((c,i)=>id('net',[report.report_id,'v1','v2',i,c])));assert.equal(store.db.prepare('SELECT body FROM reports WHERE id=?').get(report.report_id)?.body,before);
+  }finally{store.close();await rm(folder,{recursive:true,force:true});}
+
+  assert.equal(changes(a,page('c',[['Revenue 120',.1],['Cost 50',.3]])).filter(c=>c.kind==='text_modified').length,1,'Actual numeric edits must remain');
+  const extra=changes(a,page('d',[['Revenue 100',.1],['Cost 50',.3],['Cost 50',.3]]));assert.ok(!extra.some(c=>c.coverage_gaps.some(g=>g.reason==='ocr_reading_order_changed_without_text_region_change')),'Duplicate multiplicity cannot be erased by an existential match');
+});
+
+test('grid observer statuses survive schema, comparison data and explicit gaps',native,async()=>{
+  const bytes=await pdf(d=>d.fontSize(20).text('Grid status fixture',50,60)),observed=await recognizePdf(bytes,1);
+  for(const status of ['unsupported_format','unsupported_dimensions','budget_exceeded','ambiguous_boundaries'] as const){const [p]=await extractPdf(bytes,'sha256:'+byteHash(bytes));await supplementPdfOcr(p,bytes,{nativeResult:{...observed,grid_tables:[],grid_status:status,grid_reasons:['fixture_boundary_reason']}});assert.equal(p.ocr?.grid_status,status);assert.deepEqual(p.ocr?.grid_reasons,['fixture_boundary_reason']);assert.ok(p.coverage_gaps.some(g=>g.reason==='raster_grid_'+status));assert.ok(p.coverage_gaps.some(g=>g.reason==='raster_grid_fixture_boundary_reason'));}
+});
+
+test('hybrid selection preserves reliable raw regions, inferred recovery and blocked whole-line observations',()=>{
+  type E=PageData['elements'][number];
+  const element=(id:string,text:string,y:number,method='pdf_text',visibility:E['visibility']='visible',x=.1,w=.4):E=>({observation_id:id,kind:'text',text,normalized_text:text,bbox:[x,y,w,.05],reading_order:0,availability:'available',method,source_ref:id,provenance:method==='vision_ocr'?'inferred':'observed',visibility});
+  const page=(key:string,elements:E[]):PageData=>({page_id:key,asset_id:key,page:1,width:960,height:540,coordinate_system:'normalized',source_transform:[],hidden:false,text:elements.filter(e=>e.provenance==='observed').map(e=>e.text).join('\n'),unresolved_text:'Unverified source retained',elements,notes:null,capabilities:{text:'available',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},coverage_gaps:[]});
+  const raw=element('raw','Check · source',.1),title=element('title','Unknown title',.3,'pdf_text','unverified'),observed=element('ocr','Check • source',.1,'vision_ocr'),recovery=element('recover','Recovered title',.3,'vision_ocr');
+  const p=page('a',[raw,title,observed,recovery]),before=p.elements.map(e=>({...e}));selectHybridComparison(p);
+  assert.ok(comparisonText(p).includes('Check · source'));assert.ok(!comparisonText(p).includes('Check • source'));assert.equal(raw.comparison_role,'selected');assert.equal(observed.comparison_role,'shadowed');assert.equal(title.comparison_role,'shadowed');assert.equal(recovery.comparison_role,'selected');assert.equal(recovery.provenance,'inferred');assert.ok(p.coverage_gaps.some(g=>g.reason==='raw_ocr_region_disagreement_source_priority'));
+  assert.deepEqual(p.elements.map(({comparison_role,comparison_reason,comparison_order,...e})=>e),before,'Selection annotates observations without changing source or OCR fields');
+  const a=page('b',[element('a','Revenue 100',.1),element('u','unknown',.3,'pdf_text','uncertain'),element('o','Revenue 100',.1,'vision_ocr')]),b=page('c',[element('b','Revenue 120',.1),element('v','unknown',.3,'pdf_text','uncertain'),element('q','Revenue 100',.1,'vision_ocr')]);selectHybridComparison(a);selectHybridComparison(b);const changed=changes(a,b).filter(c=>c.kind==='text_modified');assert.equal(changed.length,1);assert.equal(changed[0].text_assessment,'observed');assert.deepEqual(changed[0].evidence.map(e=>e.quote),['Revenue 100','Revenue 120']);
+  const blocked=page('d',[element('cover','Revenue 1.5',.1,'pdf_text','partially_occluded'),element('seen','Revenue 15',.1,'vision_ocr')]);selectHybridComparison(blocked);assert.equal(comparisonText(blocked),'');assert.ok(unresolvedComparisonText(blocked).includes('1.5'));assert.equal(blocked.elements[1].comparison_reason,'source_appearance_blocks_ocr');
+  const mixed=page('e',[element('label','Revenue',.1,'pdf_text','visible',.1,.15),element('amount','100',.1,'pdf_text','unverified',.3,.1),element('merged','Revenue 100',.1,'vision_ocr','visible',.1,.4)]);selectHybridComparison(mixed);assert.equal(mixed.elements[2].comparison_role,'unresolved');assert.equal(comparisonText(mixed),'Revenue');assert.ok(unresolvedComparisonText(mixed).includes('100'));
+  const hidden=page('f',[element('prior','Revenue 999',.1,'pdf_text','hidden_render_mode'),element('fresh','Revenue 120',.1,'vision_ocr')]);selectHybridComparison(hidden);assert.equal(comparisonText(hidden),'Revenue 120');assert.equal(hidden.elements[0].comparison_role,'excluded');assert.equal(hidden.elements[1].provenance,'inferred');
+  const historical={...p,comparison_basis:'raster_ocr' as const,ocr_text:'Old OCR projection',ocr_unresolved_text:'Old unresolved'};assert.equal(comparisonText(historical),'Old OCR projection');assert.equal(unresolvedComparisonText(historical),'Old unresolved');assert.ok(comparisonRegions(p).every(e=>['selected','unresolved'].includes(e.comparison_role!)));
+});
+
 test('native tiled Korean/English OCR retains signs and amounts and caches exact evidence',native,async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-ocr-test-'));
   try{
@@ -82,7 +120,7 @@ test('mixed raster content supplements live text without duplication or certifyi
   const bytes=await pdf(d=>{d.fontSize(28).text('Observed header',55,25,{lineBreak:false});d.image(scan('이미지 매출 120억'),0,100,{width:960,height:440});});
   const p=(await extractPdf(bytes,'sha256:mixed',{ocr:'auto'}))[0];
   assert.ok(p.elements.some(e=>e.method==='pdf_text'&&e.text==='Observed header'));assert.ok(p.elements.some(e=>e.method==='vision_ocr'&&e.text.includes('120억')));
-  assert.equal(p.elements.filter(e=>e.text==='Observed header').length,1);assert.ok(p.text.includes('Observed header'));assert.ok(!p.text.includes('120억'));assert.equal(p.ocr?.mode,'supplement');
+  assert.equal(p.elements.filter(e=>e.text==='Observed header').length,1);assert.ok(p.text.includes('Observed header'));assert.ok(!p.text.includes('120억'));assert.equal(p.ocr?.mode,'supplement');assert.ok(!p.visible_text?.includes('120억'),'Raw visible-text projection must not absorb an OCR annex');
   const hidden=await pdf(d=>{d.image(scan('예상 매출 120억'),0,0,{width:960,height:540});d.addContent('3 Tr');d.fontSize(24).text('Revenue 999',50,80,{lineBreak:false});});
   const q=(await extractPdf(hidden,'sha256:prior',{ocr:'auto'}))[0];assert.equal(q.ocr?.mode,'scan');assert.ok(q.text.includes('999'));assert.ok(q.elements.find(e=>e.method==='pdf_text')?.visibility==='hidden_render_mode');assert.ok(comparisonText(q).includes('120억'));assert.ok(!comparisonText(q).includes('999'));
 });
@@ -106,7 +144,7 @@ test('native OCR follows rotated cropped PDF coordinates rather than guessing so
 test('rendered OCR supplies inferred comparison for unsupported text paint without mutating raw uncertainty',native,async()=>{
   const make=(value:string)=>pdf(d=>{d.addContent('2 Tr');d.fontSize(28).text('Revenue '+value,70,100,{lineBreak:false});});
   const a=(await extractPdf(await make('100'),'sha256:outlined-a',{ocr:'auto'}))[0],b=(await extractPdf(await make('120'),'sha256:outlined-b',{ocr:'auto'}))[0];
-  assert.ok(a.unresolved_text?.includes('100'));assert.ok(b.unresolved_text?.includes('120'));assert.equal(a.comparison_basis,'raster_ocr');
+  assert.ok(a.unresolved_text?.includes('100'));assert.ok(b.unresolved_text?.includes('120'));assert.equal(a.comparison_basis,'hybrid_regions_v1');
   const delta=changes(a,b).filter(c=>c.kind==='text_modified');assert.equal(delta.length,1);assert.equal(delta[0].text_assessment,'inferred');
   const duplicate={...b,raster:{...b.raster!,sha256:a.raster!.sha256},ocr:{...b.ocr!,render_sha256:a.ocr!.render_sha256}};assert.equal(changes(a,duplicate).filter(c=>c.kind==='text_modified').length,0);
 });

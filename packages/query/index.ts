@@ -1,3 +1,5 @@
+import {diffRevisions as legacyOcr9Diff} from '../diff/legacy-ocr-9.js';
+import {matchPages as legacyOcr9Match} from '../matching/legacy-ocr-9.js';
 import {matchPages as legacyNativeMatch} from '../matching/legacy-native-1.js';
 import { z } from 'zod';
 import { Store } from '../storage/index.js';
@@ -85,9 +87,9 @@ export class QueryService {
           const primary=(v:typeof a)=>v.assets.some(s=>s.format==='pptx')?{...v,pages:v.pages.filter(p=>v.assets.find(s=>s.asset_id===p.asset_id)?.format==='pptx')}:v;
           const left=primary(a),right=primary(b);
           const matches=left.pages.flatMap(p=>right.pages.filter(q=>entity(p.page_id)===entity(q.page_id)).map(q=>({from_page_id:p.page_id,to_page_id:q.page_id,score:Math.min(1,...r.matches.filter(m=>r.lineages.find(l=>l.entity_id===entity(p.page_id))?.page_ids.includes(m.from_page_id)).map(m=>m.score)),status:r.lineages.find(l=>l.entity_id===entity(p.page_id))?.status??'inferred',reasons:['snapshot_lineage_range_net']})));
-          const diff=r.engine_version===ENGINE_VERSION?diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:undefined;
+          const diff=r.engine_version===ENGINE_VERSION?diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Diff:undefined;
           if(!diff)throw new DocverError('ENGINE_VERSION_UNAVAILABLE','Historical range computation requires its archived engine; stored history/export remains readable, and reanalysis creates a new report');
-          const candidates=(r.engine_version==='0.1.0-native.1'?legacyNativeMatch:matchPages)(left.pages,right.pages).candidates;
+          const candidates=(r.engine_version==='0.1.0-native.1'?legacyNativeMatch:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Match:matchPages)(left.pages,right.pages).candidates;
           changes=diff(left,right,matches,candidates,entity).map((c,i)=>{const event={...c,schema_version:r.schema_version};return {...event,report_id:r.report_id,change_id:id('net',[r.report_id,args.from,args.to,i,event]),evidence_uri:resource(r,'manifest')};});
         } else {
           const revIndex=(key:string)=>r.revisions.findIndex(v=>v.revision_occurrence_id===key||v.revision_id===key);

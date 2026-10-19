@@ -77,9 +77,33 @@ import AppKit
         for x in xs{for y in 40...130{pixels[y*stride+x]=0}}
         for x in 85...220{pixels[100*stride+x]=0}
         precondition(DocverVision.ruledTables(image,lines).isEmpty,"Partial horizontal divider must not collapse two distinct right-column rows")
+        for gray in [180,230] {
+            for x in 85...220{pixels[100*stride+x]=UInt8(gray)}
+            let observed=DocverVision.gridObservation(image,lines)
+            precondition(observed.tables.isEmpty && observed.status=="ambiguous_boundaries" && observed.reasons.contains("faint_or_dashed_interior_boundary"),"Faint partial dividers must not establish a coarser grid")
+        }
+        for x in 85...220{pixels[100*stride+x]=(x-85)%10<5 ? 0:255}
+        precondition(DocverVision.gridObservation(image,lines).status=="ambiguous_boundaries","Dashed partial dividers must not merge distinct rows")
+        for gray in [180,230] {
+            clear();for y in ys{for x in 20...220{pixels[y*stride+x]=0}}
+            for x in xs{for y in 40...130{pixels[y*stride+x]=0}}
+            for y in 40...130{pixels[y*stride+85]=UInt8(gray)}
+            precondition(DocverVision.gridObservation(image,lines).status=="ambiguous_boundaries","Faint vertical dividers must not merge columns")
+        }
+        for y in 40...130{pixels[y*stride+85]=(y-40)%10<5 ? 0:255}
+        precondition(DocverVision.gridObservation(image,lines).status=="ambiguous_boundaries","Dashed vertical dividers must not merge columns")
         clear();for y in ys{for x in 20...220{pixels[y*stride+x]=0}}
         for y in 40...130{pixels[y*stride+20]=0;pixels[y*stride+220]=0}
         precondition(DocverVision.ruledTables(image,lines).isEmpty,"Parallel rules/axes without internal columns are not a grid")
+        clear();precondition(DocverVision.gridObservation(image,lines).status=="not_detected")
+        let unsupported=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:240,pixelsHigh:160,bitsPerSample:16,samplesPerPixel:1,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceWhite,bytesPerRow:480,bitsPerPixel:16)!
+        precondition(DocverVision.gridObservation(unsupported,lines).status=="unsupported_format")
+        let small=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:80,pixelsHigh:80,bitsPerSample:8,samplesPerPixel:1,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceWhite,bytesPerRow:80,bitsPerPixel:8)!
+        precondition(DocverVision.gridObservation(small,lines).status=="unsupported_dimensions")
+        let busy=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:240,pixelsHigh:4096,bitsPerSample:8,samplesPerPixel:1,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceWhite,bytesPerRow:240,bitsPerPixel:8)!
+        busy.bitmapData!.initialize(repeating:255,count:240*4096)
+        for y in Swift.stride(from:0,to:4096,by:2){for x in 0..<240{busy.bitmapData![y*240+x]=0}}
+        precondition(DocverVision.gridObservation(busy,lines).status=="budget_exceeded")
         print("PASS numeric position/multiplicity/conflict and lexical controls; grayscale strike/underline; ruled grid empty cells/partial-border/negative controls")
     }
 }

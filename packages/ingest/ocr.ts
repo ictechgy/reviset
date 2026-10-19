@@ -4,12 +4,13 @@ import { mkdtemp,mkdir,readFile,writeFile,rm,rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Bbox,box,byteHash,hash,id,normalize,type PageData,type ElementData,DocverError } from '../schema/index.js';
+import { Bbox,GridStatus,box,byteHash,hash,id,normalize,type PageData,type ElementData,DocverError } from '../schema/index.js';
 import { runTool,visionExecutable,visionInfo } from '../runtime/tools.js';
+import {selectHybridComparison} from './comparison-selection.js';
 
 const Candidate=z.object({text:z.string(),confidence:z.number().min(0).max(1)});
 const NativeTable=z.object({cells:z.array(z.object({row:z.number().int().nonnegative(),column:z.number().int().nonnegative(),row_span:z.number().int().positive(),column_span:z.number().int().positive(),text:z.string(),text_confident:z.boolean().optional(),bbox:Bbox})).max(20000)});
-const Result=z.object({version:z.string(),revision:z.number(),languages:z.array(z.string()),language_correction:z.literal(false),ocr_performed:z.boolean(),renderer:z.string(),verification:z.string(),viewport_width:z.number().positive(),viewport_height:z.number().positive(),rotation:z.number(),width:z.number().int().positive().max(4096),height:z.number().int().positive().max(4096),render_sha256:z.string().regex(/^[a-f0-9]{64}$/),structure_status:z.string().optional(),structure_engine:z.string().optional(),tables:z.array(NativeTable).max(200).optional(),grid_tables:z.array(NativeTable).max(50).optional(),grid_status:z.string().optional(),
+const Result=z.object({version:z.string(),revision:z.number(),languages:z.array(z.string()),language_correction:z.literal(false),ocr_performed:z.boolean(),renderer:z.string(),verification:z.string(),viewport_width:z.number().positive(),viewport_height:z.number().positive(),rotation:z.number(),width:z.number().int().positive().max(4096),height:z.number().int().positive().max(4096),render_sha256:z.string().regex(/^[a-f0-9]{64}$/),structure_status:z.string().optional(),structure_engine:z.string().optional(),tables:z.array(NativeTable).max(200).optional(),grid_tables:z.array(NativeTable).max(50).optional(),grid_status:GridStatus.optional(),grid_reasons:z.array(z.string()).max(20).optional(),bitmap_format:z.number().int().nonnegative().optional(),bitmap_bits_per_sample:z.number().int().positive().optional(),bitmap_bits_per_pixel:z.number().int().positive().optional(),
   lines:z.array(Candidate.extend({bbox:Bbox,strike_candidate:z.boolean(),strike_status:z.string().optional(),strike_bbox:Bbox,numeric_consensus:z.boolean(),numeric_status:z.string().optional(),numeric_readings:z.array(z.string()),numeric_observations:z.array(z.object({text:z.string(),bbox:Bbox,sources:z.array(z.string())})).optional(),tokens:z.array(z.object({text:z.string(),bbox:Bbox})),alternatives:z.array(Candidate).max(3)})).max(20000)});
 export type NativePageResult=z.infer<typeof Result>;
 export type OcrOptions={cacheRoot?:string;signal?:AbortSignal;sourceFile?:string;sourceHash?:string;reuseRasterOcr?:boolean;nativeResult?:NativePageResult;onPage?:(current:number,total:number)=>void};
@@ -80,13 +81,12 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
     const appearanceBlockedAt=(b:number[])=>original.some(e=>['struck_through','struck_inferred','partially_struck_through','occluded','partially_occluded'].includes(e.visibility??'')&&Math.max(0,Math.min(e.bbox[0]+e.bbox[2],b[0]+b[2])-Math.max(e.bbox[0],b[0]))*Math.max(0,Math.min(e.bbox[1]+e.bbox[3],b[1]+b[3])-Math.max(e.bbox[1],b[1]))>0);
     const nativeTables=result.tables??[],gridTables=(result.grid_tables??[]).filter(grid=>!nativeTables.some(native=>tableOverlap(grid,native)));
     const tables=[...nativeTables.map(table=>({table,grid:false})),...gridTables.map(table=>({table,grid:true}))];
-    page.ocr={status:lines.length?'available':'no_text',mode:scanned?'scan':rasterComparison?'verification':additions.length?'supplement':'verification',engine:result.version,environment,render_sha256:result.render_sha256,width:result.width,height:result.height,structure_status:result.structure_status,table_count:tables.length};
+    page.ocr={status:lines.length?'available':'no_text',mode:scanned?'scan':rasterComparison?'verification':additions.length?'supplement':'verification',engine:result.version,environment,render_sha256:result.render_sha256,width:result.width,height:result.height,structure_status:result.structure_status,grid_status:result.grid_status,grid_reasons:result.grid_reasons,bitmap_format:result.bitmap_format,bitmap_bits_per_sample:result.bitmap_bits_per_sample,bitmap_bits_per_pixel:result.bitmap_bits_per_pixel,table_count:tables.length};
     if(additions.length){
       page.capabilities.text='available';
       const good=additions.filter(e=>e.visibility==='visible').map(e=>e.text).join('\n'),uncertain=additions.filter(e=>e.visibility!=='visible').map(e=>e.text).join('\n');
       page.ocr_text=good;page.ocr_unresolved_text=uncertain;
       if(rasterComparison)page.comparison_basis='raster_ocr';
-      else page.visible_text=[page.visible_text,good].filter(Boolean).join('\n');
       page.coverage_gaps.push({feature:'ocr',reason:'ocr_inferred_text_requires_source_review'});
       if(uncertain)page.coverage_gaps.push({feature:'ocr',reason:'low_confidence_or_ambiguous_ocr_text_comparison_withheld'});
     }
@@ -98,6 +98,8 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
         page.elements.push({observation_id:id('obs',[page.asset_id,page.page,grid?'grid-cell':'vision-cell',environment,ti,key]),kind:'table_cell',text:cell.text,normalized_text:normalize(cell.text),bbox:cell.bbox,reading_order:page.elements.length,availability:grid&&!cell.text.trim()?'unavailable':'available',method:grid?'raster_ruled_grid_cell':'vision_document_cell',source_ref:`page:${page.page}/raster/table:${ti}/cell:${key}`,provenance:'inferred',visibility:grid&&(cell.text_confident!==true||appearanceBlockedAt(cell.bbox))?'uncertain':'unverified',table:{table_id:id('table',[page.asset_id,page.page,environment,ti]),row:cell.row,column:cell.column,row_span:cell.row_span,column_span:cell.column_span,origin:grid?'pdf_grid_inferred':'vision_table_inferred',assessment:'inferred'}});
       }
     }}
+    if(result.grid_status&&!['available','not_detected'].includes(result.grid_status))page.coverage_gaps.push({feature:'table_ocr',reason:'raster_grid_'+result.grid_status});
+    for(const reason of result.grid_reasons??[])page.coverage_gaps.push({feature:'table_ocr',reason:'raster_grid_'+reason});
     if(gridTables.some(t=>t.cells.some(c=>c.text_confident!==true||appearanceBlockedAt(c.bbox))))page.coverage_gaps.push({feature:'table_ocr',reason:'ruled_grid_cell_text_uncertain_or_not_observed'});
     if(gridTables.length)page.coverage_gaps.push({feature:'table_semantics',reason:'raster_ruled_grid_cells_inferred_complete_rectangles_only'});
     if(result.tables?.length)page.coverage_gaps.push({feature:'table_semantics',reason:'vision_table_cells_inferred_not_original_pptx_cells'});
@@ -106,6 +108,7 @@ export async function supplementPdfOcr(page:PageData,bytes:Uint8Array,options:Oc
     for(const status of new Set(lines.map(l=>l.strike_status).filter(s=>s&&!['detected','not_detected'].includes(s))))page.coverage_gaps.push({feature:'strike_ocr',reason:'raster_strike_'+status});
     if(lines.some(l=>l.numeric_status==='unsupported_notation'))page.coverage_gaps.push({feature:'ocr_numeric',reason:'unsupported_numeric_notation_requires_source_review'});
     if(!lines.length)page.coverage_gaps.push({feature:'ocr',reason:'ocr_no_text_detected_not_proof_of_blank_page'});
+    if(additions.length&&original.some(e=>e.provenance==='observed'&&e.text.trim()&&e.visibility!=='hidden_render_mode'))selectHybridComparison(page);
   }catch(e){
     if(options.signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;
     page.ocr={status:e instanceof DocverError&&e.code==='OCR_UNAVAILABLE'?'unavailable':'failed',engine:'native-vision-helper',environment,reason:e instanceof DocverError?e.code:'OCR_FAILED'};

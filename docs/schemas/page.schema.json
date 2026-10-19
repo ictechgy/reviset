@@ -58,7 +58,8 @@
       "type": "string",
       "enum": [
         "text_layer",
-        "raster_ocr"
+        "raster_ocr",
+        "hybrid_regions_v1"
       ]
     },
     "raster": {
@@ -122,6 +123,41 @@
         },
         "structure_status": {
           "type": "string"
+        },
+        "grid_status": {
+          "type": "string",
+          "enum": [
+            "available",
+            "not_detected",
+            "insufficient_text",
+            "unsupported_format",
+            "unsupported_dimensions",
+            "budget_exceeded",
+            "ambiguous_boundaries",
+            "partial"
+          ]
+        },
+        "grid_reasons": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "bitmap_format": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bitmap_bits_per_sample": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bitmap_bits_per_pixel": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         },
         "table_count": {
           "type": "integer",
@@ -288,6 +324,23 @@
               "observed",
               "inferred"
             ]
+          },
+          "comparison_role": {
+            "type": "string",
+            "enum": [
+              "selected",
+              "unresolved",
+              "shadowed",
+              "excluded"
+            ]
+          },
+          "comparison_reason": {
+            "type": "string"
+          },
+          "comparison_order": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "ocr": {
             "type": "object",

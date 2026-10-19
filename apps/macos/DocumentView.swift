@@ -120,12 +120,14 @@ struct PageColumn: View {
                 ScrollView { VStack(alignment:.leading,spacing:10) {
                     Text("원문은 보이는 텍스트와 별도로 보존합니다.").font(.caption).foregroundStyle(.secondary)
                     if !payload["page"]["ocr"].isNull {Text("로컬 OCR · \(payload["page"]["ocr"]["status"].string) · 인식 결과는 원본 화면으로 확인하세요.").font(.caption).foregroundStyle(.orange)}
+                    if ["unsupported_format","unsupported_dimensions","budget_exceeded","ambiguous_boundaries","partial"].contains(payload["page"]["ocr"]["grid_status"].string) {Text("표의 격자 경계가 미확정이거나 검출 범위를 벗어났습니다. 행·열을 원본 화면에서 확인하세요.").font(.caption).foregroundStyle(.orange)}
                     ForEach(payload["source"]["warnings"].array.indices,id:\.self){i in Text(renderWarningName(payload["source"]["warnings"].array[i].string)).font(.caption).foregroundStyle(.orange)}
                     ForEach(payload["page"]["elements"].array) { e in
                         VStack(alignment:.leading,spacing:4) {
                             Text(e["text"].string).textSelection(.enabled)
                             HStack { Text(e["visibility"].string.isEmpty ? "원본 구조" : e["visibility"].string)
                                 if e["method"].string == "vision_ocr" {Text("OCR 추정 · \(Int(e["ocr"]["confidence"].number*100))점")}
+                                if !e["comparison_role"].string.isEmpty {Text(e["comparison_role"].string == "selected" ? "비교에 사용" : e["comparison_role"].string == "unresolved" ? "비교 보류" : e["comparison_role"].string == "excluded" ? "숨은 원문 · 비교 제외" : e["provenance"].string == "inferred" ? "참고 OCR · 원문 우선" : "원문 보존 · OCR로 비교")}
                                 if !e["table"].isNull { Text(e["table"]["origin"].string == "ooxml_table" ? "PPTX 셀 · 구조 관측" : e["table"]["origin"].string == "vision_table_inferred" ? "화면 OCR 표 셀 · 추정" : "PDF 격자 · 추정") }
                             }.font(.caption2).foregroundStyle(e["visibility"].string.contains("occluded") || e["visibility"].string.contains("struck") ? .orange : .secondary)
                         }.padding(8).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:4))

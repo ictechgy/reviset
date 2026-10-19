@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-8-qualified-grid"
+    static let version = "docver-vision-9-grid-evidence"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -90,7 +90,7 @@ struct DocverVision {
                 "revision":r.revision, "languages":r.recognitionLanguages, "supported_languages":try r.supportedRecognitionLanguages(),
                 "language_correction":false,"automatic_language_detection":false,"target_dpi":300,"max_dimension":4096,"tile_size":1600,"tile_overlap":240,"compute_device":"Vision automatic; same OS/build keyed", "renderer":"PDFKit.thumbnail.cropBox", "font_families":families,
                 "document_structure":ProcessInfo.processInfo.operatingSystemVersion.majorVersion>=26,
-                "ruled_grid_inference":"complete-dark-solid-rectangles-v2; faint/dashed dividers may be missed; OCR tokens; inferred only",
+                "ruled_grid_inference":"complete-dark-solid-rectangles-v3; weaker interior-boundary rejection; OCR tokens; inferred only",
                 "font_inventory_sha256":digest(Data(inventory.utf8))]
     }
     static func process(_ input:[String:Any]) throws -> [String:Any] {
@@ -174,21 +174,28 @@ struct DocverVision {
                     "numeric_observations":recognized.map{["text":$0.text,"bbox":[$0.rect.minX,$0.rect.minY,$0.rect.width,$0.rect.height],"sources":$0.sources]},
                     "tokens":tokens,"alternatives":candidates.map { ["text":$0.string,"confidence":Double($0.confidence)] }]
         })
+        let grid=gridObservation(bitmap,lines)
         return metadata.merging(["ocr_performed":true,"verification":"overlapping-1600px-tiles","lines":lines,
-                                 "grid_tables":ruledTables(bitmap,lines),"grid_status":"complete_rectangular_grids_only_not_absence_proof"]){_,new in new}
+                                 "grid_tables":grid.tables,"grid_status":grid.status,"grid_reasons":grid.reasons,
+                                 "bitmap_format":bitmap.bitmapFormat.rawValue,"bitmap_bits_per_sample":bitmap.bitsPerSample,"bitmap_bits_per_pixel":bitmap.bitsPerPixel]){_,new in new}
     }
     // A second, conservative table observer. Vision can miss small ruled tables
     // in a page with columns/figures. These are raster grids, never OOXML cells.
     // Only complete rectangular rulings qualify; partial borders/merges withhold
     // the grid rather than guessing spans or filling missing text.
-    static func ruledTables(_ image:NSBitmapImageRep,_ lines:[[String:Any]])->[[String:Any]] {
-        guard lines.count>=3,supportedPixels(image),let data=image.bitmapData else{return []}
+    struct GridObservation {var tables:[[String:Any]];var status:String;var reasons:[String]}
+    static func ruledTables(_ image:NSBitmapImageRep,_ lines:[[String:Any]])->[[String:Any]] {gridObservation(image,lines).tables}
+    static func gridObservation(_ image:NSBitmapImageRep,_ lines:[[String:Any]])->GridObservation {
+        guard supportedPixels(image),let data=image.bitmapData else{return GridObservation(tables:[],status:"unsupported_format",reasons:["unsupported_bitmap_layout"])}
+        guard lines.count>=3 else{return GridObservation(tables:[],status:"insufficient_text",reasons:["fewer_than_three_text_observations"])}
         let w=image.pixelsWide,h=image.pixelsHigh,s=image.samplesPerPixel,offset=image.bitmapFormat.contains(.alphaFirst) ? 1:0
         let gray=image.colorSpace.colorSpaceModel == .gray
-        guard w>100,h>100,w<=4096,h<=4096 else{return []}
-        var dark=[UInt8](repeating:0,count:w*h)
+        guard w>100,h>100,w<=4096,h<=4096 else{return GridObservation(tables:[],status:"unsupported_dimensions",reasons:["grid_dimensions_outside_101_to_4096"])}
+        var dark=[UInt8](repeating:0,count:w*h),weak=[UInt8](repeating:0,count:w*h)
         for y in 0..<h {for x in 0..<w {let p=y*image.bytesPerRow+x*s+offset
-            dark[y*w+x] = (gray ? Int(data[p])*100 : Int(data[p])*21+Int(data[p+1])*72+Int(data[p+2])*7)<17500 ? 1:0
+            let luminance=gray ? Int(data[p])*100 : Int(data[p])*21+Int(data[p+1])*72+Int(data[p+2])*7
+            dark[y*w+x] = luminance<17500 ? 1:0
+            weak[y*w+x] = luminance<24500 ? 1:0
         }}
         struct Rule {var y:Int;var x0:Int;var x1:Int;var bottom:Int}
         var rules:[Rule]=[]
@@ -206,12 +213,12 @@ struct DocverVision {
                 else if start>=0 && x-last>2 {finish(last);start = -1}
             }
             finish(last)
-            if rules.count>2000{return []}
+            if rules.count>2000{return GridObservation(tables:[],status:"budget_exceeded",reasons:["horizontal_rule_limit_2000"])}
         }
         rules=rules.filter{$0.bottom-$0.y<=max(6,h/300)}
         var groups:[[Rule]]=[]
         for r in rules {if let i=groups.firstIndex(where:{abs($0[0].x0-r.x0)<=4 && abs($0[0].x1-r.x1)<=4}){groups[i].append(r)}else{groups.append([r])}}
-        var tables:[[String:Any]]=[]
+        var tables:[[String:Any]]=[],rejected=Set<String>()
         for group in groups where group.count>=3 && group.count<=64 {
             let sorted=group.sorted{$0.y<$1.y},gaps=zip(sorted,sorted.dropFirst()).map{$1.y-$0.bottom}.filter{$0>8}
             guard let smallest=gaps.min() else{continue}
@@ -231,8 +238,8 @@ struct DocverVision {
                 let xs=centers(full)
                 guard xs.count>=3,xs.count<=33,abs(xs[0]-x0)<=5,abs(xs.last!-x1)<=5,
                       zip(xs,xs.dropFirst()).allSatisfy({$1-$0>=12}),
-                      !partial.contains(where:{x in !xs.contains(where:{abs($0-x)<=4})}),
                       (xs.count-1)*(ys.count-1)<=1000 else{continue}
+                if partial.contains(where:{x in !xs.contains(where:{abs($0-x)<=4})}){rejected.insert("partial_vertical_divider");continue}
                 // Equal-endpoint grouping excludes partial horizontal dividers.
                 // Inspect pixels between the accepted rows as well: otherwise a
                 // merged/partial row can silently become a larger regular cell.
@@ -247,7 +254,23 @@ struct DocverVision {
                     }
                     if partialHorizontal{break}
                 }
-                if partialHorizontal{continue}
+                if partialHorizontal{rejected.insert("partial_horizontal_divider");continue}
+                // A weaker observer may reject an unsafe coarse grid, but cannot
+                // establish a new boundary. It detects light/dashed dividers that
+                // strict continuous dark-rule acceptance intentionally excludes.
+                func boundary(_ start:Int,_ end:Int,_ sample:(Int)->UInt8)->Bool {
+                    let length=end-start+1,maxGap=max(6,length/6);var count=0,first=end+1,last=start-1,gap=0,longestGap=0
+                    for n in start...end {if sample(n)>0{count+=1;first=min(first,n);last=n;gap=0}else{gap+=1;longestGap=max(longestGap,gap)}}
+                    return Double(count)>=Double(length)*0.45 && first-start<=maxGap && end-last<=maxGap && longestGap<=maxGap
+                }
+                var ambiguous=false
+                for y in (top+1)..<bottom where !ys.contains(where:{abs($0-y)<=borderTolerance}) {
+                    if zip(xs,xs.dropFirst()).contains(where:{a,b in boundary(a,b,{weak[y*w+$0]})}){ambiguous=true;break}
+                }
+                if !ambiguous {for x in (x0+1)..<x1 where !xs.contains(where:{abs($0-x)<=borderTolerance}) {
+                    if zip(ys,ys.dropFirst()).contains(where:{a,b in boundary(a,b,{weak[$0*w+x]})}){ambiguous=true;break}
+                }}
+                if ambiguous{rejected.insert("faint_or_dashed_interior_boundary");continue}
                 var cells:[[String:Any]]=[],occupiedRows=Set<Int>(),occupiedColumns=Set<Int>()
                 for row in 0..<(ys.count-1) {for col in 0..<(xs.count-1) {
                     let cell=CGRect(x:CGFloat(xs[col])/CGFloat(w),y:CGFloat(ys[row])/CGFloat(h),width:CGFloat(xs[col+1]-xs[col])/CGFloat(w),height:CGFloat(ys[row+1]-ys[row])/CGFloat(h))
@@ -268,10 +291,10 @@ struct DocverVision {
                     cells.append(["row":row,"column":col,"row_span":1,"column_span":1,"text":text,"text_confident":!words.isEmpty && words.allSatisfy{$0.2},"bbox":[cell.minX,cell.minY,cell.width,cell.height]])
                 }}
                 guard cells.filter({!($0["text"] as! String).isEmpty}).count>=3,occupiedRows.count>=2,occupiedColumns.count>=2 else{continue}
-                tables.append(["cells":cells]);if tables.count>=50{return tables}
+                tables.append(["cells":cells]);if tables.count>=50{return GridObservation(tables:tables,status:"partial",reasons:Array(rejected.union(["table_limit_50"])).sorted())}
             }
         }
-        return tables
+        return GridObservation(tables:tables,status:rejected.isEmpty ? (tables.isEmpty ? "not_detected":"available"):(tables.isEmpty ? "ambiguous_boundaries":"partial"),reasons:Array(rejected).sorted())
     }
     static func strikeCandidate(_ image:NSBitmapImageRep,_ line:CGRect)->[Double]?{
         strikeObservation(image,line).bbox

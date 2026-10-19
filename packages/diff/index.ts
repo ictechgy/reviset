@@ -1,17 +1,17 @@
-import { SCHEMA_VERSION, normalize,comparisonText,unresolvedComparisonText, type ElementData,type RevisionData, type MatchData, type ChangeData, type PageData } from '../schema/index.js';
-function regionElements(p:PageData):ElementData[]{return p.elements.filter(e=>p.comparison_basis==='raster_ocr'?e.method==='vision_ocr':(e.kind==='text'||e.kind==='table_cell')&&e.method!=='vision_document_cell');}
-function comparisonElements(p:PageData):ElementData[]{return regionElements(p).filter(e=>p.comparison_basis==='raster_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));}
+import { SCHEMA_VERSION, normalize,comparisonText,unresolvedComparisonText,comparisonRegions, type ElementData,type RevisionData, type MatchData, type ChangeData, type PageData } from '../schema/index.js';
+function regionElements(p:PageData):ElementData[]{return p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p):p.elements.filter(e=>p.comparison_basis==='raster_ocr'?e.method==='vision_ocr':(e.kind==='text'||e.kind==='table_cell')&&e.method!=='vision_document_cell');}
+function comparisonElements(p:PageData):ElementData[]{return regionElements(p).filter(e=>p.comparison_basis==='hybrid_regions_v1'?e.comparison_role==='selected':p.comparison_basis==='raster_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));}
 function regionOverlap(a:ElementData,b:ElementData):number{const x=a.bbox,y=b.bbox;return Math.max(0,Math.min(x[0]+x[2],y[0]+y[2])-Math.max(x[0],y[0]))*Math.max(0,Math.min(x[1]+x[3],y[1]+y[3])-Math.max(x[1],y[1]))/Math.max(0.000001,Math.max(x[2]*x[3],y[2]*y[3]));}
 function ocrRegionsPaired(a:PageData,b:PageData):boolean{
-  const all=(p:PageData)=>regionElements(p).filter(e=>e.method==='vision_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));
+  const all=(p:PageData)=>regionElements(p).filter(e=>p.comparison_basis==='hybrid_regions_v1'||e.method==='vision_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));
   const left=all(a),right=all(b),numbers=(s:string)=>(s.match(/[0-9]+(?:[.,][0-9]+)*/g)??[]).length;
   const overlap=(a:ElementData,b:ElementData)=>{const x=a.bbox,y=b.bbox;return Math.max(0,Math.min(x[0]+x[2],y[0]+y[2])-Math.max(x[0],y[0]))*Math.max(0,Math.min(x[1]+x[3],y[1]+y[3])-Math.max(x[1],y[1]))/Math.max(0.000001,Math.min(x[2]*x[3],y[2]*y[3]));};
-  const compatible=(e:ElementData,f:ElementData)=>(e.method!=='vision_ocr'||e.visibility==='visible')&&(f.method!=='vision_ocr'||f.visibility==='visible')&&overlap(e,f)>0.4&&numbers(e.text)===numbers(f.text);
+  const compatible=(e:ElementData,f:ElementData)=>e.comparison_role!=='unresolved'&&f.comparison_role!=='unresolved'&&(e.method!=='vision_ocr'||e.visibility==='visible')&&(f.method!=='vision_ocr'||f.visibility==='visible')&&overlap(e,f)>0.4&&numbers(e.text)===numbers(f.text);
   const paired=(from:ElementData[],to:ElementData[])=>from.filter(e=>e.method==='vision_ocr').every(e=>{const neighbors=to.filter(f=>compatible(e,f));return neighbors.length===1&&from.filter(old=>compatible(old,neighbors[0])).length===1;});
   return paired(left,right)&&paired(right,left);
 }
 export function evidence(revision:RevisionData,page:PageData,focusText=false,focusElement?:ElementData):ChangeData['evidence'][number] {
-  const element=focusElement??(focusText?comparisonElements(page).find(e=>/[0-9]/.test(e.text)):undefined);
+  const selected=comparisonElements(page),element=focusElement??(focusText?(selected.find(e=>/[0-9]/.test(e.text))??selected[0]):undefined);
   return {revision_id:revision.revision_id,revision_occurrence_id:revision.revision_occurrence_id,asset_id:page.asset_id,page_id:page.page_id,page:page.page,
     bbox:element?.bbox??[0,0,1,1],quote:element?.text??(focusText?comparisonText(page):page.text||page.ocr_text||''),method:element?.method??page.elements[0]?.method??'page_observation',provenance:element?.provenance??(page.comparison_basis==='raster_ocr'?'inferred':'observed'),...(element?{observation_id:element.observation_id}:{})};
 }
@@ -24,7 +24,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
       before:(a?(kind==='text_modified'?comparisonText(a):a.text||a.ocr_text):null)??null,after:(b?(kind==='text_modified'?comparisonText(b):b.text||b.ocr_text):null)??null,evidence:[...(a?[evidence(from,a,kind==='text_modified')]:[]),...(b?[evidence(to,b,kind==='text_modified')]:[])],
       lineage:match?{status:match.status,score:match.score,reasons:[...match.reasons]}:{status:'inferred',score:0,reasons:['unmatched_page']},coverage_gaps:gaps,evidence_uri:''});
   }
-  const uncertain=(r:RevisionData)=>r.status!=='success'||r.pages.some(p=>p.capabilities.text!=='available'||p.comparison_basis==='raster_ocr'||!!unresolvedComparisonText(p)||p.visible_text!==undefined&&!comparisonText(p).trim());
+  const uncertain=(r:RevisionData)=>r.status!=='success'||r.pages.some(p=>p.capabilities.text!=='available'||p.comparison_basis==='raster_ocr'||p.comparison_basis==='hybrid_regions_v1'||!!unresolvedComparisonText(p)||p.visible_text!==undefined&&!comparisonText(p).trim());
   if(from.status==='failed'||to.status==='failed') {
     const p=to.pages[0]??from.pages[0];if(p) add('coverage_gap',from.pages[0],to.pages[0],undefined,'failed_revision_no_comparison');
     return changes;
@@ -47,18 +47,23 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     if(!sameRaster&&regionsPaired&&!unresolvedComparisonText(a)&&!unresolvedComparisonText(b)&&a.capabilities.text==='available'&&b.capabilities.text==='available'&&textDiffers) {
       const changed=(old:ElementData[],next:ElementData[])=>{const byText=new Map<string,ElementData[]>();for(const e of next){const key=normalize(e.text);byText.set(key,[...(byText.get(key)??[]),e]);}return old.filter(e=>!(byText.get(normalize(e.text))??[]).some(f=>regionOverlap(e,f)>0.6));};
       const left=comparisonElements(a),right=comparisonElements(b),before=changed(left,right),after=changed(right,left);
+      const unchangedRegions=left.length>0&&left.length===right.length&&left.every(e=>right.filter(f=>normalize(e.text)===normalize(f.text)&&regionOverlap(e,f)>0.6).length===1)&&right.every(f=>left.filter(e=>normalize(e.text)===normalize(f.text)&&regionOverlap(e,f)>0.6).length===1);
+      const onlyOcrOrder=formatA==='pdf'&&formatB==='pdf'&&left.concat(right).some(e=>e.method==='vision_ocr')&&before.length===0&&after.length===0&&unchangedRegions;
+      if(onlyOcrOrder){add('coverage_gap',a,b,m,'ocr_reading_order_changed_without_text_region_change');}
+      else {
       const ocr=a.comparison_basis==='raster_ocr'||b.comparison_basis==='raster_ocr'||before.concat(after).some(e=>e.provenance==='inferred')||(!before.length&&!after.length&&left.concat(right).some(e=>e.method==='vision_ocr'));
       add('text_modified',a,b,m,ocr?'ocr_inferred_text_requires_source_review':a.elements.concat(b.elements).some(e=>e.visibility==='occluded')?'visible_text_after_inferred_opaque_cover':undefined);
       changes.at(-1)!.text_assessment=ocr?'inferred':'observed';
       const change=changes.at(-1)!;
       change.evidence=[...(before.length?before.slice(0,32).map(e=>evidence(from,a,false,e)):[evidence(from,a)]),...(after.length?after.slice(0,32).map(e=>evidence(to,b,false,e)):[evidence(to,b)])];
       if(before.length>32||after.length>32)change.coverage_gaps.push({feature:'evidence',reason:'additional_changed_regions_available_via_page_elements'});
+      }
     }
     if(samePixels&&!sameRaster&&textDiffers)add('coverage_gap',a,b,m,'ooxml_source_changed_while_libreoffice_appearance_unchanged');
     const sourcePdfAppearance=formatA==='pdf'&&formatB==='pdf';
     if(textDiffers&&!sameRaster&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){
       const left=regionElements(a),right=regionElements(b),leftText=new Set(left.map(e=>normalize(e.text))),rightText=new Set(right.map(e=>normalize(e.text))),pattern=(s:string)=>normalize(s).replace(/[+−-]?\s*[0-9]+(?:[.,][0-9]+)*/g,'#');
-      const supported=(e:ElementData)=>(e.visibility===undefined||e.visibility==='visible')&&e.bbox[2]*e.bbox[3]<0.8;
+      const supported=(e:ElementData)=>e.comparison_role!=='unresolved'&&(e.visibility===undefined||e.visibility==='visible')&&e.bbox[2]*e.bbox[3]<0.8;
       // Pair geometry before looking at values, including unchanged and uncertain observations.
       // Repeated/overlapping rows and an unreadable counterpart cannot become a replacement.
       for(const old of left){
