@@ -111,9 +111,9 @@ final class Bridge: @unchecked Sendable {
                     continuation.resume(returning: reply["value"])
                 } catch {
                     if analysis { self.lock.lock(); if self.analysisProcess === process { self.analysisProcess = nil }; self.lock.unlock() }
-                    _ = cancellation?.finish()
+                    let rangeCancelled=cancellation?.finish() == true
                     try? input.fileHandleForWriting.close();try? errors.fileHandleForWriting.close()
-                    continuation.resume(throwing: error)
+                    continuation.resume(throwing: rangeCancelled ? CancellationError():error)
                 }
             }
           }

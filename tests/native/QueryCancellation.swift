@@ -14,11 +14,15 @@ import Foundation
   guard Date().timeIntervalSince(start)<2,records().contains(where:{$0["tag"]as?String=="slow" && $0["event"]as?String=="terminated"})else{throw NSError(domain:"ChildNotTerminated",code:1)}
   let keep=Task{try await bridge.call("changes",["tag":"keep","delay":750])},stop=Task{try await bridge.call("changes",["tag":"stop","delay":5000])};try await started("keep");try await started("stop");stop.cancel();try await cancelled(stop);let kept=try await keep.value
   guard kept["tag"].string=="keep"else{throw NSError(domain:"SiblingRequestLost",code:1)}
+  for index in 0..<24 {
+    let racing=Task{try await bridge.call("changes",["tag":"race-\(index)","delay":5000])}
+    try await Task.sleep(nanoseconds:UInt64(index%4+1)*250_000);racing.cancel();try await cancelled(racing)
+  }
   let ordinary=Task{try await bridge.call("reports",["tag":"ordinary","delay":100])};ordinary.cancel();let unaffected=try await ordinary.value
   guard unaffected["tag"].string=="ordinary"else{throw NSError(domain:"NonRangeCallCancelled",code:1)}
   let logs=(try? fm.contentsOfDirectory(atPath:library.appendingPathComponent("logs").path)) ?? []
   guard logs.isEmpty else{throw NSError(domain:"CancellationProducedCrashDiagnostic",code:1)}
-  print("PASS 5: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; nonrangeunchanged; nofalsecrashlog")
+  print("PASS 6: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; nonrangeunchanged;24midlaunchcancellationraces; nofalsecrashlog")
   try JSONSerialization.data(withJSONObject:records(),options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("observed.json"))
  }
 }

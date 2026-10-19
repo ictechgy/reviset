@@ -168,6 +168,7 @@ struct WorkspaceSplit<Top:View,Bottom:View>:NSViewControllerRepresentable {
     func updateNSViewController(_ controller:WorkspaceSplitController<Top,Bottom>,context:Context) {
         controller.top.rootView=top();controller.bottom.rootView=bottom()
     }
+    static func dismantleNSViewController(_ controller:WorkspaceSplitController<Top,Bottom>,coordinator:()) {controller.detach()}
 }
 @MainActor enum WorkspaceGeometryPreferences {
     private static var smokeHeights:[String:Double]=[:]
@@ -197,13 +198,22 @@ struct WorkspaceSplit<Top:View,Bottom:View>:NSViewControllerRepresentable {
         upper.holdingPriority = .defaultLow;lower.holdingPriority=NSLayoutConstraint.Priority(260)
         addSplitViewItem(upper);addSplitViewItem(lower)
         observer=NotificationCenter.default.addObserver(forName:NSSplitView.didResizeSubviewsNotification,object:splitView,queue:.main) { [weak self] _ in
-            guard let self,self.positioned,!self.positioning,self.splitView.subviews.count==2 else{return}
-            let height=self.splitView.subviews[1].frame.height
-            if height>=105 && height.isFinite {WorkspaceGeometryPreferences.save(Double(height),for:self.preferenceKey)}
+            // NotificationCenter delivers this observer on the main queue.
+            MainActor.assumeIsolated {self?.rememberVisibleGeometry()}
         }
     }
     required init?(coder:NSCoder){fatalError("init(coder:) is not used")}
     deinit {if let observer {NotificationCenter.default.removeObserver(observer)}}
+    private func rememberVisibleGeometry() {
+        guard positioned,!positioning,splitView.window != nil,splitView.subviews.count==2,splitView.bounds.height>260 else{return}
+        let height=splitView.subviews[1].frame.height
+        if height>=105 && height.isFinite {WorkspaceGeometryPreferences.save(Double(height),for:preferenceKey)}
+    }
+    func detach() {
+        rememberVisibleGeometry()
+        // Resizing a removed hosting view is teardown, not a new user choice.
+        if let observer {NotificationCenter.default.removeObserver(observer);self.observer=nil}
+    }
     override func viewDidLayout() {
         super.viewDidLayout()
         guard !positioned,splitView.bounds.height>260,splitView.subviews.count==2 else{return}
