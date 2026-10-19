@@ -2,7 +2,7 @@ import { mkdir,readFile,writeFile,mkdtemp,rm,rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getDocument,Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { unzipSync } from 'fflate';
-import { convertPptxDetailed,officeFilter,validateRenderPackage,isolatedOfficeVersion } from './index.js';
+import { convertPptxDetailed,officeFilter,validateRenderPackage,isolatedOfficeVersion,svgResourcePolicy } from './index.js';
 import { pdfOptions } from '../ingest/pdf.js';
 import { officeExecutable,visionInfo } from '../runtime/tools.js';
 import { hash,byteHash,normalize,DocverError,type PageData,type ElementData,type OfficeInputPreparationData } from '../schema/index.js';
@@ -40,7 +40,7 @@ let environmentPromise:Promise<string|undefined>|undefined;
 export function officeEnvironment():Promise<string|undefined>{
   if(!environmentPromise){const pending=(async()=>{const executable=officeExecutable();if(!executable)return undefined;
     try{const version=await isolatedOfficeVersion(executable),vision=await visionInfo();if(!vision)return undefined;
-      return JSON.stringify({version,binary_sha256:byteHash(await readFile(executable)),font_inventory_sha256:vision?.font_inventory_sha256??'unavailable',font_policy:'mac-system-and-user-fontconfig-v2',source_font_policy:'ooxml-shared-xml-v1',metadata_policy:'xref-scoped-direct-info-and-trailer-v4',input_policy:officeInputPolicy,input_preparation:await officeInputEnvironment(),os:vision?.os??process.platform,filter:officeFilter});
+      return JSON.stringify({version,binary_sha256:byteHash(await readFile(executable)),font_inventory_sha256:vision?.font_inventory_sha256??'unavailable',font_policy:'mac-system-and-user-fontconfig-v2',source_font_policy:'ooxml-shared-xml-v1',svg_resource_policy:svgResourcePolicy,metadata_policy:'xref-scoped-direct-info-and-trailer-v4',input_policy:officeInputPolicy,input_preparation:await officeInputEnvironment(),os:vision?.os??process.platform,filter:officeFilter});
     }catch(e){if(e instanceof DocverError&&e.code==='CANCELLED')throw e;return undefined;}})();environmentPromise=pending;
     pending.then(value=>{if(!value&&environmentPromise===pending)environmentPromise=undefined;},()=>{if(environmentPromise===pending)environmentPromise=undefined;});}
   return environmentPromise;

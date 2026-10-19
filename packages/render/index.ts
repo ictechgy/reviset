@@ -14,6 +14,7 @@ import { XMLParser,XMLValidator } from 'fast-xml-parser';
 import {prepareOfficeInput} from './office-input.js';
 import {readXml,xmlDecoder,decodeXmlReferences} from '../xml/index.js';
 export const officeFilter='pdf:impress_pdf_Export:'+JSON.stringify({ExportHiddenSlides:{type:'boolean',value:'true'},ExportNotesPages:{type:'boolean',value:'false'}});
+export const svgResourcePolicy='fragment-only-no-xml-base-v1';
 export function validateRenderPackage(bytes:Uint8Array,depth=0,budget={total:0}):void{
   if(depth>2)throw new DocverError('ZIP_LIMIT','Nested render package exceeds limit');
   const parts=new Set<string>();
@@ -47,6 +48,7 @@ export function validateRenderPackage(bytes:Uint8Array,depth=0,budget={total:0})
         }};
       const styles=(parts:any[]):void=>{for(const part of parts){for(const [key,value]of Object.entries(part[':@']??{})){
         const decoded=decodeXmlReferences(String(value));checkCss(decoded);
+        if(key==='@_xml:base'&&decoded!=='')throw new DocverError('EXTERNAL_RELATIONSHIP','SVG base addresses are unsupported by the local resource policy');
         if(key.startsWith('@_')&&key.slice(2).split(':').at(-1)!.toLowerCase()==='href'&&!/^#[a-z0-9_.:-]+$/i.test(decoded.trim()))throw new DocverError('EXTERNAL_RELATIONSHIP','SVG external resources are not sent to the renderer');
       }
         for(const [key,value]of Object.entries(part))if(Array.isArray(value)){if(key.split(':').at(-1)!.toLowerCase()==='style')checkCss(text(value));styles(value);}

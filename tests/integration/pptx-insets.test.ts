@@ -116,6 +116,8 @@ test('UTF16 SVG media retain external-resource and active-content guards regardl
       assert.throws(()=>validateRenderPackage(zipSync({[name]:svg(body)})),{code:'EXTERNAL_RELATIONSHIP'});
     }
     for(const body of ['<image xmlns:xlink="http://www.w3.org/1999/xlink" href="file:///private/source" xlink:href="#local"/>','<image xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="file:///private/source" href="#local"/>'])assert.throws(()=>validateRenderPackage(zipSync({[name]:svg(body)})),{code:'EXTERNAL_RELATIONSHIP'});
+    for(const base of ['https://example.invalid/external.svg','file:///private/source.svg','relative.svg','#local',' '])for(const body of ['<image xml:base="'+base+'" href="#local"/>','<g xmlns:xlink="http://www.w3.org/1999/xlink" xml:base="'+base+'"><image xlink:href="#local"/></g>'])assert.throws(()=>validateRenderPackage(zipSync({[name]:svg(body)})),{code:'EXTERNAL_RELATIONSHIP'});
+    validateRenderPackage(zipSync({[name]:svg('<path id="local"/><image xml:base="" href="#local"/>')}));
     for(const body of ['<script>1</script>','<foreignObject/>','<path onclick="1"/>'])assert.throws(()=>validateRenderPackage(zipSync({[name]:svg(body)})),{code:'ACTIVE_CONTENT'});
     for(const body of ['<style>&#64;import "https://example.invalid/source";</style>','<style>&#64;<![CDATA[import]]> "https://example.invalid/source";</style>','<style>@\\69mport "https://example.invalid/source";</style>','<path style="fill: \\66ile"/>'])assert.throws(()=>validateRenderPackage(zipSync({[name]:svg(body)})),{code:'ACTIVE_CONTENT'});
     const noBom=svg('<image href="file:///private/source"/>').subarray(2);assert.throws(()=>validateRenderPackage(zipSync({[name]:noBom})),{code:'ACTIVE_CONTENT'});
