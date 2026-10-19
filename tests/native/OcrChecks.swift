@@ -71,6 +71,27 @@ import AppKit
         var struckLines=lines;struckLines[0]["strike_candidate"]=true;struckLines[0]["strike_status"]="detected"
         let struckCells=DocverVision.ruledTables(image,struckLines)[0]["cells"] as! [[String:Any]]
         precondition((struckCells[0]["text_confident"] as? Bool)==false,"Struck text cannot become a confident grid value")
+        for background:UInt8 in [240,230] {
+            for y in 0..<160{for x in 0..<240{pixels[y*stride+x]=background}}
+            for y in ys{for x in 20...220{pixels[y*stride+x]=0}}
+            for x in xs{for y in 40...130{pixels[y*stride+x]=0}}
+            let observed=DocverVision.gridObservation(image,lines)
+            precondition(observed.status=="available" && observed.tables.count==1 && (observed.tables[0]["cells"] as! [[String:Any]]).count==9,"Flat off-white backgrounds are not dividers")
+        }
+        clear()
+        for row in 0..<3{for col in 0..<3{for y in (ys[row]+1)..<ys[row+1]{for x in (xs[col]+1)..<xs[col+1]{pixels[y*stride+x]=(row+col)%2==0 ? 230:245}}}}
+        for y in ys{for x in 20...220{pixels[y*stride+x]=0}}
+        for x in xs{for y in 40...130{pixels[y*stride+x]=0}}
+        precondition(DocverVision.gridObservation(image,lines).status=="available","Broad alternating cell fills are not narrow dividers")
+        clear();for y in ys{for x in 20...220{pixels[y*stride+x]=0}}
+        for x in xs{for y in 40...130{pixels[y*stride+x]=0}}
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current=NSGraphicsContext(bitmapImageRep:image)
+        for (row,col,text) in words{(text as NSString).draw(at:NSPoint(x:xs[col]+4,y:160-ys[row]-20),withAttributes:[.font:NSFont.systemFont(ofSize:10),.foregroundColor:NSColor.black])}
+        NSGraphicsContext.restoreGraphicsState()
+        precondition(DocverVision.gridObservation(image,lines).status=="available","Actual cell glyph ink cannot be an interior divider")
+        clear();for y in ys{for x in 20...220{pixels[y*stride+x]=0}}
+        for x in xs{for y in 40...130{pixels[y*stride+x]=0}}
         for y in 41..<70{pixels[y*stride+85]=255}
         precondition(DocverVision.ruledTables(image,lines).isEmpty,"Partial/merged border must not silently become a coarser grid")
         clear();for y in [40,70,130]{for x in 20...220{pixels[y*stride+x]=0}}
@@ -104,6 +125,18 @@ import AppKit
         busy.bitmapData!.initialize(repeating:255,count:240*4096)
         for y in Swift.stride(from:0,to:4096,by:2){for x in 0..<240{busy.bitmapData![y*240+x]=0}}
         precondition(DocverVision.gridObservation(busy,lines).status=="budget_exceeded")
+        func budgetGrid(_ columns:Int,_ rows:Int,_ reason:String){
+            let width=max(160,columns*15+41),height=max(160,rows*15+41)
+            let bitmap=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:width,pixelsHigh:height,bitsPerSample:8,samplesPerPixel:1,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceWhite,bytesPerRow:width,bitsPerPixel:8)!
+            let p=bitmap.bitmapData!;p.initialize(repeating:255,count:width*height)
+            for row in 0...rows{for x in 20...(20+columns*15){p[(20+row*15)*width+x]=0}}
+            for col in 0...columns{for y in 20...(20+rows*15){p[y*width+20+col*15]=0}}
+            let result=DocverVision.gridObservation(bitmap,lines)
+            precondition(result.status=="budget_exceeded" && result.reasons.contains(reason),"Grid budgets must be explicit: \(reason), got \(result.status) \(result.reasons)")
+        }
+        budgetGrid(40,3,"column_rule_limit_33")
+        budgetGrid(10,65,"row_rule_limit_64")
+        budgetGrid(32,33,"cell_limit_1000")
         print("PASS numeric position/multiplicity/conflict and lexical controls; grayscale strike/underline; ruled grid empty cells/partial-border/negative controls")
     }
 }

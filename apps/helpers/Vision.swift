@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-9-grid-evidence"
+    static let version = "docver-vision-10-local-grid-contrast"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -90,7 +90,7 @@ struct DocverVision {
                 "revision":r.revision, "languages":r.recognitionLanguages, "supported_languages":try r.supportedRecognitionLanguages(),
                 "language_correction":false,"automatic_language_detection":false,"target_dpi":300,"max_dimension":4096,"tile_size":1600,"tile_overlap":240,"compute_device":"Vision automatic; same OS/build keyed", "renderer":"PDFKit.thumbnail.cropBox", "font_families":families,
                 "document_structure":ProcessInfo.processInfo.operatingSystemVersion.majorVersion>=26,
-                "ruled_grid_inference":"complete-dark-solid-rectangles-v3; weaker interior-boundary rejection; OCR tokens; inferred only",
+                "ruled_grid_inference":"complete-dark-solid-rectangles-v4; local-contrast interior-boundary rejection; OCR tokens; inferred only",
                 "font_inventory_sha256":digest(Data(inventory.utf8))]
     }
     static func process(_ input:[String:Any]) throws -> [String:Any] {
@@ -191,11 +191,11 @@ struct DocverVision {
         let w=image.pixelsWide,h=image.pixelsHigh,s=image.samplesPerPixel,offset=image.bitmapFormat.contains(.alphaFirst) ? 1:0
         let gray=image.colorSpace.colorSpaceModel == .gray
         guard w>100,h>100,w<=4096,h<=4096 else{return GridObservation(tables:[],status:"unsupported_dimensions",reasons:["grid_dimensions_outside_101_to_4096"])}
-        var dark=[UInt8](repeating:0,count:w*h),weak=[UInt8](repeating:0,count:w*h)
+        var dark=[UInt8](repeating:0,count:w*h),light=[UInt8](repeating:0,count:w*h)
         for y in 0..<h {for x in 0..<w {let p=y*image.bytesPerRow+x*s+offset
             let luminance=gray ? Int(data[p])*100 : Int(data[p])*21+Int(data[p+1])*72+Int(data[p+2])*7
             dark[y*w+x] = luminance<17500 ? 1:0
-            weak[y*w+x] = luminance<24500 ? 1:0
+            light[y*w+x] = UInt8(luminance/100)
         }}
         struct Rule {var y:Int;var x0:Int;var x1:Int;var bottom:Int}
         var rules:[Rule]=[]
@@ -218,8 +218,9 @@ struct DocverVision {
         rules=rules.filter{$0.bottom-$0.y<=max(6,h/300)}
         var groups:[[Rule]]=[]
         for r in rules {if let i=groups.firstIndex(where:{abs($0[0].x0-r.x0)<=4 && abs($0[0].x1-r.x1)<=4}){groups[i].append(r)}else{groups.append([r])}}
-        var tables:[[String:Any]]=[],rejected=Set<String>()
-        for group in groups where group.count>=3 && group.count<=64 {
+        var tables:[[String:Any]]=[],rejected=Set<String>(),budget=Set<String>()
+        for group in groups where group.count>=3 {
+            guard group.count<=64 else{budget.insert("row_rule_limit_64");continue}
             let sorted=group.sorted{$0.y<$1.y},gaps=zip(sorted,sorted.dropFirst()).map{$1.y-$0.bottom}.filter{$0>8}
             guard let smallest=gaps.min() else{continue}
             var chunks:[[Rule]]=[[]]
@@ -236,9 +237,10 @@ struct DocverVision {
                 }
                 func centers(_ positions:[Int])->[Int]{var bands:[[Int]]=[];for x in positions{if let last=bands.last?.last,x-last<=1{bands[bands.count-1].append(x)}else{bands.append([x])}};return bands.map{($0.first!+$0.last!)/2}}
                 let xs=centers(full)
-                guard xs.count>=3,xs.count<=33,abs(xs[0]-x0)<=5,abs(xs.last!-x1)<=5,
-                      zip(xs,xs.dropFirst()).allSatisfy({$1-$0>=12}),
-                      (xs.count-1)*(ys.count-1)<=1000 else{continue}
+                guard xs.count>=3,abs(xs[0]-x0)<=5,abs(xs.last!-x1)<=5,
+                      zip(xs,xs.dropFirst()).allSatisfy({$1-$0>=12}) else{continue}
+                guard xs.count<=33 else{budget.insert("column_rule_limit_33");continue}
+                guard (xs.count-1)*(ys.count-1)<=1000 else{budget.insert("cell_limit_1000");continue}
                 if partial.contains(where:{x in !xs.contains(where:{abs($0-x)<=4})}){rejected.insert("partial_vertical_divider");continue}
                 // Equal-endpoint grouping excludes partial horizontal dividers.
                 // Inspect pixels between the accepted rows as well: otherwise a
@@ -264,11 +266,25 @@ struct DocverVision {
                     return Double(count)>=Double(length)*0.45 && first-start<=maxGap && end-last<=maxGap && longestGap<=maxGap
                 }
                 var ambiguous=false
+                // A faint ruling is a narrow local contrast, not merely a gray
+                // pixel. Require lighter background on both perpendicular sides
+                // so uniform off-white pages and broad cell fills remain valid.
+                let flank=borderTolerance+1
+                func weakHorizontal(_ x:Int,_ y:Int)->UInt8 {
+                    guard y>=flank,y+flank<h else{return 0}
+                    let center=Int(light[y*w+x])
+                    return center<245 && center+6<=min(Int(light[(y-flank)*w+x]),Int(light[(y+flank)*w+x])) ? 1:0
+                }
+                func weakVertical(_ x:Int,_ y:Int)->UInt8 {
+                    guard x>=flank,x+flank<w else{return 0}
+                    let center=Int(light[y*w+x])
+                    return center<245 && center+6<=min(Int(light[y*w+x-flank]),Int(light[y*w+x+flank])) ? 1:0
+                }
                 for y in (top+1)..<bottom where !ys.contains(where:{abs($0-y)<=borderTolerance}) {
-                    if zip(xs,xs.dropFirst()).contains(where:{a,b in boundary(a,b,{weak[y*w+$0]})}){ambiguous=true;break}
+                    if zip(xs,xs.dropFirst()).contains(where:{a,b in boundary(a,b,{weakHorizontal($0,y)})}){ambiguous=true;break}
                 }
                 if !ambiguous {for x in (x0+1)..<x1 where !xs.contains(where:{abs($0-x)<=borderTolerance}) {
-                    if zip(ys,ys.dropFirst()).contains(where:{a,b in boundary(a,b,{weak[$0*w+x]})}){ambiguous=true;break}
+                    if zip(ys,ys.dropFirst()).contains(where:{a,b in boundary(a,b,{weakVertical(x,$0)})}){ambiguous=true;break}
                 }}
                 if ambiguous{rejected.insert("faint_or_dashed_interior_boundary");continue}
                 var cells:[[String:Any]]=[],occupiedRows=Set<Int>(),occupiedColumns=Set<Int>()
@@ -291,10 +307,11 @@ struct DocverVision {
                     cells.append(["row":row,"column":col,"row_span":1,"column_span":1,"text":text,"text_confident":!words.isEmpty && words.allSatisfy{$0.2},"bbox":[cell.minX,cell.minY,cell.width,cell.height]])
                 }}
                 guard cells.filter({!($0["text"] as! String).isEmpty}).count>=3,occupiedRows.count>=2,occupiedColumns.count>=2 else{continue}
-                tables.append(["cells":cells]);if tables.count>=50{return GridObservation(tables:tables,status:"partial",reasons:Array(rejected.union(["table_limit_50"])).sorted())}
+                tables.append(["cells":cells]);if tables.count>=50{return GridObservation(tables:tables,status:"partial",reasons:Array(rejected.union(budget).union(["table_limit_50"])).sorted())}
             }
         }
-        return GridObservation(tables:tables,status:rejected.isEmpty ? (tables.isEmpty ? "not_detected":"available"):(tables.isEmpty ? "ambiguous_boundaries":"partial"),reasons:Array(rejected).sorted())
+        let reasons=rejected.union(budget)
+        return GridObservation(tables:tables,status:!budget.isEmpty ? (tables.isEmpty ? "budget_exceeded":"partial"):rejected.isEmpty ? (tables.isEmpty ? "not_detected":"available"):(tables.isEmpty ? "ambiguous_boundaries":"partial"),reasons:Array(reasons).sorted())
     }
     static func strikeCandidate(_ image:NSBitmapImageRep,_ line:CGRect)->[Double]?{
         strikeObservation(image,line).bbox

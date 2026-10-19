@@ -97,6 +97,36 @@ test('hybrid selection preserves reliable raw regions, inferred recovery and blo
   const historical={...p,comparison_basis:'raster_ocr' as const,ocr_text:'Old OCR projection',ocr_unresolved_text:'Old unresolved'};assert.equal(comparisonText(historical),'Old OCR projection');assert.equal(unresolvedComparisonText(historical),'Old unresolved');assert.ok(comparisonRegions(p).every(e=>['selected','unresolved'].includes(e.comparison_role!)));
 });
 
+test('hybrid coverage retains unread tails and glyph warnings, and keeps mixed-size rows stable',()=>{
+  type E=PageData['elements'][number];
+  const element=(id:string,text:string,bbox:E['bbox'],visibility:E['visibility']='visible',ocr=false):E=>({observation_id:id,kind:'text',text,normalized_text:text,bbox,reading_order:0,availability:'available',method:ocr?'vision_ocr':'pdf_text',source_ref:id,provenance:ocr?'inferred':'observed',visibility});
+  const page=(key:string,elements:E[]):PageData=>({page_id:key,asset_id:key,page:1,width:960,height:540,coordinate_system:'normalized',source_transform:[],hidden:false,text:elements.filter(e=>e.provenance==='observed').map(e=>e.text).join('\n'),elements,notes:null,capabilities:{text:'available',notes:'unavailable',hidden_slides:'unavailable',animation:'unavailable',structure:'unavailable',preview:'available'},coverage_gaps:[],raster:{sha256:key.repeat(64),width:960,height:540,renderer:'fixture',environment:'fixture'}});
+  const tail=(key:string,n:string)=>{const p=page(key,[element('raw','Revenue '+n+' Unreadable tail 999',[.1,.1,.5,.05],'unverified'),element('ocr','Revenue '+n,[.1,.1,.21,.05],'visible',true)]);selectHybridComparison(p);return p;};
+  const a=tail('a','100'),b=tail('b','120');assert.equal(a.elements[0].comparison_role,'unresolved');assert.ok(unresolvedComparisonText(a).includes('Unreadable tail 999'));assert.equal(changes(a,b).filter(c=>c.kind==='text_modified').length,0,'A prefix cannot resolve a larger unknown run');
+  const independent=(key:string,n:string)=>{const p=page(key,[element('raw','Unreadable tail 999',[.1,.4,.5,.05],'unverified'),element('ocr','Revenue '+n,[.1,.1,.21,.05],'visible',true)]);selectHybridComparison(p);return p;};
+  const regional=changes(independent('c','100'),independent('d','120')).filter(c=>c.kind==='text_modified');assert.equal(regional.length,1);assert.equal(regional[0].text_scope,'region');assert.equal(regional[0].text_assessment,'inferred');
+  const blocked=element('blocked','Revenue 1.5',[.1,.1,.4,.05],'uncertain');blocked.visibility_spans=[{text:'.',state:'occluded',bbox:[.35,.1,.01,.05],paint_index:1,assessment:'inferred'},{text:'R',state:'uncertain',bbox:[.1,.1,.03,.05],paint_index:0,assessment:'inferred'}];
+  const covered=page('e',[blocked,element('ocr','Revenue 15',[.1,.1,.4,.05],'visible',true)]);selectHybridComparison(covered);assert.equal(covered.elements[1].comparison_reason,'source_appearance_blocks_ocr');assert.equal(comparisonText(covered),'');assert.ok(unresolvedComparisonText(covered).includes('1.5'));
+  const unrelated=page('f',[structuredClone(blocked),element('ocr','Independent 100',[.6,.1,.3,.05],'visible',true)]);selectHybridComparison(unrelated);assert.equal(unrelated.elements[1].comparison_role,'selected','Disjoint appearance spans cannot block an independent region');
+  const kpi=page('g',[element('label','Revenue',[.1,.10,.2,.02]),element('amount','₩12,000',[.4,.09,.15,.05],'visible',true)]);selectHybridComparison(kpi);assert.equal(comparisonText(kpi),'Revenue\n₩12,000');
+  const tall=page('h',[element('tall','Tall',[.1,.1,.1,.1]),element('line1','L1',[.31,.1,.2,.02],'visible',true),element('line2','L2',[.30,.13,.2,.02],'visible',true)]);selectHybridComparison(tall);assert.equal(comparisonText(tall),'Tall\nL1\nL2');
+  const sourceOnly=(key:string,y:number)=>{const p=page(key,[element('revenue','Revenue 100',[.1,y,.3,.02]),element('cost','Cost 50',[.5,.1001,.3,.02]),element('prior','Hidden 999',[.1,.8,.3,.02],'hidden_render_mode'),element('ocr1','Revenue 100',[.1,y,.3,.02],'visible',true),element('ocr2','Cost 50',[.5,.1001,.3,.02],'visible',true)]);selectHybridComparison(p);return p;};
+  const left=sourceOnly('i',.1),right=sourceOnly('j',.1002);assert.equal(comparisonText(left),comparisonText(right));
+  // Also protect imported snapshots whose persisted projection order differs.
+  right.elements[0].comparison_order=1;right.elements[1].comparison_order=0;
+  const order=changes(left,right);assert.equal(order.filter(c=>c.kind==='text_modified').length,0);assert.ok(order.some(c=>c.kind==='visual_region_changed'));assert.ok(order.some(c=>c.coverage_gaps.some(g=>g.reason==='ocr_reading_order_changed_without_text_region_change')));
+});
+
+test('mixed PDF glyph paint states block OCR lines and grid values independently of aggregate uncertainty',native,async()=>{
+  const make=(draw?:(d:PDFKit.PDFDocument)=>void)=>pdf(d=>{d.fontSize(24).text('Revenue 1.5',50,80,{lineBreak:false});draw?.(d);});
+  const [baseline]=await extractPdf(await make(),'sha256:baseline'),spans=baseline.elements[0].visibility_spans!;
+  const bytes=await make(d=>{for(const [text,alpha]of [['.',1],['R',.4]] as const){const b=spans.find(s=>s.text===text)!.bbox;d.save().fillOpacity(alpha).rect(b[0]*960-.1,b[1]*540-.1,b[2]*960+.2,b[3]*540+.2).fill('white').restore();}});
+  const [p]=await extractPdf(bytes,'sha256:mixed-paint'),raw=p.elements[0];assert.equal(raw.visibility,'uncertain');assert.ok(raw.visibility_spans?.some(s=>s.text==='.'&&s.state==='occluded'));
+  const result=await recognizePdf(bytes,1),line={...result.lines[0],text:'Revenue 15',confidence:1,bbox:raw.bbox,strike_candidate:false,strike_status:'not_detected',numeric_consensus:true,numeric_status:'verified',alternatives:[{text:'Revenue 15',confidence:1}]};
+  await supplementPdfOcr(p,bytes,{nativeResult:{...result,lines:[line],tables:[],grid_tables:[{cells:[{row:0,column:0,row_span:1,column_span:1,text:'Revenue 15',text_confident:true,bbox:raw.bbox}]}]}});
+  assert.equal(p.elements.find(e=>e.method==='vision_ocr')?.visibility,'uncertain');assert.equal(p.elements.find(e=>e.method==='vision_ocr')?.comparison_reason,'source_appearance_blocks_ocr');assert.equal(p.elements.find(e=>e.method==='raster_ruled_grid_cell')?.visibility,'uncertain');assert.equal(comparisonText(p),'');assert.ok(unresolvedComparisonText(p).includes('1.5'));
+});
+
 test('native tiled Korean/English OCR retains signs and amounts and caches exact evidence',native,async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-ocr-test-'));
   try{

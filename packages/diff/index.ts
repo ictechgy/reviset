@@ -48,7 +48,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
       const changed=(old:ElementData[],next:ElementData[])=>{const byText=new Map<string,ElementData[]>();for(const e of next){const key=normalize(e.text);byText.set(key,[...(byText.get(key)??[]),e]);}return old.filter(e=>!(byText.get(normalize(e.text))??[]).some(f=>regionOverlap(e,f)>0.6));};
       const left=comparisonElements(a),right=comparisonElements(b),before=changed(left,right),after=changed(right,left);
       const unchangedRegions=left.length>0&&left.length===right.length&&left.every(e=>right.filter(f=>normalize(e.text)===normalize(f.text)&&regionOverlap(e,f)>0.6).length===1)&&right.every(f=>left.filter(e=>normalize(e.text)===normalize(f.text)&&regionOverlap(e,f)>0.6).length===1);
-      const onlyOcrOrder=formatA==='pdf'&&formatB==='pdf'&&left.concat(right).some(e=>e.method==='vision_ocr')&&before.length===0&&after.length===0&&unchangedRegions;
+      const onlyOcrOrder=formatA==='pdf'&&formatB==='pdf'&&(a.comparison_basis==='hybrid_regions_v1'||b.comparison_basis==='hybrid_regions_v1'||left.concat(right).some(e=>e.method==='vision_ocr'))&&before.length===0&&after.length===0&&unchangedRegions;
       if(onlyOcrOrder){add('coverage_gap',a,b,m,'ocr_reading_order_changed_without_text_region_change');}
       else {
       const ocr=a.comparison_basis==='raster_ocr'||b.comparison_basis==='raster_ocr'||before.concat(after).some(e=>e.provenance==='inferred')||(!before.length&&!after.length&&left.concat(right).some(e=>e.method==='vision_ocr'));

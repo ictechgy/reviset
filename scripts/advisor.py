@@ -6,7 +6,7 @@ base=root/'.omx/artifacts'/('ask-'+a.provider+'-'+a.slug+'-'+datetime.datetime.n
 cwd=base/'workspace';cwd.mkdir();(base/'prompt.txt').write_bytes(data)
 exe={'claude':'/Users/coden/.local/bin/claude','grok':'/Users/coden/.grok/bin/grok','agy':'/Users/coden/.local/bin/agy'}[a.provider]
 if a.provider=='claude':argv=[exe,'-p','--tools','','--no-session-persistence','--strict-mcp-config','--setting-sources','','--disable-slash-commands','--no-chrome','--permission-mode','dontAsk']
-elif a.provider=='grok':argv=[exe,'--prompt-file',str(base/'prompt.txt'),'--tools','','--disable-web-search','--no-subagents','--no-plan','--permission-mode','dontAsk','--max-turns','4']
+elif a.provider=='grok':argv=[exe,'--prompt-file',str(base/'prompt.txt'),'--verbatim','--system-prompt-override','Review only the supplied evidence packet. You have no tools. Return substantive findings and one terminal verdict. Do not attempt filesystem access, planning, memory or other agent operations.','--tools','','--disable-web-search','--no-subagents','--no-plan','--permission-mode','dontAsk','--max-turns','8']
 else:argv=[exe,'-p',data.decode(),'--sandbox','--disable-slash-commands','--print-timeout','420s']
 version=subprocess.run([exe,'--version'],capture_output=True,text=True).stdout.strip()
 start=datetime.datetime.now(datetime.timezone.utc).isoformat();record={'provider':a.provider,'scope':a.scope,'executable':exe,'version':version,'argv':argv if a.provider!='agy' else [exe,'-p','<prompt.txt sha256='+digest+'>']+argv[3:],'cwd':str(cwd),'prompt_path':str(base/'prompt.txt'),'prompt_sha256':digest,'started_at':start}
