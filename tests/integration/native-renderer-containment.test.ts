@@ -5,7 +5,7 @@ import {existsSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {execFileSync,spawn} from 'node:child_process';
-import {onlyOfficeSidecarPolicy} from '../../packages/render/onlyoffice-sidecar.js';
+import {onlyOfficeSidecarPolicy,rethrowSidecarConversionError} from '../../packages/render/onlyoffice-sidecar.js';
 import {runTool} from '../../packages/runtime/tools.js';
 
 test('actual renderer guard confines direct IO, broker lookup, signals, resources and cancellation',{skip:process.platform!=='darwin',timeout:30000},async()=>{
@@ -40,6 +40,7 @@ test('actual renderer guard confines direct IO, broker lookup, signals, resource
         assert.ok(result.error);
         if(mode==='fsize'){assert.match(String(result.error),/ftruncate_result=-1 errno=27/u);assert.ok((await lstat(join(folder,'big.bin'))).size<=128*1024*1024);}
         if(mode==='aggregate')assert.match(String(result.error),/DOCVER_RESOURCE_LIMIT: Aggregate256MiB/u);
+        if(['aggregate','symlink'].includes(mode))assert.throws(()=>rethrowSidecarConversionError(result.error),(error:any)=>error.code==='SIDECAR_LIMIT');
         if(mode==='symlink')assert.match(String(result.error),/DOCVER_RESOURCE_LIMIT: Output symlink refused/u);
         if(mode==='output')assert.equal(result.error.code,'TOOL_OUTPUT_LIMIT');
         if(mode==='cancel')assert.equal(result.error.code,'CANCELLED');

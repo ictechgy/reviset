@@ -20,6 +20,10 @@ const Provider=z.object({version:z.literal(1),app_path:z.string().min(1).max(409
 const Lease=SidecarScope.extend({created_at:z.string().datetime()}).strict();
 const requirement='=anchor apple generic and certificate leaf[subject.OU] = "2WH24U26GJ"';
 function fail(code:string,message:string):never{throw new DocverError(code,message);}
+export function rethrowSidecarConversionError(error:unknown):never{
+  if(error instanceof DocverError&&['TOOL_FAILED','TOOL_SUPERVISOR'].includes(error.code)&&error.message.includes('DOCVER_RESOURCE_LIMIT:'))fail('SIDECAR_LIMIT','참고 변환 작업의 파일·폴더 용량 또는 구조 제한을 넘었습니다. 원문·변경 이력은 보존됩니다.');
+  throw error;
+}
 const compact=(text:string)=>text.normalize('NFC').replace(/\s/gu,'');
 const xml=(value:string)=>value.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&apos;');
 
@@ -203,7 +207,7 @@ export async function createOnlyOfficeSidecar(options:{library:string;resources:
     const parameterFile=join(folder,'params.xml');await writeFile(parameterFile,'<?xml version="1.0" encoding="utf-8"?><TaskQueueDataConvert>'+Object.entries(params).map(([k,v])=>`<${k}>${xml(v)}</${k}>`).join('')+'</TaskQueueDataConvert>',{mode:0o600,flag:'wx'});
     signal?.throwIfAborted();
     try{await runTool(guard,[folder,'/usr/bin/sandbox-exec','-p',onlyOfficeSidecarPolicy(folder,prepared.app,prepared.converter),prepared.converter,parameterFile],{supervised:true,timeout:120_000,signal,maxBytes:1024*1024,inheritEnv:false,env:{PATH:'/usr/bin:/bin',HOME:folder,TMPDIR:folder,XDG_CACHE_HOME:join(folder,'cache'),LANG:'en_US.UTF-8',TZ:'UTC'}});}
-    catch(error){if(error instanceof DocverError&&error.code==='TOOL_FAILED'&&error.message.includes('DOCVER_RESOURCE_LIMIT:'))fail('SIDECAR_LIMIT','참고 변환 작업의 파일·폴더 용량 또는 구조 제한을 넘었습니다. 원문·변경 이력은 보존됩니다.');throw error;}
+    catch(error){rethrowSidecarConversionError(error);}
     signal?.throwIfAborted();const st=await lstat(output);if(st.nlink!==1)fail('SIDECAR_OUTPUT','참고 PDF가 독립된 파일이 아닙니다.');const pdf=await smallFile(output,128*1024*1024);
     const task=getDocument({...pdfOptions,data:new Uint8Array(pdf)}),rendered:RenderedPage[]=[];let documentCharacters=0,documentItems=0;
     let abortedDestroy:Promise<void>|undefined;

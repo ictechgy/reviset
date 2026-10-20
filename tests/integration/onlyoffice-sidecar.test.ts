@@ -6,9 +6,9 @@ import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import PptxGenJS from 'pptxgenjs';
 import {extractPptx} from '../../packages/ingest/pptx.js';
-import {byteHash,hash,type ReportData} from '../../packages/schema/index.js';
+import {byteHash,hash,DocverError,type ReportData} from '../../packages/schema/index.js';
 import {parseOnlyOfficeFonts} from '../../packages/render/onlyoffice-fonts.js';
-import {SidecarScope,sidecarSource,verifySidecarMapping,verifySidecarMappingCancellable,createOnlyOfficeSidecar,closeOnlyOfficeSidecar,recoverOnlyOfficeSidecars} from '../../packages/render/onlyoffice-sidecar.js';
+import {rethrowSidecarConversionError,SidecarScope,sidecarSource,verifySidecarMapping,verifySidecarMappingCancellable,createOnlyOfficeSidecar,closeOnlyOfficeSidecar,recoverOnlyOfficeSidecars} from '../../packages/render/onlyoffice-sidecar.js';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {optionalSidecarBuild} from '../../scripts/onlyoffice-build-policy.js';
 
@@ -148,4 +148,10 @@ test('startup removes only empty or validated pre-lease jobs and retains unknown
     await writeFile(join(f.jobs,seeded.session_id,'.lease-seed'),JSON.stringify({...seeded,created_at:new Date().toISOString()}));await writeFile(join(f.jobs,unknown,'unknown.txt'),'preserve for inspection');
     assert.deepEqual(await recoverOnlyOfficeSidecars(f.root),{recovered:3,skipped:1});assert.deepEqual(await readdir(f.jobs),[unknown]);assert.equal(await readFile(join(f.jobs,unknown,'unknown.txt'),'utf8'),'preserve for inspection');assert.equal(await readFile(f.canary,'utf8'),'canonical input unchanged');
   }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+
+test('sidecar limits retain the public error code across converter and monitor rejection',()=>{
+  for(const code of ['TOOL_FAILED','TOOL_SUPERVISOR'])assert.throws(()=>rethrowSidecarConversionError(new DocverError(code,'DOCVER_RESOURCE_LIMIT: Output symlink refused')),error=>error instanceof DocverError&&error.code==='SIDECAR_LIMIT'&&error.message.includes('원문·변경 이력은 보존됩니다.'));
+  for(const original of [new DocverError('CANCELLED','DOCVER_RESOURCE_LIMIT: ignored'),new DocverError('TOOL_SUPERVISOR','Monitor crashed'),new Error('unrelated')])assert.throws(()=>rethrowSidecarConversionError(original),error=>error===original);
 });
