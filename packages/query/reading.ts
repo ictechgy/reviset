@@ -64,7 +64,7 @@ function hitAttribution(page:PageData,section:Section,value:string,start:number,
   let offset=0;const containing=elements.filter(e=>{const left=offset;offset+=e.text.length+1;return start>=left&&start+length<=left+e.text.length;});
   if(containing.length!==1)return {element_attribution:'exact_field_join',spans_elements:true};
   const e=containing[0];
-  if(elements.some(other=>other!==e&&other.text.includes(e.text)))return {element_attribution:'ambiguous',spans_elements:null};
+  if(elements.some(other=>other!==e&&other.text.length>0&&(other.text.includes(e.text)||e.text.includes(other.text))))return {element_attribution:'ambiguous',spans_elements:null};
   return {element_attribution:'exact_field_join',spans_elements:false,observation_id:e.observation_id,provenance:e.provenance,visibility:e.visibility??'not_recorded',comparison_role:e.comparison_role??'not_recorded',table_origin:e.table?.origin,table_assessment:e.table?.assessment};
 }
 export function searchContentRows(r:ReportData,args:SearchArgs):Record<string,unknown>[] {

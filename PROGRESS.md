@@ -934,3 +934,10 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 - A clean `0e95a6120837b55f17b9257db8408ccf1a290124` 전체232/232PASS,0fail/skip/cancel155478.551333ms(wrapper156.448453416s), 모든 추적 소스 바이트 고정. A 별도앱은 freshfive/backend/manual/bundle/reference/sharedXML6작업 통과했지만 다음 Claude 지적을 받아 qualification을 정상 작업 경계에서 중단했다. A233 또는 최종앱/ZIP 합격으로 재분류하지 않는다. 실행중인 이전Docver.app8핵심파일은 그대로 보존했다.
 - Claude exactA 소스 재검토 exit0·8818B·stderr0·terminal REQUEST_CHANGES(prompt6d14238a88e2a51cdf3d38b4b7ace8977e52ad39f4ba0314c16e5edb0cddc887). 채택: 저장history변경은 containing from/to 범위를 허용; 반복/포함문구 또는 구성순서 불일치의 observation 귀속은 ambiguous로 보류; unavailable capability의 빈 필드는 empty_unverified; export manifest는 bounded query 대신 공통 full reportMetadata를 사용; get_element 모든 경로에 occurrence ID 추가와 report내 중복 observation명시적거절. 현재 엔진의 occurrence stamp가 page/observation을 각각 발급하는 원본 경로도 확인했다. 과거중복alias는 새도구에서 엄격히거절하고 정확occurrence를 요청하며 legacy get_evidence 규칙은 보존한다.
 - 집중10/10PASS 약0.57초,TypeScript PASS. sourceA의 순변경/역사ID/원문·노트·MCP budget/DB불변 검사는 유지했고, Claudecounterexample·큰export환경도 회귀조건으로 추가했다. 독립A16경로 코드APPROVE/READY(13362B SHAb6ca01239cc599102a2fb9ee53311c3bc55b873f3646f1ed2e8d9a90dfc99b26)는 정확A에만 해당하며 B전체리뷰·233회귀·실제새앱/ZIP은 별도 필요하다. GrokA는900초 범위 내 응답 대기 중. 제품 OCR/PowerPoint/플랫폼 게이트는 계속OPEN.
+
+
+### 2026-10-20 AI MCP · sourceC 중복 문구 guard 대칭성
+
+- B clean `ed8b5e202bee4f931a7ce960e02ccbc6dd84063b` 전체233/233PASS,0fail/skip/cancel,wrapper163.601625833s, 추적 소스 바이트 모두 동일. 정확 B 결과이며 새 C의 전수 실행으로 재분류하지 않는다.
+- 독립 코드 lane의 실제 순서별 counterexample에서 `other.text.includes(e.text)`만 검사하면 긴/짧은 반복 요소 순서에 따라 attribution guard가 달라졌다. 실제 native producer 오귀속 exploit을 증명한 것은 아니지만 새 보수정책의 비대칭을 닫기 위해 포함 관계를 양방향으로 검사한다. 빈 다른 요소는 상관 없는 모호성으로 만들지 않는다. Revenue\nRevenue/Revenue와 a/b\na, a\nb/a 양쪽순서 controls를 추가했다. 원문·diff·event ID·기존근거의 의미는 바꾸지 않고 새 검색의 단일observation귀속만 보류한다.
+- 집중10/10PASS 및 TypeScript PASS. C 전체233/현재17경로 독립source리뷰·새앱/MCP/ZIP은 별도 진행한다. A/B 승인과 실제실행은 각각 해당정확snapshot에만 남긴다.

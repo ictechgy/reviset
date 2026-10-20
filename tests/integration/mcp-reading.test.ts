@@ -157,6 +157,10 @@ test('advisor regressions: containing history ranges, ambiguous repeated-element
     const hit=q.query('search_content',{...common,text:'Revenue',section:'source'}).items[0];assert.equal(hit.element_attribution,'ambiguous');assert.equal(hit.observation_id,undefined);
   }
   p.elements=[{...p.elements[0],text:'a',reading_order:0},{...p.elements[1],text:'b\na',reading_order:1}];p.text='a\nb\na';assert.equal(q.query('search_content',{...common,text:'a',section:'source'}).items[0].element_attribution,'ambiguous');
+  for(const parts of [['Revenue\nRevenue','Revenue'],['Revenue','Revenue\nRevenue'],['a','b\na'],['a\nb','a']]){
+    p.elements=parts.map((text,i)=>({...p.elements[0],text,observation_id:'part_'+i,reading_order:i}));p.text=parts.join('\n');
+    const hit=q.query('search_content',{...common,text:parts[0].startsWith('Revenue')?'Revenue':'a',section:'source'}).items[0];assert.equal(hit.element_attribution,'ambiguous');assert.equal(hit.observation_id,undefined);
+  }
   p.notes='';p.capabilities.notes='unavailable';assert.equal(q.query('get_page_content',{...common,revision_id:'occ_a',page_id:'a',section:'notes'}).items[0].field_state,'empty_unverified');
   const obs=p.elements[0].observation_id;assert.equal(q.query('get_element',{...common,observation_id:obs}).items[0].revision_occurrence_id,'occ_a');r.revisions[1].pages[0].elements[0].observation_id=obs;
   assert.throws(()=>q.query('get_element',{...common,observation_id:obs}),{code:'AMBIGUOUS_OBSERVATION'});assert.throws(()=>q.query('get_evidence',{...common,observation_id:obs}),{code:'AMBIGUOUS_OBSERVATION'});
