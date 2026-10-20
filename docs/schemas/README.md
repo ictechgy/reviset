@@ -20,14 +20,18 @@
 | `list_revisions` | 공통 scope | 입력·상태·occurrence·페이지 수 |
 | `list_pages` | revision_id | 원문 발췌·가용성·요소 수 |
 | `get_page` | revision_id, page_id | 순서대로 분할된 원문 요소 |
+| `get_page_content` | revision_id, page_id, section, text_offset/text_length | comparison/source/visible/unresolved/suppressed/ocr/ocr_unresolved/notes의 정확한 청크·필드 상태·SHA |
+| `search_content` | text, revision_id/format/section, case_sensitive | 페이지별 첫 literal hit·원문 offset·판독 상태·가능한 경우 요소 출처 |
 | `get_element` | observation_id | 원문·bbox·추출법; text_offset/text_length, span_offset/span_limit, appearance_evidence_offset/appearance_evidence_limit |
 | `list_changes` | mode, from/to, kind, entity_id, change_id, text | 관측 delta와 근거 |
+| `get_change` | change_id, from/to, component/component_index, text_offset/text_length | 변경 요약·전체 전후값·개별 근거·한계·계보 이유·topology |
+| `list_coverage_gaps` | revision_id/page_id/feature/gap_index, component, text_offset/text_length | report/버전/페이지의 전체 판독 한계와 개별 긴 reason/feature |
 | `list_bundle_decisions` | revision_id/source_page_id/decision_id, reason_offset/reason_length | 같은 버전의 제공 PDF 연결 이유·대체된 쌍·이력 |
 | `list_page_relations` | relation_id/page_id, from/to_occurrence, reachable_from/to_page_id, reason_offset/reason_length | 실제 방향 연결과 이유의 분할 원문 |
 | `get_entity_history` | entity_id | 각 버전의 페이지 원문·변경 ID |
 | `get_evidence` | change_id 또는 observation_id 하나 | 페이지·인용·좌표; text_offset/text_length |
 
-`get_report` 이하의 공통 scope는 project_id와 report_id다. report_id=`latest`는 첫 조회에서 고정 ID로 해석한다. 이후 해당 ID를 사용한다. revision_id 입력은 occurrence ID를 권장하며, 원본 revision ID를 사용하면 처음 등장한 occurrence를 선택한다.
+`get_report` 이하의 공통 scope는 project_id와 report_id다. report_id=`latest`는 첫 조회에서 고정 ID로 해석한다. 이후 해당 ID를 사용한다. revision_id 입력에는 occurrence ID를 쓴다. 새 내용 조회 도구와 list_bundle_decisions는 중복 원본 revision alias를 AMBIGUOUS_REVISION으로 거절한다. 기존 도구 일부의 역사적 first-occurrence alias 동작은 호환성을 위해 유지하므로 라벨이나 중복 원본 ID로 버전을 추측하지 않는다. MCP API0.4.0-mcp.1의 실용 흐름·2개 prompt는 [MCP 조회 가이드](../MCP.md)를 참고한다.
 
 모든 도구에 명시적 inputSchema/outputSchema, readOnlyHint가 있다. SDK의 기본 protocol은 2025-11-25이고 SDK가 이전 버전과 협상한다. 기준은 [MCP 도구 명세](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)와 [resources 명세](https://modelcontextprotocol.io/specification/2025-11-25/server/resources)다.
 
@@ -36,7 +40,11 @@
 ```text
 docver://projects/{project_id}/reports/{report_id}/manifest
 docver://projects/{project_id}/reports/{report_id}/revisions/{revision_id}/pages/{page_id}
+docver://projects/{project_id}/reports/{report_id}/revisions/{revision_id}/pages/{page_id}/content
+docver://projects/{project_id}/reports/{report_id}/revisions/{revision_id}/pages/{page_id}/notes
 docver://projects/{project_id}/reports/{report_id}/changes/{change_id}
+docver://projects/{project_id}/reports/{report_id}/changes/{change_id}/detail
+docver://projects/{project_id}/reports/{report_id}/coverage-gaps
 docver://projects/{project_id}/reports/{report_id}/pages/{page_id}/relations
 docver://projects/{project_id}/reports/{report_id}/entities/{entity_id}
 docver://projects/{project_id}/reports/{report_id}/evidence/{observation_id}
@@ -50,18 +58,18 @@ docver://projects/{project_id}/reports/{report_id}/evidence/{observation_id}
 
 query 응답의 JSON byte 수는 해당 예산을 넘지 않는다. MCP는 structuredContent와 호환용 JSON text의 중복 비용까지 합쳐 예산에 맞춘다. 너무 작은 예산에는 `OUTPUT_BUDGET_TOO_SMALL`을 반환하므로 실용적으로 2000~8000을 권장한다. JSON-RPC transport envelope의 ID·헤더는 이 업무 payload 예산 밖이다.
 
-응답은 `schema_version`, 고정 `report_id`, `items`, `next_cursor`, `coverage_gaps`, `truncated`, `omitted_fields`, `token_estimation`을 포함한다. coverage gap도 예산에 따라 일부만 반환할 수 있으며 이를 omitted_fields에 표시한다. 전체 coverage는 export의 manifest/report로 확인한다.
+응답은 `schema_version`, 고정 `report_id`, `items`, `next_cursor`, `coverage_gaps`, `truncated`, `omitted_fields`, `token_estimation`을 포함한다. 새 내용 도구에는 선택적 `query_context`도 있다. 공통 envelope의 coverage gap은 예산에 따라 일부만 반환하며 omitted_fields에 표시한다. 전체 한계는 list_coverage_gaps 또는 export의 manifest/report로 확인한다.
 
 cursor는 report ID·쿼리 hash·안정 정렬 위치에 묶는다. cursor를 사용해도 필터를 똑같이 전달해야 한다. limit과 출력 예산은 바꿔도 된다. 다른 report에는 `CURSOR_REPORT_MISMATCH`, 다른 필터에는 `CURSOR_QUERY_MISMATCH`를 반환한다.
 
-하나의 항목이 너무 크면 ID·resource URI·누락 필드 목록을 담은 summary를 반환하고 cursor를 진행한다. 원문은 다음처럼 읽는다.
+기존 목록 도구에서 하나의 항목이 너무 크면 ID·resource URI·누락 필드 목록을 담은 summary를 반환하고 cursor를 진행한다. 새 내용 도구는 실제 MCP dualJSON 크기에 맞춰 텍스트 청크를 줄이며 ID-only 성공으로 대체하지 않는다. 최소 scalar도 담을 수 없으면 OUTPUT_BUDGET_TOO_SMALL이다. 원문은 다음처럼 읽는다.
 
 1. `list_pages`로 page_id를 찾는다.
 2. `get_page`의 cursor로 모든 요소 ID를 읽는다.
 3. 요소 text가 생략됐으면 `get_element`를 text_length=100~500으로 호출한다.
 4. `next_text_offset`을 다음 text_offset으로 사용한다(오프셋 단위는 JavaScript UTF-16 code unit). null이면 끝이다. 이모지의 surrogate pair를 중간에서 자르지 않는다. 길이 1 요청도 한 scalar를 위해 2 code unit을 반환할 수 있으며, 임의 offset이 pair 중간이면 `TEXT_OFFSET`으로 거절한다.
 
-변경의 긴 인용은 `get_evidence`에 change_id와 offset/length를 전달한다. 생성된 summary를 완전한 원문으로 취급하지 않는다. 발표자 노트의 전체 원문은 현재 JSON/페이지 Markdown export에서 읽을 수 있으며, MCP에서 노트를 나눠 읽는 전용 조회는 아직 없다.
+변경의 긴 전후값은 get_change component=before/after로, 긴 인용은 get_evidence 또는 get_change component=evidence로 읽는다. get_change의 여러 행은 component_index, list_coverage_gaps의 개별 한계는 gap_index를 고정해 text_offset으로 잇는다. 목록 cursor와 다른 text offset을 섞지 않는다. 발표자 노트는 get_page_content section=notes와 next_text_offset으로 읽는다. 생성된 summary를 완전한 원문으로 취급하지 않는다. null/unavailable·not_recorded·empty·empty_unverified를 구분한다.
 
 ## PDF 표시 상태와 표 출처
 
@@ -109,4 +117,4 @@ New53 reports use schema0.4.0 and canonical engine0.4.0-native.bundle.53. `bundl
 
 Historical0.1/0.2/0.3 reports remain readable. Their bounded query envelopes stay0.3.0 for complete historical replay; current0.4 reports use0.4.0. Exact archived44/45/50/51 kernels and immutable golden responses protect old event IDs and evidence rather than recomputing them with new semantics. Full exports add bundle-decisions.jsonl while preserving raw report JSON.
 
-For the new `list_bundle_decisions` tool only, an alias shared by multiple occurrences returns `AMBIGUOUS_REVISION`; provide an exact `revision_occurrence_id`. A unique raw revision alias remains valid. Other archived query alias semantics remain unchanged. This prevents a history filter silently hiding another occurrence of the same original asset set.
+For `list_bundle_decisions` and the new content-reading tools, an alias shared by multiple occurrences returns `AMBIGUOUS_REVISION`; provide an exact `revision_occurrence_id`. A unique raw revision alias remains valid. Other archived query alias semantics remain unchanged. This prevents new filters silently hiding another occurrence of the same original asset set. Stored history get_change accepts a containing from/to interval; computed net IDs retain their original endpoints. Historical get_evidence recovery remains available.
