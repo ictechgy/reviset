@@ -106,18 +106,20 @@ export function coverageRows(r:ReportData,args:CoverageArgs):Record<string,unkno
   const v=args.revision_id?resolveReadingRevision(r,args.revision_id):undefined,p=args.page_id?v?.pages.find(p=>p.page_id===args.page_id):undefined;
   if(args.page_id&&!p)throw new DocverError('PAGE_NOT_FOUND','Page is outside this revision');
   const gaps=p?p.coverage_gaps:v?v.coverage_gaps:r.coverage_gaps;
-  const locations=new Map(r.revisions.flatMap(revision=>revision.pages.map(page=>[page.page_id,{revision,page}] as const)));
+  const locations=new Map<string,RevisionData[]>();
+  for(const revision of r.revisions)for(const page of revision.pages){const origins=locations.get(page.page_id)??[];origins.push(revision);locations.set(page.page_id,origins);}
   const bySource=new Map<string,RevisionData[]>();
   for(const revision of r.revisions){const aliases=bySource.get(revision.revision_id)??[];aliases.push(revision);bySource.set(revision.revision_id,aliases);}
   if(args.gap_index!==undefined&&!gaps[args.gap_index])throw new DocverError('GAP_NOT_FOUND','Gap index is outside this scope');
   return gaps.flatMap((g,index)=>{
     if(args.gap_index!==undefined&&args.gap_index!==index)return [];
     if(args.feature&&g.feature!==args.feature)return [];
-    const located=g.page_id?locations.get(g.page_id):undefined;
+    const origins=g.page_id?locations.get(g.page_id)??[]:[];
+    const located=origins.length===1?origins[0]:undefined;
     const aliases=g.revision_id?bySource.get(g.revision_id)??[]:[];
-    const occurrence=v?.revision_occurrence_id??located?.revision.revision_occurrence_id??(aliases.length===1?aliases[0].revision_occurrence_id:null);
+    const occurrence=v?.revision_occurrence_id??(origins.length>1?null:located?.revision_occurrence_id??(aliases.length===1?aliases[0].revision_occurrence_id:null));
     return [{gap_index:index,scope:p?'page':v?'revision':'report',revision_id:v?.revision_id??g.revision_id??null,revision_occurrence_id:occurrence,page_id:p?.page_id??g.page_id??null,
-      occurrence_context:occurrence?'resolved':aliases.length>1?'ambiguous':'report',feature_excerpt:textChunk(g.feature,0,120),feature_length:g.feature.length,component:args.component,
+      occurrence_context:occurrence?'resolved':origins.length>1||aliases.length>1?'ambiguous':'report',feature_excerpt:textChunk(g.feature,0,120),feature_length:g.feature.length,component:args.component,
       ...textPart(args.component==='feature'?g.feature:g.reason,args.text_offset,args.text_length)}];
   });
 }

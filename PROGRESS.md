@@ -955,3 +955,12 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 
 - D clean `aa91172922909ab2bd6cf119ec501ed66f9a7418` 전체234/234PASS158535.776708ms(wrapper159.302205208s),추적소스바이트고정. 정확D결과만귀속한다.
 - Claude exactD six-runtime packet83217B SHA584dede2de7f719a26871c6a7971189032d04680a1bbe639b292db4c5b25fbe0,exit0/4971B/stderr0/terminal REQUEST_CHANGES. 실제 CR 단독 줄바꿈이 blockquote 경계를 벗어날 수 있다는 지적을 채택한다. 공유quote가 CRLF/CR/LF 모두줄분리하도록 변경하고 pageMarkdown/history의 forged_heading 사례를회귀검증한다. JSON/MCP/저장원문은그대로며 Markdown만 줄바꿈정규화한다. 인용표시 자체를 prompt injection 완전방어로주장하지않는다. E집중11/전체234·sourceclosure·앱/ZIP는따로확인한다.
+
+
+### 2026-10-20 AI MCP sourceF: citation metadata and coverage quoting
+
+- ExactE d09344d2 full234 PASS153079.149833ms,wrapper153.866041166s,fixed176trackedbytes. E Claude six-runtime packet51953267a04d52307a4f83e3c0b8a1958b02c74fda9f230e0be7a47778ff1404 validAPPROVE4982B/exit0/stderr0. E app build/five/backend/manual passed; stopped at normal boundary after new actionable LOW. No E app/ZIP final qualification or relabeling asF.
+- Grok exactB6runtime packet1632b8a15de0a04b246f043d6b872b6b31167db5109b9fea175dabc35d5376be returned6648B/exit0/stderr0/terminalREQUEST_CHANGES within900s. Adopted additive visibility and full table row/column/span/origin/assessment for get_evidence observation citations. Stored report/schema/diff/IDs unchanged. Earlier range/Markdown issues already closed inD/E. Historical selector-preimage allegation is being checked against actual blank-ID diff constructors rather than accepted without reproduction.
+- Independent code lane traced actual namedSourceFonts XML CR through preview coverage formatter to unquoted change/report coverage in E history Markdown. Both lists now JSON+sharedquote, same as page gaps; raw report JSON preserved. New regressions exercise gap feature/reason CR+CRLF and hidden table citations. F focused11/full234/source/app/ZIP follow separately.
+
+- F also withholds report-gap occurrence attribution for duplicate historical page IDs rather than taking the last Map insertion; explicit version-scoped gaps remain exact. A synthetic duplicate-page control is regression coverage, not proof current stamped producer emits duplicates. Independent own cross-selector44/45/50/51 control passed96get_evidence+288get_change across6goldens with unchanged IDs/bodies/quotes: Grok historical-preimage mismatch allegation not reproduced in supported frozen kernels; constructors actually carry blank report/change/evidence keys before minting. No archived kernel/diff change.

@@ -92,6 +92,7 @@ test('all coverage gaps and long feature/reason text remain individually travers
   assert.equal(q.query('list_coverage_gaps',{...common,revision_id:'occ_a',page_id:'a'}).items.length,1);
   assert.throws(()=>q.query('list_coverage_gaps',{...common,page_id:'a'}));assert.throws(()=>q.query('list_coverage_gaps',{...common,gap_index:999}),{code:'GAP_NOT_FOUND'});
   assert.equal(q.query('list_revisions',common).items[0].coverage_gap_count,501);
+  const duplicated=fixture();duplicated.revisions[1].pages[0].page_id='a';duplicated.coverage_gaps=[{feature:'render',reason:'old duplicate page identity',page_id:'a'}];const gap=service(duplicated).query('list_coverage_gaps',scope(duplicated)).items[0];assert.equal(gap.revision_occurrence_id,null);assert.equal(gap.occurrence_context,'ambiguous');
 });
 test('stored and computed change IDs, null versus empty text, and exact endpoint scope survive detailed retrieval',()=>{
   const r=fixture(),q=service(r),common=scope(r),c=r.changes[0];c.before=null;c.after='';
@@ -110,6 +111,7 @@ test('search citations require an exact element join, preserve table provenance 
   p.comparison_basis='hybrid_regions_v1';p.elements[2].comparison_role='selected';p.elements[2].provenance='inferred';p.elements[2].table!.origin='pdf_grid_inferred';p.elements[2].table!.assessment='inferred';
   const inferred=q.query('search_content',{...common,text:'Cell revenue'}).items[0];assert.equal(inferred.provenance,'inferred');assert.equal(inferred.table_assessment,'inferred');assert.equal(inferred.text_assessment,'inferred');
   p.text='Different prefix '+p.text;const unmapped=q.query('search_content',{...common,text:'Covered',section:'source'}).items[0];assert.equal(unmapped.element_attribution,'not_mapped');assert.equal(unmapped.observation_id,undefined);
+  const rawCell=p.elements[2];rawCell.visibility='hidden_render_mode';const cite=q.query('get_evidence',{...common,observation_id:rawCell.observation_id}).items[0];assert.equal(cite.quote,rawCell.text);assert.equal(cite.visibility,'hidden_render_mode');assert.deepEqual(cite.table,rawCell.table);
   const noHits=q.query('search_content',{...common,text:'absent'});assert.equal(noHits.query_context?.section,'comparison');assert.equal(noHits.query_context?.result_scope,'selected_field_only');
   const long=fixture(),mapping=new Map<string,string>();for(const value of [long.report_id,long.project_id,...long.revisions.flatMap(v=>[v.revision_id,v.revision_occurrence_id,...v.pages.flatMap(p=>[p.page_id,p.asset_id,...p.elements.map(e=>e.observation_id)])])])mapping.set(value,id(value.split('_')[0],value));
   const realistic=JSON.parse(JSON.stringify(long),(_,value)=>typeof value==='string'?(mapping.get(value)??value):value) as ReportData;realistic.revisions[0].label='한국어로 된 다소 긴 버전 이름'.repeat(8);
@@ -173,6 +175,7 @@ test('Markdown export labels all reading authorities and states and refuses to m
   const folder=await mkdtemp(join(tmpdir(),'docver-markdown-reading-')),r=fixture(),p=r.revisions[0].pages[0];
   p.text='원문 가려진 금액 100\r## forged_authority\r\nCRLF 줄\nLF 줄';r.changes[0].before='before\r## forged_history';r.changes[0].after='after\r\n## forged_history';p.visible_text='표시 금액';p.suppressed_text='가려진 금액 100';p.notes=null;p.capabilities.notes='unavailable';
   p.ocr_text='추정 120';p.ocr={status:'available',engine:'fixture',environment:'same'};p.comparison_basis='raster_ocr';
+  const gap={feature:'render_fidelity\r## forged_feature',reason:'font_substitution_possible:Nonexistent-QA\r## forged_coverage\r\n## forged_coverage'};r.coverage_gaps=[gap];r.changes[0].coverage_gaps=[gap];
   const q=service(r),before=canonical(r);
   try{
     await exportReport(q,r.project_id,r.report_id,folder);
@@ -180,7 +183,7 @@ test('Markdown export labels all reading authorities and states and refuses to m
     const md=await readFile(join(folder,'content','occ_a',files[0]),'utf8');
     for(const section of ['comparison','source','visible','unresolved','suppressed','ocr','ocr_unresolved','notes'])assert.ok(md.includes('## '+section+'\n'));
     assert.match(md,/"text_assessment":"inferred"/);assert.match(md,/"field_state":"unavailable"/);assert.match(md,/"field_state":"not_recorded"/);
-    assert.ok(md.includes('> 추정 120'));assert.ok(md.includes('> 원문 가려진 금액 100'));assert.ok(md.includes('> ## forged_authority'));assert.ok(md.includes('> CRLF 줄'));assert.ok(md.includes('> LF 줄'));assert.doesNotMatch(md,/^## forged_authority$/m);assert.ok(!md.includes('\r'));const history=await readFile(join(folder,'history.md'),'utf8');assert.doesNotMatch(history,/^## forged_history$/m);assert.ok(history.includes('> ## forged_history'));assert.ok(!history.includes('\r'));assert.ok(md.includes('> 가려진 금액 100'));assert.ok(md.includes('"asset_role":"pptx_source"'));assert.ok(md.includes('"revision_occurrence_id":"occ_a"'));
+    assert.ok(md.includes('> 추정 120'));assert.ok(md.includes('> 원문 가려진 금액 100'));assert.ok(md.includes('> ## forged_authority'));assert.ok(md.includes('> CRLF 줄'));assert.ok(md.includes('> LF 줄'));assert.doesNotMatch(md,/^## forged_authority$/m);assert.ok(!md.includes('\r'));const history=await readFile(join(folder,'history.md'),'utf8');assert.doesNotMatch(history,/^## forged_history$/m);assert.ok(history.includes('> ## forged_history'));assert.ok(!history.includes('\r'));assert.doesNotMatch(history,/^## forged_(?:coverage|feature)$/m);assert.ok(history.includes('font_substitution_possible:Nonexistent-QA\\r## forged_coverage'));assert.ok(md.includes('> 가려진 금액 100'));assert.ok(md.includes('"asset_role":"pptx_source"'));assert.ok(md.includes('"revision_occurrence_id":"occ_a"'));
     const manifest=await readFile(join(folder,'manifest.json'));
     await assert.rejects(exportReport(q,r.project_id,r.report_id,folder),{code:'EXPORT_DESTINATION_NOT_EMPTY'});
     assert.deepEqual(await readFile(join(folder,'manifest.json')),manifest);assert.equal(canonical(r),before);
