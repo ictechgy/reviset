@@ -4,6 +4,20 @@ import UniformTypeIdentifiers
 import Darwin
 import CryptoKit
 
+// The captured request belongs to the model contract; model-only consumers do
+// not need to compile the PDFKit sheet or its other view dependencies.
+struct SidecarRequest: Identifiable {
+    let id = UUID().uuidString.lowercased()
+    let project: String
+    let report: String
+    let occurrence: String
+    let page: String
+    let label: String
+    var scope: [String: Any] {
+        ["project_id":project,"report_id":report,"revision_occurrence_id":occurrence,"page_id":page,"session_id":id]
+    }
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published var libraryAvailable = true
     @Published var initializing = true
