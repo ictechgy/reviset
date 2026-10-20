@@ -10,6 +10,7 @@ import {validateRenderPackage} from './index.js';
 import {namedSourceFonts} from './pptx-preview.js';
 import {unzipSync} from 'fflate';
 import {parseOnlyOfficeFonts,onlyOfficeFontRoots} from './onlyoffice-fonts.js';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 
 const sha=z.string().regex(/^[a-f0-9]{64}$/u),key=z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/u);
 export const SidecarScope=z.object({project_id:key,report_id:key,revision_occurrence_id:key,page_id:key,session_id:z.string().regex(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u)}).strict();
@@ -44,16 +45,19 @@ async function provider(resources:string,signal?:AbortSignal){
   let config:z.infer<typeof Provider>;
   try{config=Provider.parse(JSON.parse((await smallFile(join(resources,'provider.json'),65536)).toString('utf8')));}
   catch{fail('SIDECAR_UNAVAILABLE','이 Mac의 참고 렌더러가 준비되지 않았습니다. 기본 원문 화면은 계속 사용할 수 있습니다.');}
-  const app=await realpath(config.app_path),converter=await realpath(join(app,'Contents/Resources/converter/x2t'));
+  let app:string,converter:string;
+  try{app=await realpath(config.app_path);converter=await realpath(join(app,'Contents/Resources/converter/x2t'));}
+  catch{fail('SIDECAR_PROVIDER_CHANGED','참고 렌더러의 실행 파일을 찾을 수 없습니다. 이 Mac에서 렌더러를 다시 준비하세요.');}
   if(!converter.startsWith(app+'/'))fail('SIDECAR_PROVIDER_CHANGED','참고 렌더러 실행 경로를 확인할 수 없습니다.');
-  if(byteHash(await readFile(converter))!==config.converter_sha256||byteHash(await smallFile(join(app,'Contents/_CodeSignature/CodeResources'),4*1024*1024))!==config.code_resources_sha256)fail('SIDECAR_PROVIDER_CHANGED','참고 렌더러가 변경되었습니다. 다시 준비한 빌드가 필요합니다.');
+  if(byteHash(await smallFile(converter,128*1024*1024))!==config.converter_sha256||byteHash(await smallFile(join(app,'Contents/_CodeSignature/CodeResources'),4*1024*1024))!==config.code_resources_sha256)fail('SIDECAR_PROVIDER_CHANGED','참고 렌더러가 변경되었습니다. 다시 준비한 빌드가 필요합니다.');
   await runTool('/usr/bin/codesign',['--verify','--deep','--strict','-R',requirement,app],{timeout:30_000,signal,maxBytes:65536,inheritEnv:false,env:{PATH:'/usr/bin:/bin'}});
   for(const [name,expected]of [['CFBundleVersion',config.bundle_version],['CFBundleShortVersionString',config.release_version]]){
     const actual=(await runTool('/usr/bin/plutil',['-extract',name,'raw',join(app,'Contents/Info.plist')],{timeout:5000,signal,maxBytes:1024,inheritEnv:false,env:{PATH:'/usr/bin:/bin'}})).trim();
     if(actual!==expected)fail('SIDECAR_PROVIDER_CHANGED','참고 렌더러의 버전이 변경되었습니다.');
   }
-  const info=await visionInfo();signal?.throwIfAborted();
-  if(!info||info.font_inventory_sha256!==config.font_inventory_sha256)fail('SIDECAR_FONTS_CHANGED','이 Mac의 글꼴 구성이 바뀌어 참고 렌더러를 다시 준비해야 합니다.');
+  const info=await visionInfo(signal);signal?.throwIfAborted();
+  if(!info)fail('SIDECAR_UNAVAILABLE','이 Mac의 참고 렌더링 글꼴 정보를 확인할 수 없습니다.');
+  if(info.font_inventory_sha256!==config.font_inventory_sha256)fail('SIDECAR_FONTS_CHANGED','이 Mac의 글꼴 구성이 바뀌어 참고 렌더러를 다시 준비해야 합니다.');
   const fonts:Record<string,Buffer>={};
   for(const name of ['AllFonts.js','font_selection.bin'] as const){const bytes=await smallFile(join(resources,'fonts',name),1024*1024);if(bytes.length!==config.files[name].bytes||byteHash(bytes)!==config.files[name].sha256)fail('SIDECAR_FONTS','참고 글꼴 정보의 검증에 실패했습니다.');fonts[name]=bytes;}
   parseOnlyOfficeFonts(fonts['AllFonts.js']);
@@ -62,7 +66,7 @@ async function provider(resources:string,signal?:AbortSignal){
 
 export function onlyOfficeSidecarPolicy(folder:string,app:string,converter:string){
   const reads=['/System','/usr/lib','/usr/share','/private/etc','/private/var/db',...onlyOfficeFontRoots(),app,folder,'/dev'];
-  return `(version 1)(allow default)(deny network*)(deny process-fork)(deny process-exec)(allow process-exec (literal ${JSON.stringify(converter)}))(deny file-read-data)(allow file-read-data (vnode-type DIRECTORY) ${reads.map(p=>`(subpath ${JSON.stringify(p)})`).join(' ')})(deny file-write*)(allow file-write* (subpath ${JSON.stringify(folder)}) (literal "/dev/null"))(deny file-write* (subpath ${JSON.stringify(app)}))`;
+  return `(version 1)(allow default)(deny network*)(deny mach-lookup)(deny mach-register)(deny user-preference-write)(deny lsopen)(deny signal)(deny ipc-posix*)(deny ipc-sysv*)(deny iokit*)(deny process-fork)(deny process-exec)(allow process-exec (literal ${JSON.stringify(converter)}))(deny file-read-data)(allow file-read-data (vnode-type DIRECTORY) ${reads.map(p=>`(subpath ${JSON.stringify(p)})`).join(' ')})(deny file-write*)(allow file-write* (subpath ${JSON.stringify(folder)}) (literal "/dev/null"))(deny file-write* (subpath ${JSON.stringify(app)}))`;
 }
 
 export function sidecarSource(report:ReportData,scope:SidecarScopeData){
@@ -79,10 +83,10 @@ export function sidecarSource(report:ReportData,scope:SidecarScopeData){
 }
 
 type RenderedPage={width:number;height:number;text:string};
-export function verifySidecarMapping(source:PageData[],rendered:RenderedPage[]):void{
-  if(!source.length||source.length>2000||source.some((p,i)=>p.page!==i+1||p.hidden!==false)||rendered.length!==source.length)fail('SIDECAR_MAPPING','숨김·누락·모호한 페이지가 있는 원문은 별도 미리보기로 연결하지 않습니다.');
+function* sidecarMappingChecks(source:PageData[],rendered?:RenderedPage[]):Generator<void>{
+  if(!source.length||source.length>2000||source.some((p,i)=>p.page!==i+1||p.hidden!==false)||(rendered&&rendered.length!==source.length))fail('SIDECAR_MAPPING','숨김·누락·모호한 페이지가 있는 원문은 별도 미리보기로 연결하지 않습니다.');
   if(source.reduce((n,p)=>n+p.elements.reduce((m,e)=>m+e.text.length,0),0)>20_000_000)fail('SIDECAR_LIMIT','참고 화면의 원문 검사 한도를 넘었습니다.');
-  const lines=source.map(p=>[...new Set(p.elements.flatMap(e=>e.text.split(/\r\n|\r|\n/u)).map(compact).filter(s=>s.length>=6&&s.length<=512&&/\p{L}/u.test(s)))].slice(0,64));
+  const lines=source.map(p=>[...new Set(p.elements.filter(e=>e.comparison_role!=='excluded'&&e.comparison_role!=='shadowed'&&!['occluded','hidden_render_mode'].includes(e.visibility??'')).flatMap(e=>e.text.split(/\r\n|\r|\n/u)).map(compact).filter(s=>s.length>=6&&s.length<=512&&/\p{L}/u.test(s)))].slice(0,64));
   const counts=new Map<string,number>();for(const page of lines)for(const line of page)counts.set(line,(counts.get(line)??0)+1);
   const sourceText=source.map(p=>compact(p.elements.map(e=>e.text).join(' ')));
   if(sourceText.reduce((n,s)=>n+s.length,0)>20_000_000)fail('SIDECAR_LIMIT','참고 화면의 원문 검사 한도를 넘었습니다.');
@@ -90,18 +94,28 @@ export function verifySidecarMapping(source:PageData[],rendered:RenderedPage[]):
   const contains=(text:string,line:string)=>{if(++comparisons>8_000_000||(inspected+=text.length+line.length)>2_000_000_000)fail('SIDECAR_LIMIT','고유 문구의 대응 검사 한도를 넘었습니다.');return text.includes(line);};
   // Exact line uniqueness is insufficient: a short heading can legitimately be
   // contained in another page's longer heading. Only source-global anchors vote.
-  const anchors=lines.map((page,i)=>{const found:string[]=[];for(const line of page){
+  const anchors:string[][]=[];
+  for(let i=0;i<lines.length;i++){const found:string[]=[];for(const line of lines[i]){
     if(counts.get(line)===1&&!sourceText.some((other,j)=>j!==i&&contains(other,line)))found.push(line);
-    if(found.length===2)break;
-  }return found;});
+    if(found.length===8)break;
+  }if(!found.length)fail('SIDECAR_MAPPING',`${i+1}쪽에서 고유한 원문 문구를 확인할 수 없어 별도 미리보기로 연결하지 않습니다.`);anchors.push(found);yield;}
+  if(!rendered)return;
   for(let i=0;i<source.length;i++){
     const a=source[i],b=rendered[i];
     if(![a.width,a.height,b.width,b.height].every(n=>Number.isFinite(n)&&n>0)||Math.abs((a.width/a.height)/(b.width/b.height)-1)>.001)fail('SIDECAR_MAPPING','변환된 페이지 크기가 원문과 다릅니다.');
     const text=compact(b.text);
     if(!anchors[i].length||!anchors[i].some(line=>contains(text,line)))fail('SIDECAR_MAPPING','페이지 대응을 확인할 고유한 원문을 찾지 못했습니다.');
     if(anchors.some((other,j)=>j!==i&&other.some(line=>contains(text,line))))fail('SIDECAR_MAPPING','다른 페이지의 고유 원문이 겹쳐 참고 화면을 연결하지 않습니다.');
+    yield;
   }
 }
+
+export function verifySidecarMapping(source:PageData[],rendered:RenderedPage[]):void{for(const step of sidecarMappingChecks(source,rendered))void step;}
+async function runMappingChecks(checks:Generator<void>,signal?:AbortSignal){
+  signal?.throwIfAborted();
+  for(const step of checks){void step;await yieldTurn();signal?.throwIfAborted();}
+}
+export async function verifySidecarMappingCancellable(source:PageData[],rendered:RenderedPage[],signal?:AbortSignal):Promise<void>{await runMappingChecks(sidecarMappingChecks(source,rendered),signal);}
 
 export async function closeOnlyOfficeSidecar(library:string,scope:SidecarScopeData):Promise<void>{
   scope=SidecarScope.parse(scope);
@@ -121,25 +135,54 @@ export async function closeOnlyOfficeSidecar(library:string,scope:SidecarScopeDa
 export async function recoverOnlyOfficeSidecars(library:string):Promise<{recovered:number;skipped:number}>{
   const paths=await directories(library,false);let recovered=0,skipped=0;if(!paths)return {recovered,skipped};
   for(const name of await readdir(paths.leases)){
-    if(!/^[a-f0-9-]{36}\.(?:pending|closing)\.json$/u.test(name))continue;
+    if(!/^[a-f0-9-]{36}\.(?:pending|closing|active)\.json$/u.test(name))continue;
     try{
       const owner=Lease.parse(JSON.parse((await smallFile(join(paths.leases,name),8192)).toString('utf8')));
-      if(name!==owner.session_id+'.pending.json'&&name!==owner.session_id+'.closing.json'){skipped++;continue;}
+      if(!['pending','closing','active'].some(state=>name===owner.session_id+'.'+state+'.json')){skipped++;continue;}
+      if(name.endsWith('.active.json')){
+        let linked=false;for(const state of ['pending','closing'])try{await lstat(join(paths.leases,owner.session_id+'.'+state+'.json'));linked=true;}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+        if(linked)continue;
+      }
       if(name.endsWith('.pending.json')){const {created_at,...scope}=owner;void created_at;await closeOnlyOfficeSidecar(library,SidecarScope.parse(scope));}
       else {await rm(join(paths.leases,owner.session_id+'.active.json'),{force:true});await rm(join(paths.jobs,owner.session_id),{recursive:true,force:true});await rm(join(paths.leases,name),{force:true});}
       recovered++;
-    }catch{skipped++;} // A damaged optional lease must not prevent opening reports.
+    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')skipped++;} // A damaged optional lease must not prevent opening reports.
+  }
+  // Startup holds the native library's exclusive app lock. Recover only empty
+  // pre-lease directories or the validated seed written before any input copy.
+  // Unknown nonempty jobs and malformed leases remain available for inspection.
+  for(const name of await readdir(paths.jobs)){
+    if(!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/u.test(name))continue;
+    try{
+      let leased=false;
+      for(const state of ['pending','active','closing'])try{await lstat(join(paths.leases,name+'.'+state+'.json'));leased=true;}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+      if(leased)continue;
+      const folder=(await privateDirectory(join(paths.jobs,name),false))!;const entries=await readdir(folder);
+      if(entries.length){
+        if(entries.length!==1||entries[0]!=='.lease-seed'){skipped++;continue;}
+        const owner=Lease.parse(JSON.parse((await smallFile(join(folder,'.lease-seed'),8192)).toString('utf8')));
+        if(owner.session_id!==name){skipped++;continue;}
+      }
+      await rm(folder,{recursive:true});recovered++;
+    }catch{skipped++;}
   }
   return {recovered,skipped};
 }
 
 export async function createOnlyOfficeSidecar(options:{library:string;resources:string;guard:string;report:ReportData;scope:SidecarScopeData;signal?:AbortSignal}){
   const {library,resources,guard,report,signal}=options,scope=SidecarScope.parse(options.scope),selected=sidecarSource(report,scope);
-  const prepared=await provider(resources,signal),source=await smallFile(join(library,'assets',selected.asset.asset_id.slice(7)),MAX_INPUT_BYTES);
+  signal?.throwIfAborted();let source:Buffer;
+  try{source=await smallFile(join(library,'assets',selected.asset.asset_id.slice(7)),MAX_INPUT_BYTES);}
+  catch{fail('ASSET_CORRUPT','참고 화면에 사용할 저장 원본이 없거나 읽을 수 없습니다. 원본을 다시 가져와 확인하세요.');}
   if(byteHash(source)!==selected.asset.asset_id.slice(7))fail('ASSET_CORRUPT','참고 화면에 사용할 원본의 hash가 다릅니다.');
   validateRenderPackage(source);const pages=extractPptx(source,selected.asset.asset_id);
   if(pages.reduce((n,p)=>n+p.elements.reduce((m,e)=>m+e.text.length,0),0)>20_000_000)fail('SIDECAR_LIMIT','참고 화면의 원문 검사 한도를 넘었습니다.');
   if(!pages.length||pages.length>2000||pages.length!==selected.pages.length||selected.pages.some((p,i)=>p.page!==pages[i]?.page||p.hidden!==pages[i]?.hidden||p.width!==pages[i]?.width||p.height!==pages[i]?.height)||pages.some(p=>p.hidden!==false))fail('SIDECAR_MAPPING','현재 원문과 저장된 페이지 대응을 확인할 수 없습니다.');
+  // Reject source-only ambiguity before signature checks, metadata preparation,
+  // copying or converting a whole deck. The rendered correspondence is still
+  // checked independently after conversion, with the same bounded policy.
+  await runMappingChecks(sidecarMappingChecks(pages),signal);
+  const prepared=await provider(resources,signal);
   signal?.throwIfAborted();const paths=(await directories(library,true))!,folder=join(paths.jobs,scope.session_id),pending=join(paths.leases,scope.session_id+'.pending.json');
   let ownsFolder=false,ownsLease=false,published=false;
   try{
@@ -151,7 +194,9 @@ export async function createOnlyOfficeSidecar(options:{library:string;resources:
     for(const [name,bytes]of Object.entries(prepared.fonts))await writeFile(join(fonts,name),bytes,{flag:'wx',mode:0o600});
     const params={m_sFileFrom:copied,m_sFileTo:output,m_nFormatTo:'513',m_sFontDir:fonts,m_sAllFontsPath:join(fonts,'AllFonts.js'),m_sThemeDir:join(prepared.app,'Contents/Resources/editors/sdkjs/slide/themes'),m_bIsNoBase64:'true',m_sTempDir:folder};
     const parameterFile=join(folder,'params.xml');await writeFile(parameterFile,'<?xml version="1.0" encoding="utf-8"?><TaskQueueDataConvert>'+Object.entries(params).map(([k,v])=>`<${k}>${xml(v)}</${k}>`).join('')+'</TaskQueueDataConvert>',{mode:0o600,flag:'wx'});
-    signal?.throwIfAborted();await runTool(guard,[folder,'/usr/bin/sandbox-exec','-p',onlyOfficeSidecarPolicy(folder,prepared.app,prepared.converter),prepared.converter,parameterFile],{timeout:120_000,signal,maxBytes:1024*1024,inheritEnv:false,env:{PATH:'/usr/bin:/bin',HOME:folder,TMPDIR:folder,XDG_CACHE_HOME:join(folder,'cache'),LANG:'en_US.UTF-8',TZ:'UTC'}});
+    signal?.throwIfAborted();
+    try{await runTool(guard,[folder,'/usr/bin/sandbox-exec','-p',onlyOfficeSidecarPolicy(folder,prepared.app,prepared.converter),prepared.converter,parameterFile],{timeout:120_000,signal,maxBytes:1024*1024,inheritEnv:false,env:{PATH:'/usr/bin:/bin',HOME:folder,TMPDIR:folder,XDG_CACHE_HOME:join(folder,'cache'),LANG:'en_US.UTF-8',TZ:'UTC'}});}
+    catch(error){if(error instanceof DocverError&&error.code==='TOOL_FAILED'&&error.message.includes('DOCVER_RESOURCE_LIMIT:'))fail('SIDECAR_LIMIT','참고 변환 작업의 파일·폴더 용량 또는 구조 제한을 넘었습니다. 원문·변경 이력은 보존됩니다.');throw error;}
     signal?.throwIfAborted();const st=await lstat(output);if(st.nlink!==1)fail('SIDECAR_OUTPUT','참고 PDF가 독립된 파일이 아닙니다.');const pdf=await smallFile(output,128*1024*1024);
     const task=getDocument({...pdfOptions,data:new Uint8Array(pdf)}),rendered:RenderedPage[]=[];let documentCharacters=0,documentItems=0;
     let abortedDestroy:Promise<void>|undefined;
@@ -165,7 +210,7 @@ export async function createOnlyOfficeSidecar(options:{library:string;resources:
         rendered.push({width:v.width,height:v.height,text:fragments.join(' ')});p.cleanup();
       }
     }finally{signal?.removeEventListener('abort',abortPdf);await(abortedDestroy??task.destroy());}
-    verifySidecarMapping(pages,rendered);signal?.throwIfAborted();
+    await verifySidecarMappingCancellable(pages,rendered,signal);signal?.throwIfAborted();
     const parts=unzipSync(source,{filter:e=>/^ppt\/(slides|slideLayouts|slideMasters|theme)\/[^/]+\.xml$/u.test(e.name)}),known=new Set(prepared.info.font_families.map((s:string)=>s.toLowerCase())),missing=namedSourceFonts(Object.values(parts)).filter(f=>!known.has(f.toLowerCase()));
     await link(pending,join(paths.leases,scope.session_id+'.active.json'));published=true;
     return {...scope,path:output,page:selected.page.page,pages:pages.length,renderer:'ONLYOFFICE Desktop Editors',version:prepared.config.release_version,assessment:'inferred' as const,mapping:'unique_source_text_anchors_v1',source_sha256:byteHash(source),pdf_sha256:byteHash(pdf),converter_sha256:prepared.config.converter_sha256,font_inventory_sha256:prepared.config.font_inventory_sha256,omitted_font_warnings:Math.max(0,missing.length-20),warnings:['참고용 변환 화면입니다. 변경 이력과 AI 조회 결과에는 반영하지 않습니다.','PowerPoint와 픽셀 일치를 보장하지 않습니다. 그림자·글꼴·복합 개체를 원본과 대조하세요.',...missing.slice(0,20).map(f=>'대체될 수 있는 글꼴: '+(f.length>200?f.slice(0,200)+'…':f))]};

@@ -16,6 +16,9 @@ static const uint64_t job_threshold = 256ULL * 1024 * 1024;
 static unsigned entries;
 
 static void reject(const char *reason) {
+    /* The launcher may have died and closed stderr. Logging must never kill
+       this supervisor with SIGPIPE before its process-group cleanup runs. */
+    signal(SIGPIPE, SIG_IGN);
     fprintf(stderr, "DOCVER_RESOURCE_LIMIT: %s\n", reason);
     fflush(stderr);
     /* The launcher must own this detached group before any child is started. */
@@ -64,10 +67,13 @@ static uint64_t directory_size(int fd, unsigned depth) {
 }
 
 int main(int argc, char **argv) {
+    signal(SIGPIPE, SIG_IGN);
     if (argc < 4 || getpgrp() != getpid()) {
         fputs("Renderer guard requires its own detached process group\n", stderr);
         return 2;
     }
+    const pid_t launcher = getppid();
+    if (launcher <= 1) reject("Launcher exited before supervision");
     const struct rlimit file_limit = {128ULL * 1024 * 1024, 128ULL * 1024 * 1024};
     const struct rlimit cpu_limit = {90, 90}, descriptor_limit = {256, 256};
     if (setrlimit(RLIMIT_FSIZE, &file_limit) || setrlimit(RLIMIT_CPU, &cpu_limit) ||
@@ -76,6 +82,7 @@ int main(int argc, char **argv) {
     if (root < 0) return 4;
     entries = 0;
     directory_size(root, 0);
+    if (getppid() != launcher) reject("Launcher exited before conversion");
     pid_t child = fork();
     if (child < 0) { close(root); return 5; }
     if (!child) {
@@ -86,6 +93,7 @@ int main(int argc, char **argv) {
     const struct timespec interval = {0, 50000000};
     int status = 0;
     for (;;) {
+        if (getppid() != launcher) reject("Launcher exited during conversion");
         pid_t finished = waitpid(child, &status, WNOHANG);
         if (finished < 0) { if (errno == EINTR) continue; reject("Child wait failed"); }
         entries = 0;

@@ -111,6 +111,7 @@ struct MainView: View {
     var body: some View {
         VStack(spacing:0) {
             if !model.error.isEmpty { HStack { Image(systemName:"exclamationmark.triangle.fill");Text(model.error).textSelection(.enabled);Spacer();Button("닫기"){model.error=""} }.padding(10).background(.red.opacity(0.1)) }
+            if !model.sidecarRecoveryWarning.isEmpty {HStack {Image(systemName:"info.circle");Text(model.sidecarRecoveryWarning);Spacer();Button("임시 작업 폴더"){NSWorkspace.shared.open(model.bridge.library.appendingPathComponent("sidecars-v1"))};Button("닫기"){model.sidecarRecoveryWarning=""}}.font(.caption).padding(10).background(.orange.opacity(0.1))}
             if model.busy { HStack { ProgressView().controlSize(.small);Text(model.status);Text("\(model.progress["current"].int)/\(max(1,model.progress["total"].int))").foregroundStyle(.secondary);Spacer();Button(model.committing ? "저장 중" : "분석 취소"){model.cancel()}.disabled(model.committing) }.padding(10).background(.blue.opacity(0.06)) }
             HStack(spacing:0) {
                 if !model.focus { SidebarView().frame(width:220);Divider() }

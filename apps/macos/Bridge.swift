@@ -47,16 +47,21 @@ final class Bridge: @unchecked Sendable {
     let library: URL
     private let lock = NSLock()
     private var analysisProcess: Process?
+    private var sidecarRequests: [UUID:RangeRequestCancellation] = [:]
     private var cancelled = false
     init(resources: URL, library: URL) { self.resources = resources; self.library = library }
     func cancel() { lock.lock(); cancelled = true; let process = analysisProcess; lock.unlock(); if process?.isRunning == true { process?.terminate() } }
+    func cancelSidecars() {let owned=lock.withLock{Array(sidecarRequests.values)};for request in owned{request.cancel()}}
     func call(_ action: String, _ args: [String: Any] = [:], analysis: Bool = false, progress: (@Sendable (JSON) -> Void)? = nil) async throws -> JSON {
         let request = try JSON(["action": action, "args": args]).data()
         if analysis { lock.withLock { cancelled = false } }
         let cancellation=["changes","sidecarCreate"].contains(action) && !analysis ? RangeRequestCancellation():nil
+        let sidecarID=action=="sidecarCreate" ? UUID():nil
+        if let sidecarID,let cancellation {lock.withLock{sidecarRequests[sidecarID]=cancellation}}
         return try await withTaskCancellationHandler(operation: {
           try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                defer{if let sidecarID{self.lock.withLock{_ = self.sidecarRequests.removeValue(forKey:sidecarID)}}}
                 let process = Process(), input = Pipe(), output = Pipe(), errors = Pipe()
                 process.executableURL = self.resources.deletingLastPathComponent().appendingPathComponent("Helpers/node")
                 process.arguments = ["--max-old-space-size=2048", self.resources.appendingPathComponent("backend/bridge.mjs").path, "--root", self.library.path]

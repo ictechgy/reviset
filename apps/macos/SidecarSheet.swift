@@ -21,7 +21,7 @@ struct OnlyOfficeSidecarSheet: View {
                 Spacer()
                 if !payload.isNull {
                     Button { go(shownPage-1) } label: {Image(systemName:"chevron.left")}.disabled(shownPage<=1).accessibilityLabel("이전 참고 페이지")
-                    TextField("참고 페이지",text:$pageInput).frame(width:55).onSubmit{if let value=Int(pageInput){go(value)}}
+                    TextField("참고 페이지",text:$pageInput).frame(width:55).onSubmit{go(Int(pageInput) ?? shownPage)}
                     Text("/ \(payload["pages"].int)").font(.caption).foregroundStyle(.secondary)
                     Button { go(shownPage+1) } label: {Image(systemName:"chevron.right")}.disabled(shownPage>=payload["pages"].int).accessibilityLabel("다음 참고 페이지")
                     Picker("확대",selection:$zoom){Text("맞춤").tag(0.0);Text("100%").tag(1.0);Text("150%").tag(1.5);Text("200%").tag(2.0)}.frame(width:110)
@@ -29,6 +29,8 @@ struct OnlyOfficeSidecarSheet: View {
                 Button("닫기"){dismiss()}.keyboardShortcut(.cancelAction)
             }
             Text("PowerPoint와 다를 수 있는 참고 변환 화면입니다. 저장된 변경 이력과 AI 조회 결과에는 반영하지 않습니다.")
+                .font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
+            Text("숨김 슬라이드나 고유 문구가 없는 페이지가 있으면 페이지 대응을 확인할 수 없어 참고 변환이 제한됩니다.")
                 .font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
             if !failure.isEmpty {
                 ContentUnavailableView("참고 화면을 열지 못했습니다",systemImage:"exclamationmark.triangle",description:Text(failure)).frame(maxWidth:.infinity,maxHeight:.infinity)
@@ -53,13 +55,13 @@ struct OnlyOfficeSidecarSheet: View {
         .task {
             do {
                 let result=try await model.bridge.call("sidecarCreate",request.scope)
-                if !Task.isCancelled {payload=result;shownPage=result["page"].int;pageInput=String(shownPage)}
-            } catch {if !Task.isCancelled {failure=error.localizedDescription}}
+                if !Task.isCancelled,model.sidecarRequest?.id==request.id {payload=result;model.sidecarResult=result;shownPage=result["page"].int;pageInput=String(shownPage)}
+            } catch {if !Task.isCancelled,model.sidecarRequest?.id==request.id {failure=error.localizedDescription;model.sidecarFailure=failure}}
         }
         .onDisappear {
             let bridge=model.bridge,scope=request.scope
             Task { _ = try? await bridge.call("sidecarClose",scope) }
         }
     }
-    private func go(_ value:Int){guard value>=1&&value<=payload["pages"].int else{return};shownPage=value;pageInput=String(value)}
+    private func go(_ value:Int){guard value>=1&&value<=payload["pages"].int else{pageInput=String(shownPage);return};shownPage=value;pageInput=String(value)}
 }

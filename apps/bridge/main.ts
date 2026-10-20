@@ -25,8 +25,9 @@ try{
     case 'sidecarCreate':{
       const d=SidecarScope.parse(args),report=service.snapshot(d.project_id,d.report_id),controller=new AbortController(),cancel=()=>controller.abort();
       process.once('SIGTERM',cancel);process.once('SIGINT',cancel);
+      const parent=process.ppid,parentWatch=setInterval(()=>{if(parent<=1||process.ppid!==parent)process.kill(process.pid,'SIGTERM');},100);parentWatch.unref();
       try{value=await createOnlyOfficeSidecar({library:root,resources:join(dirname(fileURLToPath(import.meta.url)),'../onlyoffice-sidecar'),guard:join(dirname(process.execPath),'DocverRendererGuard'),report,scope:d,signal:controller.signal});}
-      finally{process.removeListener('SIGTERM',cancel);process.removeListener('SIGINT',cancel);}break;
+      finally{clearInterval(parentWatch);process.removeListener('SIGTERM',cancel);process.removeListener('SIGINT',cancel);}break;
     }
     case 'sidecarClose':{const d=SidecarScope.parse(args);service.project(d.project_id);await closeOnlyOfficeSidecar(root,d);value={closed:true};break;}
     case 'sidecarRecover':value=await recoverOnlyOfficeSidecars(root);break;

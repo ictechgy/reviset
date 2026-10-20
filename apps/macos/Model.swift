@@ -34,6 +34,9 @@ struct SidecarRequest: Identifiable {
     @Published var busy = false
     @Published var sidecarConfigured = false
     @Published var sidecarRequest: SidecarRequest?
+    @Published var sidecarRecoveryWarning = ""
+    var sidecarResult = JSON()
+    var sidecarFailure = ""
     @Published var loading = false
     @Published var loadingChanges = false
     @Published var committing = false
@@ -93,8 +96,8 @@ struct SidecarRequest: Identifiable {
         guard error.isEmpty && !started else {if !started{initializing=false};return};started = true;defer{initializing=false}
         do {
             _ = try await bridge.call("recover")
-            _ = try? await bridge.call("sidecarRecover")
-            sidecarConfigured = (try? await bridge.call("sidecarInfo")["configured"].bool) ?? false
+            if let recovered=try? await bridge.call("sidecarRecover"),recovered["skipped"].int>0 {sidecarRecoveryWarning="이전 참고 작업 \(recovered["skipped"].int)개를 자동 정리하지 못했습니다. 원문과 변경 이력은 계속 사용할 수 있습니다."}
+            if FileManager.default.fileExists(atPath:bridge.resources.appendingPathComponent("onlyoffice-sidecar/provider.json").path) {sidecarConfigured = (try? await bridge.call("sidecarInfo")["configured"].bool) ?? false}
             try await refresh(); if let p = projects.first { await selectProject(p["project_id"].string) }
         }
         catch { fail(error) }
@@ -290,6 +293,7 @@ struct SidecarRequest: Identifiable {
     func loadMCP() async { do { mcp = try await bridge.call("mcpConfig", ["project_id": projectID]).string } catch { fail(error) } }
     func openSidecar(_ revision:JSON,page:String) {
         guard libraryAvailable && !busy && !loading && sidecarConfigured && !page.isEmpty else{return}
+        sidecarResult=JSON();sidecarFailure=""
         sidecarRequest=SidecarRequest(project:projectID,report:report["report_id"].string,occurrence:revision["revision_occurrence_id"].string,page:page,label:revision["label"].string)
     }
     func page(_ id: String) async throws -> JSON { try await bridge.call("page", ["project_id": projectID, "report_id": report["report_id"].string, "page_id": id]) }

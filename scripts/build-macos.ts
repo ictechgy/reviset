@@ -5,9 +5,12 @@ import { resolve,join } from 'node:path';
 import { createCanvas } from '@napi-rs/canvas';
 import { generateFixtures } from './generate-fixtures.js';
 import {preparePdfjs} from './prepare-pdfjs.js';
+import {optionalSidecarBuild} from './onlyoffice-build-policy.js';
 if(process.platform!=='darwin'||process.arch!=='arm64')throw new Error('This local build currently targets macOS arm64.');
 const appName=process.env.DOCVER_APP_NAME??'Docver.app';
 if(!/^Docver(?:-[A-Za-z0-9]+)*\.app$/.test(appName))throw new Error('DOCVER_APP_NAME must be a Docver app name inside release.');
+const optionalSidecar=optionalSidecarBuild(appName,process.env.DOCVER_OPTIONAL_SIDECAR);
+if(optionalSidecar)for(const path of ['provider.json','fonts/AllFonts.js','fonts/font_selection.bin'])await stat(join('dist/onlyoffice-sidecar',path));
 const app=resolve('release',appName),contents=join(app,'Contents'),resources=join(contents,'Resources');
 await import('./build-native-helpers.js');await import('./build-renderer-guard.js');await import('./prepare-office.js');
 // Only this generated bundle is replaced; never reuse stale runtimes or dependencies.
@@ -24,8 +27,6 @@ if(linked.some(path=>!path.startsWith('/usr/lib/')&&!path.startsWith('/System/Li
 await cp(process.execPath,join(contents,'Helpers/node'));
 await cp('dist/native/DocverVision',join(contents,'Helpers/DocverVision'));
 await cp('dist/native/DocverRendererGuard',join(contents,'Helpers/DocverRendererGuard'));
-let optionalSidecar=false;
-try{await stat('dist/onlyoffice-sidecar/provider.json');optionalSidecar=true;}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
 if(optionalSidecar){
   const destination=join(resources,'onlyoffice-sidecar');await mkdir(join(destination,'fonts'),{recursive:true});
   await cp('dist/onlyoffice-sidecar/provider.json',join(destination,'provider.json'));

@@ -20,6 +20,20 @@
 
 이전 판독 루프의 Claude 소스 리뷰 timeout·Grok timeout·Agy quota 제한은 그 범위의 실패 증거로 보존한다. 후속 MCP 제안/실제 클라이언트 사용 검증과 이번 OCR 논의의 유효한 응답을 과거 실패나 새 소스 승인으로 바꾸지 않는다. 실제 화면에 대한 이전 승인을 새 빌드 전체 승인으로 확대하지 않는다.
 
+## 선택적 네이티브 참고 창 · 후속 소스 검증 중
+
+`Docver-Render.app`의 별도 PDFKit 참고 창은 원본 SHA·고정 보고서·버전 occurrence·페이지를 확인한 뒤 OnlyOffice로 문서 전체를 변환한다. 기본 렌더러나 저장 report·diff·MCP 결과는 바꾸지 않는다. 이것은 위 F 검증 앱의 대체 완료 선언이 아니다.
+
+빌드에 호스트 설정을 넣으려면 `DOCVER_APP_NAME=Docver-Render.app DOCVER_OPTIONAL_SIDECAR=host-bound npm run mac:build`를 명시해야 한다. `dist/onlyoffice-sidecar`에 이전 준비물이 남아 있어도 플래그 없는 일반 빌드에는 provider·호스트 글꼴 경로·metadata가 들어가지 않는다. 다른 앱 이름에서 이 플래그를 쓰면 빌드 전에 거절한다. 외부 vendor 앱·indexer·글꼴 프로그램은 복사하지 않는다. 설정과 metadata는 이 Mac에 종속되며 공개·다른 Mac 배포 자격이 아니다.
+
+참고 창은 숨김 페이지, 이미지뿐인 페이지, 짧거나 반복되는 문구처럼 모든 페이지의 대응 근거를 확보할 수 없는 문서를 거절한다. source-only 대응 검사로 불가능한 문서는 변환 전에 페이지 번호와 함께 알린다. 원본 구조의 제외·가림 상태를 반영해 페이지당 최대8개 고유 문구 후보를 쓰고, 변환 후에도 페이지 수·비율·다른 페이지 문구의 혼입을 검사한다. 이 조건이 문서 내용 전체의 정확도나 PowerPoint 동일성을 증명하지 않는다. 전체 페이지의 사용자가 이동하는 참고 화면을 보이므로, 선택 페이지만 검사하도록 대응 기준을 낮추지 않는다.
+
+입력·임시 파일·metadata·PDF를 포함한 job의 sampled256MiB 초과 거절, 파일 성장128MiB, process별 CPU90초, 감독 변환120초, stdout/stderr 각각1MiB 제한을 유지한다. 2k페이지·20M원문/PDF문자 및 별도8M비교/2B문자 검사 예산은 각각 독립적인 거절 조건이다. 페이지/문자 상한에 맞는 모든 문서를 받아들인다는 약속은 아니다. 매번 전체 문서를 검증·변환하며 미디어가 많은 문서는 더 일찍 제한될 수 있다. 자원 상한을 올리거나 보류를 정확 판독으로 세지 않는다. source unzip/XML 검증 같은 동기 준비 단계는 즉시 취소를 보장하지 않으며, 문구 대응과 PDF 페이지 검사는 중간 취소를 확인한다.
+
+후속 구현은 broker Mach 조회·등록, preference/LaunchServices, 다른 프로세스 신호, POSIX/SystemV IPC와 IOKit도 차단한다. 감독기는 부모 종료를 감시하고 로그 파이프가 닫혀도 자식 그룹 정리 전에 SIGPIPE로 죽지 않는다. helper의 실패 exit에서는 close를 기다리기 전에 그룹을 정리한다. 앱 정상 종료는 자체 참고 요청만 취소하고, 브리지는 앱 부모를 잃으면 자체 작업을 중단한다. macOS 회귀 테스트는 실제 규칙으로 내부 일반 파일 읽기 허용/경로 밖 읽기·쓰기/소켓/추가 fork·exec/환경·Mach 조회·신호 차단, 용량·symlink·로그·취소·timeout, 감독기 SIGKILL 및 부모 SIGKILL을 확인한다. 이 결과를 임의의 OS 취약점에 대한 완전 격리 증명으로 부르지 않는다.
+
+startup은 exclusive app-lock 아래 valid pending/closing/active-only lease, 빈 pre-lease 폴더와 검증된 seed만 복구한다. 알 수 없는 비어 있지 않은 폴더나 손상된 lease는 보존하고 UI에서 정리 실패 수와 폴더를 볼 수 있게 한다. 문서·보고서 열기는 유지한다. 새 smoke는 PDFKit의 실제 경로와 bridge PDF SHA, 선택 페이지, DB/report 바이트와 닫은 후 정리를 확인한다. 현재 단계에서 C 전체 검사·독립 리뷰·새 앱·이동 ZIP 결과는 아직 별도로 검증해야 한다.
+
 ## 무료 도구 판독·렌더 연구 · 2026-10-20
 
 아래는 `.omx/artifacts/quality-loop-04/`의 별도 실험이다. OCR 후보를 제품 판독 경로에 채택하지 않았고 현재 검증 앱·ZIP을 보존했다. 후속 참고 미리보기 소스 구현은 아래에 별도로 구분한다. 이전 native45/helper26의 480개 원본 PNG 해시를 확인하고 같은 480개를 모두 남겨 비교했다. 후보 생성에는 정답·폰트 조건을 주지 않고, 정답을 읽는 평가는 별도 프로세스로 실행했다. 이 상관된 합성 자료를 일반 문서 정확도로 확대하지 않는다.

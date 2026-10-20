@@ -24,6 +24,9 @@ export async function runTool(executable:string,args:string[],options:{input?:st
     child.stdout.on('data',d=>{stdout=collect(stdout,d);});child.stderr.on('data',d=>{stderr=collect(stderr,d);});
     const clean=()=>{clearTimeout(timer);options.signal?.removeEventListener('abort',cancelled);if(child.pid)active.delete(child.pid);if(!active.size){process.removeListener('SIGTERM',terminate);process.removeListener('SIGINT',interrupt);}};
     child.on('error',e=>{clean();reject(e);});
+    // A failed supervisor may leave descendants holding its stdio open. Kill
+    // the owned detached group at exit, before waiting for the close event.
+    child.on('exit',code=>{if(code!==0&&child.pid)kill(child.pid,'SIGKILL');});
     child.on('close',code=>{clean();if(failure)reject(failure);else if(code!==0)reject(new DocverError('TOOL_FAILED','Local processor failed (exit '+code+'): '+(stderr.length?stderr:stdout).toString('utf8').slice(-500)));else resolveRun(stdout.toString('utf8'));});
     child.stdin.on('error',()=>{});child.stdin.end(options.input);
     if(options.signal?.aborted)cancelled();
@@ -38,8 +41,16 @@ export function officeExecutable():string|undefined {
 }
 const HelperInfo=z.object({version:z.string().min(1),os:z.string().min(1),revision:z.literal(3),languages:z.array(z.string()).refine(l=>l.includes('ko-KR')&&l.includes('en-US')),language_correction:z.literal(false),font_inventory_sha256:z.string().regex(/^[a-f0-9]{64}$/),font_families:z.array(z.string())}).passthrough();
 let infoPromise:Promise<Record<string,any>|undefined>|undefined;
-export function visionInfo():Promise<Record<string,any>|undefined>{
-  if(!infoPromise){const pending=(async()=>{const executable=visionExecutable();if(!executable)return undefined;try{return {...HelperInfo.parse(JSON.parse(await runTool(executable,['--info'],{timeout:30_000}))),binary_sha256:byteHash(await readFile(executable))};}catch(e){if(e instanceof DocverError&&e.code==='CANCELLED')throw e;return undefined;}})();infoPromise=pending;
+async function probeVisionInfo(signal?:AbortSignal):Promise<Record<string,any>|undefined>{
+  signal?.throwIfAborted();const executable=visionExecutable();if(!executable)return undefined;
+  try{return {...HelperInfo.parse(JSON.parse(await runTool(executable,['--info'],{timeout:30_000,signal}))),binary_sha256:byteHash(await readFile(executable))};}
+  catch(e){signal?.throwIfAborted();if(e instanceof DocverError&&e.code==='CANCELLED')throw e;return undefined;}
+}
+export function visionInfo(signal?:AbortSignal):Promise<Record<string,any>|undefined>{
+  // A cancellable optional viewer owns its probe. Cancelling it must not abort
+  // or poison another caller's shared processing-environment inspection.
+  if(signal)return probeVisionInfo(signal);
+  if(!infoPromise){const pending=probeVisionInfo();infoPromise=pending;
     pending.then(value=>{if(!value&&infoPromise===pending)infoPromise=undefined;},()=>{if(infoPromise===pending)infoPromise=undefined;});}
   return infoPromise;
 }

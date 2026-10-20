@@ -22,7 +22,10 @@ import Foundation
   guard unaffected["tag"].string=="ordinary"else{throw NSError(domain:"NonRangeCallCancelled",code:1)}
   let logs=(try? fm.contentsOfDirectory(atPath:library.appendingPathComponent("logs").path)) ?? []
   guard logs.isEmpty else{throw NSError(domain:"CancellationProducedCrashDiagnostic",code:1)}
-  print("PASS 6: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; nonrangeunchanged;24midlaunchcancellationraces; nofalsecrashlog")
+  let shutdownA=Task{try await bridge.call("sidecarCreate",["tag":"shutdown-a","delay":5000])},shutdownB=Task{try await bridge.call("sidecarCreate",["tag":"shutdown-b","delay":5000])},other=Task{try await bridge.call("changes",["tag":"shutdown-keep","delay":750])}
+  try await started("shutdown-a");try await started("shutdown-b");try await started("shutdown-keep");bridge.cancelSidecars();try await cancelled(shutdownA);try await cancelled(shutdownB)
+  guard try await other.value["tag"].string=="shutdown-keep"else{throw NSError(domain:"SidecarShutdownKilledRead",code:1)}
+  print("PASS 7: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; nonrangeunchanged;24midlaunchcancellationraces; nofalsecrashlog; shutdownterminatesonlyownedsidecars")
   try JSONSerialization.data(withJSONObject:records(),options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("observed.json"))
  }
 }

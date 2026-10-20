@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,readdir,link,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,readdir,link,rm,rename} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
@@ -8,7 +8,9 @@ import PptxGenJS from 'pptxgenjs';
 import {extractPptx} from '../../packages/ingest/pptx.js';
 import {byteHash,hash,type ReportData} from '../../packages/schema/index.js';
 import {parseOnlyOfficeFonts} from '../../packages/render/onlyoffice-fonts.js';
-import {SidecarScope,sidecarSource,verifySidecarMapping,closeOnlyOfficeSidecar,recoverOnlyOfficeSidecars} from '../../packages/render/onlyoffice-sidecar.js';
+import {SidecarScope,sidecarSource,verifySidecarMapping,verifySidecarMappingCancellable,createOnlyOfficeSidecar,closeOnlyOfficeSidecar,recoverOnlyOfficeSidecars} from '../../packages/render/onlyoffice-sidecar.js';
+import {setImmediate as yieldTurn} from 'node:timers/promises';
+import {optionalSidecarBuild} from '../../scripts/onlyoffice-build-policy.js';
 
 const deck=new (PptxGenJS as unknown as typeof PptxGenJS.default)();
 for(const text of ['Alpha roadmap ownership','Beta review schedule'])deck.addSlide().addText(text,{x:1,y:1,w:6,h:1});
@@ -18,6 +20,12 @@ const report={project_id:'prj_sidecar',report_id:'rpt_sidecar',revisions:[{revis
 const scope=()=>SidecarScope.parse({project_id:report.project_id,report_id:report.report_id,revision_occurrence_id:'occ_a',page_id:pages[0].page_id,session_id:randomUUID()});
 const rendered=()=>pages.map(p=>({width:p.width,height:p.height,text:p.text}));
 const metadata=(file='/System/Library/Fonts/Helvetica.ttc')=>Buffer.from(Object.entries({__all_fonts_js_version__:2,__fonts_files:[file],__fonts_infos:[['Helvetica',0,0,-1,-1,-1,-1,-1,-1]],__fonts_ranges:[0,127,0],g_fonts_selection_bin:'AA=='}).map(([k,v])=>`window["${k}"] = ${JSON.stringify(v)};`).join('\n'));
+
+test('host metadata requires explicit selection and the private app name',()=>{
+  for(const name of ['Docver.app','Docver-MCP.app','Docver-Render.app'])assert.equal(optionalSidecarBuild(name,undefined),false);
+  assert.equal(optionalSidecarBuild('Docver-Render.app','host-bound'),true);
+  for(const [name,flag]of [['Docver.app','host-bound'],['Docver-MCP.app','host-bound'],['Docver-Render.app',''],['Docver-Render.app','true']])assert.throws(()=>optionalSidecarBuild(name,flag));
+});
 
 test('sidecar source uses immutable report and occurrence membership without changing the report',()=>{
   const before=hash(report),d=scope();assert.equal(sidecarSource(report,d).asset.asset_id,asset_id);
@@ -46,6 +54,29 @@ test('nested headings do not masquerade as another page when independent anchors
   const rendered=nested.map(p=>({width:p.width,height:p.height,text:p.text}));
   verifySidecarMapping(nested,rendered);
   assert.throws(()=>verifySidecarMapping(nested,rendered.reverse()));
+});
+
+test('mapping uses later visible candidates instead of excluded or nonrendered first lines',()=>{
+  const source=pages.map((p,i)=>({...p,elements:[{...p.elements[0],text:'Excluded annotation '+i,comparison_role:'excluded' as const},{...p.elements[0],text:'Occluded annotation '+i,visibility:'occluded' as const},{...p.elements[0],text:'Nonrendered first line '+i},{...p.elements[0],text:'Nonrendered second line '+i},...p.elements]}));
+  verifySidecarMapping(source,rendered());assert.throws(()=>verifySidecarMapping(source,rendered().reverse()));
+});
+
+test('a thousand short uniquely anchored pages map and cancellation interrupts the yielded scan',async()=>{
+  const source=Array.from({length:1000},(_,i)=>{const text='Independent reference source '+String(i).padStart(4,'0');return {...pages[0],page:i+1,text,elements:[{...pages[0].elements[0],text}]};});
+  const rendered=source.map(p=>({width:p.width,height:p.height,text:p.text}));
+  await verifySidecarMappingCancellable(source,rendered);
+  const controller=new AbortController(),pending=verifySidecarMappingCancellable(source,rendered,controller.signal);await yieldTurn();controller.abort();await assert.rejects(pending,{name:'AbortError'});
+  const swapped=[...rendered];[swapped[239],swapped[999]]=[swapped[999],swapped[239]];assert.throws(()=>verifySidecarMapping(source,swapped));
+});
+
+test('anchorless source is rejected before a missing provider or a conversion job is opened',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'docver-sidecar-preflight-'));try{
+    const short=new (PptxGenJS as unknown as typeof PptxGenJS.default)();short.addSlide().addText('Q&A',{x:1,y:1,w:6,h:1});
+    const bytes=await short.write({outputType:'nodebuffer'}) as Buffer,asset_id='sha256:'+byteHash(bytes),source=extractPptx(bytes,asset_id),r={...report,revisions:[{...report.revisions[0],assets:[{asset_id,format:'pptx',bytes:bytes.length}],pages:source}]} as ReportData,d={...scope(),page_id:source[0].page_id};
+    await mkdir(join(root,'assets'));await writeFile(join(root,'assets',asset_id.slice(7)),bytes);
+    await assert.rejects(createOnlyOfficeSidecar({library:root,resources:join(root,'missing-provider'),guard:join(root,'must-not-run'),report:r,scope:d}),(error:unknown)=>!!error&&typeof error==='object'&&'code'in error&&error.code==='SIDECAR_MAPPING'&&String(error).includes('1쪽'));
+    assert.deepEqual((await readdir(root)).sort(),['assets']);assert.equal(byteHash(await readFile(join(root,'assets',asset_id.slice(7)))),asset_id.slice(7));
+  }finally{await rm(root,{recursive:true,force:true});}
 });
 
 test('font metadata accepts data assignments and rejects executable or outside-path payloads',()=>{
@@ -94,5 +125,22 @@ test('startup recovery handles a damaged optional lease without deleting unrelat
     const result=await recoverOnlyOfficeSidecars(f.root);assert.equal(result.recovered,1);assert.equal(result.skipped,1);
     assert.deepEqual(await readdir(f.jobs),[]);assert.equal(await readFile(bad,'utf8'),'partial json');
     assert.equal(await readFile(f.canary,'utf8'),'canonical input unchanged');
+  }finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test('startup recovers a valid closing marker after an interrupted cleanup',async()=>{
+  const f=await leaseFixture();try{await link(f.pending,f.active);await rename(f.pending,join(f.leases,f.d.session_id+'.closing.json'));assert.deepEqual(await recoverOnlyOfficeSidecars(f.root),{recovered:1,skipped:0});assert.deepEqual(await readdir(f.jobs),[]);assert.deepEqual(await readdir(f.leases),[]);assert.equal(await readFile(f.canary,'utf8'),'canonical input unchanged');}finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test('startup recovers an owned active-only marker without a pending link',async()=>{
+  const f=await leaseFixture();try{await rename(f.pending,f.active);assert.deepEqual(await recoverOnlyOfficeSidecars(f.root),{recovered:1,skipped:0});assert.deepEqual(await readdir(f.jobs),[]);assert.deepEqual(await readdir(f.leases),[]);assert.equal(await readFile(f.canary,'utf8'),'canonical input unchanged');}finally{await rm(f.root,{recursive:true,force:true});}
+});
+
+test('startup removes only empty or validated pre-lease jobs and retains unknown nonempty data',async()=>{
+  const f=await leaseFixture();try{
+    const empty=randomUUID(),seeded=scope(),unknown=randomUUID();
+    for(const name of [empty,seeded.session_id,unknown])await mkdir(join(f.jobs,name),{mode:0o700});
+    await writeFile(join(f.jobs,seeded.session_id,'.lease-seed'),JSON.stringify({...seeded,created_at:new Date().toISOString()}));await writeFile(join(f.jobs,unknown,'unknown.txt'),'preserve for inspection');
+    assert.deepEqual(await recoverOnlyOfficeSidecars(f.root),{recovered:3,skipped:1});assert.deepEqual(await readdir(f.jobs),[unknown]);assert.equal(await readFile(join(f.jobs,unknown,'unknown.txt'),'utf8'),'preserve for inspection');assert.equal(await readFile(f.canary,'utf8'),'canonical input unchanged');
   }finally{await rm(f.root,{recursive:true,force:true});}
 });
