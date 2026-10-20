@@ -2,7 +2,46 @@
 
 요구: 실제 네이티브 Mac 앱에서 PDF 원문·가시성·OCR·PPTX 원본 충실도를 보완한다. `HANDOFF.md`와 `PLAN.md`는 원본 그대로 보존한다. 이 문서는 현재 판독 품질의 합격 기준이며 전체 PDF의 100% 인식을 선언하는 문서가 아니다.
 
-## 최근 검증본 · 2026-10-20
+## 무료 OCR 연구 loop05 · 새 Paddle 후보 두 개 모두 보류
+
+`.omx/artifacts/quality-loop-05/paddle/`에서 공식 저장소의 고정 revision·파일 SHA를 검증한 `PP-OCRv6_medium_rec`와 `korean_PP-OCRv5_mobile_rec`를 별도 연구용 환경에서 비교했다. 사전 등록한 같은 image-only crop/default CTC 조건으로 기존480개와 별도132개 PNG 전부를 두 모델에 넣었다. 정답·원본 글꼴·이전 답을 inference에 전달하지 않았고 해당 경로 읽기와 네트워크를 차단했다. 정답 대조는 inference 종료 후 별도 평가 단계에서 수행했다. 연구용 의존성73개의 당시 audit은 알려진 취약점0이며 안전성 인증을 의미하지 않는다. 모델/환경은 앱에 포함하지 않았다.
+
+480개는 상관된 합성 사례이며 일반 문서 정확도의 표본이 아니다. raw 전체 문구 기준은 다음과 같다.
+
+| 모델 | 정확 | 비어 있지 않은 오독 | 빈 결과 | 기존 정상218개 중 손실 |
+| --- | ---: | ---: | ---: | ---: |
+| 기존 helper26의 이전 결과 | 218 | 22 | 240 | 기준 |
+| PP-OCRv6 medium | 335 | 125 | 20 | 43 |
+| Korean PP-OCRv5 mobile | 293 | 187 | 0 | 28 |
+
+V6의 공백 문자만 출력한66개도 raw에서는 비어 있지 않은 오독이다. 별도 NFC/공백 정규화 지표에서는 빈 결과86개다. 기존 오독22개 중 각각12개·2개를 고쳤지만 기존 정상 판독43개·28개를 훼손해 사전 보존 기준을 통과하지 못했다. 두 모델이 같은 오답에 합의한 사례도480개 중33개다. 합의나 모델 점수만으로 정확 판독으로 승격하지 않는다.
+
+별도132개에서 정확 결과는 각각59개·67개, 비어 있지 않은 오독69개·65개다. 정답이 빈4개는 두 모델 모두 올바르게 빈 결과였고 정확 수에 포함한다. 빈 출력 총8개·4개 중 이 정답4개를 제외한 누락은4개·0개다. 같은 오답 합의는13개였다. 공백 출력과 빈 정답이 겹치는 집계를 중복 없이 해석한다.
+
+초기 실행은 sandbox 호환성으로 native SIGSEGV와 AVX 탐지 shell 실행 거절이 났다. 실패 원문과 사전 amendment1–4를 남겼고, 같은 이미지/모델/알고리즘/판정 기준을 유지한 채 연구 작업 안에서 필요한 OS 실행 경로만 허용한 뒤 전체480개62.818823초·132개18.101446333초의 inference를 완료했다. 모델 graph/parameter hash는 전후 동일했고 원격 Python/pickle 실행은 허용하지 않았다. OS/계정/전역 설정은 바꾸지 않았다.
+
+최종 판정은 `final-evaluation.json`의 **REJECT_NO_PRODUCTION_ADOPTION**이다. 프로덕션 OCR·의존성·엔진/schema·보고서는 바꾸지 않았고, 후보가 보존 기준에서 탈락했으므로 앱 통합·cold replay gate를 통과했다고 세지 않는다. 미해결 OCR과 PowerPoint strict0/26은 계속 OPEN이다. 무료 대체 도구의 일부 개선을 완벽 판독으로 부르거나 정답 기반 문구 치환·사후 임계값 조절로 실패를 숨기지 않는다.
+
+## 최근 검증본 E3 · 2026-10-20
+
+같은 Mac용 선택적 참고 창 검증본은 `release/Docver-Render.app`, ZIP은 `release/Docver-0.4.0-render2-arm64.zip`이다. clean runtime source는 `af0309a272f79ba82b2a14882748e6613e984e09`다. 앱의 빌드 원본과 이후 문서 커밋을 구분한다. `release/validation-render2.json`과 `.omx/artifacts/native-sidecar-03/composite-qualification.json`이 원본·앱·패키지·리뷰를 연결한다. 엔진53/schema0.4/Vision26/MCP API0.4.0-mcp.1의 판독·diff 알고리즘과 저장 보고서는 유지한다.
+
+- 전체 `npm run check` **252/252 PASS**, 실패·skip·cancel0. 테스트165.502466625초, 명령166.277165875초이며 검증 전후 추적190개 파일이 일치했다. 빌드21.884189875초.
+- 실제 앱/MCP **15개 작업 PASS**: 네이티브 새5버전·공개PPTX10개·새300쪽 덱의12작업과 동봉MCP의5버전·300쪽·과거900쪽 재열기3작업이다. 300쪽 작업33.012471958초, 같은300쪽을 두 occurrence로 사용했으므로 서로 다른 원본600쪽 분석으로 세지 않는다. 과거900쪽 재열기도 새900쪽 분석이 아니다.
+- 공개10개/300쪽에서 production Sheet·PDFKit의 선택 페이지·전체 페이지 수·실제 PDF 경로·bridge PDF SHA·active lease를 확인했다. `model.sidecarRequest=nil` 후 job/lease 정리와 report/SQLite 불변을 검증해 C의 실제 실패를 닫았다.
+- 실제 앱 SIGKILL의 helper 종료와 재열기 외에, bridge+앱 SIGKILL로 **실제 pending job/lease를 남긴 뒤** 같은 library의 앱 재실행으로 복구·DB 불변을 확인했다. production Swift Bridge와 동봉 backend의 Task 취소는 **명시적 sidecarClose 전에** 자체 helper·파일이 정리되고 독립 조회가 살아 있는 것을 확인했다. 종료 뒤 explicit close는 멱등성 검사다.
+- ZIP **391389156bytes**, SHA256 `7cf45ec1649d7b1e47481d74f11daeea4a7f8fa598121a3302cbea0d1682f8bf`. 공백 경로로 이동·최소 PATH·cwd `/`의 실제 앱/MCP/서명 등 **16개 검사 PASS**. 원래 앱과 이동 복사본 모두 guard의 hardened runtime·빈 entitlement·같은 SHA를 확인했다. `release-validation/validation.json`이 상세 범위를 고정한다.
+- 추가 실제 OS probe는 현재 guard로 `vfork`·`posix_spawn`·경로 밖 canary hardlink의 EPERM과 canary 불변을 확인했다. 이는 자기 소유 fixture 검사이며 임의의 OS 취약점 방어 증명이 아니다.
+
+원래 base `5982c71e4c0d859bf2facca954a5caa494363ade`부터 E3까지26개 변경 경로의 독립 코드 lane은 **APPROVE / SOURCE_READY**, 아키텍처 lane은 **WATCH / SOURCE_READY**다. 이후 실제 앱·fault·패키지 증거에 대한 별도 closure도 각각 APPROVE와 WATCH로 **INTEGRATION_READY / PRIVATE_PACKAGE_READY**를 확인했다. 결합 판정은 **COMMENT / WATCH, 같은 Mac의 비공개 패키지 READY**이며 제품 전체는 **OPEN**이다. 디렉터리 이름·metadata 예외, 문서별 보수적 거절·변환 비용, 외부 설치본/글꼴 의존은 남은 WATCH다. OS 입력·IME·VoiceOver·다른 Mac·공증·공개 배포·글꼴/vendor 재배포 자격은 이 결과에 포함하지 않는다.
+
+Claude와 Grok의 전체 E1 검토 뒤 지적된 오류 안내와 monitor 경계를 수정했다. E1→E3의 전체 intervening9경로 delta 및 새 회귀 검토에 두 advisor가 각각 terminal APPROVE를 반환했다. 이는 해당 delta의 closure이며 외부 advisor의 E3 전체26경로·제품 정확도 승인으로 확대하지 않는다. Grok에는1200초 제한을 주었고 stdout/stderr·argv·prompt hash·scope를 개별 보존했다. 내부 두 lane은 전체 E3 diff를 검토했다. Agy는 이전 `RESOURCE_EXHAUSTED` quota/exit3/stdout0으로 사용 불가였으며 유효한 E3 리뷰가 없다. 상세 validity는 `advisor-validity.json`이다.
+
+E3는 monitor를 READY 이전 trusted guard로 exec하고 PT_DENY_ATTACH와 hardened runtime을 적용한다. 실제 fixture에서 parent-side `setpgid`는 EACCES, Mach task port는 거절, ptrace 시도는 부모 SIGSEGV와 전체 소유 PID 종료로 닫혔다. 추가 SBPL `system-debug` deny의 독립 효과를 이 결과로 증명하지 않는다. E2에서 parent-side group 변경은 재현됐지만 attach·monitor 정지·timeout 우회·실제 x2t exploit은 재현되지 않았다. E2의 통합 보류와 C/D 실패 기록은 각각 당시 snapshot의 증거로 남긴다.
+
+포함 Node·MCP·Vision은 이전 F의 바이트와 같다. F의 실제 Claude37도구호출+구조화응답1 증거는 이전 F 범위로 유지하며 E3에서 새 AI 소비자 검증을 실행했다고 표시하지 않는다. 기존 `Docver.app`·`Docver-MCP.app`과 두 ZIP의 SHA는 그대로다. HANDOFF/PLAN도 원문 그대로다. OCR 480개/PowerPoint26쪽의 미해결 게이트는 아래와 같고 앱 안정성 통과로 판독 성공 수를 올리지 않는다.
+
+## 이전 MCP 검증본 F · 2026-10-20
 
 현재 MCP 개선 검증본은 `release/Docver-MCP.app`, ZIP은 `release/Docver-0.4.0-mcp1-arm64.zip`이다. clean runtime source `78e000865ce61926415b9c95b2355a5cf30372ad`에서 빌드했다. 엔진은 `0.4.0-native.bundle.53`, schema0.4.0, Vision helper26, MCP API0.4.0-mcp.1이다. 이후 문서 변경 커밋과 앱 빌드 원본 SHA를 구분한다. `release/validation.json`, `release/validation-mcp1.json`, `.omx/artifacts/ai-mcp-01/composite-qualification.json`이 해당 바이트와 증거를 고정한다.
 
@@ -20,9 +59,9 @@
 
 이전 판독 루프의 Claude 소스 리뷰 timeout·Grok timeout·Agy quota 제한은 그 범위의 실패 증거로 보존한다. 후속 MCP 제안/실제 클라이언트 사용 검증과 이번 OCR 논의의 유효한 응답을 과거 실패나 새 소스 승인으로 바꾸지 않는다. 실제 화면에 대한 이전 승인을 새 빌드 전체 승인으로 확대하지 않는다.
 
-## 선택적 네이티브 참고 창 · 후속 소스 검증 중
+## 선택적 네이티브 참고 창 · E3 검증 범위
 
-`Docver-Render.app`의 별도 PDFKit 참고 창은 원본 SHA·고정 보고서·버전 occurrence·페이지를 확인한 뒤 OnlyOffice로 문서 전체를 변환한다. 기본 렌더러나 저장 report·diff·MCP 결과는 바꾸지 않는다. 이것은 위 F 검증 앱의 대체 완료 선언이 아니다.
+`Docver-Render.app`의 별도 PDFKit 참고 창은 원본 SHA·고정 보고서·버전 occurrence·페이지를 확인한 뒤 OnlyOffice로 문서 전체를 변환한다. 기본 렌더러나 저장 report·diff·MCP 결과는 바꾸지 않는다. 현재 E3 검증 범위는 위에 고정하며 제품 전체 완료와 구분한다.
 
 빌드에 호스트 설정을 넣으려면 `DOCVER_APP_NAME=Docver-Render.app DOCVER_OPTIONAL_SIDECAR=host-bound npm run mac:build`를 명시해야 한다. `dist/onlyoffice-sidecar`에 이전 준비물이 남아 있어도 플래그 없는 일반 빌드에는 provider·호스트 글꼴 경로·metadata가 들어가지 않는다. 다른 앱 이름에서 이 플래그를 쓰면 빌드 전에 거절한다. 외부 vendor 앱·indexer·글꼴 프로그램은 복사하지 않는다. 설정과 metadata는 이 Mac에 종속되며 공개·다른 Mac 배포 자격이 아니다.
 
@@ -32,7 +71,7 @@
 
 후속 구현은 broker Mach 조회·등록, preference/LaunchServices, 다른 프로세스 신호, POSIX/SystemV IPC와 IOKit도 차단한다. 감독기는 부모 종료를 감시하고 로그 파이프가 닫혀도 자식 그룹 정리 전에 SIGPIPE로 죽지 않는다. helper의 실패 exit에서는 close를 기다리기 전에 그룹을 정리한다. 앱 정상 종료는 자체 참고 요청만 취소하고, 브리지는 앱 부모를 잃으면 자체 작업을 중단한다. macOS 회귀 테스트는 실제 규칙으로 내부 일반 파일 읽기 허용/경로 밖 읽기·쓰기/소켓/추가 fork·exec/환경·Mach 조회·신호 차단, 용량·symlink·로그·취소·timeout, 감독기 SIGKILL 및 부모 SIGKILL을 확인한다. 이 결과를 임의의 OS 취약점에 대한 완전 격리 증명으로 부르지 않는다.
 
-startup은 exclusive app-lock 아래 valid pending/closing/active-only lease, 빈 pre-lease 폴더와 검증된 seed만 복구한다. 알 수 없는 비어 있지 않은 폴더나 손상된 lease는 보존하고 UI에서 정리 실패 수와 폴더를 볼 수 있게 한다. 문서·보고서 열기는 유지한다. 새 smoke는 PDFKit의 실제 경로와 bridge PDF SHA, 선택 페이지, DB/report 바이트와 닫은 후 정리를 확인한다. 현재 단계에서 C 전체 검사·독립 리뷰·새 앱·이동 ZIP 결과는 아직 별도로 검증해야 한다.
+startup은 exclusive app-lock 아래 valid pending/closing/active-only lease, 빈 pre-lease 폴더와 검증된 seed만 복구한다. 알 수 없는 비어 있지 않은 폴더나 손상된 lease는 보존하고 UI에서 정리 실패 수와 폴더를 볼 수 있게 한다. 문서·보고서 열기는 유지한다. 새 smoke는 PDFKit의 실제 경로와 bridge PDF SHA, 선택 페이지, DB/report 바이트와 닫은 후 정리를 확인한다. 이 문단을 작성했던 C의 실제 실패와 이후 D/E/E2/E3의 결과는 아래 이력에 분리한다. 현재 E3의 앱·리뷰·이동 ZIP 결과는 위 최근 검증본에 고정한다.
 
 ### 실제 C 앱 반례와 후속 D 소스
 

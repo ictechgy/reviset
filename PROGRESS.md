@@ -1,3 +1,19 @@
+# 현재 검증 상태 · E3 / 무료 도구 · 2026-10-20
+
+실행본은 `release/Docver-Render.app`, ZIP은 `release/Docver-0.4.0-render2-arm64.zip`이다. clean runtime source `af0309a272f79ba82b2a14882748e6613e984e09`와 후속 문서 커밋을 구분한다. 기존 AL/F 앱·ZIP과 HANDOFF/PLAN은 보존했다. 전체 제품 판독 게이트는 **OPEN**, 같은 Mac의 선택적 비공개 참고 창 패키지는 **COMMENT / WATCH; SOURCE_READY / INTEGRATION_READY / PRIVATE_PACKAGE_READY**다. 상세 결합 증거는 `.omx/artifacts/native-sidecar-03/composite-qualification.json`, 현재 사용 조건은 `docs/QUALITY.md`다.
+
+- E3 전체252/252 PASS, 실패·skip·cancel0,165502.466625ms(wrapper166.277165875초), 추적190파일 불변. 앱 빌드21.884189875초. 실제12native+3MCP 총15작업 PASS: 새5버전·공개10PPTX·새300쪽(33.012471958초)·과거900쪽 재열기를 구분했다. 300쪽 두 occurrence를 서로 다른 원본600쪽으로 세지 않는다.
+- 실제 Sheet/PDFKit 선택쪽·PDF경로/bridgeSHA·model.nil 후 정리·DB/report불변을 통과해 C의 실제 닫기 실패를 수정했다. 앱 SIGKILL, 실제 pending job/lease가 남는 bridge+앱 SIGKILL 뒤 같은 library의 앱 재시작 복구, production SwiftBridge 취소 후 explicit close **이전** 정리와 독립 조회 보존도 통과했다. OS 마우스/키보드 입력 검증은 아니다.
+- ZIP391389156bytes SHA256 `7cf45ec1649d7b1e47481d74f11daeea4a7f8fa598121a3302cbea0d1682f8bf`; 공백 이동경로·최소 PATH/cwd `/` 실제 앱/MCP와 원래/복사 guard hardened runtime·빈 entitlement까지16checks PASS. 현재 guard의 추가 vfork/posix_spawn/경로밖 hardlink 실제 probe도 EPERM/canary불변이다. `system-debug` deny의 독립 효과나 OS취약점 완전 방어로 확대하지 않는다.
+- 전체 base5982c71→E3의26경로 독립 code APPROVE/SOURCE_READY, arch WATCH/SOURCE_READY. 실제 통합/ZIP의 별도 양 lane closure는 APPROVE와 WATCH로 private READY다. E2 group변경 반례/통합보류와 C/D 실패 기록은 당시 scope 그대로 보존했다. E3는 trusted monitor exec/PT_DENY_ATTACH/hardened runtime/FD·READY 등록 검증으로 보완하며 실제 부모 setpgid EACCES, Mach거절, ptrace 부모 SIGSEGV시 소유 PID 종료를 확인했다.
+- Claude/Grok의 E1 전체 검토에서 나온 제한 안내·monitor 경계를 반영했고 E1→E3 전체 intervening9경로 delta와 새회귀 closure는 각각 terminal APPROVE다. 이는 E3 전체26경로의 외부 승인이 아니며 내부 양 lane 전체 리뷰와 구분한다. Grok timeout1200초·개별 raw/prompt/argv/hash를 보존했다. Agy는 이전 quota/exit3/stdout0으로 유효 리뷰가 없다.
+- F 동봉 Node/MCP/Vision과 현재 파일 SHA는 동일하다. 실제 Claude37MCP호출+구조화응답1은 F의 이전 검증이며 E3 새AI검증으로 재표시하지 않는다. 버전 본문·노트·가림/OCR 층·이력·변경 전후·근거/한계 조회는 유지한다.
+- 무료 OCR loop05의 공식 Paddle 고정모델2개를 isolated 환경에서 동일480+별도132 PNG로 끝까지 평가했다. V6medium raw335정확/125오독/20빈, KoreanV5 293/187/0이나 기존 정상218개 중43개·28개 손실로 **REJECT_NO_PRODUCTION_ADOPTION**. 별도132의 정확59/67에는 빈 정답4개씩 포함한다. 원시 빈8/4의 실제 누락은4/0이며 오독69/65다. 초기호환성실패와 amendment1–4, 모델/이미지hash·전체행·73dependency audit0knownvuln를 보존한다. 모델/생산의존성/engine/schema/report를 바꾸지 않았다.
+
+기존 helper26의 이전480결과218정확/22오독/240빈과 PowerPoint 독립26쪽 strict0/26은 미해결이다. OnlyOffice 참고 창은 외부 설치본/호스트 metadata에 종속된 선택적 화면이며 이 정확도 게이트나 다른 Mac/공개 배포/공증 자격을 통과시킨 것이 아니다. 아래는 당시 상태를 보존한 시간순·역순 혼합 이력이며 현재 검증 상태는 이 맨 위 기록을 따른다.
+
+---
+
 # 품질 반복 2 · pass11 · 2026-10-19
 
 45e0476(엔진19/helper16)은109검사·실제900쪽56.269초를 통과했고 Claude 범위APPROVE가 단위 우회의 수정을 확인했다. 이후 두 독립 full-diff 리뷰는 `1/2.3`, `1/2,000`, `.5/2`의 일부 정수 분수 토큰이 미지원 비율을 통과시키고 전체/지역 추정 변경에 진입하는 사례를 재현해 BLOCK했다. 이전 승인·차단·QA를 구분하고 output/checkpoints/45e04768에 보존했다.

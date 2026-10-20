@@ -4,9 +4,11 @@ PPTX·PDF 버전의 페이지 대응, 숫자 수정, 중간 삽입·삭제와 �
 
 ## Mac에서 사용
 
-현재 Mac에서 검증한 앱은 `release/Docver-MCP.app`입니다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 실행하세요. 더블클릭해서 실행하고 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**를 선택합니다. 파일 순서를 버전 순서로 사용하며, PPTX 또는 PDF 하나만으로도 유효합니다. 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
+현재 Mac에서 검증한 앱은 `release/Docver-Render.app`입니다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 실행하세요. 더블클릭해서 실행하고 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**를 선택합니다. 파일 순서를 버전 순서로 사용하며, PPTX 또는 PDF 하나만으로도 유효합니다. 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
 
-최근 검증본은 [Docver-MCP.app](release/Docver-MCP.app)과 [arm64 ZIP](release/Docver-0.4.0-mcp1-arm64.zip)입니다. 빌드 원본은 `78e000865ce61926415b9c95b2355a5cf30372ad`이며, 234개 테스트·앱/MCP 9개 시나리오·ZIP 이동 실행 13개 검사를 통과했습니다. Claude가 실제 포함 MCP로 합성5버전의 본문·노트·숫자 변경·중간 삽입/삭제를 읽은 답변도 저장 원문과 대조했습니다. 상세 증거는 [검증 기록](release/validation.json), MCP 사용법은 [조회 가이드](docs/MCP.md), 남은 OCR·PowerPoint 충실도 문제는 [품질 현황](docs/QUALITY.md)에 기록합니다. 이 결과는 모든 문서의 완벽한 판독을 뜻하지 않습니다.
+최근 검증본은 [Docver-Render.app](release/Docver-Render.app)과 [arm64 ZIP](release/Docver-0.4.0-render2-arm64.zip)입니다. 빌드 원본은 `af0309a272f79ba82b2a14882748e6613e984e09`이며, 252개 테스트·실제 앱/MCP 15개 작업·ZIP 이동 실행 16개 검사를 통과했습니다. 선택적 OnlyOffice 참고 창은 이 Mac의 외부 설치본과 글꼴 metadata에 연결되며, 원본 대응을 확인한 문서의 PDF를 큰 PDFKit 화면으로 엽니다. 저장된 분석·diff·MCP와 기본 렌더는 유지합니다. 이 패키지는 같은 Mac용 검증본이며 다른 Mac으로의 배포 검증은 완료하지 않았습니다. 상세 증거는 [검증 기록](release/validation-render2.json), 사용 조건과 남은 OCR·PowerPoint 충실도 문제는 [품질 현황](docs/QUALITY.md)에 기록합니다.
+
+이전 [Docver-MCP.app](release/Docver-MCP.app)도 보존했습니다. Claude의 실제 MCP 사용 검증은 그 이전 F 빌드의 37개 도구 호출과 1개 구조화 응답에 해당합니다. 현재 앱의 포함 MCP·Node·Vision은 F와 바이트가 같고 새 앱의 실제 MCP 작업도 별도로 통과했습니다. 버전별 내용과 변경 조회 방법은 [AI 조회 가이드](docs/MCP.md)를 참고하세요. 모든 문서의 완벽한 판독은 아직 달성하지 못했습니다.
 
 - 인접 버전의 1:1 연결·해제·1:N 분할·N:1 병합을 수정합니다. 한 관계에서 최대32페이지를 고르고 이유를 남기며, 모든 분기를 전체 이력과 원문에서 따로 열 수 있습니다.
 - 같은 버전의 PPTX 슬라이드와 제공 PDF 페이지를 별도 창에서 연결·해제·재연결하고 이유·대체된 연결을 보존합니다. 과거 보고서에서는 연결 이력을 조회합니다. 사용자 연결은 참고용이며 PowerPoint 화면 충실도를 보증하지 않습니다.
