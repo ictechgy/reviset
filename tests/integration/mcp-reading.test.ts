@@ -171,7 +171,7 @@ test('advisor regressions: containing history ranges, ambiguous repeated-element
 
 test('Markdown export labels all reading authorities and states and refuses to mix or overwrite a previous export',async()=>{
   const folder=await mkdtemp(join(tmpdir(),'docver-markdown-reading-')),r=fixture(),p=r.revisions[0].pages[0];
-  p.text='원문 가려진 금액 100';p.visible_text='표시 금액';p.suppressed_text='가려진 금액 100';p.notes=null;p.capabilities.notes='unavailable';
+  p.text='원문 가려진 금액 100\r## forged_authority\r\nCRLF 줄\nLF 줄';r.changes[0].before='before\r## forged_history';r.changes[0].after='after\r\n## forged_history';p.visible_text='표시 금액';p.suppressed_text='가려진 금액 100';p.notes=null;p.capabilities.notes='unavailable';
   p.ocr_text='추정 120';p.ocr={status:'available',engine:'fixture',environment:'same'};p.comparison_basis='raster_ocr';
   const q=service(r),before=canonical(r);
   try{
@@ -180,7 +180,7 @@ test('Markdown export labels all reading authorities and states and refuses to m
     const md=await readFile(join(folder,'content','occ_a',files[0]),'utf8');
     for(const section of ['comparison','source','visible','unresolved','suppressed','ocr','ocr_unresolved','notes'])assert.ok(md.includes('## '+section+'\n'));
     assert.match(md,/"text_assessment":"inferred"/);assert.match(md,/"field_state":"unavailable"/);assert.match(md,/"field_state":"not_recorded"/);
-    assert.ok(md.includes('> 추정 120'));assert.ok(md.includes('> 원문 가려진 금액 100'));assert.ok(md.includes('> 가려진 금액 100'));assert.ok(md.includes('"asset_role":"pptx_source"'));assert.ok(md.includes('"revision_occurrence_id":"occ_a"'));
+    assert.ok(md.includes('> 추정 120'));assert.ok(md.includes('> 원문 가려진 금액 100'));assert.ok(md.includes('> ## forged_authority'));assert.ok(md.includes('> CRLF 줄'));assert.ok(md.includes('> LF 줄'));assert.doesNotMatch(md,/^## forged_authority$/m);assert.ok(!md.includes('\r'));const history=await readFile(join(folder,'history.md'),'utf8');assert.doesNotMatch(history,/^## forged_history$/m);assert.ok(history.includes('> ## forged_history'));assert.ok(!history.includes('\r'));assert.ok(md.includes('> 가려진 금액 100'));assert.ok(md.includes('"asset_role":"pptx_source"'));assert.ok(md.includes('"revision_occurrence_id":"occ_a"'));
     const manifest=await readFile(join(folder,'manifest.json'));
     await assert.rejects(exportReport(q,r.project_id,r.report_id,folder),{code:'EXPORT_DESTINATION_NOT_EMPTY'});
     assert.deepEqual(await readFile(join(folder,'manifest.json')),manifest);assert.equal(canonical(r),before);

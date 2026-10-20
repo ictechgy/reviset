@@ -949,3 +949,9 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 - Claude exactB six-runtime packet73932B SHA1632b8a15de0a04b246f043d6b872b6b31167db5109b9fea175dabc35d5376be의 substantive7116B/exit0/stderr0/terminal APPROVE. 현재엔진 한정 static승인이며 C/D전체/앱승인은아니다. 추가LOW중 실제AI사용에관련된 Markdown 원문역할부재와 같은폴더export stale파일혼합을 채택한다. primary_text무제한 가설은 schema max128로반증한다. legacyalias호환은기존정책유지; 고대미stamp중복ID가설은현재producer재현없음으로별도기록한다.
 - Markdown은 공통reading helper의8개field와원본/제공PDF authority, null/empty/not_recorded/empty_unverified, observed/inferred metadata를 함께기록한다. 저장report/JSONL/eventID는불변. 새/빈폴더만허용하고 exclusive write로기존파일을덮어쓰지않는다. 실패시부분export삭제나사용자파일삭제를하지않으며 원자적폴더commit을보장하지않는다.
 - 독립architecture LOW synthetic 저장change의to_occurrence누락사례를확인했다. 현재producer발생증거없으나새get_change의containingrange검사를 start<=a && a<b && b<=end로닫고 missing/reverse/selfcontrols를추가한다. 기존저장eventID/diff는수정하지않는다. D집중11/전체234·독립리뷰·실제앱·ZIP는이어검증한다.
+
+
+### 2026-10-20 AI MCP · sourceE Markdown CR 인용 경계
+
+- D clean `aa91172922909ab2bd6cf119ec501ed66f9a7418` 전체234/234PASS158535.776708ms(wrapper159.302205208s),추적소스바이트고정. 정확D결과만귀속한다.
+- Claude exactD six-runtime packet83217B SHA584dede2de7f719a26871c6a7971189032d04680a1bbe639b292db4c5b25fbe0,exit0/4971B/stderr0/terminal REQUEST_CHANGES. 실제 CR 단독 줄바꿈이 blockquote 경계를 벗어날 수 있다는 지적을 채택한다. 공유quote가 CRLF/CR/LF 모두줄분리하도록 변경하고 pageMarkdown/history의 forged_heading 사례를회귀검증한다. JSON/MCP/저장원문은그대로며 Markdown만 줄바꿈정규화한다. 인용표시 자체를 prompt injection 완전방어로주장하지않는다. E집중11/전체234·sourceclosure·앱/ZIP는따로확인한다.
