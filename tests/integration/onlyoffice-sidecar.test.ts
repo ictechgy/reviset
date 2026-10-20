@@ -69,6 +69,11 @@ test('a thousand short uniquely anchored pages map and cancellation interrupts t
   const swapped=[...rendered];[swapped[239],swapped[999]]=[swapped[999],swapped[239]];assert.throws(()=>verifySidecarMapping(source,swapped));
 });
 
+test('dense three-hundred-page source anchors are prepared once with an independent rendered budget',async()=>{
+  const source=Array.from({length:300},(_,i)=>{const text=Array.from({length:8},(_,j)=>'Page '+String(i).padStart(4,'0')+' section '+j+' anchor '+('x'.repeat(160))).join('\n');return {...pages[0],page:i+1,text,elements:[{...pages[0].elements[0],text}]};});
+  await verifySidecarMappingCancellable(source,source.map(p=>({width:p.width,height:p.height,text:p.text})));
+});
+
 test('anchorless source is rejected before a missing provider or a conversion job is opened',async()=>{
   const root=await mkdtemp(join(tmpdir(),'docver-sidecar-preflight-'));try{
     const short=new (PptxGenJS as unknown as typeof PptxGenJS.default)();short.addSlide().addText('Q&A',{x:1,y:1,w:6,h:1});

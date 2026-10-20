@@ -6,7 +6,7 @@ import CryptoKit
 @main struct DocverApp: App {
     @StateObject private var model=AppModel()
     var body: some Scene {
-        Window("Docver", id:"main") {MainView().environmentObject(model).task {await Smoke.runIfRequested(model)}.onReceive(NotificationCenter.default.publisher(for:NSApplication.willTerminateNotification)){_ in model.bridge.cancelSidecars()}}
+        Window("Docver", id:"main") {MainView().environmentObject(model).task {await Smoke.runIfRequested(model)}.onReceive(NotificationCenter.default.publisher(for:NSApplication.willTerminateNotification)){_ in model.sidecarRequest=nil;model.bridge.cancelSidecars()}}
         .defaultSize(width:1440,height:960)
         .windowToolbarStyle(.unifiedCompact)
         .commands {
@@ -103,7 +103,7 @@ import CryptoKit
             try await Task.sleep(nanoseconds:350_000_000);try captureView(sheet,output.appendingPathComponent("native-sidecar.png"))
             let jobs=model.bridge.library.appendingPathComponent("sidecars-v1/jobs"),leases=model.bridge.library.appendingPathComponent("sidecars-v1/leases")
             let pdfPath=jobs.appendingPathComponent(request.id).appendingPathComponent("converted.pdf"),pdfSHA=try fileDigest(pdfPath)
-            guard model.sidecarResult["pdf_sha256"].string==pdfSHA,doc.documentURL?.standardizedFileURL==pdfPath.standardizedFileURL else{throw BridgeError(code:"SIDECAR_PDF_HASH",message:"참고 화면과 변환 결과의 PDF hash 또는 경로가 다릅니다.")}
+            guard model.sidecarResult["pdf_sha256"].string==pdfSHA,doc.documentURL?.resolvingSymlinksInPath().standardizedFileURL==pdfPath.resolvingSymlinksInPath().standardizedFileURL else{throw BridgeError(code:"SIDECAR_PDF_HASH",message:"참고 화면과 변환 결과의 PDF hash 또는 경로가 다릅니다.")}
             guard FileManager.default.fileExists(atPath:leases.appendingPathComponent(request.id+".active.json").path) else{throw BridgeError(code:"SIDECAR_LEASE",message:"참고 화면 작업의 소유권이 없습니다.")}
             model.sidecarRequest=nil
             for _ in 0..<200 {

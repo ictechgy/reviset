@@ -14,6 +14,7 @@
 
 static const uint64_t job_threshold = 256ULL * 1024 * 1024;
 static unsigned entries;
+static pid_t owned_child;
 
 static void reject(const char *reason) {
     /* The launcher may have died and closed stderr. Logging must never kill
@@ -21,6 +22,7 @@ static void reject(const char *reason) {
     signal(SIGPIPE, SIG_IGN);
     fprintf(stderr, "DOCVER_RESOURCE_LIMIT: %s\n", reason);
     fflush(stderr);
+    if (owned_child > 0) kill(owned_child, SIGKILL);
     /* The launcher must own this detached group before any child is started. */
     killpg(getpgrp(), SIGKILL);
     _exit(125);
@@ -90,12 +92,16 @@ int main(int argc, char **argv) {
         execv(argv[2], argv + 2);
         _exit(127);
     }
+    owned_child = child;
     const struct timespec interval = {0, 50000000};
     int status = 0;
     for (;;) {
         if (getppid() != launcher) reject("Launcher exited during conversion");
+        const pid_t child_group = getpgid(child);
+        if (child_group >= 0 && child_group != getpgrp()) reject("Child left owned process group");
         pid_t finished = waitpid(child, &status, WNOHANG);
         if (finished < 0) { if (errno == EINTR) continue; reject("Child wait failed"); }
+        if (finished == child) owned_child = 0;
         entries = 0;
         directory_size(root, 0);
         if (finished == child) break;

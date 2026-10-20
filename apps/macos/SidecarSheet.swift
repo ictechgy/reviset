@@ -51,16 +51,13 @@ struct OnlyOfficeSidecarSheet: View {
                     }.frame(maxHeight:130)
                 }
             }
-        }.padding(16).frame(minWidth:850,idealWidth:1200,minHeight:600,idealHeight:820)
+        }.padding(16).frame(minWidth:850,idealWidth:1200,minHeight:600,idealHeight:820).background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light)
         .task {
+            guard !Task.isCancelled,model.sidecarRequest?.id==request.id else{return}
             do {
-                let result=try await model.bridge.call("sidecarCreate",request.scope)
+                let result=try await model.bridge.call("sidecarCreate",request.scope,owner:request.owner)
                 if !Task.isCancelled,model.sidecarRequest?.id==request.id {payload=result;model.sidecarResult=result;shownPage=result["page"].int;pageInput=String(shownPage)}
             } catch {if !Task.isCancelled,model.sidecarRequest?.id==request.id {failure=error.localizedDescription;model.sidecarFailure=failure}}
-        }
-        .onDisappear {
-            let bridge=model.bridge,scope=request.scope
-            Task { _ = try? await bridge.call("sidecarClose",scope) }
         }
     }
     private func go(_ value:Int){guard value>=1&&value<=payload["pages"].int else{pageInput=String(shownPage);return};shownPage=value;pageInput=String(value)}

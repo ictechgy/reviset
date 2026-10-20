@@ -28,11 +28,21 @@
 
 참고 창은 숨김 페이지, 이미지뿐인 페이지, 짧거나 반복되는 문구처럼 모든 페이지의 대응 근거를 확보할 수 없는 문서를 거절한다. source-only 대응 검사로 불가능한 문서는 변환 전에 페이지 번호와 함께 알린다. 원본 구조의 제외·가림 상태를 반영해 페이지당 최대8개 고유 문구 후보를 쓰고, 변환 후에도 페이지 수·비율·다른 페이지 문구의 혼입을 검사한다. 이 조건이 문서 내용 전체의 정확도나 PowerPoint 동일성을 증명하지 않는다. 전체 페이지의 사용자가 이동하는 참고 화면을 보이므로, 선택 페이지만 검사하도록 대응 기준을 낮추지 않는다.
 
-입력·임시 파일·metadata·PDF를 포함한 job의 sampled256MiB 초과 거절, 파일 성장128MiB, process별 CPU90초, 감독 변환120초, stdout/stderr 각각1MiB 제한을 유지한다. 2k페이지·20M원문/PDF문자 및 별도8M비교/2B문자 검사 예산은 각각 독립적인 거절 조건이다. 페이지/문자 상한에 맞는 모든 문서를 받아들인다는 약속은 아니다. 매번 전체 문서를 검증·변환하며 미디어가 많은 문서는 더 일찍 제한될 수 있다. 자원 상한을 올리거나 보류를 정확 판독으로 세지 않는다. source unzip/XML 검증 같은 동기 준비 단계는 즉시 취소를 보장하지 않으며, 문구 대응과 PDF 페이지 검사는 중간 취소를 확인한다.
+입력·임시 파일·metadata·PDF를 포함한 job의 sampled256MiB 초과 거절, 파일 성장128MiB, process별 CPU90초, 감독 변환120초, stdout/stderr 각각1MiB 제한을 유지한다. 2k페이지·20M원문/PDF문자 및 source 준비와 PDF 검사 각각의8M비교/2B문자 검사 예산은 각각 독립적인 거절 조건이다. 페이지/문자 상한에 맞는 모든 문서를 받아들인다는 약속은 아니다. 매번 전체 문서를 검증·변환하며 미디어가 많은 문서는 더 일찍 제한될 수 있다. 자원 상한을 올리거나 보류를 정확 판독으로 세지 않는다. source unzip/XML 검증 같은 동기 준비 단계는 즉시 취소를 보장하지 않으며, 문구 대응과 PDF 페이지 검사는 중간 취소를 확인한다.
 
 후속 구현은 broker Mach 조회·등록, preference/LaunchServices, 다른 프로세스 신호, POSIX/SystemV IPC와 IOKit도 차단한다. 감독기는 부모 종료를 감시하고 로그 파이프가 닫혀도 자식 그룹 정리 전에 SIGPIPE로 죽지 않는다. helper의 실패 exit에서는 close를 기다리기 전에 그룹을 정리한다. 앱 정상 종료는 자체 참고 요청만 취소하고, 브리지는 앱 부모를 잃으면 자체 작업을 중단한다. macOS 회귀 테스트는 실제 규칙으로 내부 일반 파일 읽기 허용/경로 밖 읽기·쓰기/소켓/추가 fork·exec/환경·Mach 조회·신호 차단, 용량·symlink·로그·취소·timeout, 감독기 SIGKILL 및 부모 SIGKILL을 확인한다. 이 결과를 임의의 OS 취약점에 대한 완전 격리 증명으로 부르지 않는다.
 
 startup은 exclusive app-lock 아래 valid pending/closing/active-only lease, 빈 pre-lease 폴더와 검증된 seed만 복구한다. 알 수 없는 비어 있지 않은 폴더나 손상된 lease는 보존하고 UI에서 정리 실패 수와 폴더를 볼 수 있게 한다. 문서·보고서 열기는 유지한다. 새 smoke는 PDFKit의 실제 경로와 bridge PDF SHA, 선택 페이지, DB/report 바이트와 닫은 후 정리를 확인한다. 현재 단계에서 C 전체 검사·독립 리뷰·새 앱·이동 ZIP 결과는 아직 별도로 검증해야 한다.
+
+### 실제 C 앱 반례와 후속 D 소스
+
+C clean `6c032236b7c43800ea02a485007014871514df46`는 전체249테스트와 앱 빌드·fresh5버전을 통과했으나 첫 공개 PPTX의 실제 닫기 검사에서 `SIDECAR_CLEANUP`으로 실패했다. PDFKit 표시·선택3쪽·PDF 경로/SHA 검사 다음, report/DB 바이트 검사 전에 실패했으므로 그 뒤의 불변성 검사를 통과로 세지 않는다. 원문 실패·앱 바이트·capture를 `.omx/artifacts/native-sidecar-01/`에 보존한다. C 독립 양 lane은 실제 반례를 반영해 BLOCK/REQUEST_CHANGES로 판정했고 C ZIP은 만들지 않았다.
+
+D는 화면의 `.onDisappear` 대신 모델의 요청 교체·nil 전환에서 이전 요청의 취소 토큰과 고정 scope로 정리한다. 같은 토큰을 실제 bridge 실행에도 넘기므로 요청이 닫힌 뒤 늦게 시작되는 작업도 실행하지 못한다. Sheet가 전혀 없는 native model 회귀 검사가 프로젝트/보고서를 바꾸고 교체·닫기·지연 실행·다른 조회 보존·중복 정리 없음까지 확인한다. 참고 창의 밝은 배경도 명시한다.
+
+Claude C의 예산 중복 계산 지적은 source 준비에서 계산한 고유 문구를 요청 안에서 한 번만 보관하고 PDF 검사가 재사용하도록 수정한다. 두 단계의8M/2B 제한은 독립적이며, dense300쪽·8문구 pure control을 추가했다. 브리지의 부모 감시는 첫 탐지에서 timer를 지우고 controller를 중단해 반복 자기 SIGTERM이 finally를 끊지 않도록 한다. 감독기는 직접 자식 PID와 process group 변경도 검사하며, escaped-child OS control을 추가했다. reaped PID를 다시 kill하지 않는다. 파일 경로 비교는 symlink를 해소한다.
+
+Directory-data 전역 예외를 없애는 추가 후보는 실제 native probe가 exit134로 실패하여 채택하지 않았다. 통과한 기존 디렉터리 메타데이터/열람 예외를 유지하며, 임의 경로의 파일 내용이 허용되는 것으로 확대하지 않는다. 이름·메타데이터/일부 process-info 허용과 손상된 seed 보존은 알려진 WATCH다. D 집중18검사는 통과했으며 새 전체·독립 리뷰·실제 앱·300쪽·강제종료/재시작·이동 ZIP은 각각 추가 검증이 필요하다.
 
 ## 무료 도구 판독·렌더 연구 · 2026-10-20
 
@@ -57,7 +67,7 @@ OnlyOffice 실행 prototype은 공유 입력 검증·원본 복사·새0700폴�
 
 이전 prototype의 오래된 출력 재사용 문제는 새 폴더를 강제해 독립 코드 리뷰의6개 mock으로 닫았다. 후속 v3 격리는 정확한 고정 snapshot에서 코드 APPROVE·아키텍처 WATCH로 연구 범위의 F2/B1을 닫았다. PDF/캐시 식별자, 폰트 생성·배포 조건, 숨김 슬라이드·소비자 연결은 canonical 렌더러 채택 게이트로 남는다. 현재 검증 앱이나 canonical report의 렌더러를 변경하지 않았다. Claude·Grok의 유효한 응답은 실험 설계 논의이며 새 OCR 결과/소스 승인이 아니다. Grok 제한은1200초로 주었고 Agy는 quota 오류(exit3/출력0)라 리뷰로 계산하지 않는다.
 
-### 후속 네이티브 참고 미리보기 · 구현 검증 중
+### source A 중간 기록 · 후속 네이티브 참고 미리보기
 
 현재 소스에는 PDFKit의 선택적 OnlyOffice 참고 창을 추가했다. 고정 report/버전 occurrence/페이지/asset SHA를 검사하며 별도 UUID 작업·lease로 표시한다. 저장된 PageData·asset·raster·diff·MCP 결과에는 반영하지 않는다. 원문 전체에서 고유한 문구, 페이지 수·비율을 대조하고 숨김 슬라이드·모호한 연결은 거절한다. 화면은 추정임을 표시하며 근거 좌표를 덧씌우지 않는다. 창 닫기와 결과 생성이 겹쳐도 닫힌 작업이 다시 publish되지 않도록 marker 연결·정리를 분리했다.
 

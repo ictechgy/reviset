@@ -83,15 +83,16 @@ export function sidecarSource(report:ReportData,scope:SidecarScopeData){
 }
 
 type RenderedPage={width:number;height:number;text:string};
-function* sidecarMappingChecks(source:PageData[],rendered?:RenderedPage[]):Generator<void>{
-  if(!source.length||source.length>2000||source.some((p,i)=>p.page!==i+1||p.hidden!==false)||(rendered&&rendered.length!==source.length))fail('SIDECAR_MAPPING','숨김·누락·모호한 페이지가 있는 원문은 별도 미리보기로 연결하지 않습니다.');
+type MappingPlan={geometry:{width:number;height:number}[];anchors:string[][]};
+function mappingContains(){let comparisons=0,inspected=0;return (text:string,line:string)=>{if(++comparisons>8_000_000||(inspected+=text.length+line.length)>2_000_000_000)fail('SIDECAR_LIMIT','고유 문구의 대응 검사 한도를 넘었습니다.');return text.includes(line);};}
+function* prepareSidecarMapping(source:PageData[]):Generator<void,MappingPlan>{
+  if(!source.length||source.length>2000||source.some((p,i)=>p.page!==i+1||p.hidden!==false||![p.width,p.height].every(n=>Number.isFinite(n)&&n>0)))fail('SIDECAR_MAPPING','숨김·누락·모호한 페이지가 있는 원문은 별도 미리보기로 연결하지 않습니다.');
   if(source.reduce((n,p)=>n+p.elements.reduce((m,e)=>m+e.text.length,0),0)>20_000_000)fail('SIDECAR_LIMIT','참고 화면의 원문 검사 한도를 넘었습니다.');
   const lines=source.map(p=>[...new Set(p.elements.filter(e=>e.comparison_role!=='excluded'&&e.comparison_role!=='shadowed'&&!['occluded','hidden_render_mode'].includes(e.visibility??'')).flatMap(e=>e.text.split(/\r\n|\r|\n/u)).map(compact).filter(s=>s.length>=6&&s.length<=512&&/\p{L}/u.test(s)))].slice(0,64));
   const counts=new Map<string,number>();for(const page of lines)for(const line of page)counts.set(line,(counts.get(line)??0)+1);
   const sourceText=source.map(p=>compact(p.elements.map(e=>e.text).join(' ')));
   if(sourceText.reduce((n,s)=>n+s.length,0)>20_000_000)fail('SIDECAR_LIMIT','참고 화면의 원문 검사 한도를 넘었습니다.');
-  let comparisons=0,inspected=0;
-  const contains=(text:string,line:string)=>{if(++comparisons>8_000_000||(inspected+=text.length+line.length)>2_000_000_000)fail('SIDECAR_LIMIT','고유 문구의 대응 검사 한도를 넘었습니다.');return text.includes(line);};
+  const contains=mappingContains();
   // Exact line uniqueness is insufficient: a short heading can legitimately be
   // contained in another page's longer heading. Only source-global anchors vote.
   const anchors:string[][]=[];
@@ -99,9 +100,14 @@ function* sidecarMappingChecks(source:PageData[],rendered?:RenderedPage[]):Gener
     if(counts.get(line)===1&&!sourceText.some((other,j)=>j!==i&&contains(other,line)))found.push(line);
     if(found.length===8)break;
   }if(!found.length)fail('SIDECAR_MAPPING',`${i+1}쪽에서 고유한 원문 문구를 확인할 수 없어 별도 미리보기로 연결하지 않습니다.`);anchors.push(found);yield;}
-  if(!rendered)return;
-  for(let i=0;i<source.length;i++){
-    const a=source[i],b=rendered[i];
+  return {geometry:source.map(({width,height})=>({width,height})),anchors};
+}
+function* verifyRenderedMapping(plan:MappingPlan,rendered:RenderedPage[]):Generator<void>{
+  const {geometry,anchors}=plan,contains=mappingContains();
+  if(rendered.length!==geometry.length)fail('SIDECAR_MAPPING','변환된 페이지 수가 원문과 다릅니다.');
+  if(rendered.reduce((n,p)=>n+p.text.length,0)>20_000_000)fail('SIDECAR_LIMIT','참고 화면의 텍스트 검사 한도를 넘었습니다.');
+  for(let i=0;i<geometry.length;i++){
+    const a=geometry[i],b=rendered[i];
     if(![a.width,a.height,b.width,b.height].every(n=>Number.isFinite(n)&&n>0)||Math.abs((a.width/a.height)/(b.width/b.height)-1)>.001)fail('SIDECAR_MAPPING','변환된 페이지 크기가 원문과 다릅니다.');
     const text=compact(b.text);
     if(!anchors[i].length||!anchors[i].some(line=>contains(text,line)))fail('SIDECAR_MAPPING','페이지 대응을 확인할 고유한 원문을 찾지 못했습니다.');
@@ -110,12 +116,13 @@ function* sidecarMappingChecks(source:PageData[],rendered?:RenderedPage[]):Gener
   }
 }
 
-export function verifySidecarMapping(source:PageData[],rendered:RenderedPage[]):void{for(const step of sidecarMappingChecks(source,rendered))void step;}
-async function runMappingChecks(checks:Generator<void>,signal?:AbortSignal){
+function finishMappingChecks<T>(checks:Generator<void,T>):T{for(;;){const step=checks.next();if(step.done)return step.value;}}
+export function verifySidecarMapping(source:PageData[],rendered:RenderedPage[]):void{finishMappingChecks(verifyRenderedMapping(finishMappingChecks(prepareSidecarMapping(source)),rendered));}
+async function runMappingChecks<T>(checks:Generator<void,T>,signal?:AbortSignal):Promise<T>{
   signal?.throwIfAborted();
-  for(const step of checks){void step;await yieldTurn();signal?.throwIfAborted();}
+  for(;;){signal?.throwIfAborted();const step=checks.next();if(step.done)return step.value;await yieldTurn();signal?.throwIfAborted();}
 }
-export async function verifySidecarMappingCancellable(source:PageData[],rendered:RenderedPage[],signal?:AbortSignal):Promise<void>{await runMappingChecks(sidecarMappingChecks(source,rendered),signal);}
+export async function verifySidecarMappingCancellable(source:PageData[],rendered:RenderedPage[],signal?:AbortSignal):Promise<void>{const plan=await runMappingChecks(prepareSidecarMapping(source),signal);await runMappingChecks(verifyRenderedMapping(plan,rendered),signal);}
 
 export async function closeOnlyOfficeSidecar(library:string,scope:SidecarScopeData):Promise<void>{
   scope=SidecarScope.parse(scope);
@@ -181,7 +188,7 @@ export async function createOnlyOfficeSidecar(options:{library:string;resources:
   // Reject source-only ambiguity before signature checks, metadata preparation,
   // copying or converting a whole deck. The rendered correspondence is still
   // checked independently after conversion, with the same bounded policy.
-  await runMappingChecks(sidecarMappingChecks(pages),signal);
+  const mapping=await runMappingChecks(prepareSidecarMapping(pages),signal);
   const prepared=await provider(resources,signal);
   signal?.throwIfAborted();const paths=(await directories(library,true))!,folder=join(paths.jobs,scope.session_id),pending=join(paths.leases,scope.session_id+'.pending.json');
   let ownsFolder=false,ownsLease=false,published=false;
@@ -210,7 +217,7 @@ export async function createOnlyOfficeSidecar(options:{library:string;resources:
         rendered.push({width:v.width,height:v.height,text:fragments.join(' ')});p.cleanup();
       }
     }finally{signal?.removeEventListener('abort',abortPdf);await(abortedDestroy??task.destroy());}
-    await verifySidecarMappingCancellable(pages,rendered,signal);signal?.throwIfAborted();
+    await runMappingChecks(verifyRenderedMapping(mapping,rendered),signal);signal?.throwIfAborted();
     const parts=unzipSync(source,{filter:e=>/^ppt\/(slides|slideLayouts|slideMasters|theme)\/[^/]+\.xml$/u.test(e.name)}),known=new Set(prepared.info.font_families.map((s:string)=>s.toLowerCase())),missing=namedSourceFonts(Object.values(parts)).filter(f=>!known.has(f.toLowerCase()));
     await link(pending,join(paths.leases,scope.session_id+'.active.json'));published=true;
     return {...scope,path:output,page:selected.page.page,pages:pages.length,renderer:'ONLYOFFICE Desktop Editors',version:prepared.config.release_version,assessment:'inferred' as const,mapping:'unique_source_text_anchors_v1',source_sha256:byteHash(source),pdf_sha256:byteHash(pdf),converter_sha256:prepared.config.converter_sha256,font_inventory_sha256:prepared.config.font_inventory_sha256,omitted_font_warnings:Math.max(0,missing.length-20),warnings:['참고용 변환 화면입니다. 변경 이력과 AI 조회 결과에는 반영하지 않습니다.','PowerPoint와 픽셀 일치를 보장하지 않습니다. 그림자·글꼴·복합 개체를 원본과 대조하세요.',...missing.slice(0,20).map(f=>'대체될 수 있는 글꼴: '+(f.length>200?f.slice(0,200)+'…':f))]};

@@ -19,10 +19,10 @@ test('actual renderer guard confines direct IO, broker lookup, signals, resource
     // therefore cannot be explained by an absent broker. No preference is set.
     assert.equal(JSON.parse(execFileSync(probe,['broker-baseline','','',''],{encoding:'utf8'})).mach_result,0);
     const outside=join(root,'unexpected-write'),canary=join(root,'canary');await writeFile(canary,'public synthetic canary');
-    for(const mode of ['probe','fsize','aggregate','symlink','output','cancel','timeout','supervisor-kill']){
-      const folder=join(root,mode);await mkdir(folder,{mode:0o700});const controller=new AbortController(),wait=['cancel','timeout','supervisor-kill'].includes(mode);
+    for(const mode of ['probe','fsize','aggregate','symlink','output','cancel','timeout','supervisor-kill','escape']){
+      const folder=join(root,mode);await mkdir(folder,{mode:0o700});const controller=new AbortController(),wait=['cancel','timeout','supervisor-kill','escape'].includes(mode);
       if(mode==='probe')await writeFile(join(folder,'inside-canary'),'Public regular-file canary');
-      const pending=runTool(resolve('dist/native/DocverRendererGuard'),[folder,'/usr/bin/sandbox-exec','-p',onlyOfficeSidecarPolicy(folder,vendor,probe),probe,wait?'wait':mode,folder,outside,canary],{inheritEnv:false,env:{PATH:'/usr/bin:/bin',HOME:folder,TMPDIR:folder},signal:controller.signal,timeout:mode==='timeout'?1500:10000,maxBytes:1024*1024}).then(stdout=>({stdout,error:undefined}),error=>({stdout:'',error:error as Error&{code:string}}));
+      const pending=runTool(resolve('dist/native/DocverRendererGuard'),[folder,'/usr/bin/sandbox-exec','-p',onlyOfficeSidecarPolicy(folder,vendor,probe),probe,wait&&mode!=='escape'?'wait':mode,folder,outside,canary],{inheritEnv:false,env:{PATH:'/usr/bin:/bin',HOME:folder,TMPDIR:folder},signal:controller.signal,timeout:mode==='timeout'?1500:10000,maxBytes:1024*1024}).then(stdout=>({stdout,error:undefined}),error=>({stdout:'',error:error as Error&{code:string}}));
       let pids:number[]=[];
       if(wait){for(let i=0;i<100&&!existsSync(join(folder,'pids.json'));i++)await new Promise(r=>setTimeout(r,10));assert.ok(existsSync(join(folder,'pids.json')));const owners=JSON.parse(await readFile(join(folder,'pids.json'),'utf8'));pids=Object.values(owners);for(const pid of pids)owned.add(pid);if(mode==='cancel')controller.abort();if(mode==='supervisor-kill')process.kill(owners.supervisor,'SIGKILL');}
       const result=await pending;
@@ -35,6 +35,7 @@ test('actual renderer guard confines direct IO, broker lookup, signals, resource
         if(mode==='fsize'){assert.match(String(result.error),/ftruncate_result=-1 errno=27/u);assert.ok((await lstat(join(folder,'big.bin'))).size<=128*1024*1024);}
         if(mode==='aggregate')assert.match(String(result.error),/DOCVER_RESOURCE_LIMIT: Aggregate256MiB/u);
         if(mode==='symlink')assert.match(String(result.error),/DOCVER_RESOURCE_LIMIT: Output symlink refused/u);
+        if(mode==='escape')assert.match(String(result.error),/DOCVER_RESOURCE_LIMIT: Child left owned process group/u);
         if(mode==='output')assert.equal(result.error.code,'TOOL_OUTPUT_LIMIT');
         if(mode==='cancel')assert.equal(result.error.code,'CANCELLED');
         if(mode==='timeout')assert.equal(result.error.code,'TOOL_TIMEOUT');

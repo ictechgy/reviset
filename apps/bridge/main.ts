@@ -25,7 +25,7 @@ try{
     case 'sidecarCreate':{
       const d=SidecarScope.parse(args),report=service.snapshot(d.project_id,d.report_id),controller=new AbortController(),cancel=()=>controller.abort();
       process.once('SIGTERM',cancel);process.once('SIGINT',cancel);
-      const parent=process.ppid,parentWatch=setInterval(()=>{if(parent<=1||process.ppid!==parent)process.kill(process.pid,'SIGTERM');},100);parentWatch.unref();
+      const parent=process.ppid,parentWatch=setInterval(()=>{if(parent<=1||process.ppid!==parent){clearInterval(parentWatch);cancel();}},100);parentWatch.unref();
       try{value=await createOnlyOfficeSidecar({library:root,resources:join(dirname(fileURLToPath(import.meta.url)),'../onlyoffice-sidecar'),guard:join(dirname(process.execPath),'DocverRendererGuard'),report,scope:d,signal:controller.signal});}
       finally{clearInterval(parentWatch);process.removeListener('SIGTERM',cancel);process.removeListener('SIGINT',cancel);}break;
     }

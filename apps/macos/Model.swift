@@ -8,6 +8,7 @@ import CryptoKit
 // not need to compile the PDFKit sheet or its other view dependencies.
 struct SidecarRequest: Identifiable {
     let id = UUID().uuidString.lowercased()
+    let owner = BridgeRequestCancellation()
     let project: String
     let report: String
     let occurrence: String
@@ -33,7 +34,17 @@ struct SidecarRequest: Identifiable {
     @Published var rightPageID = ""
     @Published var busy = false
     @Published var sidecarConfigured = false
-    @Published var sidecarRequest: SidecarRequest?
+    @Published var sidecarRequest: SidecarRequest? {
+        didSet {
+            guard let previous=oldValue,previous.id != sidecarRequest?.id else{return}
+            previous.owner.cancel()
+            let bridge=bridge,scope=previous.scope
+            Task {
+                do{_ = try await bridge.call("sidecarClose",scope)}
+                catch{sidecarRecoveryWarning="참고 작업을 정리하지 못했습니다. 임시 작업 폴더를 확인하세요. "+error.localizedDescription}
+            }
+        }
+    }
     @Published var sidecarRecoveryWarning = ""
     var sidecarResult = JSON()
     var sidecarFailure = ""
