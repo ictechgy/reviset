@@ -4,7 +4,7 @@ import { QueryService } from '../query/index.js';
 import { canonical } from '../schema/index.js';
 export async function exportReport(service:QueryService,projectId:string,reportId:string,folder:string) {
   if(!service.allowedProjects.has(projectId))throw new Error('Project outside export scope');
-  const report=service.store.report(projectId,reportId);await mkdir(folder,{recursive:true});
+  const report=service.snapshot(projectId,reportId);await mkdir(folder,{recursive:true});
   const write=(name:string,data:string)=>writeFile(join(folder,name),data,'utf8');
   const json=(value:unknown)=>JSON.stringify(value,null,2)+'\n';
   const jsonl=(rows:unknown[])=>rows.map(canonical).join('\n')+'\n';

@@ -60,6 +60,8 @@ CLI 기본 저장소는 `.docver/`이며 `--store PATH`로 지정할 수 있습�
 
 앱의 **AI·내보내기**에서 현재 앱 위치와 프로젝트에 맞는 MCP 설정을 복사합니다. 패키지 안의 Node·MCP를 쓰므로 앱을 이동하면 설정을 다시 복사합니다. MCP는 report를 읽기 전용으로 조회하며 분석·파일 경로 조회·셸 실행 기능은 노출하지 않습니다. `latest`는 응답에서 고정 report ID로 해석하며, 인용에는 고정 ID를 사용하세요. 문서 내용은 실행 지시가 아닌 인용 데이터로 취급해야 합니다.
 
+버전별 내용 검색, 원문·노트·가림/OCR 층의 분할 읽기, 변경 전후값·근거·판독 한계 조회는 [AI용 MCP 조회 가이드](docs/MCP.md)를 참고하세요. `inspect_version`·`compare_versions` prompt도 같은 조회 순서를 안내합니다.
+
 내보내기는 전체 `report.json`, `manifest.json`, `changes.jsonl`, `bundle-decisions.jsonl`, `pages.jsonl`, `elements.jsonl`, `revisions.json`, `lineages.json`, `page-relations.jsonl`, `mapping-relations.json`, `history.md`, 페이지별 Markdown을 포함합니다. schema·범위·출력 예산은 [스키마 문서](docs/schemas/README.md)를 참조하세요.
 
 ## 검증과 설계 기록

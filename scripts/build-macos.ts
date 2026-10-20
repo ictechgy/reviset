@@ -6,7 +6,9 @@ import { createCanvas } from '@napi-rs/canvas';
 import { generateFixtures } from './generate-fixtures.js';
 import {preparePdfjs} from './prepare-pdfjs.js';
 if(process.platform!=='darwin'||process.arch!=='arm64')throw new Error('This local build currently targets macOS arm64.');
-const app=resolve('release/Docver.app'),contents=join(app,'Contents'),resources=join(contents,'Resources');
+const appName=process.env.DOCVER_APP_NAME??'Docver.app';
+if(!/^Docver(?:-[A-Za-z0-9]+)*\.app$/.test(appName))throw new Error('DOCVER_APP_NAME must be a Docver app name inside release.');
+const app=resolve('release',appName),contents=join(app,'Contents'),resources=join(contents,'Resources');
 await import('./build-native-helpers.js');await import('./prepare-office.js');
 // Only this generated bundle is replaced; never reuse stale runtimes or dependencies.
 await rm(app,{recursive:true,force:true});

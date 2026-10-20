@@ -67,6 +67,13 @@
     },
     "token_estimation": {
       "type": "string"
+    },
+    "query_context": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
     }
   },
   "required": [
