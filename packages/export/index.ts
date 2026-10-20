@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { QueryService } from '../query/index.js';
+import { QueryService, reportMetadata } from '../query/index.js';
 import { canonical } from '../schema/index.js';
 export async function exportReport(service:QueryService,projectId:string,reportId:string,folder:string) {
   if(!service.allowedProjects.has(projectId))throw new Error('Project outside export scope');
@@ -9,7 +9,7 @@ export async function exportReport(service:QueryService,projectId:string,reportI
   const json=(value:unknown)=>JSON.stringify(value,null,2)+'\n';
   const jsonl=(rows:unknown[])=>rows.map(canonical).join('\n')+'\n';
   const header={schema_version:report.schema_version,report_id:report.report_id};
-  await write('manifest.json',json({...service.query('get_report',{project_id:projectId,report_id:report.report_id,max_output_tokens:8000}).items[0],
+  await write('manifest.json',json({...reportMetadata(report),
     ...header,revisions:report.revisions.map(r=>({revision_id:r.revision_id,revision_occurrence_id:r.revision_occurrence_id,assets:r.assets})),coverage_gaps:report.coverage_gaps}));
   await write('report.json',json(report));
   // Full export and bounded interactive queries share the same immutable report loaded by QueryService.

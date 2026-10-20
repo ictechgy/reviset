@@ -61,6 +61,8 @@ const archivedBundle50Kernel=(version:string)=>version==='0.3.0-native.bundle.50
 const archivedBundle51Kernel=(version:string)=>version==='0.3.0-native.bundle.51';
 const currentLineageKernel=(version:string)=>version===ENGINE_VERSION||archivedLineageKernel(version)||archivedBundle50Kernel(version)||archivedBundle51Kernel(version);
 const resource=(r:ReportData,kind:string,key?:string)=>`docver://projects/${r.project_id}/reports/${r.report_id}/${kind}${key?'/'+key:''}`;
+export const reportMetadata=(r:ReportData)=>({schema_version:r.schema_version,report_id:r.report_id,project_id:r.project_id,engine_version:r.engine_version,schema_hash:r.schema_hash,timeline_revision_id:r.timeline_revision_id,mapping_revision_id:r.mapping_revision_id,
+  observation_environment:r.observation_environment,revision_count:r.revisions.length,change_count:r.changes.length,relation_count:r.mapping_relations?.length??0,bundle_decision_count:r.bundle_decisions?.length??0,relation_edge_count:r.matches.length,unresolved_candidates:r.candidates.filter(c=>c.status==='needs_review').length,resource_uri:resource(r,'manifest')});
 export class QueryService {
   constructor(readonly store:Store,readonly allowedProjects:Set<string>,private readonly loadSnapshot?:(projectId:string,reportId:string)=>ReportData) {}
   snapshot(projectId:string,reportId:string):ReportData {
@@ -89,7 +91,9 @@ export class QueryService {
     let locations:Map<string,{v:ReportData['revisions'][number];p:ReportData['revisions'][number]['pages'][number]}>|undefined;
     const pageFor=(pageId:string)=>(locations??=new Map(r.revisions.flatMap(v=>v.pages.map(p=>[p.page_id,{v,p}] as const)))).get(pageId);
     const element=()=> {
-      for(const v of r.revisions) for(const p of v.pages) {const e=p.elements.find(e=>e.observation_id===args.observation_id);if(e)return {v,p,e};}
+      let found:{v:ReportData['revisions'][number];p:ReportData['revisions'][number]['pages'][number];e:ElementData}|undefined;
+      for(const v of r.revisions)for(const p of v.pages)for(const e of p.elements)if(e.observation_id===args.observation_id){if(found)throw new DocverError('AMBIGUOUS_OBSERVATION','Observation ID is not unique within this report');found={v,p,e};}
+      if(found)return found;
       throw new DocverError('OBSERVATION_NOT_FOUND','Observation is outside this report');
     };
     switch(name) {
@@ -100,15 +104,18 @@ export class QueryService {
         if(Boolean(args.from)!==Boolean(args.to))throw new DocverError('RANGE_REQUIRED','Supply both from and to occurrence IDs');
         const from=args.from?resolveReadingRevision(r,args.from):undefined,to=args.to?resolveReadingRevision(r,args.to):undefined;
         let change=r.changes.find(c=>c.change_id===args.change_id),computed=false;
-        if(change&&from&&to&&(change.from_occurrence!==from.revision_occurrence_id||change.to_occurrence!==to.revision_occurrence_id))throw new DocverError('CHANGE_SCOPE','Stored change is outside the selected endpoints');
+        if(from&&to&&r.revisions.indexOf(from)>=r.revisions.indexOf(to))throw new DocverError('RANGE_ORDER','from must precede to');
+        if(change&&from&&to){
+          const start=r.revisions.indexOf(from),end=r.revisions.indexOf(to),a=r.revisions.findIndex(v=>v.revision_occurrence_id===change!.from_occurrence),b=r.revisions.findIndex(v=>v.revision_occurrence_id===change!.to_occurrence);
+          if(a<start||b>end)throw new DocverError('CHANGE_SCOPE','Stored change is outside the selected history range');
+        }
         if(!change&&from&&to){
           change=this.rangeChange(r,args);computed=true;
         }
         if(!change)throw new DocverError('CHANGE_NOT_FOUND','Change is outside this report; computed range changes also require from/to occurrence IDs');
         return changeContentRows(r,change,args,computed);
       }
-      case 'get_report': return [{schema_version:r.schema_version,report_id:r.report_id,project_id:r.project_id,engine_version:r.engine_version,schema_hash:r.schema_hash,timeline_revision_id:r.timeline_revision_id,mapping_revision_id:r.mapping_revision_id,
-        observation_environment:r.observation_environment,revision_count:r.revisions.length,change_count:r.changes.length,relation_count:r.mapping_relations?.length??0,bundle_decision_count:r.bundle_decisions?.length??0,relation_edge_count:r.matches.length,unresolved_candidates:r.candidates.filter(c=>c.status==='needs_review').length,resource_uri:resource(r,'manifest')}];
+      case 'get_report':return [reportMetadata(r)];
       case 'list_revisions':return r.revisions.map(({pages,...v})=>({...v,page_count:pages.length,coverage_gap_count:v.coverage_gaps.length,coverage_gaps:undefined}));
       case 'list_bundle_decisions': {
         let occurrence:string|undefined;
@@ -138,7 +145,7 @@ export class QueryService {
           const empty=roi?.primary_empty_characters??[],character=empty[args.ocr_empty_character_index];
           if(!character)throw new DocverError('OCR_CHARACTER_NOT_FOUND','Empty-character evidence is outside this observation');
           const text=textChunk(character.text,args.text_offset,Math.min(32,args.text_length));
-          return [{observation_id:e.observation_id,page_id:p.page_id,page:p.page,ocr_empty_character:{index:args.ocr_empty_character_index,count:empty.length,offset:character.offset,bbox:character.bbox,ink_pixels:character.ink_pixels,method:character.method,text,text_offset:args.text_offset,next_text_offset:args.text_offset+text.length<character.text.length?args.text_offset+text.length:null,next_index:args.ocr_empty_character_index+1<empty.length?args.ocr_empty_character_index+1:null}}];
+          return [{observation_id:e.observation_id,revision_occurrence_id:v.revision_occurrence_id,page_id:p.page_id,page:p.page,ocr_empty_character:{index:args.ocr_empty_character_index,count:empty.length,offset:character.offset,bbox:character.bbox,ink_pixels:character.ink_pixels,method:character.method,text,text_offset:args.text_offset,next_text_offset:args.text_offset+text.length<character.text.length?args.text_offset+text.length:null,next_index:args.ocr_empty_character_index+1<empty.length?args.ocr_empty_character_index+1:null}}];
         }
         if(args.ocr_context_index!==undefined){
           if(!context)throw new DocverError('OCR_CONTEXT_NOT_FOUND','OCR context is outside this observation');
@@ -147,7 +154,7 @@ export class QueryService {
           const text=observed?textChunk(observed.text,args.text_offset,Math.min(32,args.text_length)):undefined,
             alternativeText=alternative?textChunk(alternative.text,args.ocr_alternative_offset,Math.min(32,args.ocr_alternative_length)):undefined,
             tokens=observed?.token_bboxes.slice(args.ocr_token_offset,args.ocr_token_offset+args.ocr_token_limit);
-          return [{observation_id:e.observation_id,page_id:p.page_id,page:p.page,ocr_context:{index:args.ocr_context_index,languages:context.languages,padding:context.padding,scale:context.scale,crop_bbox:context.crop_bbox,status:context.status,observation_count:context.observations.length,next_index:args.ocr_context_index+1<roi!.contexts.length?args.ocr_context_index+1:null,
+          return [{observation_id:e.observation_id,revision_occurrence_id:v.revision_occurrence_id,page_id:p.page_id,page:p.page,ocr_context:{index:args.ocr_context_index,languages:context.languages,padding:context.padding,scale:context.scale,crop_bbox:context.crop_bbox,status:context.status,observation_count:context.observations.length,next_index:args.ocr_context_index+1<roi!.contexts.length?args.ocr_context_index+1:null,
             reading:observed?{index:args.ocr_observation_index,next_index:args.ocr_observation_index+1<context.observations.length?args.ocr_observation_index+1:null,text,text_offset:args.text_offset,next_text_offset:args.text_offset+text!.length<observed.text.length?args.text_offset+text!.length:null,text_length:observed.text.length,confidence:observed.confidence,bbox:observed.bbox,ink_coverage:observed.ink_coverage,
               token_bboxes:tokens,token_offset:args.ocr_token_offset,token_count:observed.token_bboxes.length,next_token_offset:args.ocr_token_offset+tokens!.length<observed.token_bboxes.length?args.ocr_token_offset+tokens!.length:null,
               alternative_count:observed.alternatives.length,alternative:alternative?{index:args.ocr_alternative_index,text:alternativeText,confidence:alternative.confidence,text_offset:args.ocr_alternative_offset,text_length:alternative.text.length,next_text_offset:args.ocr_alternative_offset+alternativeText!.length<alternative.text.length?args.ocr_alternative_offset+alternativeText!.length:null}:undefined}:undefined}}];
@@ -155,7 +162,7 @@ export class QueryService {
         const text=textChunk(e.text,args.text_offset,args.text_length);
         const alternative=e.ocr?.alternatives[args.ocr_alternative_index],alternativeText=alternative?textChunk(alternative.text,args.ocr_alternative_offset,args.ocr_alternative_length):undefined;
         return [{...e,text,normalized_text:undefined,ocr:ocrSummary(e.ocr),ocr_alternative:alternative?{index:args.ocr_alternative_index,confidence:alternative.confidence,text:alternativeText,text_length:alternative.text.length,text_offset:args.ocr_alternative_offset,next_text_offset:args.ocr_alternative_offset+alternativeText!.length<alternative.text.length?args.ocr_alternative_offset+alternativeText!.length:null}:undefined,visibility_spans:args.span_limit?chunk:undefined,visibility_evidence:args.appearance_evidence_limit?evidence:undefined,visibility_span_count:spans.length,visibility_evidence_count:appearance.length,span_offset:args.span_offset,next_span_offset:args.span_offset+chunk.length<spans.length?args.span_offset+chunk.length:null,appearance_evidence_offset:args.appearance_evidence_offset,next_appearance_evidence_offset:args.appearance_evidence_offset+evidence.length<appearance.length?args.appearance_evidence_offset+evidence.length:null,text_offset:args.text_offset,next_text_offset:args.text_offset+text.length<e.text.length?args.text_offset+text.length:null,
-          revision_id:v.revision_id,page_id:p.page_id,page:p.page,resource_uri:resource(r,'evidence',e.observation_id)}];
+          revision_id:v.revision_id,revision_occurrence_id:v.revision_occurrence_id,page_id:p.page_id,page:p.page,resource_uri:resource(r,'evidence',e.observation_id)}];
       }
       case 'list_changes': {
         let changes=r.changes;

@@ -32,14 +32,14 @@ MCP prompts `inspect_version`, `compare_versions`도 위 흐름을 제공한다.
 
 | section | 읽는 값 |
 | --- | --- |
-| `comparison` · 기본 | 실제 비교에 선택한 문구. OCR 추정이 들어갈 수 있으며 완벽한 판독을 뜻하지 않는다. |
+| `comparison` · 기본 | 실제 비교에 선택한 문구. 관측 취소선이 비교용으로 남아 있거나 OCR 추정이 들어갈 수 있다. 현재 유효한 본문이나 완벽한 판독과 같다고 가정하지 않는다. |
 | `source` | 추출한 원문 `Page.text`. 가림·취소선·invisible OCR층 등을 포함할 수 있다. |
 | `visible` | 별도로 저장된 원문 가시성 관측. 관측 취소선이 포함될 수 있으므로 active 내용과 같다고 가정하지 않는다. |
 | `unresolved` / `suppressed` | 별도로 저장된 미확정/가려진 원문층. |
 | `ocr` / `ocr_unresolved` | 저장된 화면 OCR과 미확정 OCR. 추정임을 유지한다. |
 | `notes` | 발표자 노트. PDF 등의 `null`은 unavailable이며 빈 문자열이나 삭제가 아니다. |
 
-없는 선택 필드는 `text:null`, `field_state:not_recorded`로 구분한다. `notes:null`은 `unavailable`, 실제 빈 문자열은 `empty`다. `text_assessment`, `comparison_basis`, OCR 상태·판독 한계 수, 원본/제공 PDF 역할을 함께 읽는다. 사람의 PDF 페이지 연결은 PPTX 원본 충실도나 OCR 문구 정확도를 인증하지 않는다.
+없는 선택 필드는 `text:null`, `field_state:not_recorded`로 구분한다. `notes:null`은 `unavailable`, 실제 빈 문자열은 capability가 available일 때 `empty`다. 판독 capability가 unavailable/실패인데 저장된 값만 빈 경우 `empty_unverified`로 반환하므로 내용이 없다는 뜻으로 해석하지 않는다. `text_assessment`, `comparison_basis`, OCR 상태·판독 한계 수, 원본/제공 PDF 역할을 함께 읽는다. 사람의 PDF 페이지 연결은 PPTX 원본 충실도나 OCR 문구 정확도를 인증하지 않는다.
 
 긴 내용은 `text_offset`·`text_length`로 읽고 반환된 `next_text_offset`이 null일 때까지 이어 읽는다. `text_length` 출력은 전체 필드 길이, `text_sha256`은 전체 필드 UTF-8 바이트의 SHA-256이다. 입력 `text_length`는 원하는 청크 길이다. offset은 UTF-16 code unit이며 Unicode scalar 중간을 자르지 않는다. 청크는 전송 예산에 따라 더 짧아질 수 있다.
 
@@ -51,11 +51,11 @@ MCP prompts `inspect_version`, `compare_versions`도 위 흐름을 제공한다.
 
 `revision_id`, `format:pptx|pdf`, `section`으로 범위를 한정한다. **페이지마다 첫 match 하나**를 버전·저장 페이지 순서로 반환하므로 한 글자 검색도 페이지 내 무한 hit 목록을 만들지 않는다. `query_context.result_scope`는 선택 필드만 검색했음을 명시한다. comparison에서 0건이라는 사실을 전체 문서·노트·가려진 층에 문구가 없다는 뜻으로 넓히지 않는다.
 
-검색은 위치·상태를 간결하게 반환한다. `content_tool:get_page_content`와 같은 occurrence/page/section으로 상세 문구·고정 resource URI를 얻는다. 완전한 요소 join과 offset 대응을 증명한 경우에만 observation ID·visibility·table provenance를 붙인다. 대응을 증명하지 못하면 `element_attribution:not_mapped`, 여러 요소를 가로지르면 `spans_elements:true`이며 단일 요소 근거를 만들어 붙이지 않는다.
+검색은 위치·상태를 간결하게 반환한다. `content_tool:get_page_content`와 같은 occurrence/page/section으로 상세 문구·고정 resource URI를 얻는다. 필드 구성 순서·요소 join과 offset을 대조하고 반복 문구/포함 관계의 모호성이 없는 경우에만 observation ID·visibility·table provenance를 붙인다. 대응을 증명하지 못하면 `element_attribution:not_mapped`, 여러 요소를 가로지르면 `spans_elements:true`이며 단일 요소 근거를 만들어 붙이지 않는다.
 
 ## 정확한 변경과 한계 복구
 
-`get_change(change_id,component)`의 component는 `summary`, `before`, `after`, `evidence`, `coverage_gaps`, `coverage_features`, `lineage_reasons`, `topology`다. summary의 lineage·문구/화면/영역 대응 판정과 component 수를 먼저 확인한다. `null` 전후값과 빈 문자열은 다르다. `range_net`의 계산된 변경 ID에는 조회 당시의 `from`·`to` occurrence도 함께 넣는다. 과거 엔진의 selector로 발급한 ID도 기존 recovery 규칙으로 조회하며 새 ID로 바꾸지 않는다.
+`get_change(change_id,component)`의 component는 `summary`, `before`, `after`, `evidence`, `coverage_gaps`, `coverage_features`, `lineage_reasons`, `topology`다. summary의 lineage·문구/화면/영역 대응 판정과 component 수를 먼저 확인한다. `null` 전후값과 빈 문자열은 다르다. `range_net`의 계산된 변경 ID에는 조회 당시의 `from`·`to` occurrence도 함께 넣는다. 과거 엔진의 selector로 발급한 ID도 기존 recovery 규칙으로 조회하며 새 ID로 바꾸지 않는다. 단, 중복 source alias를 from/to에 그대로 넣으면 새 도구는 거절하므로 정확한 occurrence를 지정한다. 기존 get_evidence의 역사적 alias 동작은 유지한다. 저장된 이력 변경에는 해당 변경을 포함하는 from/to 범위도 사용할 수 있다.
 
 목록은 `next_cursor`로, 개별 긴 문자열은 `next_text_offset`으로 잇는다. 여러 행인 evidence/한계/reason은 반환된 **`component_index`를 선택한 새 호출**에서 그 행의 text offset을 이어 읽는다. 이때 목록 cursor를 함께 재사용하지 않는다. cursor는 보고서와 필터에 묶이므로 text offset이나 component가 달라지면 다른 조회다.
 

@@ -32,8 +32,8 @@ function readingState(page:PageData,section:Section){
   const value=readingText(page,section),isOcr=section==='ocr'||section==='ocr_unresolved'||section==='comparison'&&basis==='raster_ocr';
   const selected=section==='comparison'&&basis==='hybrid_regions_v1'?comparisonRegions(page).filter(e=>e.comparison_role==='selected'):[];
   const assessment=isOcr?'inferred':selected.some(e=>e.provenance==='inferred')?(selected.some(e=>e.provenance==='observed')?'mixed':'inferred'):'observed';
-  return {section,field_state:value===null?(section==='notes'?'unavailable':'not_recorded'):value.length?'present':'empty',text_assessment:assessment,
-    availability:value===null?'unavailable':section==='notes'?page.capabilities.notes:isOcr?(page.ocr?.status==='available'?'available':'unavailable'):page.capabilities.text,
+  const availability=value===null?'unavailable':section==='notes'?page.capabilities.notes:isOcr?(page.ocr?.status==='available'?'available':'unavailable'):page.capabilities.text;
+  return {section,field_state:value===null?(section==='notes'?'unavailable':'not_recorded'):value.length?'present':availability==='available'?'empty':'empty_unverified',text_assessment:assessment,availability,
     interpretation:section==='source'?'raw_may_include_hidden_struck_occluded':section==='notes'?'separate_speaker_notes':section==='comparison'?'selected_not_verified_truth':'separate_observation_not_active',
     comparison_basis:basis,ocr_status:page.ocr?.status??'not_requested',coverage_gap_count:page.coverage_gaps.length};
 }
@@ -59,9 +59,13 @@ function hitAttribution(page:PageData,section:Section,value:string,start:number,
   else if(section==='comparison')elements=page.comparison_basis==='hybrid_regions_v1'?comparisonRegions(page).filter(e=>e.comparison_role==='selected'):page.comparison_basis==='raster_ocr'?primaryOcr.filter(e=>e.visibility==='visible'):page.visible_text===undefined?source:visible;
   // A substring's coincidental presence in an element is not a coordinate map.
   if(!elements||elements.map(e=>e.text).join('\n')!==value)return {element_attribution:'not_mapped',spans_elements:null};
+  const ordering=(e:typeof page.elements[number])=>section==='comparison'&&page.comparison_basis==='hybrid_regions_v1'?e.comparison_order??e.reading_order:e.reading_order;
+  if(elements.some((e,i)=>i>0&&ordering(elements![i-1])>ordering(e)))return {element_attribution:'ambiguous',spans_elements:null};
   let offset=0;const containing=elements.filter(e=>{const left=offset;offset+=e.text.length+1;return start>=left&&start+length<=left+e.text.length;});
   if(containing.length!==1)return {element_attribution:'exact_field_join',spans_elements:true};
-  const e=containing[0];return {element_attribution:'exact_field_join',spans_elements:false,observation_id:e.observation_id,provenance:e.provenance,visibility:e.visibility??'not_recorded',comparison_role:e.comparison_role??'not_recorded',table_origin:e.table?.origin,table_assessment:e.table?.assessment};
+  const e=containing[0];
+  if(elements.some(other=>other!==e&&other.text.includes(e.text)))return {element_attribution:'ambiguous',spans_elements:null};
+  return {element_attribution:'exact_field_join',spans_elements:false,observation_id:e.observation_id,provenance:e.provenance,visibility:e.visibility??'not_recorded',comparison_role:e.comparison_role??'not_recorded',table_origin:e.table?.origin,table_assessment:e.table?.assessment};
 }
 export function searchContentRows(r:ReportData,args:SearchArgs):Record<string,unknown>[] {
   const revisions=args.revision_id?[resolveReadingRevision(r,args.revision_id)]:r.revisions;

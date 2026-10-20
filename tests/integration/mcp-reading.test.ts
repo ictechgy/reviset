@@ -148,3 +148,18 @@ test('export uses the same snapshot seam and preserves exact raw fields and chan
   const folder=await mkdtemp(join(tmpdir(),'docver-reading-export-')),r=fixture(),fake={report:()=>{throw Error('must use snapshot seam');}} as unknown as Store,q=new QueryService(fake,new Set([r.project_id]),()=>r),original=canonical(r);
   try{await exportReport(q,r.project_id,r.report_id,folder);assert.equal(canonical(JSON.parse(await readFile(join(folder,'report.json'),'utf8'))),original);assert.equal(readText(q,'get_page_content',{...scope(r),revision_id:'occ_a',page_id:'a',section:'notes'}),r.revisions[0].pages[0].notes);assert.equal(canonical(r),original);}finally{await rm(folder,{recursive:true,force:true});}
 });
+test('advisor regressions: containing history ranges, ambiguous repeated-element attribution, unavailable empty fields and unbounded export metadata',async()=>{
+  const r=fixture(),q=service(r),common=scope(r),p=r.revisions[0].pages[0];
+  assert.equal(q.query('get_change',{...common,change_id:'change_reading',from:'occ_a',to:'occ_c'}).items[0].change_id,'change_reading');
+  assert.throws(()=>q.query('get_change',{...common,change_id:'change_reading',from:'occ_c',to:'occ_a'}),{code:'RANGE_ORDER'});
+  for(const order of [false,true]){
+    const first={...p.elements[0],text:'Revenue',reading_order:0,observation_id:'visible',visibility:'visible' as const},second={...first,observation_id:'covered',reading_order:1,visibility:'occluded' as const};p.elements=order?[second,first]:[first,second];p.text='Revenue\nRevenue';
+    const hit=q.query('search_content',{...common,text:'Revenue',section:'source'}).items[0];assert.equal(hit.element_attribution,'ambiguous');assert.equal(hit.observation_id,undefined);
+  }
+  p.elements=[{...p.elements[0],text:'a',reading_order:0},{...p.elements[1],text:'b\na',reading_order:1}];p.text='a\nb\na';assert.equal(q.query('search_content',{...common,text:'a',section:'source'}).items[0].element_attribution,'ambiguous');
+  p.notes='';p.capabilities.notes='unavailable';assert.equal(q.query('get_page_content',{...common,revision_id:'occ_a',page_id:'a',section:'notes'}).items[0].field_state,'empty_unverified');
+  const obs=p.elements[0].observation_id;assert.equal(q.query('get_element',{...common,observation_id:obs}).items[0].revision_occurrence_id,'occ_a');r.revisions[1].pages[0].elements[0].observation_id=obs;
+  assert.throws(()=>q.query('get_element',{...common,observation_id:obs}),{code:'AMBIGUOUS_OBSERVATION'});assert.throws(()=>q.query('get_evidence',{...common,observation_id:obs}),{code:'AMBIGUOUS_OBSERVATION'});
+  r.observation_environment={large_environment:'가나다😀'.repeat(6000)};const folder=await mkdtemp(join(tmpdir(),'docver-large-manifest-'));
+  try{await exportReport(q,r.project_id,r.report_id,folder);const manifest=JSON.parse(await readFile(join(folder,'manifest.json'),'utf8'));assert.equal(manifest.engine_version,r.engine_version);assert.equal(manifest.schema_hash,r.schema_hash);assert.deepEqual(manifest.observation_environment,r.observation_environment);assert.equal(manifest.truncated,undefined);}finally{await rm(folder,{recursive:true,force:true});}
+});
