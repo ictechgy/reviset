@@ -77,3 +77,18 @@ npm run cli -- query --project prj_demo --report rpt_fixed --tool list_coverage_
 새 조회는 저장된 판독을 더 잘 읽게 하는 기능이다. 미해결 OCR 오인식이나 PPTX 렌더 차이를 없애는 기능으로 해석하지 않는다. 실제 앱·ZIP의 검증 범위와 남은 품질 게이트는 [QUALITY.md](QUALITY.md)와 `release/validation.json`에 따로 고정한다.
 
 페이지별 Markdown도 MCP와 같은8개 section과 field_state/availability/관측·추정/원본·제공PDF 역할을 표시한다. JSON/JSONL의 저장 원문과 변경 ID는 그대로 보존한다. 내보내기는 새 폴더 또는 빈 폴더를 사용하며 기존 파일이 있으면 `EXPORT_DESTINATION_NOT_EMPTY`로 거절한다. 서로 다른 보고서의 페이지 파일이 섞이지 않도록 기존 폴더를 덮어쓰지 않는다.
+
+
+## 실제 앱과 AI 연결 검증
+
+`release/Docver-MCP.app`의 **AI·내보내기**에서 현재 프로젝트의 MCP 설정을 복사한다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 실행한다. 앱 이동 후에는 설정을 다시 복사한다. 이 패키지의 MCP API는 `0.4.0-mcp.1`, 저장 보고서의 판독·diff 엔진은 `0.4.0-native.bundle.53`이다.
+
+고정 소스 `78e000865ce61926415b9c95b2355a5cf30372ad`에서 전체234검사, 실제 앱/MCP9시나리오, ZIP 이동·최소PATH·서명13검사를 통과했다. 새5버전과 기존900쪽 보고서를 실제 포함 MCP로 읽고 원문·노트·변경 전후·근거·검색 순서·한계 개수와 SQLite 불변을 확인했다. 900쪽 조회는 기존 보고서 재열기이며 새 OCR/분석 성능 검사가 아니다.
+
+Claude도 모델 계정 변경 없이 읽기 전용 MCP만 사용해 합성5버전을 직접 조사했다. 실제 읽기 MCP 호출37회(구조화 출력1회 별도) 후 본문·노트 상태/원문·정확한 버전/페이지ID, 두 숫자 변경의 전체 전후값과 양쪽 근거 인용, 전체이력의 추가1/삭제1과 최초↔최종 순변경의 추가0/삭제0을 저장 보고서에 대조해 통과했다. 정답 값은 평가 프롬프트에 넣지 않았다. 소스 리뷰(Claude6runtime 승인·Grok수정범위 승인)와 이 실제 사용성 검증은 별도 증거다.
+
+이 실제 사용 중 기본4000B에서 긴 인용 메타데이터가 들어가지 않아 `OUTPUT_BUDGET_TOO_SMALL`이 한 번 반환됐고, Claude는 `max_output_tokens:8000`으로 정상 복구했다. 일반적인 인용 조회도 메타데이터 길이에 따라 기본 예산을 넘을 수 있으므로 이 오류에는 8000을 사용한다. `truncated`/continuation과 판독 한계를 항상 확인한다. 이는 모델 토큰 수가 아닌 두 JSON 복사본을 포함한 보수적 UTF8 byte 예산이다.
+
+페이지 Markdown의 CR/CRLF는 표시용 LF로 정규화된다. `text_length`/`text_sha256`은 저장 원문의 값이며, 추출 문구의 원래 줄바꿈은 JSON/JSONL 또는 MCP 청크로 확인한다. 내보내기 실패는 부분 폴더를 남길 수 있으며 원자적 트랜잭션이 아니다.
+
+기존 alias/작은예산의 summary호환은 유지한다. 정밀 AI 조회는 occurrenceID와 새4개읽기도구를 사용한다. 전체 보고서/row/필드hash를 메모리에 만드는 비용은 남아 있고 CPU/RSS/p95 상한을 보장하지 않는다. OCR과 원본PowerPoint 충실도의 이전 미통과 게이트도 이 MCP 작업으로 합격 처리하지 않는다. 상세 실행은 `release/validation.json`과 `.omx/artifacts/ai-mcp-01/composite-qualification.json`에 보존한다.

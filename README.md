@@ -4,9 +4,9 @@ PPTX·PDF 버전의 페이지 대응, 숫자 수정, 중간 삽입·삭제와 �
 
 ## Mac에서 사용
 
-현재 Mac에서 빌드한 앱은 `release/Docver.app`입니다. 더블클릭해서 실행하고 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**를 선택합니다. 파일 순서를 버전 순서로 사용하며, PPTX 또는 PDF 하나만으로도 유효합니다. 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
+현재 Mac에서 검증한 앱은 `release/Docver-MCP.app`입니다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 실행하세요. 더블클릭해서 실행하고 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**를 선택합니다. 파일 순서를 버전 순서로 사용하며, PPTX 또는 PDF 하나만으로도 유효합니다. 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
 
-최근 검증본은 [Docver.app](release/Docver.app)과 [arm64 ZIP](release/Docver-0.4.0-native53-svg-guard-v1-arm64.zip)입니다. 빌드 원본은 `3ff0af791b661c8243ae8276a76e0c3a47644be9`이며, 223개 테스트·실제 앱 11개 시나리오·ZIP 이동 실행 검사를 통과했습니다. 상세 증거는 [검증 기록](release/validation.json), 남은 OCR·PowerPoint 충실도 문제는 [품질 현황](docs/QUALITY.md)에 기록합니다. 이 결과는 모든 문서를 완벽히 판독한다는 의미가 아닙니다.
+최근 검증본은 [Docver-MCP.app](release/Docver-MCP.app)과 [arm64 ZIP](release/Docver-0.4.0-mcp1-arm64.zip)입니다. 빌드 원본은 `78e000865ce61926415b9c95b2355a5cf30372ad`이며, 234개 테스트·앱/MCP 9개 시나리오·ZIP 이동 실행 13개 검사를 통과했습니다. Claude가 실제 포함 MCP로 합성5버전의 본문·노트·숫자 변경·중간 삽입/삭제를 읽은 답변도 저장 원문과 대조했습니다. 상세 증거는 [검증 기록](release/validation.json), MCP 사용법은 [조회 가이드](docs/MCP.md), 남은 OCR·PowerPoint 충실도 문제는 [품질 현황](docs/QUALITY.md)에 기록합니다. 이 결과는 모든 문서의 완벽한 판독을 뜻하지 않습니다.
 
 - 인접 버전의 1:1 연결·해제·1:N 분할·N:1 병합을 수정합니다. 한 관계에서 최대32페이지를 고르고 이유를 남기며, 모든 분기를 전체 이력과 원문에서 따로 열 수 있습니다.
 - 같은 버전의 PPTX 슬라이드와 제공 PDF 페이지를 별도 창에서 연결·해제·재연결하고 이유·대체된 연결을 보존합니다. 과거 보고서에서는 연결 이력을 조회합니다. 사용자 연결은 참고용이며 PowerPoint 화면 충실도를 보증하지 않습니다.
@@ -27,8 +27,8 @@ PPTX·PDF 버전의 페이지 대응, 숫자 수정, 중간 삽입·삭제와 �
 ```sh
 npm ci
 npm run check
-npm run mac:build
-open release/Docver.app
+DOCVER_APP_NAME=Docver-MCP.app npm run mac:build
+open release/Docver-MCP.app
 ```
 
 ## PDF 표시 상태와 표
