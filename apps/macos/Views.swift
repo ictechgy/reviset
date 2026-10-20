@@ -137,6 +137,7 @@ struct MainView: View {
             }
         }.onChange(of:model.tab){if model.tab=="export"{Task{await model.loadMCP()}}else{model.changeRange()}}
         .sheet(isPresented:$model.importSheet){ImportView()}
+        .sheet(item:$model.sidecarRequest){request in OnlyOfficeSidecarSheet(request:request).environmentObject(model)}
         .sheet(isPresented:$model.bundleSheet){BundleSheet(projectID:model.bundleProjectID,reportID:model.bundleReportID,occurrence:model.bundleOccurrence,initialSource:model.bundleSourceID).environmentObject(model)}
         .task {await model.start()}
     }

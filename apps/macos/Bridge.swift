@@ -53,7 +53,7 @@ final class Bridge: @unchecked Sendable {
     func call(_ action: String, _ args: [String: Any] = [:], analysis: Bool = false, progress: (@Sendable (JSON) -> Void)? = nil) async throws -> JSON {
         let request = try JSON(["action": action, "args": args]).data()
         if analysis { lock.withLock { cancelled = false } }
-        let cancellation=action == "changes" && !analysis ? RangeRequestCancellation():nil
+        let cancellation=["changes","sidecarCreate"].contains(action) && !analysis ? RangeRequestCancellation():nil
         return try await withTaskCancellationHandler(operation: {
           try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {

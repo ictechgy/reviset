@@ -18,6 +18,8 @@ import CryptoKit
     @Published var leftPageID = ""
     @Published var rightPageID = ""
     @Published var busy = false
+    @Published var sidecarConfigured = false
+    @Published var sidecarRequest: SidecarRequest?
     @Published var loading = false
     @Published var loadingChanges = false
     @Published var committing = false
@@ -75,7 +77,12 @@ import CryptoKit
     func refresh() async throws { projects = try await bridge.call("projects").array }
     func start() async {
         guard error.isEmpty && !started else {if !started{initializing=false};return};started = true;defer{initializing=false}
-        do { _ = try await bridge.call("recover"); try await refresh(); if let p = projects.first { await selectProject(p["project_id"].string) } }
+        do {
+            _ = try await bridge.call("recover")
+            _ = try? await bridge.call("sidecarRecover")
+            sidecarConfigured = (try? await bridge.call("sidecarInfo")["configured"].bool) ?? false
+            try await refresh(); if let p = projects.first { await selectProject(p["project_id"].string) }
+        }
         catch { fail(error) }
     }
     func selectProject(_ id: String, snapshot: String? = nil) async {
@@ -267,6 +274,10 @@ import CryptoKit
         do { _ = try await bridge.call("export", ["project_id": projectID, "report_id": report["report_id"].string, "folder": target.path]); NSWorkspace.shared.open(target); status = "JSON·JSONL·Markdown 보고서를 저장했습니다" } catch { fail(error) }
     }
     func loadMCP() async { do { mcp = try await bridge.call("mcpConfig", ["project_id": projectID]).string } catch { fail(error) } }
+    func openSidecar(_ revision:JSON,page:String) {
+        guard libraryAvailable && !busy && !loading && sidecarConfigured && !page.isEmpty else{return}
+        sidecarRequest=SidecarRequest(project:projectID,report:report["report_id"].string,occurrence:revision["revision_occurrence_id"].string,page:page,label:revision["label"].string)
+    }
     func page(_ id: String) async throws -> JSON { try await bridge.call("page", ["project_id": projectID, "report_id": report["report_id"].string, "page_id": id]) }
 }
 struct ImportFileIdentity: Equatable {

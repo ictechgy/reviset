@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import PDFKit
+import CryptoKit
 
 @main struct DocverApp: App {
     @StateObject private var model=AppModel()
@@ -48,6 +49,7 @@ import PDFKit
             let referenceChecks=request["reference_appearance_checks"].bool ? try await exerciseReferenceAppearance(model):[:]
             let importChecks=request["import_draft_files"].array.isEmpty ? [:]:try await exerciseImportDraft(model,output,request["import_draft_files"].array.map{URL(fileURLWithPath:$0.string)})
             let bundleChecks=request["bundle_mapping_checks"].bool ? try await exerciseBundleMapping(model,output):[:]
+            let sidecarChecks=request["sidecar_checks"].bool ? try await exerciseSidecar(model,output,request["sidecar_page"].int):[:]
             model.inspector=true
             try await Task.sleep(nanoseconds:700_000_000);try capture(output.appendingPathComponent("native-compare.png"))
             model.inspector=false;model.focus=true;model.showChanges=false;model.pageMode="after"
@@ -73,8 +75,50 @@ import PDFKit
             let numeric=model.changes.filter{$0["kind"].string=="text_modified"}
             let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"reference_appearance_checks":referenceChecks,"import_draft_checks":importChecks,"bundle_mapping_checks":bundleChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
             var complete=result;complete["aspect_ratio_checks"]=aspectChecks
+            complete["sidecar_checks"]=sidecarChecks
             try JSON(complete).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
         }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Docver native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
+    }
+    static func exerciseSidecar(_ model:AppModel,_ output:URL,_ requestedPage:Int) async throws->[String:Any] {
+        guard model.sidecarConfigured else{throw BridgeError(code:"SIDECAR_NOT_CONFIGURED",message:"참고 렌더러가 준비되지 않았습니다.")}
+        let revision=model.revision(0),pages=model.primaryPages(revision)
+        guard let page=(requestedPage>0 ? pages.first(where:{$0["page"].int==requestedPage}):pages.last) else{throw BridgeError(code:"SIDECAR_PAGE",message:"참고 화면의 원문 페이지가 없습니다.")}
+        let before=try model.report.data(),database=model.bridge.library.appendingPathComponent("docver.sqlite"),beforeDB=try fileDigest(database)
+        model.openSidecar(revision,page:page["page_id"].string)
+        guard let request=model.sidecarRequest else{throw BridgeError(code:"SIDECAR_OPEN",message:"참고 화면 요청을 만들지 못했습니다.")}
+        func pdfView(_ view:NSView)->PDFView? {
+            if let pdf=view as? PDFView{return pdf}
+            for child in view.subviews{if let pdf=pdfView(child){return pdf}}
+            return nil
+        }
+        do {
+            var sheet:NSWindow?,pdf:PDFView?
+            for _ in 0..<600 {
+                sheet=NSApp.windows.compactMap{$0.sheets.first}.first
+                if let content=sheet?.contentView,let candidate=pdfView(content),let doc=candidate.document,let current=candidate.currentPage,doc.pageCount==pages.count,doc.index(for:current)==page["page"].int-1 {pdf=candidate;break}
+                try await Task.sleep(nanoseconds:50_000_000)
+            }
+            guard let sheet,let pdf,let doc=pdf.document else{throw BridgeError(code:"SIDECAR_PDFKIT",message:"실제 PDFKit 참고 페이지가 열리지 않았습니다.")}
+            try await Task.sleep(nanoseconds:350_000_000);try captureView(sheet,output.appendingPathComponent("native-sidecar.png"))
+            let jobs=model.bridge.library.appendingPathComponent("sidecars-v1/jobs"),leases=model.bridge.library.appendingPathComponent("sidecars-v1/leases")
+            let pdfPath=jobs.appendingPathComponent(request.id).appendingPathComponent("converted.pdf"),pdfSHA=try fileDigest(pdfPath)
+            guard FileManager.default.fileExists(atPath:leases.appendingPathComponent(request.id+".active.json").path) else{throw BridgeError(code:"SIDECAR_LEASE",message:"참고 화면 작업의 소유권이 없습니다.")}
+            model.sidecarRequest=nil
+            for _ in 0..<200 {
+                let a=(try? FileManager.default.contentsOfDirectory(atPath:jobs.path)) ?? [],b=(try? FileManager.default.contentsOfDirectory(atPath:leases.path)) ?? []
+                if a.isEmpty&&b.isEmpty{break};try await Task.sleep(nanoseconds:25_000_000)
+            }
+            let remainingJobs=try FileManager.default.contentsOfDirectory(atPath:jobs.path),remainingLeases=try FileManager.default.contentsOfDirectory(atPath:leases.path)
+            guard remainingJobs.isEmpty&&remainingLeases.isEmpty else{throw BridgeError(code:"SIDECAR_CLEANUP",message:"참고 화면의 임시 작업이 남았습니다.")}
+            let after=try await model.bridge.call("view",["project_id":request.project,"report_id":request.report])
+            guard try before==model.report.data(),try before==after.data(),try beforeDB==fileDigest(database) else{throw BridgeError(code:"SIDECAR_REPORT_MUTATION",message:"참고 화면이 저장된 결과를 변경했습니다.")}
+            return ["renderer":"ONLYOFFICE Desktop Editors","native_pdfkit":true,"page":page["page"].int,"page_count":doc.pageCount,"pdf_sha256":pdfSHA,"report_and_database_unchanged":true,"owned_jobs_and_leases_removed":true]
+        }catch{model.sidecarRequest=nil;_ = try? await model.bridge.call("sidecarClose",request.scope);throw error}
+    }
+    static func fileDigest(_ url:URL)throws->String {
+        let file=try FileHandle(forReadingFrom:url);defer{try? file.close()};var digest=SHA256()
+        while let bytes=try file.read(upToCount:1024*1024),!bytes.isEmpty{digest.update(data:bytes)}
+        return digest.finalize().map{String(format:"%02x",$0)}.joined()
     }
     static func exerciseAspectRatios(_ model:AppModel,_ output:URL) async throws->[[String:Any]] {
         model.focus=true;model.pageMode="both";model.showChanges=false;model.inspector=false;model.tab="compare";try await model.updateChanges();try await Task.sleep(nanoseconds:650_000_000)

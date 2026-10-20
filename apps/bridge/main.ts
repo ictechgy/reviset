@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { DesktopService,type DesktopDraft } from '../../packages/desktop/service.js';
 import { DocverError, Decision, RelationSelection, BundleSelection,bundleDirectiveState, byteHash, hash,comparisonText,textChunk,unresolvedComparisonText, SCHEMA_VERSION, ENGINE_VERSION } from '../../packages/schema/index.js';
 import { querySchemas } from '../../packages/query/index.js';
+import {SidecarScope,createOnlyOfficeSidecar,closeOnlyOfficeSidecar,recoverOnlyOfficeSidecars,onlyOfficeSidecarConfigured} from '../../packages/render/onlyoffice-sidecar.js';
 const key=z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/),scope=z.object({project_id:key,report_id:key});
 const request=JSON.parse(readFileSync(0,'utf8')) as {action:string;args:any};
 const rootArg=process.argv.indexOf('--root');if(rootArg<0)throw new Error('Explicit app library required');
@@ -20,6 +21,15 @@ async function verifiedSource(assetId:string):Promise<string>{
 try{
   let value:unknown;
   switch(request.action){
+    case 'sidecarInfo':value={configured:await onlyOfficeSidecarConfigured(join(dirname(fileURLToPath(import.meta.url)),'../onlyoffice-sidecar'))};break;
+    case 'sidecarCreate':{
+      const d=SidecarScope.parse(args),report=service.snapshot(d.project_id,d.report_id),controller=new AbortController(),cancel=()=>controller.abort();
+      process.once('SIGTERM',cancel);process.once('SIGINT',cancel);
+      try{value=await createOnlyOfficeSidecar({library:root,resources:join(dirname(fileURLToPath(import.meta.url)),'../onlyoffice-sidecar'),guard:join(dirname(process.execPath),'DocverRendererGuard'),report,scope:d,signal:controller.signal});}
+      finally{process.removeListener('SIGTERM',cancel);process.removeListener('SIGINT',cancel);}break;
+    }
+    case 'sidecarClose':{const d=SidecarScope.parse(args);service.project(d.project_id);await closeOnlyOfficeSidecar(root,d);value={closed:true};break;}
+    case 'sidecarRecover':value=await recoverOnlyOfficeSidecars(root);break;
     case 'projects':value=service.projects().map(projectResponse);break;
     case 'recover':{const d=z.object({run_id:z.string().optional()}).parse(args);value=service.recover(d.run_id).map(projectResponse);const folder=join(root,'staging-v4');try{for(const name of await readdir(folder))if(/^run_[a-f0-9-]+\.json$/.test(name)&&(!d.run_id||name===d.run_id+'.json'))await rm(join(folder,name));}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}break;}
     case 'create':{const data=z.object({title:z.string().trim().min(1).max(200),revisions:z.array(z.object({label:z.string().trim().min(1).max(200),files:z.array(z.string()).min(1).max(2),expected_sha256:z.array(z.string().regex(/^[a-f0-9]{64}$/).nullable()).min(1).max(2).optional()}).refine(r=>!r.expected_sha256||r.expected_sha256.length===r.files.length,'File identity count must match input count')).min(1).max(100)}).parse(args);value=await service.create(data.title,data.revisions);break;}

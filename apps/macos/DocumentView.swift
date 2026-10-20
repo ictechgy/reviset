@@ -170,6 +170,10 @@ struct PageColumn: View {
                 Button { go(current["page"].int+1) } label: { Image(systemName:"chevron.right") }.disabled(current.isNull || current["page"].int>=pages.count)
                 Spacer(); Text(payload["source"]["origin"].string == "reference_pdf" ? (payload["page"]["appearance"]["association"].string == "human_confirmed" ? "제공 PDF · 사용자 연결 · 참고용":"제공 PDF · 페이지 대응 추정") : payload["source"]["origin"].string == "pptx_converted" ? "PPTX 렌더 · LibreOffice" : payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 렌더 없음").font(.caption).foregroundStyle(.secondary)
                 if model.isBundle(revision) {Button{model.openBundle(revision,source:pageID)}label:{Image(systemName:"link")}.help(model.bundleEditingUnavailable == nil ? "이 버전의 PPTX와 제공 PDF 페이지 연결 수정":"이 보고서의 제공 PDF 연결·이력 조회").disabled(model.busy || model.loading).accessibilityLabel("제공 PDF 페이지 연결·이력 확인")}
+                if model.sidecarConfigured && revision["assets"].array.contains(where:{$0["format"].string=="pptx"&&$0["asset_id"].string==current["asset_id"].string}) {
+                    Button {model.openSidecar(revision,page:pageID)} label:{Label("참고 렌더",systemImage:"rectangle.on.rectangle")}
+                        .help("ONLYOFFICE의 별도 변환 화면을 참고용으로 확인").disabled(model.busy||model.loading)
+                }
             }.controlSize(.small)
             if !evidence.isNull && ["reference_pdf","pptx_converted"].contains(payload["source"]["origin"].string) {
                 Text(evidence["method"].string == "provided_pdf_native_raster" ? (payload["page"]["appearance"]["association"].string == "human_confirmed" ? "제공 PDF의 화면 근거입니다. 사용자가 페이지를 연결했으며 PowerPoint 원본 충실도는 미검증입니다.":"제공 PDF의 화면 근거입니다. PPTX와의 페이지 대응은 추정입니다.") : "PPTX 근거의 화면 좌표는 미검증입니다. 아래 추출 원문에서 내용을 확인하세요.").font(.caption).foregroundStyle(.orange)

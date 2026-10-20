@@ -4,18 +4,52 @@
 
 ## 최근 검증본 · 2026-10-20
 
-실행 파일은 `release/Docver.app`, ZIP은 `release/Docver-0.4.0-native53-svg-guard-v1-arm64.zip`이다. 둘 다 clean source `3ff0af791b661c8243ae8276a76e0c3a47644be9`에서 빌드했다. 이후 문서만 변경한 커밋은 앱의 빌드 원본 SHA와 구분한다. `release/validation.json`과 `.omx/artifacts/quality-loop-03/native53al-composite-qualification.json`이 해당 바이트와 증거를 고정한다.
+현재 MCP 개선 검증본은 `release/Docver-MCP.app`, ZIP은 `release/Docver-0.4.0-mcp1-arm64.zip`이다. clean runtime source `78e000865ce61926415b9c95b2355a5cf30372ad`에서 빌드했다. 엔진은 `0.4.0-native.bundle.53`, schema0.4.0, Vision helper26, MCP API0.4.0-mcp.1이다. 이후 문서 변경 커밋과 앱 빌드 원본 SHA를 구분한다. `release/validation.json`, `release/validation-mcp1.json`, `.omx/artifacts/ai-mcp-01/composite-qualification.json`이 해당 바이트와 증거를 고정한다.
 
-- 전체 223/223 테스트 통과, 실패·skip·cancel 0, 152.374466958초. Swift warnings-as-errors 검사 경고 0. 빌드 후 추적 중인 runtime/test 파일 122개 해시도 일치한다.
-- 실제 앱 11개 시나리오 통과: UTF8/UTF16LE/UTF16BE PPTX의 원문·표·노트·미리보기·재열기, 새 900페이지 혼합 분석, 페이지 비율, 제공 PDF·가져오기, 번들 대응·수동 관계·과거 이력, backend/MCP, 5버전, 기존 600/900/1,200페이지 보고서 재열기. 새 900페이지 분석은 60.337862583초, 1초 간격 프로세스 트리 RSS 표본 최대 1013.484375MiB였다. 나머지 대용량 재열기는 새 분석 시간으로 계산하지 않는다. OS 마우스·키보드 입력 전체를 자동 검증한 결과도 아니다.
-- ZIP 390495400bytes, SHA256 `44eabdfc94b7a9c1fa3da55b8ef00adc3cd2cf2b56b31a8130d4e2e3c884f6bf`. 공백 경로에 풀어 최소 PATH/cwd `/`에서 새 5버전·backend 8검사·참조 PDF/가져오기·번들/과거 이력·읽기 전용 MCP·두 번째 앱 프로세스 재열기와 앱/동봉 Office 엄격 서명 검증을 통과했다.
-- 원래 base부터 152개 변경 경로의 독립 코드 판정은 APPROVE/READY, 아키텍처는 WATCH/SOURCE_READY. 합성 판정은 COMMENT, 소스 준비는 READY다. 자원 사용·전체 이력 materialization·플랫폼·판독 충실도의 WATCH는 남아 있다. 소스 준비와 제품 전체 완료는 별개다.
+- 전체 234/234 테스트 통과, 실패·skip·cancel 0. 테스트 156.831809459초, 명령 전체 157.588447208초. 검증 전후 추적 소스 176개 바이트가 일치했다.
+- 실제 앱/동봉 MCP 9개 작업 통과: 새 5버전·backend·수동 관계·번들 대응·참조 PDF 화면·공유 XML 원문·기존 900페이지 보고서 재열기·5버전 MCP·900페이지 MCP. 900페이지 재열기를 이 빌드의 새 900페이지 분석으로 계산하지 않는다.
+- ZIP 390897279bytes, SHA256 `20f12659025bebc11db7e8818ccb37861c4e2066570a4c1c778e70db439e6a3a`. 공백 경로에 풀어 최소 PATH/cwd `/`의 13개 검사를 통과했다. 앱/동봉 Office 서명, 새 5버전·MCP·재열기 등 상세 범위는 위 합성 증거에 기록했다.
+- 원래 base부터 전체 17개 변경 경로의 독립 코드 판정은 APPROVE/READY, 아키텍처는 WATCH/SOURCE_READY다. 소스 준비와 제품 전체 완료는 별개다. 후속 문서만 변경한 범위도 별도 closure로 구분한다.
+- Claude가 실제 동봉 읽기 전용 MCP에서 37개 도구 호출과 1개 구조화 응답을 수행했다. 5버전·노트·두 변경·과거 이력·net 조회 결과를 확인했고 DB 바이트는 유지됐다. 기본 4000byte 응답 예산 오류 1회는 8000byte로 재요청해 복구했다. 이 사용 검증을 전체 판독 정확도 승인으로 확대하지 않는다.
 
-미해결 판독 문제도 유지한다. 같은 helper26의 이전 480개 상관된 합성 사례에서는 전체 문구 일치 218개, 비어 있지 않은 오인식 22개, 판독 보류/빈 결과 240개였다. 이번 빌드에서 480개를 새로 전수 실행한 수치로 바꾸지 않는다. 오인식에는 `Client`→`Cllent`, `biIling`→`billing` 등이 있다. 이를 정답 문구로 강제 치환하지 않으며 원문 이미지·관측·추정 경고를 보존한다. 별도 OCR 엔진/언어·확대·축소 후보는 기존 정상 판독을 훼손하는 반례 때문에 채택하지 않았다. 렌더 해시 대조에서 같은 픽셀/다른 정답 충돌은 없었으므로 이 자료가 판독 불가능성을 증명한 것도 아니다.
+이전 `release/Docver.app`과 `release/Docver-0.4.0-native53-svg-guard-v1-arm64.zip`은 runtime source `3ff0af791b661c8243ae8276a76e0c3a47644be9`의 별도 검증본으로 보존했다. 그때의 223개 테스트·앱 11개 시나리오·새 900페이지 분석(60.337862583초, RSS 표본 최대1013.484375MiB), ZIP390495400bytes/SHA256 `44eabdfc94b7a9c1fa3da55b8ef00adc3cd2cf2b56b31a8130d4e2e3c884f6bf`와 전체152경로 리뷰는 `.omx/artifacts/quality-loop-03/native53al-composite-qualification.json`의 해당 원본에만 적용한다. 이전 600/900/1,200페이지 재열기와 현재 검증본의 검사를 혼합하지 않는다.
 
-이전 독립 PowerPoint 기준 26쪽의 엄격 픽셀 동일성도 0쪽이었다. 이번 XML·문장 순서·미리보기·리소스 경계 수정이 그 충실도 게이트를 통과시킨 것은 아니다. 다른 Mac/최소 OS, OS 입력·IME·VoiceOver, Developer ID 공증·공개 배포 검증도 남아 있다. 따라서 제품 전체 완료 상태는 **OPEN**이다.
+미해결 판독 문제도 유지한다. 같은 helper26의 이전 480개 상관된 합성 사례에서는 전체 문구 일치 218개, 비어 있지 않은 오인식 22개, 판독 보류/빈 결과 240개였다. 이번 앱에서 480개를 새로 전수 실행한 수치로 바꾸지 않는다. 오인식에는 `Client`→`Cllent`, `biIling`→`billing` 등이 있다. 이를 정답 문구로 강제 치환하지 않으며 원문 이미지·관측·추정 경고를 보존한다. 별도 OCR 엔진/언어·확대·축소 후보는 기존 정상 판독을 훼손하는 반례 때문에 채택하지 않았다. 렌더 해시 대조에서 같은 픽셀/다른 정답 충돌은 없었으므로 이 자료가 판독 불가능성을 증명한 것도 아니다.
 
-Claude의 유효한 이전 지적을 반영했고 원문·정확한 범위를 보존했다. 마지막 좁은 소스 재검토와 동일 요청의 1회 운영 재시도는 빈 출력 timeout이라 최종 승인으로 인정하지 않는다. Grok 요청도 timeout, Agy는 quota 제한으로 이번 최종 승인이 없다. 과거 실제 화면 7개에 대한 Claude 승인을 새 빌드 전체 승인으로 확대하지 않는다.
+이전 독립 PowerPoint 기준 26쪽의 엄격 픽셀 동일성도 0쪽이었다. MCP 개선이나 XML·문장 순서·리소스 경계 수정이 그 충실도 게이트를 통과시킨 것은 아니다. 사용자는 PowerPoint 사용권이 없어 무료 도구로 계속하도록 선택했다. 현재 LibreOffice 렌더와 공개된 독립 기준 PDF로 검증하며, 유료 앱의 설치·활성화를 전제하지 않는다. 다른 Mac/최소 OS, OS 입력·IME·VoiceOver, Developer ID 공증·공개 배포 검증도 남아 있다. 따라서 제품 전체 완료 상태는 **OPEN**이다.
+
+이전 판독 루프의 Claude 소스 리뷰 timeout·Grok timeout·Agy quota 제한은 그 범위의 실패 증거로 보존한다. 후속 MCP 제안/실제 클라이언트 사용 검증과 이번 OCR 논의의 유효한 응답을 과거 실패나 새 소스 승인으로 바꾸지 않는다. 실제 화면에 대한 이전 승인을 새 빌드 전체 승인으로 확대하지 않는다.
+
+## 무료 도구 판독·렌더 연구 · 2026-10-20
+
+아래는 `.omx/artifacts/quality-loop-04/`의 별도 실험이다. OCR 후보를 제품 판독 경로에 채택하지 않았고 현재 검증 앱·ZIP을 보존했다. 후속 참고 미리보기 소스 구현은 아래에 별도로 구분한다. 이전 native45/helper26의 480개 원본 PNG 해시를 확인하고 같은 480개를 모두 남겨 비교했다. 후보 생성에는 정답·폰트 조건을 주지 않고, 정답을 읽는 평가는 별도 프로세스로 실행했다. 이 상관된 합성 자료를 일반 문서 정확도로 확대하지 않는다.
+
+| 독립 후보 | 480개 문구 완전 일치 | 비어 있지 않은 오인식 | 기존 정답 218개 중 손실 | 기존 오독 22개 중 교정 |
+| --- | ---: | ---: | ---: | ---: |
+| GLM-OCR bf16 · 잉크 영역 crop | 297 | 183 | 59 | 14 |
+| EasyOCR english_g2 · crop | 135 | 345 | 112 | 0 |
+| EasyOCR latin_g2 · crop | 160 | 320 | 97 | 1 |
+| EasyOCR korean_g2 · crop | 56 | 424 | 164 | 0 |
+
+표는 공백까지 포함한 원문 문자열 일치다. 기존 NFC·공백 축약 평가에서 korean_g2는 60개 일치·420개 오인식이며, 이 차이를 숨기지 않는다. 위 네 후보는 480개에서 빈 결과가 0개였고, 모두 기존 정답 보존 기준을 실패했다. Latin/English 모델이 지원하지 않는 한글 96개도 분모에서 빼지 않는다. 엔진·문자 집합을 정답 조건에 따라 선택하는 정책은 만들지 않았다.
+
+별도 Arial·Georgia·Courier New·Avenir Next, 두 크기, 깨끗한 영상/JPEG 열화 및 빈 화면·완전 가림 4개를 포함한 132개 대조군도 유지했다. GLM은 51개 일치·81개 오인식이고 빈 대조군 4개 모두 문구를 생성했다. EasyOCR의 원문 일치는 English42/Latin56/Korean53개, 오인식은 각각90/76/79개다. English·Latin은 빈 대조군 4개를 비웠고, Korean은 4개 모두 문자를 생성했다. 빈 대조군의 정답인 빈 출력은 일치 수에 이미 포함된다. 원문/공백 축약 수치, 지원하지 않는 문자 집합과 행별 평가 파일의 해시는 `easyocr/final-evaluation.json`에 남겼다. 개별 행은 같은 폴더의 `corpus480-evaluation.json`과 `controls132-evaluation.json`에 보존했다.
+
+같은 모델의 I/l/i 후보 점수 재계산은 잔여 8개 중 교정 0개였다. 영상 연결 성분으로 글자를 나눈 실험은 480개 중 적격 0개여서 인식 자체를 실행하지 않았다. 별도 Vision 문자 상자 기반의 가설적 픽셀 조각/고정 순열 3개 실험은 이전 오독20개·정답16개를 실행했으나 교정0개였다. 세 순열이 같은 답에 동의한 8개 중 4개도 오답이었다. 같은 줄의 점 있는 i와 정확한 RGBA 글자 모양을 대조하는 실험도 후보0개였다. 보류·부적격을 해결로 계산하지 않는다. 같은 픽셀의 I/l 충돌이 발견되지 않았으므로 판독 불가능성이 증명된 것도 아니다.
+
+OnlyOffice10.0.0.169는 공식 arm DMG의 해시·개발자 서명·공증 티켓을 확인하고 이 프로젝트의 연구 폴더에서만 사용했다. 공개 원본10개/독립 PowerPoint 기준26쪽에서 평균 RGB 채널 오차는 LibreOffice2.2618121944에서 OnlyOffice1.8239458250으로 감소했고, 24쪽은 개선·2쪽은 악화했다. 두 렌더러 모두 엄격 픽셀 동일성은0/26이다. startup2·3쪽의 그림자 회귀와 텍스트 영역3개의 불일치 표시가 남는다. 전체 요소 문자열 대조에서 나온8개 표시는 글머리표·줄바꿈의 영향도 있어8쪽의 내용 삭제로 분류하지 않는다.
+
+OnlyOffice 실행 prototype은 공유 입력 검증·원본 복사·새0700폴더·네트워크/불필요한 읽기·쓰기/추가 fork·exec 제한·환경 분리·프로세스 그룹 취소를 적용했다. 파일별128MiB와 감독 프로세스·변환 자식 각각의 CPU90초는 OS 한도이며 총 작업 CPU/RSS 한도는 아니다. 전체256MiB는 표본 감시와 종료 후 검사에 의한 초과 거절 기준이다. 총 용량의 엄격한 상한으로 부르지 않는다(보존한 sparse 대조군은 거절 시300MiB). 감독 변환 호출의 wall120초와 stdout·stderr 각각1MiB 한도도 적용했다. 앞선 동기 입력 검증, 최대30초의 codesign 검사와 준비·복사는 이120초 밖이다. DirFD/nofollow 순회, 경로 밖 canary·외부 쓰기·네트워크·fork·exec·환경·파일/총 용량·symlink·로그·취소·timeout 대조군7개를 통과했다. 공개10개 변환과 기존 OnlyOffice 대비26쪽의 RGBA·텍스트 배치 동일성도 확인했다. 이는 PowerPoint 동등성이나 앱 배포 승인과 별개다.
+
+이전 prototype의 오래된 출력 재사용 문제는 새 폴더를 강제해 독립 코드 리뷰의6개 mock으로 닫았다. 후속 v3 격리는 정확한 고정 snapshot에서 코드 APPROVE·아키텍처 WATCH로 연구 범위의 F2/B1을 닫았다. PDF/캐시 식별자, 폰트 생성·배포 조건, 숨김 슬라이드·소비자 연결은 canonical 렌더러 채택 게이트로 남는다. 현재 검증 앱이나 canonical report의 렌더러를 변경하지 않았다. Claude·Grok의 유효한 응답은 실험 설계 논의이며 새 OCR 결과/소스 승인이 아니다. Grok 제한은1200초로 주었고 Agy는 quota 오류(exit3/출력0)라 리뷰로 계산하지 않는다.
+
+### 후속 네이티브 참고 미리보기 · 구현 검증 중
+
+현재 소스에는 PDFKit의 선택적 OnlyOffice 참고 창을 추가했다. 고정 report/버전 occurrence/페이지/asset SHA를 검사하며 별도 UUID 작업·lease로 표시한다. 저장된 PageData·asset·raster·diff·MCP 결과에는 반영하지 않는다. 원문 전체에서 고유한 문구, 페이지 수·비율을 대조하고 숨김 슬라이드·모호한 연결은 거절한다. 화면은 추정임을 표시하며 근거 좌표를 덧씌우지 않는다. 창 닫기와 결과 생성이 겹쳐도 닫힌 작업이 다시 publish되지 않도록 marker 연결·정리를 분리했다.
+
+Python 의존 없이 별도의 C 감독 도구를 사용하며 Vision helper의 빌드 fingerprint는 바꾸지 않았다. 네이티브 감독부에서 OS 대조군7개와 공개10개 변환을 통과했다. 실제 새 source 함수에서도10개/26쪽의 페이지 대응·원문 보존·임시 작업 정리를 확인했다. 포함 관계가 있는 정상 제목을 잘못 보류한 반례는 전체 원문 기준 고유 문구로 수정하고 합성 중첩 제목·페이지 교환 대조군을 추가했다. 집중7개 테스트·TypeScript 검사는 통과했다. 이는 전체 소스 독립 리뷰·새 앱·이동한 ZIP 검증을 대신하지 않는다.
+
+선택적 provider는 외부의 서명된 OnlyOffice 앱을 지정하고 team·binary·CodeResources·버전·호스트 font inventory와 생성 metadata의 SHA를 확인한다. metadata는 실행하지 않고 JSON 값 대입만 허용한다. 생성된 metadata에는 사용자 설치 글꼴 경로도 포함되며 시스템 전용 목록으로 부르지 않는다. 앱·font indexer·폰트 프로그램은 번들하지 않고 provider JSON과 두 metadata 파일만 allowlist로 복사한다. 이 Mac의 private build 구성으로, 다른 Mac의 준비·배포·라이선스 검증을 완료한 것이 아니다.
 
 ## 구현한 경로
 
@@ -58,8 +92,8 @@ OCR·렌더·MCP 회귀 테스트가 통과한 체크포인트가 있다. 최종
 | 회전/CropBox 좌표·스캔 표 행/열 | 현재 Mac 실제 helper 테스트 통과 |
 | PPTX 실제 렌더·한글·숨김 슬라이드 | 구현 및 실제 변환 테스트 통과 |
 | 300쪽 스캔 PDF×2의 실제 앱 작업 | 이전 V fresh600 스캔 분석 통과; AL은 그 보고서 재열기 통과. 새 AL 스캔 분석 시간으로 재분류하지 않음 |
-| 새 번들/이동한 ZIP/읽기 전용 MCP | AL clean source 앱과 정확한 ZIP에서 통과; 위 고정 증거 참조 |
-| 최종 full-diff 독립 코드/아키텍처 리뷰 | AL 전체152경로 코드 APPROVE/READY·아키텍처 WATCH/SOURCE_READY; 이후 문서만 별도 closure |
+| 새 번들/이동한 ZIP/읽기 전용 MCP | F clean source Docver-MCP 앱과 정확한 mcp1 ZIP에서 통과; 위 고정 증거 참조 |
+| 최종 full-diff 독립 코드/아키텍처 리뷰 | F의 원래 base부터 전체17경로 코드 APPROVE/READY·아키텍처 WATCH/SOURCE_READY; 후속 문서 변경은 별도 범위 |
 | 목표 PowerPoint 환경의 픽셀 동일성 | 선택한 macOS PowerPoint 기준 미통과 |
 | 다양한 실제 문서·스캔 열화/언어·특수 PDF | corpus 확장 필요 |
 
