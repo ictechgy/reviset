@@ -6,15 +6,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/resource.h>
+#include <sys/event.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/wait.h>
-#include <time.h>
 #include <unistd.h>
 
 static const uint64_t job_threshold = 256ULL * 1024 * 1024;
 static unsigned entries;
-static pid_t owned_child;
+static pid_t group;
 
 static void reject(const char *reason) {
     /* The launcher may have died and closed stderr. Logging must never kill
@@ -22,9 +21,8 @@ static void reject(const char *reason) {
     signal(SIGPIPE, SIG_IGN);
     fprintf(stderr, "DOCVER_RESOURCE_LIMIT: %s\n", reason);
     fflush(stderr);
-    if (owned_child > 0) kill(owned_child, SIGKILL);
     /* The launcher must own this detached group before any child is started. */
-    killpg(getpgrp(), SIGKILL);
+    killpg(group, SIGKILL);
     _exit(125);
 }
 
@@ -68,10 +66,14 @@ static uint64_t directory_size(int fd, unsigned depth) {
     return total;
 }
 
+/* The untrusted converter must remain the detached session leader. A session
+   leader cannot move process groups or create a new session; its sandbox also
+   denies fork. The trusted monitor is a child in that same owned group. */
 int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
-    if (argc < 4 || getpgrp() != getpid()) {
-        fputs("Renderer guard requires its own detached process group\n", stderr);
+    group = getpid();
+    if (argc < 4 || getpgrp() != group || getsid(0) != group || fcntl(3, F_GETFD) < 0) {
+        fputs("Renderer guard requires a detached session and status pipe\n", stderr);
         return 2;
     }
     const pid_t launcher = getppid();
@@ -85,30 +87,59 @@ int main(int argc, char **argv) {
     entries = 0;
     directory_size(root, 0);
     if (getppid() != launcher) reject("Launcher exited before conversion");
-    pid_t child = fork();
-    if (child < 0) { close(root); return 5; }
-    if (!child) {
+    int ready[2];
+    if (pipe(ready)) return 5;
+    pid_t monitor = fork();
+    if (monitor < 0) return 5;
+    if (monitor > 0) {
+        close(3); /* Monitor exclusively owns the status channel from this point. */
+        close(ready[1]);
+        char ack = 0;
+        ssize_t count;
+        do { count = read(ready[0], &ack, 1); } while (count < 0 && errno == EINTR);
+        if (count != 1 || ack != 'R') reject("Monitor startup failed");
+        close(ready[0]);
         close(root);
         execv(argv[2], argv + 2);
-        _exit(127);
+        reject("Converter exec failed");
     }
-    owned_child = child;
+    close(ready[0]);
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    int queue = kqueue();
+    if (queue < 0) reject("Monitor event queue failed");
+    struct kevent changes[2];
+    EV_SET(&changes[0], launcher, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_RECEIPT, NOTE_EXIT, 0, NULL);
+    EV_SET(&changes[1], group, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_RECEIPT, NOTE_EXIT, 0, NULL);
+    struct kevent receipts[2];
+    if (kevent(queue, changes, 2, receipts, 2, NULL) != 2) reject("Monitor registration failed");
+    for (int i = 0; i < 2; i++)
+        if (!(receipts[i].flags & EV_ERROR) || receipts[i].data != 0) reject("Monitor registration refused");
+    char header[64];
+    int length = snprintf(header, sizeof(header), "M %d\n", getpid());
+    if (write(3, header, (size_t)length) != length || write(ready[1], "R", 1) != 1)
+        reject("Launcher status channel closed");
+    close(ready[1]);
     const struct timespec interval = {0, 50000000};
-    int status = 0;
     for (;;) {
-        if (getppid() != launcher) reject("Launcher exited during conversion");
-        const pid_t child_group = getpgid(child);
-        if (child_group >= 0 && child_group != getpgrp()) reject("Child left owned process group");
-        pid_t finished = waitpid(child, &status, WNOHANG);
-        if (finished < 0) { if (errno == EINTR) continue; reject("Child wait failed"); }
-        if (finished == child) owned_child = 0;
+        struct kevent events[2];
+        int count = kevent(queue, NULL, 0, events, 2, &interval);
+        if (count < 0) { if (errno == EINTR) continue; reject("Monitor event wait failed"); }
+        int finished = 0;
+        for (int i = 0; i < count; i++) {
+            if ((events[i].flags & EV_ERROR) || (pid_t)events[i].ident == launcher)
+                reject("Launcher exited during conversion");
+            if ((pid_t)events[i].ident == group && (events[i].fflags & NOTE_EXIT)) finished = 1;
+        }
         entries = 0;
         directory_size(root, 0);
-        if (finished == child) break;
-        nanosleep(&interval, NULL);
+        if (finished) {
+            /* Success is provisional: the launcher also requires converter exit0. */
+            if (write(3, "OK\n", 3) != 3) reject("Launcher status channel closed");
+            close(root);
+            close(queue);
+            close(3);
+            return 0;
+        }
     }
-    close(root);
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
-    return 6;
 }

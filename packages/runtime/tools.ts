@@ -10,25 +10,48 @@ const active=new Map<number,()=>void>();
 function kill(pid:number,signal:NodeJS.Signals='SIGTERM'){try{process.kill(-pid,signal);}catch{/* already exited */}}
 function stop(){for(const cancel of active.values())cancel();}
 const terminate=()=>stop(),interrupt=()=>stop();
-export async function runTool(executable:string,args:string[],options:{input?:string;timeout?:number;signal?:AbortSignal;maxBytes?:number;env?:NodeJS.ProcessEnv;inheritEnv?:boolean}={}):Promise<string>{
+export async function runTool(executable:string,args:string[],options:{input?:string;timeout?:number;signal?:AbortSignal;maxBytes?:number;env?:NodeJS.ProcessEnv;inheritEnv?:boolean;supervised?:boolean;onSupervisorPid?:(pid:number)=>void}={}):Promise<string>{
   options.signal?.throwIfAborted();
   return new Promise((resolveRun,reject)=>{
-    const child=spawn(executable,args,{detached:true,stdio:['pipe','pipe','pipe'],env:{...(options.inheritEnv===false?{}:process.env),SAL_DISABLE_OPENCL:'1',...options.env}});
+    const child=spawn(executable,args,{detached:true,stdio:options.supervised?['pipe','pipe','pipe','pipe']:['pipe','pipe','pipe'],env:{...(options.inheritEnv===false?{}:process.env),SAL_DISABLE_OPENCL:'1',...options.env}});
     let stdout:Buffer=Buffer.alloc(0),stderr:Buffer=Buffer.alloc(0),failure:Error|undefined;
+    let status='',monitor:number|undefined,monitorOK=!options.supervised;
     const abort=(error:Error)=>{if(failure)return;failure=error;if(child.pid)kill(child.pid,'SIGKILL');};
     const cancelled=()=>abort(new DocverError('CANCELLED','Local document processing cancelled'));
     if(child.pid){if(!active.size){process.once('SIGTERM',terminate);process.once('SIGINT',interrupt);}active.set(child.pid,cancelled);}
     options.signal?.addEventListener('abort',cancelled,{once:true});
     const timer=setTimeout(()=>abort(new DocverError('TOOL_TIMEOUT','Local document processor timed out')),options.timeout??120_000);
     const collect=(value:Buffer,chunk:Buffer)=>{if(value.length+chunk.length>(options.maxBytes??16*1024*1024)){abort(new DocverError('TOOL_OUTPUT_LIMIT','Local processor output limit exceeded'));return value;}return Buffer.concat([value,chunk]);};
-    child.stdout.on('data',d=>{stdout=collect(stdout,d);});child.stderr.on('data',d=>{stderr=collect(stderr,d);});
+    child.stdout!.on('data',d=>{stdout=collect(stdout,d);});child.stderr!.on('data',d=>{stderr=collect(stderr,d);});
+    // fd3 belongs only to the trusted guard monitor. The session-leader
+    // converter closes it before exec, so a crashed monitor fails closed.
+    const statusPipe=options.supervised?child.stdio[3]:undefined;
+    if(statusPipe&&'on' in statusPipe){
+      let statusBytes=0;
+      statusPipe.on('data',(chunk:Buffer)=>{
+        statusBytes+=chunk.length;status+=chunk.toString('utf8');
+        if(statusBytes>128){abort(new DocverError('TOOL_SUPERVISOR','Invalid renderer monitor status'));return;}
+        for(let end;(end=status.indexOf('\n'))>=0;){
+          const line=status.slice(0,end);status=status.slice(end+1);
+          if(monitor===undefined){
+            const match=/^M ([1-9][0-9]*)$/u.exec(line),pid=match?Number(match[1]):0;
+            if(!Number.isSafeInteger(pid)||pid<=1||pid>2147483647||pid===child.pid){abort(new DocverError('TOOL_SUPERVISOR','Invalid renderer monitor identity'));return;}
+            monitor=pid;options.onSupervisorPid?.(pid);
+          }else if(line==='OK'&&!monitorOK)monitorOK=true;
+          else {monitorOK=false;abort(new DocverError('TOOL_SUPERVISOR','Invalid renderer monitor status'));return;}
+        }
+        if(monitorOK&&status.length){monitorOK=false;abort(new DocverError('TOOL_SUPERVISOR','Invalid renderer monitor status'));}
+      });
+      const monitorClosed=()=>{if(!monitorOK||status.length)abort(new DocverError('TOOL_SUPERVISOR','Renderer monitor exited before completion'));};
+      statusPipe.on('end',monitorClosed);statusPipe.on('error',monitorClosed);statusPipe.on('close',monitorClosed);
+    }
     const clean=()=>{clearTimeout(timer);options.signal?.removeEventListener('abort',cancelled);if(child.pid)active.delete(child.pid);if(!active.size){process.removeListener('SIGTERM',terminate);process.removeListener('SIGINT',interrupt);}};
     child.on('error',e=>{clean();reject(e);});
     // A failed supervisor may leave descendants holding its stdio open. Kill
     // the owned detached group at exit, before waiting for the close event.
     child.on('exit',code=>{if(code!==0&&child.pid)kill(child.pid,'SIGKILL');});
-    child.on('close',code=>{clean();if(failure)reject(failure);else if(code!==0)reject(new DocverError('TOOL_FAILED','Local processor failed (exit '+code+'): '+(stderr.length?stderr:stdout).toString('utf8').slice(-500)));else resolveRun(stdout.toString('utf8'));});
-    child.stdin.on('error',()=>{});child.stdin.end(options.input);
+    child.on('close',code=>{clean();if(failure)reject(failure instanceof DocverError&&failure.code==='TOOL_SUPERVISOR'?new DocverError(failure.code,failure.message+': '+stderr.toString('utf8').slice(-500)):failure);else if(code!==0)reject(new DocverError('TOOL_FAILED','Local processor failed (exit '+code+'): '+(stderr.length?stderr:stdout).toString('utf8').slice(-500)));else if(!monitorOK)reject(new DocverError('TOOL_SUPERVISOR','Renderer monitor did not confirm completion'));else resolveRun(stdout.toString('utf8'));});
+    child.stdin!.on('error',()=>{});child.stdin!.end(options.input);
     if(options.signal?.aborted)cancelled();
   });
 }

@@ -1018,3 +1018,10 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 - D의 모델 요청에 lock으로 보호한 bridge cancellation owner를 보관하고 요청 교체/nil에서 captured previous.owner.cancel+previous.scope close를 수행한다. View onDisappear cleanup은 제거했다. 닫힌owner로 늦게 호출한create는 child 실행 전에 중단한다. 실제nativeModel을 최소 appbundle로 컴파일한 새 검사에서 Sheet 없이 이전/현재 프로젝트·report scope·취소/지연호출·독립조회·중복정리없음을 확인한다.
 - D pure dense300쪽/8anchors regression은 source plan재사용+별도post예산을 확인한다. parentWatch는첫탐지에서clearInterval+controller.abort로바꾸고, guard직접child PID정리·PGID이탈탐지·reapedPIDclear를추가했다. 실제escape control까지 포함한다. 디렉터리 전역읽기 예외를 제거한 후보는 실제probeexit134로실패해 원래qualifiedpolicy로복원했다(실패로그source-D-focused-2 보존). 메타데이터/이름 노출WATCH는 문서에 명시하며 내용읽기 격리/OS취약점완전방어를 혼동하지 않는다.
 - D집중18/18PASS8517.966333ms,TypeScriptPASS. 현재nativeguardb5461eb22212454f45c3172c984ad5179a2241e3b39fbfd1833e8c4b546e2cdc. 실제 새app·nativepublic10/300/강제종료·MCP·이동ZIP은새native-sidecar-02에서검증하며C실패폴더는덮지않는다. 네이티브컴퓨터제어pipe시작실패로OS클릭검증은수행하지않았고,앱자체계측/실제PDFKit과원시캡처범위를구분한다. 기존F/ALapp/ZIP와HANDOFF/PLAN은유지한다.
+
+
+### 2026-10-20 source D 재리뷰와 E 감독 구조 수정
+
+- D2ca797b 전체251/251PASS157731.698375ms(wrapper158.476216초), 추적190파일 불변. 독립 코드APPROVE/sourceREADY와 달리 아키텍처는 직접 child가 setpgid로 이탈한 직후 guard/group을 죽이면 다음50ms검사 전 child가 남을 수 있는 D-B1을 근거로 BLOCK/SOURCE_BLOCKED했다. 이는 source interleaving이며 실제 x2t exploit 재현으로 주장하지 않는다. D앱/ZIP은 실행하지 않았고 D는 최종 승인이 아니다.
+- E는 Node가 분리한 session leader G를 fork child로 대체하지 않고 같은 PID에서 sandbox/x2t로 exec한다. G의 PID=PGID=SID를 확인하므로 setpgid/setsid 이탈을 OS가 거절하며 sandbox는 추가 fork를 막는다. fork한 trusted monitor M만 전용fd3에 PID/최종OK를 쓰고, launcher/converter의 kqueue 종료 감시 두 개를 각각 등록한 뒤에만 변환을 시작한다. Node는 monitor 종료/오류/잘못된 응답에서 원래 G그룹을 취소하며 Gexit0과 최종검사OK를 모두 요구한다. 부모 종료/자원초과는 M이 그룹을 정리한다. 별도정상종료·기존실패경로·실제앱 검증은 독립 gate다.
+- native control은 escape 시도 이후 PID 게시를 기다려 즉시 취소/monitor SIGKILL을 각각12회 검사한다. 원래 D의 escape-only 검사와 별개다. 새 clean E 전체·양 lane·실제앱·이동ZIP은 검증 전이며 기존 F/AL 앱·ZIP/HANDOFF/PLAN은 보존한다. 보편 OCR/PowerPoint 충실도 OPEN을 이 감독 수정으로 해결했다고 세지 않는다.

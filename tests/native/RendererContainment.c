@@ -31,6 +31,12 @@ int main(int argc,char **argv){
  if(!strcmp(mode,"aggregate")){for(int i=0;i<3;i++){snprintf(path,sizeof(path),"%s/sparse-%d.bin",folder,i);int fd=open(path,O_WRONLY|O_CREAT|O_EXCL,0600);if(fd<0||ftruncate(fd,100LL*1024*1024)<0)return 5;close(fd);}return 0;}
  if(!strcmp(mode,"symlink")){snprintf(path,sizeof(path),"%s/redirect",folder);return symlink(canary,path)==0?0:6;}
  if(!strcmp(mode,"output")){for(int i=0;i<2*1024*1024;i++)putchar('A');return 0;}
- if(!strcmp(mode,"wait")||!strcmp(mode,"escape")){snprintf(path,sizeof(path),"%s/pids.json",folder);FILE *f=fopen(path,"w");if(!f)return 7;fprintf(f,"{\"converter\":%d,\"supervisor\":%d}",getpid(),getppid());fclose(f);if(!strcmp(mode,"escape")&&setpgid(0,0))return 8;for(;;)sleep(1);}
+ if(!strcmp(mode,"wait")||!strcmp(mode,"escape")){
+  errno=0;int pg=setpgid(0,0),pe=errno;errno=0;int sid=setsid(),se=errno;
+  snprintf(path,sizeof(path),"%s/pids.json",folder);FILE *f=fopen(path,"w");if(!f)return 7;
+  fprintf(f,"{\"converter\":%d,\"group\":%d,\"session\":%d,\"setpgid_denied\":%s,\"setsid_denied\":%s}",getpid(),getpgrp(),getsid(0),pg<0&&pe==EPERM?"true":"false",sid<0&&se==EPERM?"true":"false");fclose(f);
+  if(!strcmp(mode,"escape"))return pg<0&&pe==EPERM&&sid<0&&se==EPERM?0:8;
+  for(;;)sleep(1);
+ }
  return 3;
 }

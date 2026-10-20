@@ -263,3 +263,10 @@ Early independent WIP reviews caught the context-key failure, missing warning co
 
 - AK architecture full152 WATCH/SOURCE_READY report52206B SHA25661e74f6e708f6dbb2e1e56806f5b613696809e6c51d9c940c798961b8bc1b55a; combined with independent codeCOMMENT/READY and exactapp/ZIP gates, AK is a separately qualified checkpoint. ProductOPEN and its base-URIWATCH retained; not futureAL approval.
 - AL exactfixed-source strictSwift PASS0warnings2.693743209s and full223/223PASS0fail/skip/cancel152374.466958ms (wrapper153.126279584s), runtime/test/fixture bytes unchanged. Independent source lane replays original3baseURIexamples and currentUTF16SVGcontrolPASS; no new narrowdeltaissue. Standardsbasis https://www.w3.org/TR/xmlbase/ verified; no nativefetch claim. New cleanALsourcecomplete152 closure, freshapp11jobs and separateSVG-policyZIP remain pending.
+
+
+### 2026-10-20 source D 재리뷰와 E 감독 구조 수정
+
+- D2ca797b 전체251/251PASS157731.698375ms(wrapper158.476216초), 추적190파일 불변. 독립 코드APPROVE/sourceREADY와 달리 아키텍처는 직접 child가 setpgid로 이탈한 직후 guard/group을 죽이면 다음50ms검사 전 child가 남을 수 있는 D-B1을 근거로 BLOCK/SOURCE_BLOCKED했다. 이는 source interleaving이며 실제 x2t exploit 재현으로 주장하지 않는다. D앱/ZIP은 실행하지 않았고 D는 최종 승인이 아니다.
+- E는 Node가 분리한 session leader G를 fork child로 대체하지 않고 같은 PID에서 sandbox/x2t로 exec한다. G의 PID=PGID=SID를 확인하므로 setpgid/setsid 이탈을 OS가 거절하며 sandbox는 추가 fork를 막는다. fork한 trusted monitor M만 전용fd3에 PID/최종OK를 쓰고, launcher/converter의 kqueue 종료 감시 두 개를 각각 등록한 뒤에만 변환을 시작한다. Node는 monitor 종료/오류/잘못된 응답에서 원래 G그룹을 취소하며 Gexit0과 최종검사OK를 모두 요구한다. 부모 종료/자원초과는 M이 그룹을 정리한다. 별도정상종료·기존실패경로·실제앱 검증은 독립 gate다.
+- native control은 escape 시도 이후 PID 게시를 기다려 즉시 취소/monitor SIGKILL을 각각12회 검사한다. 원래 D의 escape-only 검사와 별개다. 새 clean E 전체·양 lane·실제앱·이동ZIP은 검증 전이며 기존 F/AL 앱·ZIP/HANDOFF/PLAN은 보존한다. 보편 OCR/PowerPoint 충실도 OPEN을 이 감독 수정으로 해결했다고 세지 않는다.
