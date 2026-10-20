@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/event.h>
 #include <sys/stat.h>
@@ -66,13 +68,72 @@ static uint64_t directory_size(int fd, unsigned depth) {
     return total;
 }
 
+static int monitor_conversion(int root, pid_t launcher, int ready) {
+    /* Final monitor image is protected before the parent may exec converter. */
+    if (ptrace(PT_DENY_ATTACH, 0, NULL, 0) < 0) reject("Monitor debug protection failed");
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    int queue = kqueue();
+    if (queue < 0) reject("Monitor event queue failed");
+    struct kevent changes[2];
+    EV_SET(&changes[0], launcher, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_RECEIPT, NOTE_EXIT, 0, NULL);
+    EV_SET(&changes[1], group, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_RECEIPT, NOTE_EXIT, 0, NULL);
+    struct kevent receipts[2];
+    if (kevent(queue, changes, 2, receipts, 2, NULL) != 2) reject("Monitor registration failed");
+    for (int i = 0; i < 2; i++)
+        if (!(receipts[i].flags & EV_ERROR) || receipts[i].data != 0) reject("Monitor registration refused");
+    char header[64];
+    int length = snprintf(header, sizeof(header), "M %d\n", getpid());
+    if (write(3, header, (size_t)length) != length || write(ready, "R", 1) != 1)
+        reject("Launcher status channel closed");
+    close(ready);
+    const struct timespec interval = {0, 50000000};
+    for (;;) {
+        struct kevent events[2];
+        int count = kevent(queue, NULL, 0, events, 2, &interval);
+        if (count < 0) { if (errno == EINTR) continue; reject("Monitor event wait failed"); }
+        int finished = 0;
+        for (int i = 0; i < count; i++) {
+            if ((events[i].flags & EV_ERROR) || (pid_t)events[i].ident == launcher)
+                reject("Launcher exited during conversion");
+            if ((pid_t)events[i].ident == group && (events[i].fflags & NOTE_EXIT)) finished = 1;
+        }
+        entries = 0;
+        directory_size(root, 0);
+        if (finished) {
+            /* Success is provisional: the launcher also requires converter exit0. */
+            if (write(3, "OK\n", 3) != 3) reject("Launcher status channel closed");
+            close(root);
+            close(queue);
+            close(3);
+            return 0;
+        }
+    }
+}
+
 /* The untrusted converter must remain the detached session leader. A session
    leader cannot move process groups or create a new session; its sandbox also
    denies fork. The trusted monitor is a child in that same owned group. */
 int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
+    if (argc == 6 && !strcmp(argv[1], "--monitor")) {
+        char *ends[4];
+        long values[4];
+        for (int i = 0; i < 4; i++) {
+            errno = 0; values[i] = strtol(argv[i + 2], &ends[i], 10);
+            if (errno || *ends[i] || ends[i] == argv[i + 2] || values[i] <= 1 || values[i] > INT32_MAX) return 2;
+        }
+        pid_t launcher = (pid_t)values[0]; group = (pid_t)values[1];
+        int root = (int)values[2], ready = (int)values[3];
+        struct stat directory, pipe_info;
+        if (getpid() == group || getppid() != group || getpgrp() != group || getsid(0) != group ||
+            launcher == group || root <= 3 || ready <= 3 || root == ready ||
+            fcntl(3, F_GETFD) < 0 || fstat(root, &directory) || !S_ISDIR(directory.st_mode) ||
+            fstat(ready, &pipe_info) || !S_ISFIFO(pipe_info.st_mode)) return 2;
+        return monitor_conversion(root, launcher, ready);
+    }
     group = getpid();
-    if (argc < 4 || getpgrp() != group || getsid(0) != group || fcntl(3, F_GETFD) < 0) {
+    if (argc < 4 || argv[0][0] != '/' || getpgrp() != group || getsid(0) != group || fcntl(3, F_GETFD) < 0) {
         fputs("Renderer guard requires a detached session and status pipe\n", stderr);
         return 2;
     }
@@ -104,42 +165,16 @@ int main(int argc, char **argv) {
         reject("Converter exec failed");
     }
     close(ready[0]);
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    int queue = kqueue();
-    if (queue < 0) reject("Monitor event queue failed");
-    struct kevent changes[2];
-    EV_SET(&changes[0], launcher, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_RECEIPT, NOTE_EXIT, 0, NULL);
-    EV_SET(&changes[1], group, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_RECEIPT, NOTE_EXIT, 0, NULL);
-    struct kevent receipts[2];
-    if (kevent(queue, changes, 2, receipts, 2, NULL) != 2) reject("Monitor registration failed");
-    for (int i = 0; i < 2; i++)
-        if (!(receipts[i].flags & EV_ERROR) || receipts[i].data != 0) reject("Monitor registration refused");
-    char header[64];
-    int length = snprintf(header, sizeof(header), "M %d\n", getpid());
-    if (write(3, header, (size_t)length) != length || write(ready[1], "R", 1) != 1)
-        reject("Launcher status channel closed");
-    close(ready[1]);
-    const struct timespec interval = {0, 50000000};
-    for (;;) {
-        struct kevent events[2];
-        int count = kevent(queue, NULL, 0, events, 2, &interval);
-        if (count < 0) { if (errno == EINTR) continue; reject("Monitor event wait failed"); }
-        int finished = 0;
-        for (int i = 0; i < count; i++) {
-            if ((events[i].flags & EV_ERROR) || (pid_t)events[i].ident == launcher)
-                reject("Launcher exited during conversion");
-            if ((pid_t)events[i].ident == group && (events[i].fflags & NOTE_EXIT)) finished = 1;
-        }
-        entries = 0;
-        directory_size(root, 0);
-        if (finished) {
-            /* Success is provisional: the launcher also requires converter exit0. */
-            if (write(3, "OK\n", 3) != 3) reject("Launcher status channel closed");
-            close(root);
-            close(queue);
-            close(3);
-            return 0;
-        }
-    }
+    /* A parent cannot change a child process group after that child execs.
+       Preserve only the directory capability and the two protocol writers. */
+    if (fcntl(root, F_SETFD, 0) || fcntl(ready[1], F_SETFD, 0) || fcntl(3, F_SETFD, 0))
+        reject("Monitor descriptor preparation failed");
+    char launcher_arg[32], group_arg[32], root_arg[32], ready_arg[32];
+    snprintf(launcher_arg, sizeof(launcher_arg), "%d", launcher);
+    snprintf(group_arg, sizeof(group_arg), "%d", group);
+    snprintf(root_arg, sizeof(root_arg), "%d", root);
+    snprintf(ready_arg, sizeof(ready_arg), "%d", ready[1]);
+    char *monitor_args[] = {argv[0], "--monitor", launcher_arg, group_arg, root_arg, ready_arg, NULL};
+    execv(argv[0], monitor_args);
+    reject("Monitor exec failed");
 }

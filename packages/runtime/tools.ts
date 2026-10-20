@@ -50,7 +50,7 @@ export async function runTool(executable:string,args:string[],options:{input?:st
     // A failed supervisor may leave descendants holding its stdio open. Kill
     // the owned detached group at exit, before waiting for the close event.
     child.on('exit',code=>{if(code!==0&&child.pid)kill(child.pid,'SIGKILL');});
-    child.on('close',code=>{clean();if(failure)reject(failure instanceof DocverError&&failure.code==='TOOL_SUPERVISOR'?new DocverError(failure.code,failure.message+': '+stderr.toString('utf8').slice(-500)):failure);else if(code!==0)reject(new DocverError('TOOL_FAILED','Local processor failed (exit '+code+'): '+(stderr.length?stderr:stdout).toString('utf8').slice(-500)));else if(!monitorOK)reject(new DocverError('TOOL_SUPERVISOR','Renderer monitor did not confirm completion'));else resolveRun(stdout.toString('utf8'));});
+    child.on('close',(code,signal)=>{clean();if(failure)reject(failure instanceof DocverError&&failure.code==='TOOL_SUPERVISOR'?new DocverError(failure.code,failure.message+' (exit '+code+', signal '+(signal??'none')+'): '+stderr.toString('utf8').slice(-500)):failure);else if(code!==0)reject(new DocverError('TOOL_FAILED','Local processor failed (exit '+code+(signal?', signal '+signal:'')+'): '+(stderr.length?stderr:stdout).toString('utf8').slice(-500)));else if(!monitorOK)reject(new DocverError('TOOL_SUPERVISOR','Renderer monitor did not confirm completion'));else resolveRun(stdout.toString('utf8'));});
     child.stdin!.on('error',()=>{});child.stdin!.end(options.input);
     if(options.signal?.aborted)cancelled();
   });

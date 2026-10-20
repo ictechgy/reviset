@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,readFile,writeFile,rm,lstat,realpath} from 'node:fs/promises';
-import {existsSync} from 'node:fs';
+import {existsSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {execFileSync,spawn} from 'node:child_process';
@@ -22,16 +22,22 @@ test('actual renderer guard confines direct IO, broker lookup, signals, resource
     // Each wait fixture attempts both escape syscalls before publishing its PID.
     // Thus immediate cancellation/monitor death is synchronized AFTER escape
     // attempts, not a separate escape-only or cleanup-only control.
-    const modes=['probe','fsize','aggregate','symlink','output','timeout','escape',...Array.from({length:12},()=>['cancel','supervisor-kill']).flat()];
+    const modes=['probe','fsize','aggregate','symlink','output','timeout','escape','monitor-parent','monitor-debug',...Array.from({length:12},()=>['cancel','supervisor-kill']).flat()];
     for(const [iteration,mode] of modes.entries()){
       const folder=join(root,mode+'-'+iteration);await mkdir(folder,{mode:0o700});const controller=new AbortController(),wait=['cancel','timeout','supervisor-kill','escape'].includes(mode);
       if(mode==='probe')await writeFile(join(folder,'inside-canary'),'Public regular-file canary');
       let monitor=0;
-      const pending=runTool(resolve('dist/native/DocverRendererGuard'),[folder,'/usr/bin/sandbox-exec','-p',onlyOfficeSidecarPolicy(folder,vendor,probe),probe,wait&&mode!=='escape'?'wait':mode,folder,outside,canary],{supervised:true,onSupervisorPid:pid=>{monitor=pid;},inheritEnv:false,env:{PATH:'/usr/bin:/bin',HOME:folder,TMPDIR:folder},signal:controller.signal,timeout:mode==='timeout'?1500:10000,maxBytes:1024*1024}).then(stdout=>({stdout,error:undefined}),error=>({stdout:'',error:error as Error&{code:string}}));
+      const pending=runTool(resolve('dist/native/DocverRendererGuard'),[folder,'/usr/bin/sandbox-exec','-p',onlyOfficeSidecarPolicy(folder,vendor,probe),probe,wait&&mode!=='escape'?'wait':mode,folder,outside,canary],{supervised:true,onSupervisorPid:pid=>{monitor=pid;if(mode.startsWith('monitor-')){owned.add(pid);writeFileSync(join(folder,'monitor.pid'),String(pid));}},inheritEnv:false,env:{PATH:'/usr/bin:/bin',HOME:folder,TMPDIR:folder},signal:controller.signal,timeout:mode==='timeout'?1500:10000,maxBytes:1024*1024}).then(stdout=>({stdout,error:undefined}),error=>({stdout:'',error:error as Error&{code:string}}));
       let pids:number[]=[];
       if(wait){for(let i=0;i<100&&!existsSync(join(folder,'pids.json'));i++)await new Promise(r=>setTimeout(r,10));assert.ok(existsSync(join(folder,'pids.json')));const owners=JSON.parse(await readFile(join(folder,'pids.json'),'utf8'));assert.ok(monitor>1);assert.equal(owners.converter,owners.group);assert.equal(owners.converter,owners.session);assert.equal(owners.setpgid_denied,true);assert.equal(owners.setsid_denied,true);pids=[owners.converter,monitor];for(const pid of pids)owned.add(pid);if(mode==='cancel')controller.abort();if(mode==='supervisor-kill')process.kill(monitor,'SIGKILL');}
       const result=await pending;
-      if(mode==='probe'){
+      if(mode==='monitor-parent'){
+        assert.ifError(result.error);const observed=JSON.parse(result.stdout);assert.equal(observed.monitor,monitor);assert.equal(observed.monitor_group,observed.group);assert.equal(observed.move_result,-1);assert.equal(observed.move_errno,13);pids=[observed.converter,monitor];
+      }else if(mode==='monitor-debug'){
+        const observed=JSON.parse(await readFile(join(folder,'debug-attempt.json'),'utf8'));assert.equal(observed.monitor,monitor);assert.equal(observed.monitor_group,observed.group);assert.notEqual(observed.task_result,0);pids=[observed.converter,monitor];
+        if(existsSync(join(folder,'debug-result.json'))){const debug=JSON.parse(await readFile(join(folder,'debug-result.json'),'utf8'));assert.equal(debug.attach_result,-1);assert.equal(debug.attach_errno,1);}
+        else {assert.ok(result.error);assert.match(String(result.error),/SIGSEGV/u);}
+      }else if(mode==='probe'){
         assert.ifError(result.error);const observed=JSON.parse(result.stdout);
         for(const key of ['inside_read_allowed','mach_denied','signal_denied','read_denied','write_denied','network_denied','fork_denied','exec_denied','env_absent'])assert.equal(observed[key],true,key);
         assert.equal(observed.mach_result,1100);assert.equal(existsSync(outside),false);

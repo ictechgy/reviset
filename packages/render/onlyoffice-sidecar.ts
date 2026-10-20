@@ -70,7 +70,7 @@ async function provider(resources:string,signal?:AbortSignal){
 
 export function onlyOfficeSidecarPolicy(folder:string,app:string,converter:string){
   const reads=['/System','/usr/lib','/usr/share','/private/etc','/private/var/db',...onlyOfficeFontRoots(),app,folder,'/dev'];
-  return `(version 1)(allow default)(deny network*)(deny mach-lookup)(deny mach-register)(deny user-preference-write)(deny lsopen)(deny signal)(deny ipc-posix*)(deny ipc-sysv*)(deny iokit*)(deny process-fork)(deny process-exec)(allow process-exec (literal ${JSON.stringify(converter)}))(deny file-read-data)(allow file-read-data (vnode-type DIRECTORY) ${reads.map(p=>`(subpath ${JSON.stringify(p)})`).join(' ')})(deny file-write*)(allow file-write* (subpath ${JSON.stringify(folder)}) (literal "/dev/null"))(deny file-write* (subpath ${JSON.stringify(app)}))`;
+  return `(version 1)(allow default)(deny network*)(deny mach-lookup)(deny mach-register)(deny user-preference-write)(deny lsopen)(deny signal)(deny system-debug)(deny ipc-posix*)(deny ipc-sysv*)(deny iokit*)(deny process-fork)(deny process-exec)(allow process-exec (literal ${JSON.stringify(converter)}))(deny file-read-data)(allow file-read-data (vnode-type DIRECTORY) ${reads.map(p=>`(subpath ${JSON.stringify(p)})`).join(' ')})(deny file-write*)(allow file-write* (subpath ${JSON.stringify(folder)}) (literal "/dev/null"))(deny file-write* (subpath ${JSON.stringify(app)}))`;
 }
 
 export function sidecarSource(report:ReportData,scope:SidecarScopeData){

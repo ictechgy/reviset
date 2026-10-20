@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/ptrace.h>
 #include <unistd.h>
 #include <servers/bootstrap.h>
 #include <mach/mach.h>
@@ -16,6 +17,22 @@ int main(int argc,char **argv){
  if(argc!=5)return 2;
  const char *mode=argv[1],*folder=argv[2],*outside=argv[3],*canary=argv[4];char path[4096];
  if(!strcmp(mode,"broker-baseline")){mach_port_t port=MACH_PORT_NULL;kern_return_t result=bootstrap_look_up(bootstrap_port,"com.apple.cfprefsd.daemon",&port);if(result==KERN_SUCCESS)mach_port_deallocate(mach_task_self(),port);printf("{\"mach_result\":%d}\n",result);return result==KERN_SUCCESS?0:91;}
+ if(!strcmp(mode,"monitor-parent")||!strcmp(mode,"monitor-debug")){
+  int monitor=0;snprintf(path,sizeof(path),"%s/monitor.pid",folder);
+  for(int i=0;i<500&&!monitor;i++){FILE*f=fopen(path,"r");if(f){if(fscanf(f,"%d",&monitor)!=1)monitor=0;fclose(f);}if(!monitor)usleep(1000);}
+  if(monitor<=1)return 9;
+  if(!strcmp(mode,"monitor-parent")){
+   errno=0;int moved=setpgid(monitor,monitor),e=errno;
+   printf("{\"converter\":%d,\"monitor\":%d,\"monitor_group\":%d,\"group\":%d,\"move_result\":%d,\"move_errno\":%d}\n",getpid(),monitor,getpgid(monitor),getpgrp(),moved,e);return 0;
+  }
+  mach_port_t task=MACH_PORT_NULL;kern_return_t result=task_for_pid(mach_task_self(),monitor,&task);if(result==KERN_SUCCESS)mach_port_deallocate(mach_task_self(),task);
+  snprintf(path,sizeof(path),"%s/debug-attempt.json",folder);FILE*f=fopen(path,"w");if(!f)return 10;
+  fprintf(f,"{\"converter\":%d,\"monitor\":%d,\"monitor_group\":%d,\"group\":%d,\"task_result\":%d}",getpid(),monitor,getpgid(monitor),getpgrp(),result);fclose(f);
+  errno=0;int attached=ptrace(PT_ATTACH,monitor,0,0),e=errno;
+  snprintf(path,sizeof(path),"%s/debug-result.json",folder);f=fopen(path,"w");if(!f)return 11;
+  fprintf(f,"{\"attach_result\":%d,\"attach_errno\":%d}",attached,e);fclose(f);
+  return attached==0?42:0;
+ }
  if(!strcmp(mode,"probe")){
   snprintf(path,sizeof(path),"%s/inside-canary",folder);int inside=open(path,O_RDONLY);char first=0;int ir=inside>=0?(int)read(inside,&first,1):-1;if(inside>=0)close(inside);
   int fd=open(canary,O_RDONLY);int re=errno;if(fd>=0)close(fd);

@@ -272,3 +272,14 @@ Early independent WIP reviews caught the context-key failure, missing warning co
 - native control은 escape 시도 이후 PID 게시를 기다려 즉시 취소/monitor SIGKILL을 각각12회 검사한다. 원래 D의 escape-only 검사와 별개다. 새 clean E 전체·양 lane·실제앱·이동ZIP은 검증 전이며 기존 F/AL 앱·ZIP/HANDOFF/PLAN은 보존한다. 보편 OCR/PowerPoint 충실도 OPEN을 이 감독 수정으로 해결했다고 세지 않는다.
 
 - E4817a0b 전체251/251PASS161484.686166ms(wrapper162.221819초), 추적190파일 불변. 독립 코드의20개 runtime fault control에서 resource reject가 TOOL_SUPERVISOR로 바뀐 경우 한국어 SIDECAR_LIMIT로 번역되지 않는 작은 회귀를 찾아 E2에서 두 코드 모두 동일한 제한 안내로 정리한다. 실제 native aggregate/symlink reject와 pure error-identity/cancellation 보존 검사를 추가하며 E의 전체결과를 E2 결과로 다시 표시하지 않는다.
+
+
+### 2026-10-20 source E2 실제 검증과 E3 감독 경계 보강
+
+- E2 clean2374b60 전체252/252PASS160209.810583ms(wrapper160.953237초). 독립 코드COMMENT/sourceREADY(2f3ae948…), 아키텍처WATCH/sourceREADY(f706e572…) 후 실제 앱 build20.983초, five+공개PPTX10개+fresh300쪽 덱12native작업과MCP five/300/old900 3작업 총15PASS. C의 실제닫기실패반례를 같은assertion으로 재실행해PDFKit선택쪽·해시·닫기정리·DB/report불변까지 통과했다. ZIP render1 391388340B SHA294499aec2f35f71699a0f3fc1201fe054e5f1749fcd8b095e83414d5abf39fd, 공백이동경로 실제app/MCP/서명 총12checksPASS. F/AL앱/ZIP는 보존한다.
+- E2 앱SIGKILL후 helper전부0.104437초내종료/잔여0, 추가 bridge+app동시SIGKILL은 실제pendingjob/lease1개를 남겨 actual같은library재시작으로 복구/DB불변(helpers0.040078초). E2 Swift Bridge cancel 검사는 명시적sidecarClose를 포함하므로 cancellation-alone 증거로 세지 않는다. E3검사에서는 명시close전에정리불변을 확인한다.
+- Grok completeE REQUEST_CHANGES는 감독M이 untrustedG의 미exec child여서 debugging후group이탈 가능성을 지적했다. E2 actualproductionpolicy/guard 자체fixture에서 parent-side setpgid(M,M)=0을 확인했지만 task_for_pid=5,ptrace=-1/EPERM,monitor정상종료였다. 여기서 attach/정지/timeout우회나 실제x2t exploit은 재현되지 않았다. 첫repro는vendorroot가job까지포함해쓰기거절(exit4)이었으며 별도보존하고, 분리한vendor/actualprobe결과와 혼동하지 않는다. E2 source/app/ZIP PASS들은 그대로 두고최종통합승인은 추가경계검증대기로BLOCKED했다.
+- E3는 M을 같은G그룹에서 trusted guard의--monitor이미지로 먼저exec해 parent-side setpgid를 OS EACCES로 막고, PT_DENY_ATTACH·hardened runtime(디버깅entitlement없음)·sandbox system-debug deny를 추가한다. dirFD와privatefd3/ready만명시적으로exec에보존하고 monitor신원/FD/보호/kqueue등록이끝난후READY를준다. Node는실패진단에실제exit/signal을포함한다. nativecontrol에서M그룹이탈거절과Mach/ptrace거절(부모SIGSEGV도failclosed)을직접검사한다. 전체/양lane/새앱/ZIP은새native-sidecar-03에서재검증전까지PASS로세지않는다.
+- Claude E completeCOMMENT와E2 limit-only closureAPPROVE, Grok E completeREQUEST_CHANGES와E2 limit-only closureAPPROVE는각scope별원문을보존한다. E2 narrowapproval은monitor지적을닫지않는다. 480 OCR218정확/22오독/240빈,PowerPointstrict0/26은OPEN이다.
+
+- E3 집중17/17PASS3444.312667ms(wrapper3.470154초), 실제native감독검사2408.273ms. parent-side그룹변경은EACCES/원래G그룹유지, Mach taskport거절, ptrace는부모SIGSEGV와전체ownedPID종료로failclosed를확인했다. 초기E3검사에서실제SIGSEGV를에러에표시하지못한진단회귀가드러나signal을TOOL_FAILED에도보존하고재검사했다. 서명된runtimeguard SHA b995ae2ed0fc0e482ccd6c1a27872a84bdf384e41cedd995f1c7d19e3b7d9ffa; 최종앱/이동ZIP복사본의같은서명flags와entitlement는별도확인한다.
