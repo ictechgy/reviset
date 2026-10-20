@@ -107,7 +107,7 @@ export class QueryService {
         if(from&&to&&r.revisions.indexOf(from)>=r.revisions.indexOf(to))throw new DocverError('RANGE_ORDER','from must precede to');
         if(change&&from&&to){
           const start=r.revisions.indexOf(from),end=r.revisions.indexOf(to),a=r.revisions.findIndex(v=>v.revision_occurrence_id===change!.from_occurrence),b=r.revisions.findIndex(v=>v.revision_occurrence_id===change!.to_occurrence);
-          if(a<start||b>end)throw new DocverError('CHANGE_SCOPE','Stored change is outside the selected history range');
+          if(!(start<=a&&a<b&&b<=end))throw new DocverError('CHANGE_SCOPE','Stored change is outside the selected history range');
         }
         if(!change&&from&&to){
           change=this.rangeChange(r,args);computed=true;

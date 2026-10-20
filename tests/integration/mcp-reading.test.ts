@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,rm,writeFile,readdir,mkdir} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
@@ -152,6 +152,7 @@ test('advisor regressions: containing history ranges, ambiguous repeated-element
   const r=fixture(),q=service(r),common=scope(r),p=r.revisions[0].pages[0];
   assert.equal(q.query('get_change',{...common,change_id:'change_reading',from:'occ_a',to:'occ_c'}).items[0].change_id,'change_reading');
   assert.throws(()=>q.query('get_change',{...common,change_id:'change_reading',from:'occ_c',to:'occ_a'}),{code:'RANGE_ORDER'});
+  for(const [from,to] of [['occ_a','occ_missing'],['occ_b','occ_a'],['occ_b','occ_b']]){const invalid=fixture();invalid.changes[0].from_occurrence=from;invalid.changes[0].to_occurrence=to;assert.throws(()=>service(invalid).query('get_change',{...scope(invalid),change_id:'change_reading',from:'occ_a',to:'occ_c'}),{code:'CHANGE_SCOPE'});}
   for(const order of [false,true]){
     const first={...p.elements[0],text:'Revenue',reading_order:0,observation_id:'visible',visibility:'visible' as const},second={...first,observation_id:'covered',reading_order:1,visibility:'occluded' as const};p.elements=order?[second,first]:[first,second];p.text='Revenue\nRevenue';
     const hit=q.query('search_content',{...common,text:'Revenue',section:'source'}).items[0];assert.equal(hit.element_attribution,'ambiguous');assert.equal(hit.observation_id,undefined);
@@ -166,4 +167,24 @@ test('advisor regressions: containing history ranges, ambiguous repeated-element
   assert.throws(()=>q.query('get_element',{...common,observation_id:obs}),{code:'AMBIGUOUS_OBSERVATION'});assert.throws(()=>q.query('get_evidence',{...common,observation_id:obs}),{code:'AMBIGUOUS_OBSERVATION'});
   r.observation_environment={large_environment:'가나다😀'.repeat(6000)};const folder=await mkdtemp(join(tmpdir(),'docver-large-manifest-'));
   try{await exportReport(q,r.project_id,r.report_id,folder);const manifest=JSON.parse(await readFile(join(folder,'manifest.json'),'utf8'));assert.equal(manifest.engine_version,r.engine_version);assert.equal(manifest.schema_hash,r.schema_hash);assert.deepEqual(manifest.observation_environment,r.observation_environment);assert.equal(manifest.truncated,undefined);}finally{await rm(folder,{recursive:true,force:true});}
+});
+
+test('Markdown export labels all reading authorities and states and refuses to mix or overwrite a previous export',async()=>{
+  const folder=await mkdtemp(join(tmpdir(),'docver-markdown-reading-')),r=fixture(),p=r.revisions[0].pages[0];
+  p.text='원문 가려진 금액 100';p.visible_text='표시 금액';p.suppressed_text='가려진 금액 100';p.notes=null;p.capabilities.notes='unavailable';
+  p.ocr_text='추정 120';p.ocr={status:'available',engine:'fixture',environment:'same'};p.comparison_basis='raster_ocr';
+  const q=service(r),before=canonical(r);
+  try{
+    await exportReport(q,r.project_id,r.report_id,folder);
+    const files=await readdir(join(folder,'content','occ_a'));assert.equal(files.length,1);
+    const md=await readFile(join(folder,'content','occ_a',files[0]),'utf8');
+    for(const section of ['comparison','source','visible','unresolved','suppressed','ocr','ocr_unresolved','notes'])assert.ok(md.includes('## '+section+'\n'));
+    assert.match(md,/"text_assessment":"inferred"/);assert.match(md,/"field_state":"unavailable"/);assert.match(md,/"field_state":"not_recorded"/);
+    assert.ok(md.includes('> 추정 120'));assert.ok(md.includes('> 원문 가려진 금액 100'));assert.ok(md.includes('> 가려진 금액 100'));assert.ok(md.includes('"asset_role":"pptx_source"'));assert.ok(md.includes('"revision_occurrence_id":"occ_a"'));
+    const manifest=await readFile(join(folder,'manifest.json'));
+    await assert.rejects(exportReport(q,r.project_id,r.report_id,folder),{code:'EXPORT_DESTINATION_NOT_EMPTY'});
+    assert.deepEqual(await readFile(join(folder,'manifest.json')),manifest);assert.equal(canonical(r),before);
+    const occupied=join(folder,'occupied');await mkdir(occupied);await writeFile(join(occupied,'user.txt'),'keep');
+    await assert.rejects(exportReport(q,r.project_id,r.report_id,occupied),{code:'EXPORT_DESTINATION_NOT_EMPTY'});assert.deepEqual(await readdir(occupied),['user.txt']);assert.equal(await readFile(join(occupied,'user.txt'),'utf8'),'keep');
+  }finally{await rm(folder,{recursive:true,force:true});}
 });

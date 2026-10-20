@@ -75,3 +75,5 @@ npm run cli -- query --project prj_demo --report rpt_fixed --tool list_coverage_
 ```
 
 새 조회는 저장된 판독을 더 잘 읽게 하는 기능이다. 미해결 OCR 오인식이나 PPTX 렌더 차이를 없애는 기능으로 해석하지 않는다. 실제 앱·ZIP의 검증 범위와 남은 품질 게이트는 [QUALITY.md](QUALITY.md)와 `release/validation.json`에 따로 고정한다.
+
+페이지별 Markdown도 MCP와 같은8개 section과 field_state/availability/관측·추정/원본·제공PDF 역할을 표시한다. JSON/JSONL의 저장 원문과 변경 ID는 그대로 보존한다. 내보내기는 새 폴더 또는 빈 폴더를 사용하며 기존 파일이 있으면 `EXPORT_DESTINATION_NOT_EMPTY`로 거절한다. 서로 다른 보고서의 페이지 파일이 섞이지 않도록 기존 폴더를 덮어쓰지 않는다.

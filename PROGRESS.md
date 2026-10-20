@@ -941,3 +941,11 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 - B clean `ed8b5e202bee4f931a7ce960e02ccbc6dd84063b` 전체233/233PASS,0fail/skip/cancel,wrapper163.601625833s, 추적 소스 바이트 모두 동일. 정확 B 결과이며 새 C의 전수 실행으로 재분류하지 않는다.
 - 독립 코드 lane의 실제 순서별 counterexample에서 `other.text.includes(e.text)`만 검사하면 긴/짧은 반복 요소 순서에 따라 attribution guard가 달라졌다. 실제 native producer 오귀속 exploit을 증명한 것은 아니지만 새 보수정책의 비대칭을 닫기 위해 포함 관계를 양방향으로 검사한다. 빈 다른 요소는 상관 없는 모호성으로 만들지 않는다. Revenue\nRevenue/Revenue와 a/b\na, a\nb/a 양쪽순서 controls를 추가했다. 원문·diff·event ID·기존근거의 의미는 바꾸지 않고 새 검색의 단일observation귀속만 보류한다.
 - 집중10/10PASS 및 TypeScript PASS. C 전체233/현재17경로 독립source리뷰·새앱/MCP/ZIP은 별도 진행한다. A/B 승인과 실제실행은 각각 해당정확snapshot에만 남긴다.
+
+
+### 2026-10-20 AI MCP · sourceD 내보내기 읽기 상태·폴더 분리
+
+- C clean `c23a0e25d59e91328e3fcd402fc8e8748332abdb` 전체233/233PASS,wrapper155.087010583s,추적소스바이트고정. C전용review와 이후D실행을 구분한다. GrokA900초는exit124/stdout0/stderr0로무효이며 승인으로세지않는다. GrokB900초는 별도 진행한다.
+- Claude exactB six-runtime packet73932B SHA1632b8a15de0a04b246f043d6b872b6b31167db5109b9fea175dabc35d5376be의 substantive7116B/exit0/stderr0/terminal APPROVE. 현재엔진 한정 static승인이며 C/D전체/앱승인은아니다. 추가LOW중 실제AI사용에관련된 Markdown 원문역할부재와 같은폴더export stale파일혼합을 채택한다. primary_text무제한 가설은 schema max128로반증한다. legacyalias호환은기존정책유지; 고대미stamp중복ID가설은현재producer재현없음으로별도기록한다.
+- Markdown은 공통reading helper의8개field와원본/제공PDF authority, null/empty/not_recorded/empty_unverified, observed/inferred metadata를 함께기록한다. 저장report/JSONL/eventID는불변. 새/빈폴더만허용하고 exclusive write로기존파일을덮어쓰지않는다. 실패시부분export삭제나사용자파일삭제를하지않으며 원자적폴더commit을보장하지않는다.
+- 독립architecture LOW synthetic 저장change의to_occurrence누락사례를확인했다. 현재producer발생증거없으나새get_change의containingrange검사를 start<=a && a<b && b<=end로닫고 missing/reverse/selfcontrols를추가한다. 기존저장eventID/diff는수정하지않는다. D집중11/전체234·독립리뷰·실제앱·ZIP는이어검증한다.
