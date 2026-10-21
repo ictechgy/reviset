@@ -29,7 +29,7 @@ struct MappingSheet: View {
     var selectedEdges:[JSON] {model.report["matches"].array.filter{left.contains($0["from_page_id"].string)&&right.contains($0["to_page_id"].string)}}
     var currentSelectionText:String {
         let values=selectedEdges.map{edge in edgeLabel(edge)+" · "+(edge["status"].string=="human_confirmed" ? "사용자 확정":edge["status"].string=="needs_review" ? "검토 필요 후보":"추정 대응")}
-        return "현재 선택의 대응·후보: "+(values.isEmpty ? "없음":values.joined(separator:" / "))
+        return "현재 선택의 저장된 대응: "+(values.isEmpty ? "직접 연결 없음":values.joined(separator:" / "))
     }
     var conflicts: [JSON] {
         model.report["matches"].array.filter { edge in
@@ -49,6 +49,7 @@ struct MappingSheet: View {
             }.disabled(saving)
             Text("이전 \(left.count)쪽 → 이후 \(right.count)쪽 · 한쪽 최대 32쪽 선택").font(.callout.weight(.medium))
             Text(currentSelectionText).font(.caption).foregroundStyle(.secondary).lineLimit(2).help(currentSelectionText)
+            Text("표시된 연결 외에 다른 유사 후보가 있을 수 있습니다.").font(.caption2).foregroundStyle(.secondary)
             if !conflicts.isEmpty {
                 Text("기존 대응 \(conflicts.count)개가 해제됩니다. 남은 분기들은 유지되며, 한 쌍만 남으면 1:1 연결로 바뀝니다.").font(.caption).foregroundStyle(.orange)
                 ScrollView(.horizontal) { HStack { ForEach(Array(conflicts.enumerated()), id: \.offset) { _,edge in Text(edgeLabel(edge)).font(.caption2).padding(5).background(Color.orange.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 4)) } } }.frame(maxHeight: 34)

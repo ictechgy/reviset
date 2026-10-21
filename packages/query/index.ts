@@ -16,7 +16,7 @@ import {matchPages as legacyNativeMatch} from '../matching/legacy-native-1.js';
 import { z } from 'zod';
 import { Store } from '../storage/index.js';
 import { SCHEMA_VERSION,ENGINE_VERSION, canonical, hash, id,comparisonText,textChunk, DocverError, Gap, Change, type ChangeData, type ReportData,type ElementData } from '../schema/index.js';
-import { matchPages,MATCHING_WORK_POLICY,MAX_ASSIGNMENT_COSTS } from '../matching/index.js';
+import { matchPages,MATCHING_WORK_POLICY,MAX_ASSIGNMENT_COSTS,MAX_MATCHING_MATRIX_CELLS } from '../matching/index.js';
 import { diffRevisions } from '../diff/index.js';
 import { diffRevisions as legacyNativeDiff } from '../diff/legacy-native-1.js';
 import { changeContentRows, coverageRows, pageContentRows, readingSections, resolveReadingRevision, searchContentRows } from './reading.js';
@@ -188,7 +188,7 @@ export class QueryService {
           const diff=currentLineageKernel(r.engine_version)?archivedLineageKernel(r.engine_version)?legacyLineage45Diff:archivedBundle50Kernel(r.engine_version)?legacyBundle50Diff:archivedBundle51Kernel(r.engine_version)?legacyBundle51Diff:diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Diff:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Diff:undefined;
           if(!diff)throw new DocverError('ENGINE_VERSION_UNAVAILABLE','Historical range computation requires its archived engine; stored history/export remains readable, and reanalysis creates a new report');
           const matcher=archivedLineageKernel(r.engine_version)?legacyLineage45Match:archivedBundle50Kernel(r.engine_version)?legacyBundle50Match:archivedBundle51Kernel(r.engine_version)?legacyBundle51Match:r.engine_version==='0.1.0-native.1'?legacyNativeMatch:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Match:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Match:matchPages;
-          const candidates=(matcher===matchPages?matchPages(left.pages,right.pages,[],[],{maxCosts:r.observation_environment.matching_work_policy===MATCHING_WORK_POLICY?MAX_ASSIGNMENT_COSTS:r.observation_environment.matching_work_policy==='hungarian-32m-costs-v1'?32_000_000:undefined}):matcher(left.pages,right.pages)).candidates;
+          const candidates=(matcher===matchPages?matchPages(left.pages,right.pages,[],[],{maxCosts:r.observation_environment.matching_work_policy===MATCHING_WORK_POLICY?MAX_ASSIGNMENT_COSTS:r.observation_environment.matching_work_policy==='hungarian-32m-costs-v1'?32_000_000:undefined,maxMatrixCells:r.observation_environment.matching_work_policy===MATCHING_WORK_POLICY?MAX_MATCHING_MATRIX_CELLS:undefined}):matcher(left.pages,right.pages)).candidates;
           const endpointIds=r.engine_version===ENGINE_VERSION||r.engine_version==='0.3.0-native.lineage.45'||archivedBundle50Kernel(r.engine_version)||archivedBundle51Kernel(r.engine_version)?[a.revision_occurrence_id,b.revision_occurrence_id]:[args.from,args.to];
           changes=diff(left,right,matches,candidates,entity,directed?.structural).map((c,i)=>{const event={...c,schema_version:r.schema_version};return {...event,report_id:r.report_id,change_id:id('net',[r.report_id,...endpointIds,i,event]),evidence_uri:resource(r,'manifest')};});
           if(!this.loadSnapshot)this.ranges.set(cacheKey,changes);

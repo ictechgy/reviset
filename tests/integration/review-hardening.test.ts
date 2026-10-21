@@ -44,7 +44,7 @@ import {Store} from '../../packages/storage/index.js';
 import {DesktopService,DESKTOP_PROJECTS_TABLE} from '../../packages/desktop/service.js';
 import {QueryService} from '../../packages/query/index.js';
 import {exportReport} from '../../packages/export/index.js';
-import {matchPages,MAX_ASSIGNMENT_COSTS,MATCHING_WORK_POLICY} from '../../packages/matching/index.js';
+import {matchPages,MAX_ASSIGNMENT_COSTS,MATCHING_WORK_POLICY,MAX_MATCHING_MATRIX_CELLS} from '../../packages/matching/index.js';
 import {matchPages as preservedMatcher} from '../../packages/matching/legacy-bundle-51.js';
 import {ENGINE_VERSION,SCHEMA_VERSION,Report,type ReportData,type PageData,type RevisionData} from '../../packages/schema/index.js';
 function sourcePage(id:string,text='Revenue 100',asset='sha256:'+'a'.repeat(64)):PageData{return {page_id:id,asset_id:asset,page:1,width:960,height:540,coordinate_system:'normalized_top_left',source_transform:[1,0,0,1,0,0],hidden:false,text,elements:[{observation_id:'obs_'+id,kind:'text',text,normalized_text:text,bbox:[.1,.1,.5,.1],reading_order:0,availability:'available',method:'fixture_source',source_ref:id,provenance:'observed'}],notes:'',capabilities:{text:'available',notes:'available',hidden_slides:'available',animation:'unavailable',structure:'available',preview:'unavailable'},coverage_gaps:[]};}
@@ -101,7 +101,7 @@ test('500/1000 near-tied template pages remain supported and cancellation runs b
  assert.deepEqual(matchPages(pages('a',12),pages('b',12)),preservedMatcher(pages('a',12),pages('b',12)));
  for(const n of [500,1000]){let ticks=0;const timer=setInterval(()=>ticks++,1);try{const result=await matchPagesCooperative(pages('a',n),pages('b',n),[],[],{maxCosts:MAX_ASSIGNMENT_COSTS});assert.equal(result.matches.length,n);assert.ok(result.matches.every(m=>m.status==='needs_review'));assert.ok(ticks>0,'event loop must run during non-uniform dense assignment');}finally{clearInterval(timer);}}
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),1);try{await assert.rejects(matchPagesCooperative(pages('a',1000),pages('b',1000),[],[],{maxCosts:MAX_ASSIGNMENT_COSTS,signal:controller.signal}),{name:'AbortError'});}finally{clearTimeout(timer);}
- assert.throws(()=>matchPages(pages('a',1001),pages('b',1000),[],[],{maxCosts:MAX_ASSIGNMENT_COSTS}),{code:'MATCHING_LIMIT'});
+ assert.throws(()=>matchPages(pages('a',1001),pages('b',1000),[],[],{maxCosts:MAX_ASSIGNMENT_COSTS,maxMatrixCells:MAX_MATCHING_MATRIX_CELLS}),{code:'MATCHING_LIMIT'});
 });
 test('damaged draft retains scoped read-only report/page/export/MCP access and every mutation still fails closed',async()=>{
  const root=await mkdtemp(join(tmpdir(),'docver-damaged-readonly-')),service=new DesktopService(root);try{
@@ -110,4 +110,16 @@ test('damaged draft retains scoped read-only report/page/export/MCP access and e
   const bridge=(action:string,args:Record<string,unknown>)=>{const result=spawnSync(process.execPath,['--import','tsx',resolve('apps/bridge/main.ts'),'--root',root],{input:JSON.stringify({action,args}),encoding:'utf8',timeout:10000});assert.ifError(result.error);const reply=JSON.parse(result.stdout);assert.equal(reply.ok,true,JSON.stringify(reply.error));return reply.value;};
   const scope={project_id:p.project_id,report_id:r.report_id};assert.equal(bridge('view',scope).draft_hash,null);const rows=bridge('projects',{});assert.equal(rows[0].unreadable,true);assert.equal(rows[0].last_report_id,r.report_id);assert.equal(JSON.parse(bridge('mcpConfig',{project_id:p.project_id})).mcpServers.docver.args.at(-1),p.project_id);bridge('export',{...scope,folder:join(root,'export')});assert.equal(JSON.stringify(JSON.parse(await readFile(join(root,'export/report.json'),'utf8'))),original);assert.equal(service.store.db.prepare(`SELECT body FROM ${DESKTOP_PROJECTS_TABLE} WHERE id=?`).get(p.project_id)?.body,'{damaged');
  }finally{service.close();await rm(root,{recursive:true,force:true});}
+});
+
+// Old v1 PPTX reports admitted >1000 slides when unique source anchors
+// removed every Hungarian row. A new-analysis matrix cap cannot rewrite that.
+test('stored v1 range matching retains its cost-only admission beyond the v2 matrix cap',()=>{
+ const r=readingReport('report_v1_1001');r.observation_environment.matching_work_policy='hungarian-32m-costs-v1';
+ for(const [j,v]of r.revisions.entries()){v.assets=[{asset_id:'sha256:'+'a'.repeat(64),format:'pptx',bytes:0}];v.pages=Array.from({length:1001},(_,i)=>({...sourcePage(`p${j}_${i}`,'Same heading'),page:i+1}));}
+ r.matches=r.revisions[0].pages.map((p,i)=>({from_page_id:p.page_id,to_page_id:r.revisions[1].pages[i].page_id,score:1,status:'inferred',reasons:['exact_source_page']}));
+ r.candidates=[];r.changes=[];r.lineages=r.revisions[0].pages.map((p,i)=>({entity_id:'family_'+i,page_ids:[p.page_id,r.revisions[1].pages[i].page_id],status:'inferred'}));
+ const q=new QueryService({} as Store,new Set([r.project_id]),()=>r),args={project_id:r.project_id,report_id:r.report_id,from:'occ_a',to:'occ_b',mode:'range_net'};
+ assert.deepEqual(q.changeSet(args),[],'stored v1 exact anchors remain readable');
+ r.observation_environment.matching_work_policy=MATCHING_WORK_POLICY;assert.throws(()=>q.changeSet(args),{code:'MATCHING_LIMIT'},'new v2 matrix admission is explicit');
 });
