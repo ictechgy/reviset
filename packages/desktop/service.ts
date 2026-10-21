@@ -94,8 +94,11 @@ export class DesktopService {
       const p=this.project(projectId);
       if(expectedDraftHash!==undefined&&expectedDraftHash!==hash(this.manifest(projectId)))throw new DocverError('STALE_REPORT','입력이나 연결이 바뀌었습니다. 현재 내용을 확인한 뒤 순서를 다시 변경하세요.');
       if(p.dirty&&p.bundle_decisions.length&&canonical(p.bundle_decisions)!==canonical(p.last_report_id?this.snapshot(projectId,p.last_report_id).bundle_decisions??[]:[]))throw new DocverError('PENDING_BUNDLE_DECISIONS','페이지 연결 변경을 먼저 분석한 뒤 버전 순서를 바꾸세요. 기존 보고서는 그대로 보존됩니다.');
-      const previous=p.last_report_id?this.snapshot(projectId,p.last_report_id):undefined;
-      if(p.dirty&&(canonical(p.mapping_decisions)!==canonical(previous?.mapping_decisions??[])||canonical(p.mapping_relations)!==canonical(previous?.mapping_relations??[])))throw new DocverError('PENDING_MAPPING_DECISIONS','대응 변경을 먼저 분석한 뒤 버전 순서를 바꾸세요. 입력한 이유와 기존 보고서는 유지됩니다.');
+      if(p.dirty&&(p.mapping_decisions.length||p.mapping_relations.length)){
+        const previous=p.last_report_id?this.snapshot(projectId,p.last_report_id):undefined;
+        if(canonical(p.mapping_decisions)!==canonical(previous?.mapping_decisions??[])||canonical(p.mapping_relations)!==canonical(previous?.mapping_relations??[]))throw new DocverError('PENDING_MAPPING_DECISIONS','대응 변경을 먼저 분석한 뒤 버전 순서를 바꾸세요. 입력한 이유와 기존 보고서는 유지됩니다.');
+      }
+      if(discardHumanDecisions&&!expectedDraftHash)throw new DocverError('REORDER_CONFIRMATION_REQUIRED','현재 입력의 hash를 확인한 순서 변경 요청이 필요합니다.');
       if((p.mapping_decisions.length||p.mapping_relations.length||p.bundle_decisions.length)&&!discardHumanDecisions)throw new DocverError('REORDER_CONFIRMATION_REQUIRED','순서를 바꾸면 현재 입력의 사용자 대응과 제공 PDF 연결 이력이 초기화됩니다. 이전 고정 보고서는 유지됩니다. 내용을 확인하고 순서 변경을 승인하세요.');
       if(order.length!==p.revisions.length||new Set(order).size!==order.length||order.some(n=>!Number.isInteger(n)||n<0||n>=order.length))throw new DocverError('INVALID_ORDER','버전 순서를 확인하세요.');
       return this.save({...p,revisions:order.map(n=>p.revisions[n]),mapping_decisions:[],mapping_relations:[],bundle_decisions:[],dirty:true});
@@ -122,10 +125,11 @@ export class DesktopService {
       this.save({...project,bundle_decisions:[...project.bundle_decisions,decision],dirty:true});return {project_id:projectId,decision_id:decision.decision_id,dirty:true,last_report_id:project.last_report_id};
     });
   }
-  queryService(projectId:string){this.project(projectId);return new QueryService(this.store,new Set([projectId]),(p,r)=>{const key=p+'|'+r;if(r!=='latest'&&this.snapshots.has(key))return this.snapshots.get(key)!;const report=this.store.report(p,r);if(this.snapshots.size>=2)this.snapshots.delete(this.snapshots.keys().next().value!);this.snapshots.set(p+'|'+report.report_id,report);return report;});}
+  private requireProjectRecord(projectId:string){if(!this.store.db.prepare(`SELECT 1 FROM ${DESKTOP_PROJECTS_TABLE} WHERE id=?`).get(projectId))throw new DocverError('PROJECT_NOT_FOUND','프로젝트를 찾을 수 없습니다.');}
+  queryService(projectId:string){this.requireProjectRecord(projectId);return new QueryService(this.store,new Set([projectId]),(p,r)=>{const key=p+'|'+r;if(r!=='latest'&&this.snapshots.has(key))return this.snapshots.get(key)!;const report=this.store.report(p,r);if(this.snapshots.size>=2)this.snapshots.delete(this.snapshots.keys().next().value!);this.snapshots.set(p+'|'+report.report_id,report);return report;});}
   snapshot(projectId:string,reportId:string):ReportData{return this.queryService(projectId).snapshot(projectId,reportId);}
-  pageData(projectId:string,reportId:string,pageId:string){this.project(projectId);return this.store.nativePage(projectId,reportId,pageId);}
-  reports(projectId:string){this.project(projectId);return this.store.reports(projectId);}
+  pageData(projectId:string,reportId:string,pageId:string){this.requireProjectRecord(projectId);return this.store.nativePage(projectId,reportId,pageId);}
+  reports(projectId:string){this.requireProjectRecord(projectId);return this.store.reports(projectId);}
   async preview(projectId:string,reportId:string,pageId:string) {
     const r=this.snapshot(projectId,reportId),revision=r.revisions.find(v=>v.pages.some(p=>p.page_id===pageId)),page=revision?.pages.find(p=>p.page_id===pageId);
     if(!revision||!page)throw new DocverError('PAGE_NOT_FOUND','원문 페이지를 찾을 수 없습니다.');

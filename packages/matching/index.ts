@@ -1,11 +1,12 @@
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import { type PageData, type MatchData, type MappingDecision, type MappingRelationData, DocverError } from '../schema/index.js';
 import {grams,dice,matchingText,sameOriginalPage,sameSourceRaster} from '../schema/page-similarity.js';
 export {matchingText,pageSimilarity as similarity} from '../schema/page-similarity.js';
 import {relationEdges} from './relations.js';
-export const MATCHING_WORK_POLICY='hungarian-32m-costs-v1';
-export const MAX_ASSIGNMENT_COSTS=32_000_000;
+export const MATCHING_WORK_POLICY='hungarian-1000-pages-1b-costs-v2';
+export const MAX_ASSIGNMENT_COSTS=1_000_000_000;
 // Rectangular maximum-weight assignment with private dummy columns for unmatched rows.
-function assignment(weights:number[][],maxCosts=Infinity):number[] {
+function* assignment(weights:number[][],maxCosts=Infinity):Generator<void,number[],undefined> {
   if(!weights.length) return [];
   if(weights.every(row=>row.every(value=>value===0)))return weights.map(()=>-1);
   // For a square uniform positive matrix the stable solver chooses its
@@ -20,7 +21,8 @@ function assignment(weights:number[][],maxCosts=Infinity):number[] {
     do {
       used[j0]=true;const i0=p[j0];let delta=Infinity,j1=0;
       for(let j=1;j<=m;j++) if(!used[j]) {
-        if(++costs>maxCosts)throw new DocverError('MATCHING_LIMIT','유사한 페이지 후보가 많아 대응 계산 한도에 도달했습니다. 새 보고서는 저장하지 않았습니다. 문서를 나눠 가져오거나 이전 보고서의 대응을 확인하세요.');
+        if(++costs>maxCosts)throw new DocverError('MATCHING_LIMIT','페이지 대응 계산 한도에 도달했습니다. 원문과 기존 보고서는 유지됩니다. 문서를 나눠 비교하거나 기존 대응을 확인하세요.');
+        if(costs%250_000===0)yield;
         const cur=-(weights[i0-1][j-1]??0)-u[i0]-v[j];
         if(cur<minv[j]) {minv[j]=cur;way[j]=j0;}
         if(minv[j]<delta) {delta=minv[j];j1=j;}
@@ -34,7 +36,7 @@ function assignment(weights:number[][],maxCosts=Infinity):number[] {
   for(let j=1;j<=m;j++) if(p[j]) out[p[j]-1]=j-1;
   return out;
 }
-export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecision[]=[],relations:MappingRelationData[]=[],options:{maxCosts?:number}={}):{matches:MatchData[],candidates:MatchData[]} {
+function* matchingSteps(from:PageData[],to:PageData[],decisions:MappingDecision[]=[],relations:MappingRelationData[]=[],options:{maxCosts?:number}={}):Generator<void,{matches:MatchData[],candidates:MatchData[]},undefined> {
   const fromIds=new Set(from.map(p=>p.page_id)),toIds=new Set(to.map(p=>p.page_id)),groups=relations.filter(r=>r.from_page_ids.some(p=>fromIds.has(p))||r.to_page_ids.some(p=>toIds.has(p)));
   if(groups.some(r=>r.from_page_ids.some(p=>!fromIds.has(p))||r.to_page_ids.some(p=>!toIds.has(p))))throw new DocverError('MAPPING_INTERVAL','Relation is outside this primary comparison interval');
   const groupEdges=groups.flatMap(relationEdges);
@@ -49,6 +51,7 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
   if(new Set(occupiedFrom).size!==occupiedFrom.length||new Set(occupiedTo).size!==occupiedTo.length||groupEdges.some(e=>blocked.has(e.from_page_id+'|'+e.to_page_id)))throw new DocverError('MAPPING_CONFLICT','Overlapping manual relations or excluded pairs');
   const left=from.filter(p=>!manual.some(d=>d.from_page_id===p.page_id));
   const right=to.filter(p=>!manual.some(d=>d.to_page_id===p.page_id));
+  if(Number.isFinite(options.maxCosts)&&left.length*right.length>1_000_000)throw new DocverError('MATCHING_LIMIT','대응 후보 행렬 한도에 도달했습니다. 원문과 기존 보고서는 유지됩니다. 문서를 나눠 비교하세요.');
   const sourceKey=(p:PageData)=>JSON.stringify([p.asset_id,p.page]);
   function counts(pages:PageData[],key:(p:PageData)=>string|undefined){const out=new Map<string,number>();for(const p of pages){const k=key(p);if(k!==undefined)out.set(k,(out.get(k)??0)+1);}return out;}
   const sourceLeft=counts(left,sourceKey),sourceRight=counts(right,sourceKey);
@@ -79,7 +82,19 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
   function anchor(unique:(i:number,j:number)=>boolean){for(let i=0;i<left.length;i++)if(chosen[i]<0){const j=right.findIndex((_,j)=>!used.has(j)&&weights[i][j]>0&&unique(i,j));if(j>=0){chosen[i]=j;used.add(j);}}}
   anchor(uniqueOriginal);anchor(uniqueRaster);
   const remainingLeft=left.map((_,i)=>i).filter(i=>chosen[i]<0),remainingRight=right.map((_,j)=>j).filter(j=>!used.has(j));
-  assignment(remainingLeft.map(i=>remainingRight.map(j=>weights[i][j]>=0.58?weights[i][j]:0)),options.maxCosts).forEach((j,k)=>{if(j>=0&&j<remainingRight.length)chosen[remainingLeft[k]]=remainingRight[j];});
+  (yield* assignment(remainingLeft.map(i=>remainingRight.map(j=>weights[i][j]>=0.58?weights[i][j]:0)),options.maxCosts)).forEach((j,k)=>{if(j>=0&&j<remainingRight.length)chosen[remainingLeft[k]]=remainingRight[j];});
   chosen.forEach((j,i)=>{if(j<right.length&&j>=0&&weights[i][j]>=0.58) {matches.push(candidate(i,j));keep(i,j);}});
   return {matches,candidates};
+}
+
+// At most n existing rows can participate in an augmentation. For n,m<=1000,
+// sum_i(sum_{k=0}^{i-1}(m+n-k)) <=834,333,500 cost evaluations. The 1B limit
+// admits that supported domain, while bounded yields keep cancellation live.
+export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecision[]=[],relations:MappingRelationData[]=[],options:{maxCosts?:number}={}):{matches:MatchData[],candidates:MatchData[]} {
+  const steps=matchingSteps(from,to,decisions,relations,options);
+  for(;;){const step=steps.next();if(step.done)return step.value;}
+}
+export async function matchPagesCooperative(from:PageData[],to:PageData[],decisions:MappingDecision[]=[],relations:MappingRelationData[]=[],options:{maxCosts?:number;signal?:AbortSignal}={}):Promise<{matches:MatchData[],candidates:MatchData[]}> {
+  options.signal?.throwIfAborted();const steps=matchingSteps(from,to,decisions,relations,options);
+  for(;;){const step=steps.next();if(step.done)return step.value;await yieldTurn();options.signal?.throwIfAborted();}
 }

@@ -17,15 +17,15 @@ export async function runTool(executable:string,args:string[],options:{input?:st
   options.signal?.throwIfAborted();
   return new Promise((resolveRun,reject)=>{
     const child=spawn(executable,args,{detached:true,stdio:options.supervised?['pipe','pipe','pipe','pipe']:['pipe','pipe','pipe'],env:{...(options.inheritEnv===false?{}:process.env),SAL_DISABLE_OPENCL:'1',...options.env}});
-    let stdout:Buffer=Buffer.alloc(0),stderr:Buffer=Buffer.alloc(0),failure:Error|undefined;
+    const output={chunks:[] as Buffer[],bytes:0},diagnostic={chunks:[] as Buffer[],bytes:0};let failure:Error|undefined;
     let status='',monitor:number|undefined,monitorOK=!options.supervised;
     const abort=(error:Error)=>{if(failure)return;failure=error;if(child.pid)kill(child.pid,'SIGKILL');};
     const cancelled=()=>abort(new DocverError('CANCELLED','Local document processing cancelled'));
     if(child.pid){if(!active.size){process.once('SIGTERM',terminate);process.once('SIGINT',interrupt);}active.set(child.pid,cancelled);}
     options.signal?.addEventListener('abort',cancelled,{once:true});
     const timer=setTimeout(()=>abort(new DocverError('TOOL_TIMEOUT','Local document processor timed out')),options.timeout??120_000);
-    const collect=(value:Buffer,chunk:Buffer)=>{if(value.length+chunk.length>(options.maxBytes??16*1024*1024)){abort(new DocverError('TOOL_OUTPUT_LIMIT','Local processor output limit exceeded'));return value;}return Buffer.concat([value,chunk]);};
-    child.stdout!.on('data',d=>{stdout=collect(stdout,d);});child.stderr!.on('data',d=>{stderr=collect(stderr,d);});
+    const collect=(stream:typeof output,chunk:Buffer)=>{if(stream.bytes+chunk.length>(options.maxBytes??16*1024*1024)){abort(new DocverError('TOOL_OUTPUT_LIMIT','Local processor output limit exceeded'));return;}stream.chunks.push(chunk);stream.bytes+=chunk.length;};
+    child.stdout!.on('data',d=>collect(output,d));child.stderr!.on('data',d=>collect(diagnostic,d));
     // fd3 belongs only to the trusted guard monitor. The session-leader
     // converter closes it before exec, so a crashed monitor fails closed.
     const statusPipe=options.supervised?child.stdio[3]:undefined;
@@ -53,7 +53,7 @@ export async function runTool(executable:string,args:string[],options:{input?:st
     // A failed supervisor may leave descendants holding its stdio open. Kill
     // the owned detached group at exit, before waiting for the close event.
     child.on('exit',code=>{if(code!==0&&child.pid)kill(child.pid,'SIGKILL');});
-    child.on('close',(code,signal)=>{clean();if(failure)reject(failure instanceof DocverError&&failure.code==='TOOL_SUPERVISOR'?new DocverError(failure.code,failure.message+' (exit '+code+', signal '+(signal??'none')+'): '+stderr.toString('utf8').slice(-500)):failure);else if(code!==0)reject(new DocverError('TOOL_FAILED','Local processor failed (exit '+code+(signal?', signal '+signal:'')+'): '+(stderr.length?stderr:stdout).toString('utf8').slice(-500)));else if(!monitorOK)reject(new DocverError('TOOL_SUPERVISOR','Renderer monitor did not confirm completion'));else resolveRun(stdout.toString('utf8'));});
+    child.on('close',(code,signal)=>{clean();const stdout=Buffer.concat(output.chunks,output.bytes),stderr=Buffer.concat(diagnostic.chunks,diagnostic.bytes);if(failure)reject(failure instanceof DocverError&&failure.code==='TOOL_SUPERVISOR'?new DocverError(failure.code,failure.message+' (exit '+code+', signal '+(signal??'none')+'): '+stderr.toString('utf8').slice(-500)):failure);else if(code!==0)reject(new DocverError('TOOL_FAILED','Local processor failed (exit '+code+(signal?', signal '+signal:'')+'): '+(stderr.length?stderr:stdout).toString('utf8').slice(-500)));else if(!monitorOK)reject(new DocverError('TOOL_SUPERVISOR','Renderer monitor did not confirm completion'));else resolveRun(stdout.toString('utf8'));});
     child.stdin!.on('error',()=>{});child.stdin!.end(options.input);
     if(options.signal?.aborted)cancelled();
   });

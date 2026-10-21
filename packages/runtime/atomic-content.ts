@@ -9,8 +9,17 @@ import {byteHash,DocverError} from '../schema/index.js';
 // before the verified replacement is atomically renamed into place.
 function temporary(target:string){return join(dirname(target),'.docver-content-'+randomUUID()+'.tmp');}
 function corrupt(){return new DocverError('ASSET_CORRUPT','저장 원본이 일반 파일이 아닙니다. 기존 파일을 보존했으며 자동으로 덮어쓰지 않았습니다.');}
+function alreadyPublishedSync(target:string,sha256:string){
+  try{if(!lstatSync(target).isFile())throw corrupt();return byteHash(readFileSync(target))===sha256;}
+  catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return false;throw error;}
+}
+async function alreadyPublished(target:string,sha256:string){
+  try{if(!(await lstat(target)).isFile())throw corrupt();return byteHash(await readFile(target))===sha256;}
+  catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return false;throw error;}
+}
 export function publishContentSync(target:string,bytes:Uint8Array,sha256:string){
   if(byteHash(bytes)!==sha256)throw new DocverError('ASSET_HASH','Content does not match its expected hash');
+  if(alreadyPublishedSync(target,sha256))return;
   const temp=temporary(target);let fd:number|undefined;
   try{
     fd=openSync(temp,'wx',0o600);writeFileSync(fd,bytes);fsyncSync(fd);closeSync(fd);fd=undefined;
@@ -29,6 +38,7 @@ export function publishContentSync(target:string,bytes:Uint8Array,sha256:string)
 }
 export async function publishContent(target:string,bytes:Uint8Array,sha256:string){
   if(byteHash(bytes)!==sha256)throw new DocverError('ASSET_HASH','Content does not match its expected hash');
+  if(await alreadyPublished(target,sha256))return;
   const temp=temporary(target);let handle:Awaited<ReturnType<typeof open>>|undefined;
   try{
     handle=await open(temp,'wx',0o600);await handle.writeFile(bytes);await handle.sync();await handle.close();handle=undefined;

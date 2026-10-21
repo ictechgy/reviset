@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,writeFile,readdir,rm,symlink,lstat} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,readdir,rm,symlink,lstat,chmod} from 'node:fs/promises';
 import {join} from 'node:path';import {tmpdir} from 'node:os';
 import {publishContent,publishContentSync} from '../../packages/runtime/atomic-content.js';
 import {byteHash,Manifest,SCHEMA_HASH} from '../../packages/schema/index.js';
@@ -27,14 +27,14 @@ test('canonical content publishes complete private files, repairs truncation wit
    const target=join(root,sync?'sync':'async');await writeFile(target,'truncated original');
    if(sync)publishContentSync(target,bytes,sha);else await publishContent(target,bytes,sha);
    assert.deepEqual(await readFile(target),bytes);const quarantines=(await readdir(root)).filter(n=>n.startsWith((sync?'sync':'async')+'.corrupt-'));assert.equal(quarantines.length,1);assert.equal(await readFile(join(root,quarantines[0]),'utf8'),'truncated original');
-   const before=(await lstat(target)).ino;if(sync)publishContentSync(target,bytes,sha);else await publishContent(target,bytes,sha);assert.equal((await lstat(target)).ino,before,'matching canonical file is unchanged');
+   const before=(await lstat(target)).ino;await chmod(root,0o555);try{if(sync)publishContentSync(target,bytes,sha);else await publishContent(target,bytes,sha);}finally{await chmod(root,0o700);}assert.equal((await lstat(target)).ino,before,'matching canonical file is unchanged without needing directory writes');
   }
   const target=join(root,'fresh');await publishContent(target,bytes,sha);assert.equal((await lstat(target)).mode&0o777,0o600);assert.equal((await readdir(root)).filter(n=>n.endsWith('.tmp')).length,0);
   const outside=join(root,'outside'),linked=join(root,'linked');await writeFile(outside,'outside evidence');await symlink(outside,linked);await assert.rejects(publishContent(linked,bytes,sha),{code:'ASSET_CORRUPT'});assert.equal(await readFile(outside,'utf8'),'outside evidence');assert.ok((await lstat(linked)).isSymbolicLink());
  }finally{await rm(root,{recursive:true,force:true});}
 });
 test('cache keeps LRU and serialized-byte bounds; huge entries cannot evict retained valid entries',()=>{
- const cache=new BoundedCache<string>(2,16);cache.set('a','one');cache.set('b','two');assert.equal(cache.get('a'),'one');cache.set('c','three');assert.equal(cache.get('b'),undefined);assert.equal(cache.get('a'),'one');cache.set('huge','x'.repeat(100));assert.equal(cache.get('huge'),undefined);assert.equal(cache.get('a'),'one');assert.equal(cache.get('c'),'three');
+ const cache=new BoundedCache<string>(2,16);cache.set('a','one');cache.set('b','two');assert.equal(cache.get('a'),'one');cache.set('c','three');assert.equal(cache.get('b'),undefined);assert.equal(cache.get('a'),'one');cache.set('huge','x'.repeat(100));assert.equal(cache.get('huge'),undefined);assert.equal(cache.get('a'),'one');assert.equal(cache.get('c'),'three');const sized=new BoundedCache<object>(1,32);sized.set('sized',{toJSON(){throw Error('must not serialize stored payload twice');}},10);assert.ok(sized.get('sized'));
 });
 test('CLI manifest admission matches desktop100revision cap without changing stored Report schema',()=>{
  const revision={label:'v',files:['synthetic.pdf']};assert.ok(Manifest.safeParse({project_id:'prj_admission',title:'test',revisions:Array.from({length:100},()=>revision)}).success);assert.equal(Manifest.safeParse({project_id:'prj_admission',title:'test',revisions:Array.from({length:101},()=>revision)}).success,false);assert.match(SCHEMA_HASH,/^[a-f0-9]{64}$/);
@@ -59,7 +59,7 @@ test('dense matching preserves historical square ties and uncertainty; work exha
 });
 test('MCP immutable report cache resolves latest afresh and enforces scope before cache; range filters and selectors remain independent',async()=>{
  const root=await mkdtemp(join(tmpdir(),'docver-query-cache-')),store=new Store(root);try{
-  const first=readingReport('report_first');store.finishRun(store.beginRun(first.project_id,'first'),first);let reads=0;const read=store.report.bind(store);store.report=(p,r)=>{reads++;return read(p,r);};const scope=new Set([first.project_id]),q=new QueryService(store,scope);
+  const first=readingReport('report_first');store.finishRun(store.beginRun(first.project_id,'first'),first);let reads=0;const read=store.reportWithSize.bind(store);store.reportWithSize=(p,r)=>{reads++;return read(p,r);};const scope=new Set([first.project_id]),q=new QueryService(store,scope);
   assert.equal(q.snapshot(first.project_id,'latest').report_id,first.report_id);assert.equal(q.snapshot(first.project_id,first.report_id).report_id,first.report_id);assert.equal(reads,1);
   const args={project_id:first.project_id,report_id:first.report_id,from:'occ_a',to:'occ_b',mode:'range_net'};const original=q.changeSet(args);assert.equal(original.length,1);assert.equal(q.changeSet({...args,text:'not present'}).length,0);assert.deepEqual(q.changeSet(args),original);assert.deepEqual(q.changeSet({...args,from:'rev_a',to:'rev_b'}),original);
   assert.throws(()=>q.changeSet({...args,from:'occ_b',to:'occ_a'}),{code:'RANGE_ORDER'});scope.clear();assert.throws(()=>q.snapshot(first.project_id,first.report_id),{code:'PROJECT_SCOPE'});scope.add(first.project_id);
@@ -80,4 +80,34 @@ test('full Markdown export keeps hostile content inert and distinct same-prefix 
   const q=new QueryService({} as Store,new Set([r.project_id]),()=>r),folder=join(root,'export');await exportReport(q,r.project_id,r.report_id,folder);const paths=await readdir(join(folder,'content/occ_a'));assert.equal(paths.length,2);assert.ok(paths.every(n=>n.length>75));const text=await readFile(join(folder,'content/occ_a',paths[0]),'utf8');
   let fence='';for(const line of text.split('\n')){if(!line.startsWith('> '))continue;const value=line.slice(2),marker=/^(`{3,})(?:text)?$/.exec(value);if(marker){if(!fence)fence=marker[1];else if(marker[1]===fence)fence='';}if(value.includes('example.invalid')||value.includes('<script>')||value==='# forged heading')assert.ok(fence,'untrusted source must remain in a fenced code block');}assert.equal(fence,'');assert.equal(JSON.parse(await readFile(join(folder,'report.json'),'utf8')).revisions[0].pages[0].text,malicious);
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+import {canonicalRelation,relationEdges} from '../../packages/matching/relations.js';
+import {hash} from '../../packages/schema/index.js';
+test('confirmed timeline reset permits repeated swaps and undo while pending human edits remain protected',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'docver-order-repeat-')),service=new DesktopService(root);try{
+  const file=join(root,'fixture.pdf');await writeFile(file,'synthetic');const p=await service.create('Order',[{label:'a',files:[file]},{label:'b',files:[file]}]),r=readingReport('report_order');r.project_id=p.project_id;
+  const relation=canonicalRelation(r.revisions,{kind:'continuation',from_occurrence:'occ_a',to_occurrence:'occ_b',from_page_ids:['page_a'],to_page_ids:['page_b'],reason:'retained human reason'});r.mapping_relations=[relation];r.matches=relationEdges(relation);
+  service.store.db.prepare(`UPDATE ${DESKTOP_PROJECTS_TABLE} SET body=? WHERE id=?`).run(JSON.stringify({...p,mapping_relations:[relation]}),p.project_id);service.commit(p.project_id,{report:r,analysis_run_id:service.store.beginRun(p.project_id,'Order'),draft_hash:hash(service.manifest(p.project_id))});const before=JSON.stringify(service.snapshot(p.project_id,r.report_id));
+  assert.throws(()=>service.reorder(p.project_id,[1,0]),{code:'REORDER_CONFIRMATION_REQUIRED'});assert.throws(()=>service.reorder(p.project_id,[1,0],true),{code:'REORDER_CONFIRMATION_REQUIRED'});service.reorder(p.project_id,[1,0],true,hash(service.manifest(p.project_id)));service.reorder(p.project_id,[1,0],false,hash(service.manifest(p.project_id)));service.reorder(p.project_id,[1,0]);assert.deepEqual(service.project(p.project_id).revisions.map(v=>v.label),['b','a']);assert.equal(JSON.stringify(service.snapshot(p.project_id,r.report_id)),before);
+ }finally{service.close();await rm(root,{recursive:true,force:true});}
+});
+
+import {matchPagesCooperative} from '../../packages/matching/index.js';
+import {spawnSync} from 'node:child_process';
+import {resolve} from 'node:path';
+test('500/1000 near-tied template pages remain supported and cancellation runs between assignment slices',async()=>{
+ const pages=(side:string,n:number)=>Array.from({length:n},(_,i)=>sourcePage(side+i,'Quarterly revenue forecast allocation review '+(i%2?'channel growth outlook':'channel revenue outlook'),side));
+ assert.deepEqual(matchPages(pages('a',12),pages('b',12)),preservedMatcher(pages('a',12),pages('b',12)));
+ for(const n of [500,1000]){let ticks=0;const timer=setInterval(()=>ticks++,1);try{const result=await matchPagesCooperative(pages('a',n),pages('b',n),[],[],{maxCosts:MAX_ASSIGNMENT_COSTS});assert.equal(result.matches.length,n);assert.ok(result.matches.every(m=>m.status==='needs_review'));assert.ok(ticks>0,'event loop must run during non-uniform dense assignment');}finally{clearInterval(timer);}}
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),1);try{await assert.rejects(matchPagesCooperative(pages('a',1000),pages('b',1000),[],[],{maxCosts:MAX_ASSIGNMENT_COSTS,signal:controller.signal}),{name:'AbortError'});}finally{clearTimeout(timer);}
+ assert.throws(()=>matchPages(pages('a',1001),pages('b',1000),[],[],{maxCosts:MAX_ASSIGNMENT_COSTS}),{code:'MATCHING_LIMIT'});
+});
+test('damaged draft retains scoped read-only report/page/export/MCP access and every mutation still fails closed',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'docver-damaged-readonly-')),service=new DesktopService(root);try{
+  const file=join(root,'synthetic.pdf');await writeFile(file,'synthetic');const p=await service.create('Read only',[{label:'one',files:[file]}]),r=readingReport('report_damaged');r.project_id=p.project_id;service.commit(p.project_id,{report:r,analysis_run_id:service.store.beginRun(p.project_id,'Read only'),draft_hash:hash(service.manifest(p.project_id))});const original=JSON.stringify(service.snapshot(p.project_id,r.report_id)),newer=readingReport('report_newer');newer.project_id=p.project_id;for(const report of [newer,r])service.commit(p.project_id,{report,analysis_run_id:service.store.beginRun(p.project_id,'Repeat'),draft_hash:hash(service.manifest(p.project_id))});service.store.db.prepare(`UPDATE ${DESKTOP_PROJECTS_TABLE} SET body=? WHERE id=?`).run('{damaged',p.project_id);
+  assert.equal(service.reports(p.project_id)[0].report_id,r.report_id);assert.equal(JSON.stringify(service.snapshot(p.project_id,r.report_id)),original);assert.equal(service.pageData(p.project_id,r.report_id,'page_a').page.page_id,'page_a');assert.throws(()=>service.reorder(p.project_id,[0]),{code:'DRAFT_UNREADABLE'});assert.throws(()=>service.manifest(p.project_id),{code:'DRAFT_UNREADABLE'});assert.throws(()=>service.snapshot(p.project_id,'report_not_in_scope'),{code:'REPORT_NOT_FOUND'});
+  const bridge=(action:string,args:Record<string,unknown>)=>{const result=spawnSync(process.execPath,['--import','tsx',resolve('apps/bridge/main.ts'),'--root',root],{input:JSON.stringify({action,args}),encoding:'utf8',timeout:10000});assert.ifError(result.error);const reply=JSON.parse(result.stdout);assert.equal(reply.ok,true,JSON.stringify(reply.error));return reply.value;};
+  const scope={project_id:p.project_id,report_id:r.report_id};assert.equal(bridge('view',scope).draft_hash,null);const rows=bridge('projects',{});assert.equal(rows[0].unreadable,true);assert.equal(rows[0].last_report_id,r.report_id);assert.equal(JSON.parse(bridge('mcpConfig',{project_id:p.project_id})).mcpServers.docver.args.at(-1),p.project_id);bridge('export',{...scope,folder:join(root,'export')});assert.equal(JSON.stringify(JSON.parse(await readFile(join(root,'export/report.json'),'utf8'))),original);assert.equal(service.store.db.prepare(`SELECT body FROM ${DESKTOP_PROJECTS_TABLE} WHERE id=?`).get(p.project_id)?.body,'{damaged');
+ }finally{service.close();await rm(root,{recursive:true,force:true});}
 });

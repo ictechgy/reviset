@@ -131,7 +131,7 @@ struct ReorderConfirmation:Identifiable {
             _ = try await bridge.call("recover")
             if let recovered=try? await bridge.call("sidecarRecover"),recovered["skipped"].int>0 {sidecarRecoveryWarning="이전 참고 작업 \(recovered["skipped"].int)개를 자동 정리하지 못했습니다. 원문과 변경 이력은 계속 사용할 수 있습니다."}
             if FileManager.default.fileExists(atPath:bridge.resources.appendingPathComponent("onlyoffice-sidecar/provider.json").path) {sidecarConfigured = (try? await bridge.call("sidecarInfo")["configured"].bool) ?? false}
-            try await refresh(); if let p = projects.first(where:{!$0["unreadable"].bool}) { await selectProject(p["project_id"].string) }
+            try await refresh(); if let p = projects.first(where:{!$0["unreadable"].bool}) ?? projects.first { await selectProject(p["project_id"].string) }
         }
         catch { fail(error) }
     }
@@ -160,12 +160,13 @@ struct ReorderConfirmation:Identifiable {
         let project=projectID,reportID=report["report_id"].string,before=revision(start)["revision_occurrence_id"].string,after=revision(end)["revision_occurrence_id"].string
         let mode=history ? "history" : end == start+1 ? "adjacent" : "range_net"
         let key=[project,reportID,before,after,mode].joined(separator:"|")
+        let preferredChange=selectedChangeID
         let generation:Int,task:Task<[JSON],Error>
         if let pending=pendingRange,pending.key==key {
             generation=pending.generation;task=pending.task
         } else {
             pendingRange?.task.cancel()
-            rangeGeneration += 1;generation=rangeGeneration;loadingChanges=true;changesFailure=""
+            rangeGeneration += 1;generation=rangeGeneration;loadingChanges=true;changesFailure="";changes=[];selectedChangeID=nil
             task=Task { try await self.bridge.call("changes",["project_id":project,"report_id":reportID,"from":before,"to":after,"mode":mode]).array }
             pendingRange=(key,generation,task)
         }
@@ -174,13 +175,13 @@ struct ReorderConfirmation:Identifiable {
             guard generation==rangeGeneration else{return}
             changes=response
             if !changes.contains(where:{$0["change_id"].string==selectedChangeID}) {
-                selectedChangeID=changes.first(where:{$0["kind"].string=="text_modified"})?["change_id"].string ?? changes.first?["change_id"].string ?? ""
+                selectedChangeID=changes.first(where:{$0["change_id"].string==preferredChange})?["change_id"].string ?? changes.first(where:{$0["kind"].string=="text_modified"})?["change_id"].string ?? changes.first?["change_id"].string ?? ""
             }
             selectEvidence();loadingChanges=false
             if pendingRange?.generation==generation {pendingRange=nil}
         } catch {
             guard generation==rangeGeneration else{return}
-            loadingChanges=false;changesFailure=error.localizedDescription
+            changes=[];selectedChangeID=nil;loadingChanges=false;changesFailure=error.localizedDescription
             if pendingRange?.generation==generation {pendingRange=nil}
             throw error
         }
@@ -242,7 +243,7 @@ struct ReorderConfirmation:Identifiable {
     }
     func changeRange() { Task { do { try await updateChanges() } catch { fail(error) } } }
     func run(_ id: String) async {
-        guard libraryAvailable && !initializing && !busy else { return };selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;evidenceWarning="";let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
+        guard libraryAvailable && !initializing && !busy && !projects.contains(where:{$0["project_id"].string==id && $0["unreadable"].bool}) else { return };selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailure="";evidenceWarning="";let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
         do {
             let result = try await bridge.call("analyze", ["project_id": id], analysis: true) { [weak self] p in
                 Task { @MainActor in guard let self,self.busy,!self.committing,self.analysisToken==token else{return}; self.progress = p; self.status = p["phase"].string == "match" ? "페이지 대응과 변경을 계산합니다" : p["phase"].string == "render" ? p["label"].string+" 화면 준비 중" : p["label"].string.isEmpty ? "원본을 추출합니다" : p["label"].string + " 추출 중" }
@@ -267,12 +268,14 @@ struct ReorderConfirmation:Identifiable {
                 status = "분석을 취소했습니다. 이전 보고서는 유지됩니다."
             } else { fail(error) }
             try? await refresh();busy=false
+            if !report.isNull {try? await updateChanges()}
         }
     }
     func cancel() { guard busy && !committing else { return }; cancelRequested = true; bridge.cancel(); status = "분석을 취소하고 있습니다" }
     func create(title: String, rows: [ImportRow]) async throws -> JSON {
-        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false
-        return try await bridge.call("create", ["title": title, "revisions": rows.map(\.createPayload)])
+        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailure=""
+        do{return try await bridge.call("create", ["title": title, "revisions": rows.map(\.createPayload)])}
+        catch{if !report.isNull {try? await updateChanges()};throw error}
     }
     func demo() async {
         guard !busy && !loading && !initializing else{return}
@@ -326,6 +329,7 @@ struct ReorderConfirmation:Identifiable {
         revision["assets"].array.count == 2 && Set(revision["assets"].array.map{$0["format"].string}) == Set(["pptx","pdf"])
     }
     var bundleEditingUnavailable: String? {
+        if project["unreadable"].bool{return "입력 기록 손상 · 고정 보고서 읽기 전용입니다."}
         if busy || loading || initializing {return "분석과 페이지 로딩이 끝난 뒤 수정하세요."}
         if project["dirty"].bool {return "입력·대응 변경을 먼저 분석하세요."}
         if report["report_id"].string.isEmpty || project["last_report_id"].string != report["report_id"].string {return "최신 고정 보고서에서 수정하세요."}

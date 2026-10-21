@@ -6,7 +6,7 @@ import { MAX_INPUT_BYTES,Manifest, Report, SCHEMA_VERSION, SCHEMA_HASH, ENGINE_V
 import { ingest, type Extracted } from '../ingest/index.js';
 import {PPTX_TEXT_POLICY} from '../ingest/pptx.js';
 import {PDF_TEXT_GEOMETRY_POLICY} from '../ingest/pdf.js';
-import { matchPages, similarity,MATCHING_WORK_POLICY,MAX_ASSIGNMENT_COSTS } from '../matching/index.js';
+import { matchPagesCooperative, similarity,MATCHING_WORK_POLICY,MAX_ASSIGNMENT_COSTS } from '../matching/index.js';
 import {primaryPages,validateMappings} from '../matching/relations.js';
 import { diffRevisions } from '../diff/index.js';
 import {applyBundleDecisions} from '../bundle/index.js';
@@ -88,7 +88,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
       let referenceQualified=false;
       if(extracted.length===2) {
         const secondary=extracted.find(e=>e!==primary)!;
-        const rendered=stamp(secondary.pages), visible=pages.filter(p=>!p.hidden),pairing=matchPages(visible,rendered,[],[],{maxCosts:MAX_ASSIGNMENT_COSTS});
+        const rendered=stamp(secondary.pages), visible=pages.filter(p=>!p.hidden),pairing=await matchPagesCooperative(visible,rendered,[],[],{maxCosts:MAX_ASSIGNMENT_COSTS,signal});
         for(const m of pairing.matches.filter(m=>m.status!=='needs_review')) bundleMapping.push({source_page_id:m.from_page_id,rendered_page_id:m.to_page_id,score:m.score});
         if(pairing.matches.length!==visible.length||pairing.matches.length!==rendered.length||pairing.matches.some(m=>m.status==='needs_review'||m.score<0.95)||pairing.matches.some(m=>{
           const a=visible.find(p=>p.page_id===m.from_page_id)!,b=rendered.find(p=>p.page_id===m.to_page_id)!;
@@ -138,7 +138,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     for(let i=1;i<revisions.length;i++) {
       if(revisions[i-1].status==='failed'||revisions[i].status==='failed') continue;
       await new Promise<void>(resume=>setImmediate(resume));signal?.throwIfAborted();
-      const pairing=matchPages(primaryPages(revisions[i-1]),primaryPages(revisions[i]),decisions,relations.filter(r=>r.from_occurrence===revisions[i-1].revision_occurrence_id&&r.to_occurrence===revisions[i].revision_occurrence_id),{maxCosts:MAX_ASSIGNMENT_COSTS});
+      const pairing=await matchPagesCooperative(primaryPages(revisions[i-1]),primaryPages(revisions[i]),decisions,relations.filter(r=>r.from_occurrence===revisions[i-1].revision_occurrence_id&&r.to_occurrence===revisions[i].revision_occurrence_id),{maxCosts:MAX_ASSIGNMENT_COSTS,signal});
       matches.push(...pairing.matches);candidates.push(...pairing.candidates);
     }
     // A known hidden slide can bridge an intermediate PDF visibility gap; no fictional delete/add.

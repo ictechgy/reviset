@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { getDocument,Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { unzipSync } from 'fflate';
 import { convertPptxDetailed,officeFilter,validateRenderPackage,isolatedOfficeVersion,svgResourcePolicy,officeIsolationPolicy } from './index.js';
-import { pdfOptions } from '../ingest/pdf.js';
+import {pdfOptions,PDF_TEXT_GEOMETRY_POLICY} from '../ingest/pdf.js';
 import { officeExecutable,visionInfo } from '../runtime/tools.js';
 import { hash,byteHash,normalize,DocverError,type PageData,type ElementData,type OfficeInputPreparationData } from '../schema/index.js';
 import { captureNativePages,ocrEnvironment } from '../ingest/ocr.js';
@@ -40,7 +40,7 @@ let environmentPromise:Promise<string|undefined>|undefined;
 export function officeEnvironment():Promise<string|undefined>{
   if(!environmentPromise){const pending=(async()=>{const executable=officeExecutable();if(!executable)return undefined;
     try{const version=await isolatedOfficeVersion(executable),vision=await visionInfo();if(!vision)return undefined;
-      return JSON.stringify({version,binary_sha256:byteHash(await readFile(executable)),font_inventory_sha256:vision?.font_inventory_sha256??'unavailable',font_policy:'mac-system-and-user-fontconfig-v2',source_font_policy:'ooxml-shared-xml-v1',svg_resource_policy:svgResourcePolicy,isolation_policy:officeIsolationPolicy,metadata_policy:'xref-scoped-direct-info-and-trailer-v4',input_policy:officeInputPolicy,input_preparation:await officeInputEnvironment(),os:vision?.os??process.platform,filter:officeFilter});
+      return JSON.stringify({version,binary_sha256:byteHash(await readFile(executable)),font_inventory_sha256:vision?.font_inventory_sha256??'unavailable',font_policy:'mac-system-and-user-fontconfig-v2',source_font_policy:'ooxml-shared-xml-v1',svg_resource_policy:svgResourcePolicy,text_geometry_policy:PDF_TEXT_GEOMETRY_POLICY,isolation_policy:officeIsolationPolicy,metadata_policy:'xref-scoped-direct-info-and-trailer-v4',input_policy:officeInputPolicy,input_preparation:await officeInputEnvironment(),os:vision?.os??process.platform,filter:officeFilter});
     }catch(e){if(e instanceof DocverError&&e.code==='CANCELLED')throw e;return undefined;}})();environmentPromise=pending;
     pending.then(value=>{if(!value&&environmentPromise===pending)environmentPromise=undefined;},()=>{if(environmentPromise===pending)environmentPromise=undefined;});}
   return environmentPromise;
@@ -69,7 +69,8 @@ export async function preparePptxPreview(source:string,bytes:Uint8Array,pages:Pa
       if(Math.abs((p.width/p.height)/(v.width/v.height)-1)>0.001)throw new DocverError('PREVIEW_GEOMETRY','Converted page aspect ratio differs from source slide');
       const content=await rendered.getTextContent({disableNormalization:true}),fragments=content.items.flatMap(item=>{
         if(!('str'in item))return [];const t=Util.transform(v.transform,item.transform),height=Math.hypot(t[2],t[3]),angle=Math.atan2(t[1],t[0])+(content.styles[item.fontName]?.vertical?Math.PI/2:0),ascent=content.styles[item.fontName]?.ascent??.8;
-        const corners=[[0,-height*ascent],[item.width,-height*ascent],[0,height*(1-ascent)],[item.width,height*(1-ascent)]].map(([x,y])=>[t[4]+Math.cos(angle)*x-Math.sin(angle)*y,t[5]+Math.sin(angle)*x+Math.cos(angle)*y]);
+        const width=item.width*Math.hypot(v.transform[0],v.transform[1]);
+        const corners=[[0,-height*ascent],[width,-height*ascent],[0,height*(1-ascent)],[width,height*(1-ascent)]].map(([x,y])=>[t[4]+Math.cos(angle)*x-Math.sin(angle)*y,t[5]+Math.sin(angle)*x+Math.cos(angle)*y]);
         const xs=corners.map(p=>p[0]),ys=corners.map(p=>p[1]);return [{text:item.str,bbox:[Math.min(...xs)/v.width,Math.min(...ys)/v.height,(Math.max(...xs)-Math.min(...xs))/v.width,(Math.max(...ys)-Math.min(...ys))/v.height]}];
       });
       if(missingRenderedText(p.elements,fragments))warnings.push('rendered_text_differs_from_ooxml_requires_source_review');

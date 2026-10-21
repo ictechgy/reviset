@@ -8,9 +8,9 @@ export class BoundedCache<T> {
     const entry=this.entries.get(key);if(!entry)return undefined;
     this.entries.delete(key);this.entries.set(key,entry);return entry.value;
   }
-  set(key:string,value:T){
+  set(key:string,value:T,serializedBytes?:number){
+    const bytes=serializedBytes??Buffer.byteLength(JSON.stringify(value));if(!Number.isSafeInteger(bytes)||bytes<0||bytes>this.maxBytes)return;
     const prior=this.entries.get(key);if(prior){this.bytes-=prior.bytes;this.entries.delete(key);}
-    const bytes=Buffer.byteLength(JSON.stringify(value));if(bytes>this.maxBytes)return;
     while(this.entries.size>=this.maxEntries||this.bytes+bytes>this.maxBytes){const oldest=this.entries.keys().next().value;if(oldest===undefined)break;this.bytes-=this.entries.get(oldest)!.bytes;this.entries.delete(oldest);}
     this.entries.set(key,{value,bytes});this.bytes+=bytes;
   }

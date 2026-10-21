@@ -34,6 +34,10 @@ import CryptoKit
             } else if request["files"].array.isEmpty{await model.demo()}
             else{let rows=request["files"].array.map{ImportRow(label:URL(fileURLWithPath:$0.string).deletingPathExtension().lastPathComponent,urls:[URL(fileURLWithPath:$0.string)])};let p=try await model.create(title:"수백 페이지 합성 검증",rows:rows);model.projectID=p["project_id"].string;await model.run(model.projectID)}
             guard !model.report.isNull else{throw BridgeError(code:"SMOKE_NO_REPORT",message:model.error)}
+            let assets=model.bridge.library.appendingPathComponent("assets")
+            let assetFacts=try FileManager.default.contentsOfDirectory(at:assets,includingPropertiesForKeys:nil).filter{$0.lastPathComponent.range(of:"^[a-f0-9]{64}$",options:.regularExpression) != nil}.map{url in
+                (url:url,sha:try fileDigest(url),modified:try FileManager.default.attributesOfItem(atPath:url.path)[.modificationDate] as? Date)
+            }
             let aspectChecks=request["aspect_ratio_checks"].bool ? try await exerciseAspectRatios(model,output):[]
             if request["bundle_sheet_page"].int>0 {
                 let revision=model.revision(0),number=request["bundle_sheet_page"].int
@@ -64,6 +68,22 @@ import CryptoKit
             }
             model.tab="history";model.focus=false;try await model.updateChanges()
             try await Task.sleep(nanoseconds:300_000_000);try capture(output.appendingPathComponent("native-history.png"))
+            var historyChangeCheck:[String:Any]=[:]
+            if let change=model.changes.last(where:{$0["kind"].string=="text_modified"}) {
+                let id=change["change_id"].string,before=change["from_occurrence"].string,after=change["to_occurrence"].string
+                model.chooseChange(id)
+                for _ in 0..<200 {
+                    if !model.loadingChanges && model.selectedChangeID==id && model.tab=="compare" {break}
+                    try await Task.sleep(nanoseconds:20_000_000)
+                }
+                try await Task.sleep(nanoseconds:300_000_000)
+                let evidence=change["evidence"].array
+                guard model.tab=="compare",model.selectedChangeID==id,model.revision(model.from)["revision_occurrence_id"].string==before,model.revision(model.to)["revision_occurrence_id"].string==after,
+                      evidence.contains(where:{$0["revision_occurrence_id"].string==before && model.displayPageID($0["page_id"].string,in:model.revision(model.from))==model.leftPageID}),
+                      evidence.contains(where:{$0["revision_occurrence_id"].string==after && model.displayPageID($0["page_id"].string,in:model.revision(model.to))==model.rightPageID}) else {throw BridgeError(code:"HISTORY_CHANGE_SELECTION",message:"실제 이력 선택과 비교 구간·원문 근거가 다릅니다.")}
+                historyChangeCheck=["selected_change_id":id,"from_occurrence":before,"to_occurrence":after,"source_pages_verified":true]
+                try capture(output.appendingPathComponent("native-history-change.png"));model.tab="history";try await model.updateChanges()
+            }
             // Navigate both the first and final history columns and let pending range calls settle.
             for index in [0,model.revisions.count-1]{
                 let id=model.primaryPages(model.revision(index)).last!["page_id"].string
@@ -75,6 +95,12 @@ import CryptoKit
             let numeric=model.changes.filter{$0["kind"].string=="text_modified"}
             let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"reference_appearance_checks":referenceChecks,"import_draft_checks":importChecks,"bundle_mapping_checks":bundleChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
             var complete=result;complete["aspect_ratio_checks"]=aspectChecks
+            for fact in assetFacts {
+                let modified=try FileManager.default.attributesOfItem(atPath:fact.url.path)[.modificationDate] as? Date
+                guard try fileDigest(fact.url)==fact.sha,modified==fact.modified else{throw BridgeError(code:"SOURCE_ASSET_CHANGED",message:"화면 표시 후 저장 원본의 hash 또는 수정 시간이 바뀌었습니다.")}
+            }
+            complete["source_assets_unchanged"]=assetFacts.map{["name":$0.url.lastPathComponent,"sha256":$0.sha]}
+            complete["history_change_check"]=historyChangeCheck
             complete["sidecar_checks"]=sidecarChecks
             try JSON(complete).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
         }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Docver native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}

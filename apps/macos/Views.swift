@@ -149,11 +149,16 @@ struct SidebarView: View {
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
             HStack{Text("프로젝트").font(.caption).foregroundStyle(.secondary);Spacer();Button{model.importSheet=true}label:{Image(systemName:"plus")}.buttonStyle(.borderless).disabled(model.busy || model.loading)}.padding(.horizontal,14).padding(.top,18)
-            List(model.projects){p in Button{Task{await model.selectProject(p["project_id"].string)}}label:{HStack{Image(systemName:"folder.fill").foregroundStyle(.blue);VStack(alignment:.leading,spacing:3){Text(p["title"].string).lineLimit(1);Text(p["unreadable"].bool ? "입력 손상 · 기존 자료 보존":"\(p["revisions"].array.count)개 버전"+(p["dirty"].bool ? " · 분석 대기":"")).font(.caption2).foregroundStyle(.secondary)}}.padding(.vertical,5)}.buttonStyle(.plain).disabled(model.busy||model.loading||p["unreadable"].bool).help(p["unreadable"].bool ? "입력 기록을 읽지 못했습니다. 기존 원문과 보고서는 보존했습니다.":p["title"].string).listRowBackground(p["project_id"].string==model.projectID ? Color.blue.opacity(0.12):Color.clear)}.listStyle(.sidebar).frame(minHeight:80,maxHeight:220)
+            List(model.projects){p in Button{Task{await model.selectProject(p["project_id"].string)}}label:{HStack{Image(systemName:"folder.fill").foregroundStyle(.blue);VStack(alignment:.leading,spacing:3){Text(p["title"].string).lineLimit(1);Text(p["unreadable"].bool ? "입력 손상 · 기존 자료 보존":"\(p["revisions"].array.count)개 버전"+(p["dirty"].bool ? " · 분석 대기":"")).font(.caption2).foregroundStyle(.secondary)}}.padding(.vertical,5)}.buttonStyle(.plain).disabled(model.busy||model.loading).help(p["unreadable"].bool ? "입력 기록을 읽지 못했습니다. 기존 원문과 보고서는 보존했습니다.":p["title"].string).listRowBackground(p["project_id"].string==model.projectID ? Color.blue.opacity(0.12):Color.clear)}.listStyle(.sidebar).frame(minHeight:80,maxHeight:220)
             if !model.project.isNull {
+                if model.project["unreadable"].bool {
+                    Label("고정 보고서 읽기 전용",systemImage:"lock.doc").font(.caption).padding(.horizontal,14)
+                    Text("입력 기록을 읽지 못했습니다. 기존 보고서와 원문은 계속 열 수 있습니다. 다시 분석하려면 새 프로젝트로 가져오세요.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,14)
+                }else{
                 Text("가져오기 순서").font(.caption).foregroundStyle(.secondary).padding(.horizontal,14)
                 ScrollView { LazyVStack(spacing:0){ForEach(Array(model.project["revisions"].array.enumerated()),id:\.offset){i,r in HStack(spacing:8){Text(String(format:"%02d",i+1)).foregroundStyle(.secondary).font(.caption2);VStack(alignment:.leading,spacing:4){Text(r["label"].string).lineLimit(1).font(.caption);Text(r["files"].array.map{$0["blob"].string.hasSuffix("pdf") ? "PDF":"PPTX"}.joined(separator:" + ")).font(.caption2).foregroundStyle(.secondary)};Spacer();VStack(spacing:3){Button{Task{await model.reorder(i,delta:-1)}}label:{Image(systemName:"chevron.up")}.disabled(i==0||model.busy||model.loading);Button{Task{await model.reorder(i,delta:1)}}label:{Image(systemName:"chevron.down")}.disabled(i==model.project["revisions"].array.count-1||model.busy||model.loading)}.buttonStyle(.borderless).font(.caption2)}.padding(.horizontal,14).padding(.vertical,9);Divider()}} }
-                Button(model.project["dirty"].bool ? "입력·대응 변경 분석":"다시 분석"){Task{await model.run(model.projectID)}}.disabled(model.busy || model.loading).frame(maxWidth:.infinity).padding(.horizontal,14)
+                Button(model.project["dirty"].bool ? "입력·대응 변경 분석":"다시 분석"){Task{await model.run(model.projectID)}}.disabled(model.busy || model.loading || model.project["unreadable"].bool).frame(maxWidth:.infinity).padding(.horizontal,14)
+                }
             }
             Spacer(minLength:5)
             Button{model.importSheet=true}label:{Label("문서 버전 가져오기",systemImage:"plus")}.disabled(model.busy || model.loading).frame(maxWidth:.infinity).padding(14)
@@ -238,6 +243,7 @@ struct ChangeRow: View {
 struct InspectorView: View {
     @EnvironmentObject var model: AppModel
     var mappingUnavailableReason: String? {
+        if model.project["unreadable"].bool{return "입력 기록 손상 · 고정 보고서 읽기 전용입니다."}
         if model.busy { return "분석이 끝난 뒤 대응을 수정할 수 있습니다." }
         if model.loading || model.loadingChanges { return "변경 목록을 불러오고 있습니다." }
         if model.project["dirty"].bool { return "대기 중인 수정을 재분석한 뒤 대응을 수정하세요." }

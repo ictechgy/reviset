@@ -222,7 +222,7 @@ struct BundlePagePreview:View {
                 .overlay{if loadingPage && !payload.isNull && failure.isEmpty{VStack{ProgressView();Text("페이지 검증 중 · 이전 조회 화면").font(.caption)}.padding(8).background(.regularMaterial,in:RoundedRectangle(cornerRadius:6))}}.allowsHitTesting(!loadingPage)
         }.frame(maxWidth:.infinity).task(id:projectID+reportID+pageID+basis){
             let scope=projectID+"|"+reportID+"|"+basis;if loadedScope != scope{payload=JSON()};failure="";loadingPage=true;defer{if !Task.isCancelled{loadingPage=false}};guard !pageID.isEmpty else{payload=JSON();return}
-            do{let result=try await model.bridge.call("page",["project_id":projectID,"report_id":reportID,"page_id":pageID,"basis":basis]);if !Task.isCancelled{payload=result;loadedScope=scope}}catch{if !Task.isCancelled{failure=error.localizedDescription}}
+            do{let result=try await model.bridge.call("page",["project_id":projectID,"report_id":reportID,"page_id":pageID,"basis":basis]);if !Task.isCancelled{payload=result;loadedScope=scope}}catch{if !Task.isCancelled{payload=JSON();failure=error.localizedDescription}}
         }
     }
 }

@@ -73,7 +73,7 @@ export class QueryService {
     if(this.loadSnapshot)return this.loadSnapshot(projectId,reportId);
     const resolved=reportId==='latest'?this.store.resolveReportId(projectId,reportId):reportId,key=JSON.stringify([projectId,resolved]);
     const cached=this.snapshots.get(key);if(cached)return cached;
-    const report=this.store.report(projectId,resolved);this.snapshots.set(key,report);return report;
+    const {report,serializedBytes}=this.store.reportWithSize(projectId,resolved);this.snapshots.set(key,report,serializedBytes);return report;
   }
   changeSet(raw:unknown):ChangeData[] {
     const args=querySchemas.list_changes.parse(raw);const report=this.snapshot(args.project_id,args.report_id);
@@ -178,7 +178,7 @@ export class QueryService {
           const a=resolveRev(args.from),b=resolveRev(args.to);if(!a||!b)throw new DocverError('REVISION_NOT_FOUND','Range endpoints are outside this report');
           const aIndex=r.revisions.indexOf(a),bIndex=r.revisions.indexOf(b);if(aIndex>=bIndex)throw new DocverError('RANGE_ORDER','from must precede to');
           // Keep original selectors in the key: archived44 net IDs include aliases.
-          const cacheKey=JSON.stringify([r.project_id,r.report_id,args.from,args.to]),cached=this.ranges.get(cacheKey);
+          const cacheKey=JSON.stringify([r.project_id,r.report_id,args.from,args.to]),cached=this.loadSnapshot?undefined:this.ranges.get(cacheKey);
           if(cached){changes=cached;}else{
           const entity=(p:string)=>r.lineages.find(l=>l.page_ids.includes(p))?.entity_id??'';
           const primary=(v:typeof a)=>v.assets.some(s=>s.format==='pptx')?{...v,pages:v.pages.filter(p=>v.assets.find(s=>s.asset_id===p.asset_id)?.format==='pptx')}:v;
@@ -188,10 +188,10 @@ export class QueryService {
           const diff=currentLineageKernel(r.engine_version)?archivedLineageKernel(r.engine_version)?legacyLineage45Diff:archivedBundle50Kernel(r.engine_version)?legacyBundle50Diff:archivedBundle51Kernel(r.engine_version)?legacyBundle51Diff:diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Diff:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Diff:undefined;
           if(!diff)throw new DocverError('ENGINE_VERSION_UNAVAILABLE','Historical range computation requires its archived engine; stored history/export remains readable, and reanalysis creates a new report');
           const matcher=archivedLineageKernel(r.engine_version)?legacyLineage45Match:archivedBundle50Kernel(r.engine_version)?legacyBundle50Match:archivedBundle51Kernel(r.engine_version)?legacyBundle51Match:r.engine_version==='0.1.0-native.1'?legacyNativeMatch:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Match:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Match:matchPages;
-          const candidates=(matcher===matchPages?matchPages(left.pages,right.pages,[],[],{maxCosts:r.observation_environment.matching_work_policy===MATCHING_WORK_POLICY?MAX_ASSIGNMENT_COSTS:undefined}):matcher(left.pages,right.pages)).candidates;
+          const candidates=(matcher===matchPages?matchPages(left.pages,right.pages,[],[],{maxCosts:r.observation_environment.matching_work_policy===MATCHING_WORK_POLICY?MAX_ASSIGNMENT_COSTS:r.observation_environment.matching_work_policy==='hungarian-32m-costs-v1'?32_000_000:undefined}):matcher(left.pages,right.pages)).candidates;
           const endpointIds=r.engine_version===ENGINE_VERSION||r.engine_version==='0.3.0-native.lineage.45'||archivedBundle50Kernel(r.engine_version)||archivedBundle51Kernel(r.engine_version)?[a.revision_occurrence_id,b.revision_occurrence_id]:[args.from,args.to];
           changes=diff(left,right,matches,candidates,entity,directed?.structural).map((c,i)=>{const event={...c,schema_version:r.schema_version};return {...event,report_id:r.report_id,change_id:id('net',[r.report_id,...endpointIds,i,event]),evidence_uri:resource(r,'manifest')};});
-          this.ranges.set(cacheKey,changes);
+          if(!this.loadSnapshot)this.ranges.set(cacheKey,changes);
           }
         } else {
           const revIndex=(key:string)=>r.revisions.findIndex(v=>v.revision_occurrence_id===key||v.revision_id===key);

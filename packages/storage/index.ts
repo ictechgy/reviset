@@ -63,11 +63,14 @@ export class Store {
     publishContentSync(path,bytes,assetId.slice(7));
   }
   report(projectId:string,reportId:string):ReportData {
+    return this.reportWithSize(projectId,reportId).report;
+  }
+  reportWithSize(projectId:string,reportId:string):{report:ReportData;serializedBytes:number} {
     const row=reportId==='latest'?this.db.prepare('SELECT reports.body FROM reports JOIN runs ON runs.report_id=reports.id WHERE reports.project_id=? ORDER BY runs.rowid DESC LIMIT 1').get(projectId):this.db.prepare('SELECT body FROM reports WHERE project_id=? AND id=?').get(projectId,reportId);
     if(!row) throw new DocverError('REPORT_NOT_FOUND','No report in this project scope');
-    const parsed=Report.safeParse(JSON.parse(String(row.body)));
+    const body=String(row.body),parsed=Report.safeParse(JSON.parse(body));
     if(!parsed.success)throw new DocverError('SCHEMA_INCOMPATIBLE','Stored snapshot does not match the supported schema; migration is not implemented');
-    return parsed.data;
+    return {report:parsed.data,serializedBytes:Buffer.byteLength(body)};
   }
   resolveReportId(projectId:string,alias:string):string {
     const row=alias==='latest'?this.db.prepare('SELECT reports.id FROM reports JOIN runs ON runs.report_id=reports.id WHERE reports.project_id=? ORDER BY runs.rowid DESC LIMIT 1').get(projectId):this.db.prepare('SELECT id FROM reports WHERE project_id=? AND id=?').get(projectId,alias);

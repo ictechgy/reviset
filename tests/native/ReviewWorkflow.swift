@@ -20,9 +20,20 @@ import SwiftUI
   try require(!records().contains(where:{$0["action"].string=="reorder"}),"ReorderWroteBeforeConfirmation");model.reorderConfirmation=nil
   try require(model.project["mapping_relations"].array.count==1&&model.project["bundle_decision_count"].int==2,"CancelChangedDraft")
   model.projectID="prj_a";await model.confirmReorder(confirmation);try require(!records().contains(where:{$0["action"].string=="reorder"}),"StaleConfirmationWroteOtherProject")
-  model.projectID="prj_history";model.error="";model.report=JSON(["report_id":"rpt_history","revisions":["a","b","c"].map{k in ["revision_occurrence_id":"occ_"+k,"label":k,"assets":[["asset_id":"asset_"+k,"format":"pdf"]],"pages":[["page_id":"page_"+k,"asset_id":"asset_"+k,"page":1]]]},"matches":[]]);model.from=0;model.to=2;model.tab="history";model.changes=[JSON(["change_id":"chg_history","from_occurrence":"occ_b","to_occurrence":"occ_c"])];model.chooseChange("chg_history")
+  model.projectID="prj_history";model.error="";model.report=JSON(["report_id":"rpt_history","revisions":["a","b","c"].map{k in ["revision_occurrence_id":"occ_"+k,"label":k,"assets":[["asset_id":"asset_"+k,"format":"pdf"]],"pages":[["page_id":"page_"+k,"asset_id":"asset_"+k,"page":1]]]},"matches":[]]);model.from=0;model.to=2;model.tab="history";model.changes=[JSON(["change_id":"chg_history","from_occurrence":"occ_b","to_occurrence":"occ_c"])];model.chooseChange("chg_history");model.changeRange()
   for _ in 0..<200 {if model.selectedChangeID=="chg_history"&&model.leftPageID=="page_b"&&model.rightPageID=="page_c"{break};try await Task.sleep(nanoseconds:5_000_000)}
   try require(model.tab=="compare"&&model.from==1&&model.to==2&&model.leftPageID=="page_b"&&model.rightPageID=="page_c"&&model.inspector,"HistoryDidNotOpenExactIntervalAndEvidence")
+  let validReport=model.report
+  for mode in ["run","cancel","create"] {
+   model.projectID="prj_pending_"+mode;model.report=validReport;model.error="";let pending=Task{try? await model.updateChanges()};try await started("changes",model.projectID)
+   try require(model.loadingChanges,"PendingRangeDidNotOwnLoadingState");try require(model.changes.isEmpty && model.selected.isNull,"LoadingNewRangeDisplayedPriorChanges")
+   if mode=="create" {var failed=false;do{_ = try await model.create(title:"fail",rows:[])}catch let error as BridgeError{failed=error.code=="CONTROLLED_CREATE_FAILURE"};try require(failed,"CreateDidNotFailAsExpected")}
+   else {let run=Task{await model.run(model.projectID)};try await started("analyze",model.projectID);if mode=="cancel" {model.cancel()};await run.value;try require(mode=="cancel" ? model.status.contains("취소"):model.error.contains("controlled run failure"),"RunDidNotReachExpectedFailureOrCancellation")}
+   await pending.value;try require(!model.loadingChanges && !model.busy,"FailedActionLeftChangesLoading")
+  }
+  model.projectID="prj_history";var bad=validReport.dictionary;bad["report_id"]="rpt_range_fail";model.report=JSON(bad);model.changes=[JSON(["change_id":"stale_change"])];model.selectedChangeID="stale_change"
+  do{try await model.updateChanges();throw NSError(domain:"RangeFailureExpected",code:1)}catch{}
+  try require(model.changes.isEmpty && model.selected.isNull && !model.changesFailure.isEmpty && !model.loadingChanges,"FailedRangeDisplayedPriorChanges")
   print("PASS actual native workflow: scoped MCP late/ABA replies, copy readiness, selection/create race, reorder cancel/stale safety, history interval/evidence")
  }
 }
