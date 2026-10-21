@@ -366,7 +366,7 @@ struct ReorderConfirmation:Identifiable {
             let config=try await bridge.call("mcpConfig",["project_id":project]).string
             guard !Task.isCancelled,project==projectID,generation==mcpGeneration else{return}
             mcpProjectID=project;mcp=config
-        } catch {if !Task.isCancelled,project==projectID,generation==mcpGeneration {mcpFailure=error.localizedDescription;fail(error)}}
+        } catch {if !Task.isCancelled,project==projectID,generation==mcpGeneration {mcpFailure=error.localizedDescription}}
     }
     func openSidecar(_ revision:JSON,page:String) {
         guard libraryAvailable && !busy && !loading && sidecarConfigured && !page.isEmpty else{return}

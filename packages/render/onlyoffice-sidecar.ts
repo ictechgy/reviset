@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {readFile,writeFile,mkdir,realpath,lstat,rename,rm,link,readdir} from 'node:fs/promises';
-import {join} from 'node:path';
+import {join,dirname} from 'node:path';
 import {getDocument} from 'pdfjs-dist/legacy/build/pdf.mjs';
 import {byteHash,MAX_INPUT_BYTES,DocverError,type PageData,type ReportData} from '../schema/index.js';
 import {runTool,visionInfo} from '../runtime/tools.js';
@@ -69,8 +69,9 @@ async function provider(resources:string,signal?:AbortSignal){
 }
 
 export function onlyOfficeSidecarPolicy(folder:string,app:string,converter:string){
+  const jobAncestors:string[]=[];for(let p=dirname(folder);;p=dirname(p)){jobAncestors.push(p);if(p===dirname(p))break;}
   const reads=['/System','/usr/lib','/usr/share','/private/etc','/private/var/db',...onlyOfficeFontRoots(),app,folder,'/dev'];
-  return `(version 1)(allow default)(deny network*)(deny mach-lookup)(deny mach-register)(deny user-preference-write)(deny lsopen)(deny signal)(deny system-debug)(deny ipc-posix*)(deny ipc-sysv*)(deny iokit*)(deny process-fork)(deny process-exec)(allow process-exec (literal ${JSON.stringify(converter)}))(deny file-read-data)(allow file-read-data (vnode-type DIRECTORY) ${reads.map(p=>`(subpath ${JSON.stringify(p)})`).join(' ')})(deny file-write*)(allow file-write* (subpath ${JSON.stringify(folder)}) (literal "/dev/null"))(deny file-write* (subpath ${JSON.stringify(app)}))`;
+  return `(version 1)(allow default)(deny network*)(deny mach-lookup)(deny mach-register)(deny user-preference-write)(deny lsopen)(deny signal)(deny system-debug)(deny ipc-posix*)(deny ipc-sysv*)(deny iokit*)(deny process-fork)(deny process-exec)(allow process-exec (literal ${JSON.stringify(converter)}))(deny file-read-data)(allow file-read-data ${jobAncestors.map(p=>`(literal ${JSON.stringify(p)})`).join(' ')} ${reads.map(p=>`(subpath ${JSON.stringify(p)})`).join(' ')})(deny file-write*)(allow file-write* (subpath ${JSON.stringify(folder)}) (literal "/dev/null"))(deny file-write* (subpath ${JSON.stringify(app)}))`;
 }
 
 export function sidecarSource(report:ReportData,scope:SidecarScopeData){
@@ -206,7 +207,7 @@ export async function createOnlyOfficeSidecar(options:{library:string;resources:
     const params={m_sFileFrom:copied,m_sFileTo:output,m_nFormatTo:'513',m_sFontDir:fonts,m_sAllFontsPath:join(fonts,'AllFonts.js'),m_sThemeDir:join(prepared.app,'Contents/Resources/editors/sdkjs/slide/themes'),m_bIsNoBase64:'true',m_sTempDir:folder};
     const parameterFile=join(folder,'params.xml');await writeFile(parameterFile,'<?xml version="1.0" encoding="utf-8"?><TaskQueueDataConvert>'+Object.entries(params).map(([k,v])=>`<${k}>${xml(v)}</${k}>`).join('')+'</TaskQueueDataConvert>',{mode:0o600,flag:'wx'});
     signal?.throwIfAborted();
-    try{await runTool(guard,[folder,'/usr/bin/sandbox-exec','-p',onlyOfficeSidecarPolicy(folder,prepared.app,prepared.converter),prepared.converter,parameterFile],{supervised:true,timeout:120_000,signal,maxBytes:1024*1024,inheritEnv:false,env:{PATH:'/usr/bin:/bin',HOME:folder,TMPDIR:folder,XDG_CACHE_HOME:join(folder,'cache'),LANG:'en_US.UTF-8',TZ:'UTC'}});}
+    try{await runTool(guard,[folder,'/usr/bin/sandbox-exec','-p',onlyOfficeSidecarPolicy(folder,prepared.app,prepared.converter),prepared.converter,parameterFile],{cwd:folder,supervised:true,timeout:120_000,signal,maxBytes:1024*1024,inheritEnv:false,env:{PATH:'/usr/bin:/bin',HOME:folder,TMPDIR:folder,XDG_CACHE_HOME:join(folder,'cache'),LANG:'en_US.UTF-8',TZ:'UTC'}});}
     catch(error){rethrowSidecarConversionError(error);}
     signal?.throwIfAborted();const st=await lstat(output);if(st.nlink!==1)fail('SIDECAR_OUTPUT','참고 PDF가 독립된 파일이 아닙니다.');const pdf=await smallFile(output,128*1024*1024);
     const task=getDocument({...pdfOptions,data:new Uint8Array(pdf)}),rendered:RenderedPage[]=[];let documentCharacters=0,documentItems=0;
