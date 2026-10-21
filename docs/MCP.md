@@ -92,3 +92,12 @@ Claude도 모델 계정 변경 없이 읽기 전용 MCP만 사용해 합성5버�
 페이지 Markdown의 CR/CRLF는 표시용 LF로 정규화된다. `text_length`/`text_sha256`은 저장 원문의 값이며, 추출 문구의 원래 줄바꿈은 JSON/JSONL 또는 MCP 청크로 확인한다. 내보내기 실패는 부분 폴더를 남길 수 있으며 원자적 트랜잭션이 아니다.
 
 기존 alias/작은예산의 summary호환은 유지한다. 정밀 AI 조회는 occurrenceID와 새4개읽기도구를 사용한다. 전체 보고서/row/필드hash를 메모리에 만드는 비용은 남아 있고 CPU/RSS/p95 상한을 보장하지 않는다. OCR과 원본PowerPoint 충실도의 이전 미통과 게이트도 이 MCP 작업으로 합격 처리하지 않는다. 상세 실행은 `release/validation.json`과 `.omx/artifacts/ai-mcp-01/composite-qualification.json`에 보존한다.
+
+
+## 2026-10-21 재리뷰 실행본
+
+현재 앱은 `release/Docver-Review.app`이며 runtime source `1872f61fb78867f31ca70a14732b7c0c7bfadd39`다. 과거 F빌드의 Claude 직접37호출과 현재 패키지 검증을 구별한다. 새5버전/300쪽/과거900쪽 보고서 재열기를 포함 MCP로 조회했고, 손상 draft 복사본에서도 실제 앱과 MCP가 기존 고정 보고서·원문·노트·변경 양쪽·근거·검색·관측 한계를 읽고 SQLite/draft 원문을 보존했다. 계산한 range_net 뒤 source와 report metadata를 다시 읽어 캐시 오염이 없음을 확인했다. [실행 결합·범위](REVIEW-2026-10-21.md).
+
+앱의 설정 복사는 현재 프로젝트/시도의 준비 완료 값만 허용한다. 실패는 준비 중과 구별하며 **설정 다시 불러오기**로 복구한다. MCP 실패·재시도는 별도 글로벌 오류를 덮거나 남기지 않는다. `latest`는 매번 최신 run의 고정 ID로 해석하고 scope 검사를 캐시 조회 전에 한다. report2개/64MiB·range8개/16MiB는 직렬화 데이터 한도이며 heap 보장이 아니다. custom snapshot loader는 양 캐시를 우회한다.
+
+v2 대응 비용/행렬 정책을 관측 환경에 기록하고, v1 저장 보고서는32M 비용과 원래 admission을 유지한다. engine44의 역사적 selector 기반 ID도 보존한다. 계산 제한이나 판독 공백은 변경 없음·삭제 증거가 아니다. 새 Markdown 파일명은8자리 prefix 대신 전체64hex asset ID를 사용하며 링크도 함께 갱신했다. JSON/JSONL 원문·고정 report/change ID와 과거 내보내기 파일은 바꾸지 않는다.

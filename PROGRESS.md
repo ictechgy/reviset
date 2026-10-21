@@ -1,4 +1,15 @@
-# 현재 검증 상태 · E3 / 무료 도구 · 2026-10-20
+# 현재 검증 상태 · 보안·성능·구조·UI/UX 재리뷰 · 2026-10-21
+
+실행본 `release/Docver-Review.app`, ZIP `release/Docver-0.4.0-review1-arm64.zip`. clean runtime source `1872f61fb78867f31ca70a14732b7c0c7bfadd39`. 독립39경로 코드 COMMENT / 구조 WATCH, 현재 차단 결함0, 같은 Mac native integration와 private package READY. 제품 전체 판독·PowerPoint 충실도 OPEN은 유지한다. [상세 재리뷰](docs/REVIEW-2026-10-21.md).
+
+- 전체 회귀는 R5 `c76c0eca90e0e2c0d1a7b732f3a9ef799ad49b3f`의267/267 PASS(1102.169초), 이후 정확한7경로를 최종21/21 집중 검사(37.748초)와 strict Swift exit0으로 결합했다. strict 경고4개를 무경고로 세지 않는다. 최종 R8 전체 npmtest를 실행했다고 부르지 않는다.
+- 최종 앱 build23.146초, 실제13native+3MCP=16작업 PASS. 새5버전/공개10PPTX/새300쪽/단일 버전, MCP5버전/300쪽/과거900쪽 재열기를 구분한다. 300쪽 동일 원본 두 occurrence 분석과 참고 PDFKit 검증32.624초.
+- 실제 OCR 작업 종료·부모 손실, 손상 draft 앱/MCP 읽기, 실제 x2t 도중 앱 및 bridge+앱 SIGKILL 후 같은 library 재시작 복구 PASS. 원본 hash/mtime와 보고서/SQLite 불변. OS 입력/VoiceOver 인증은 아니다.
+- ZIP391459545B SHA256 `a474fe68e5b8528a6d6655ab12f25605c34f80e01fe46113b5e3786ed9b36b2f`. 공백 이동경로·최소PATH·포함Node·서명·guard hardened runtime·실제 앱/MCP16검사 PASS. [검증 JSON](release/validation-review1.json).
+- Claude/Grok 최초·R1·R3의 지적을 보존하고 R5/R6/R7/R8 변경분 재리뷰로 닫았다. 마지막3파일 closure 양쪽APPROVE, 최종 실제6장 ClaudeAPPROVE/P1·P2없음. 전역 디렉터리 data읽기 제거·정확한 ancestor/root 경계, 양수 캡처PID, 프로젝트/시도 MCP 소유권, 구보고서 정책·복구, 원자적 게시·안전한 export, bounded matching·cache, 큰 캔버스/정확한 근거/부분 강조를 검증했다.
+- 전역metadata·허용 ancestor entry 이름·OS broker, 양수PID재사용/임의 강제종료·전원손실, heap/RSS/모든 OCR 성능 및 다른Mac·공증·공개 배포는 WATCH/OPEN. 이전 앱·ZIP/HANDOFF/PLAN hash 보존. 원문·실험실패·역사적 차단 verdict를 뒤에 PASS로 덮어쓰지 않는다.
+
+# 이전 검증 상태 · E3 / 무료 도구 · 2026-10-20
 
 실행본은 `release/Docver-Render.app`, ZIP은 `release/Docver-0.4.0-render2-arm64.zip`이다. clean runtime source `af0309a272f79ba82b2a14882748e6613e984e09`와 후속 문서 커밋을 구분한다. 기존 AL/F 앱·ZIP과 HANDOFF/PLAN은 보존했다. 전체 제품 판독 게이트는 **OPEN**, 같은 Mac의 선택적 비공개 참고 창 패키지는 **COMMENT / WATCH; SOURCE_READY / INTEGRATION_READY / PRIVATE_PACKAGE_READY**다. 상세 결합 증거는 `.omx/artifacts/native-sidecar-03/composite-qualification.json`, 현재 사용 조건은 `docs/QUALITY.md`다.
 

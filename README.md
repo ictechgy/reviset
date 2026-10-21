@@ -4,11 +4,11 @@ PPTX·PDF 버전의 페이지 대응, 숫자 수정, 중간 삽입·삭제와 �
 
 ## Mac에서 사용
 
-현재 Mac에서 검증한 앱은 `release/Docver-Render.app`입니다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 실행하세요. 더블클릭해서 실행하고 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**를 선택합니다. 파일 순서를 버전 순서로 사용하며, PPTX 또는 PDF 하나만으로도 유효합니다. 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
+현재 Mac에서 검증한 앱은 `release/Docver-Review.app`입니다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 실행하세요. 더블클릭해서 실행하고 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**를 선택합니다. 파일 순서를 버전 순서로 사용하며, PPTX 또는 PDF 하나만으로도 유효합니다. 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
 
-최근 검증본은 [Docver-Render.app](release/Docver-Render.app)과 [arm64 ZIP](release/Docver-0.4.0-render2-arm64.zip)입니다. 빌드 원본은 `af0309a272f79ba82b2a14882748e6613e984e09`이며, 252개 테스트·실제 앱/MCP 15개 작업·ZIP 이동 실행 16개 검사를 통과했습니다. 선택적 OnlyOffice 참고 창은 이 Mac의 외부 설치본과 글꼴 metadata에 연결되며, 원본 대응을 확인한 문서의 PDF를 큰 PDFKit 화면으로 엽니다. 저장된 분석·diff·MCP와 기본 렌더는 유지합니다. 이 패키지는 같은 Mac용 검증본이며 다른 Mac으로의 배포 검증은 완료하지 않았습니다. 상세 증거는 [검증 기록](release/validation-render2.json), 사용 조건과 남은 OCR·PowerPoint 충실도 문제는 [품질 현황](docs/QUALITY.md)에 기록합니다.
+최근 검증본은 [Docver-Review.app](release/Docver-Review.app)과 [arm64 ZIP](release/Docver-0.4.0-review1-arm64.zip)입니다. 실행 원본은 `1872f61fb78867f31ca70a14732b7c0c7bfadd39`입니다. R5 전체267개 회귀와 최종7파일의 집중21개 검사, 새 앱/MCP16작업 및 이동 ZIP16검사를 결합했습니다. Claude·Grok 지적 수정과 독립 코드·구조 리뷰, Claude의 새 실제 화면 검토를 마쳤습니다. 정확한 소스 결합과 남은 범위는 [재리뷰 기록](docs/REVIEW-2026-10-21.md), [ZIP 검증](release/validation-review1.json), [품질 현황](docs/QUALITY.md)을 참고하세요.
 
-이전 [Docver-MCP.app](release/Docver-MCP.app)도 보존했습니다. Claude의 실제 MCP 사용 검증은 그 이전 F 빌드의 37개 도구 호출과 1개 구조화 응답에 해당합니다. 현재 앱의 포함 MCP·Node·Vision은 F와 바이트가 같고 새 앱의 실제 MCP 작업도 별도로 통과했습니다. 버전별 내용과 변경 조회 방법은 [AI 조회 가이드](docs/MCP.md)를 참고하세요. 모든 문서의 완벽한 판독은 아직 달성하지 못했습니다.
+선택적 OnlyOffice 참고 창은 이 Mac의 외부 설치본과 글꼴 metadata에 연결됩니다. 원본 대응을 확인한 문서의 PDF를 큰 PDFKit 화면으로 열며 저장된 분석·diff·MCP를 대체하지 않습니다. 같은 Mac의 비공개 검증본이며 다른 Mac 배포·공증은 완료하지 않았습니다. 이전 Docver-MCP/Docver-Render 앱·ZIP도 보존했습니다. Claude의 직접 MCP37호출은 이전 F빌드의 독립 증거이고 새 실행본의 포함 MCP는 별도로 검증했습니다. 버전별 내용과 변경 조회 방법은 [AI 조회 가이드](docs/MCP.md)를 참고하세요. 모든 문서의 완벽한 판독은 아직 달성하지 못했습니다.
 
 - 인접 버전의 1:1 연결·해제·1:N 분할·N:1 병합을 수정합니다. 한 관계에서 최대32페이지를 고르고 이유를 남기며, 모든 분기를 전체 이력과 원문에서 따로 열 수 있습니다.
 - 같은 버전의 PPTX 슬라이드와 제공 PDF 페이지를 별도 창에서 연결·해제·재연결하고 이유·대체된 연결을 보존합니다. 과거 보고서에서는 연결 이력을 조회합니다. 사용자 연결은 참고용이며 PowerPoint 화면 충실도를 보증하지 않습니다.
@@ -18,7 +18,7 @@ PPTX·PDF 버전의 페이지 대응, 숫자 수정, 중간 삽입·삭제와 �
 - PPTX 원문은 텍스트 조각·저장된 필드 값·줄바꿈과 도형·표의 순서를 보존합니다. 발표자 노트의 문단과 빈 줄도 유지합니다. XML 원문은 UTF-8과 BOM이 있는 UTF-16을 읽고, 손상된 인코딩과 허용하지 않는 문자는 명시 오류로 표시합니다.
 - PPTX는 앱에 포함된 LibreOffice로 실제 PDF를 렌더해 표시합니다. 내용 대응이 확인된 같은 버전의 원본 PDF를 함께 가져오면 그 PDF를 우선 표시합니다. 별도 변환 화면이 없으면 구조 보기를 명시합니다. 숨김 슬라이드도 포함해 원본 슬라이드 번호와 렌더 페이지를 검증합니다.
 - 스캔·복합 PDF에는 macOS Vision의 로컬 한글/영어 OCR을 사용합니다. 300 DPI 목표, 최대 4096px, 겹치는 타일과 숫자 영역 재인식으로 부호·소수점·금액을 검증합니다. 인식 점수는 확률이 아니며 OCR 변경은 추정과 원문 확인 표식을 붙입니다.
-- 파일당 512 MiB, PDF 1,000쪽, 프로젝트 100버전 상한입니다. 분석은 페이지를 최대 16쪽씩 native helper로 처리하고, 같은 화면의 OCR은 버전 간 재사용합니다. 페이지 이동은 SQLite의 개별 페이지 인덱스를 사용합니다. 상한이 모든 문서의 속도·정확도 보장은 아닙니다.
+- 파일당 512 MiB, PDF 1,000쪽, 프로젝트 100버전 상한입니다. 분석은 페이지를 최대 16쪽씩 native helper로 처리하고, 같은 화면의 OCR은 버전 간 재사용합니다. 페이지 이동은 SQLite의 개별 페이지 인덱스를 사용합니다. 새 대응은1000×1000페이지 범위를 검사한 계산 한도를 사용하며 더 큰/비대칭 비교는 명시 중단될 수 있습니다. 과거 보고서는 당시 계산 정책을 유지합니다. 상한이 모든 문서의 속도·정확도 보장은 아닙니다.
 
 보관소는 `~/Library/Application Support/Docver/library/`입니다. 가져온 원본을 앱 전용 위치에 복사하며 원본을 덮어쓰지 않습니다. 분석은 별도 프로세스에서 수행하고 취소된 결과는 고정 보고서로 저장하지 않습니다. 과거 보고서와 새 분석 실행은 별개로 보존합니다.
 
@@ -29,8 +29,8 @@ PPTX·PDF 버전의 페이지 대응, 숫자 수정, 중간 삽입·삭제와 �
 ```sh
 npm ci
 npm run check
-DOCVER_APP_NAME=Docver-MCP.app npm run mac:build
-open release/Docver-MCP.app
+DOCVER_APP_NAME=Docver-Local.app npm run mac:build
+open release/Docver-Local.app
 ```
 
 ## PDF 표시 상태와 표

@@ -1,3 +1,13 @@
+# 현재 추가 검증 · 2026-10-21 재리뷰
+
+현재 실행본은 `release/Docver-Review.app`, runtime source `1872f61fb78867f31ca70a14732b7c0c7bfadd39`이며 [재리뷰·한계·증거](REVIEW-2026-10-21.md)와 [이동 ZIP 검증](../release/validation-review1.json)을 기준으로 한다. 아래 E3·AL·F 등 과거 검증은 각 고정 소스에만 해당한다.
+
+R5 전체267 PASS + 최종7파일 집중21 PASS + 최종 실제 앱/MCP16작업 + 이동ZIP16검사를 결합한 **same-Mac PRIVATE_PACKAGE_READY**다. 최종R8전체npmtest, 보편OCR, PowerPoint픽셀동일성, OS입력/VoiceOver·다른Mac·공증/공개배포 합격으로 해석하지 않는다. strictSwift exit0에도 기존 캡처 경고4개가 남는다.
+
+세 native parser 정책에서 전역 디렉터리 data grant를 없앴다. 다만 정확히 허용한 ancestor **내 entry 이름**, helper 폴더·OS/font/vendor/job 루트와 전역 metadata/필요 broker는 남으므로 완전한 파일명·broker 격리가 아니다. per-job CoreML 초기 비용이 실제로 있으며300쪽PPTX32.624초를 스캔PDF OCR 속도로 대신하지 않는다. 새 v2 대응은1000×1000 지원 영역과 행렬/계산 비용 제한을 구분하며, 비대칭·상한 밖은 명시 실패한다. v1 과거 admission은 보존했다.
+
+새 최종 실제 화면에서 이전 P2(문장 전체 색상·근거 버전 누락·3행 대응 목록)를 Claude가 닫고APPROVE했다. 원본 SHA/mtime와 DB 불변·손상 draft 읽기·관측한 종료/재시작은 별도 실행으로 통과했다. 기존 stress 판독 코퍼스와 독립 PowerPoint 참조 미통과를 이 리뷰로 합격 처리하지 않는다. 자세한 잔여 WATCH는 위 재리뷰 문서를 따른다.
+
 # 품질 검증 · 진행 중
 
 요구: 실제 네이티브 Mac 앱에서 PDF 원문·가시성·OCR·PPTX 원본 충실도를 보완한다. `HANDOFF.md`와 `PLAN.md`는 원본 그대로 보존한다. 이 문서는 현재 판독 품질의 합격 기준이며 전체 PDF의 100% 인식을 선언하는 문서가 아니다.
