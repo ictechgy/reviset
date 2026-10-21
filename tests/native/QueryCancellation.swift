@@ -14,6 +14,8 @@ import Foundation
   guard Date().timeIntervalSince(start)<2,records().contains(where:{$0["tag"]as?String=="slow" && $0["event"]as?String=="terminated"})else{throw NSError(domain:"ChildNotTerminated",code:1)}
   let keep=Task{try await bridge.call("changes",["tag":"keep","delay":750])},stop=Task{try await bridge.call("changes",["tag":"stop","delay":5000])};try await started("keep");try await started("stop");stop.cancel();try await cancelled(stop);let kept=try await keep.value
   guard kept["tag"].string=="keep"else{throw NSError(domain:"SiblingRequestLost",code:1)}
+  let page=Task{try await bridge.call("page",["tag":"page","delay":5000])},peer=Task{try await bridge.call("reports",["tag":"page-peer","delay":250])};try await started("page");page.cancel();try await cancelled(page)
+  guard try await peer.value["tag"].string=="page-peer",records().contains(where:{$0["tag"]as?String=="page" && $0["event"]as?String=="terminated"})else{throw NSError(domain:"SupersededPageWasNotTerminatedOrKilledPeer",code:1)}
   for index in 0..<24 {
     let racing=Task{try await bridge.call("changes",["tag":"race-\(index)","delay":5000])}
     try await Task.sleep(nanoseconds:UInt64(index%4+1)*250_000);racing.cancel();try await cancelled(racing)
@@ -25,7 +27,7 @@ import Foundation
   let shutdownA=Task{try await bridge.call("sidecarCreate",["tag":"shutdown-a","delay":5000])},shutdownB=Task{try await bridge.call("sidecarCreate",["tag":"shutdown-b","delay":5000])},other=Task{try await bridge.call("changes",["tag":"shutdown-keep","delay":750])}
   try await started("shutdown-a");try await started("shutdown-b");try await started("shutdown-keep");bridge.cancelSidecars();try await cancelled(shutdownA);try await cancelled(shutdownB)
   guard try await other.value["tag"].string=="shutdown-keep"else{throw NSError(domain:"SidecarShutdownKilledRead",code:1)}
-  print("PASS 7: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; nonrangeunchanged;24midlaunchcancellationraces; nofalsecrashlog; shutdownterminatesonlyownedsidecars")
+  print("PASS 8: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; pagecancelendsownhelperandpreservespeer; nonrangeunchanged;24midlaunchcancellationraces; nofalsecrashlog; shutdownterminatesonlyownedsidecars")
   try JSONSerialization.data(withJSONObject:records(),options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("observed.json"))
  }
 }

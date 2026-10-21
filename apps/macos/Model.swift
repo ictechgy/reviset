@@ -18,12 +18,22 @@ struct SidecarRequest: Identifiable {
         ["project_id":project,"report_id":report,"revision_occurrence_id":occurrence,"page_id":page,"session_id":id]
     }
 }
+struct ReorderConfirmation:Identifiable {
+    let id=UUID()
+    let project:String
+    let draft:Data
+    let draftHash:String
+    let order:[Int]
+    let message:String
+}
 
 @MainActor final class AppModel: ObservableObject {
     @Published var libraryAvailable = true
     @Published var initializing = true
     @Published var projects: [JSON] = []
-    @Published var projectID = ""
+    @Published var projectID = "" {
+        didSet {if oldValue != projectID {mcp="";mcpProjectID="";mcpGeneration += 1}}
+    }
     @Published var report = JSON()
     @Published var reports: [JSON] = []
     @Published var changes: [JSON] = []
@@ -50,6 +60,7 @@ struct SidecarRequest: Identifiable {
     var sidecarFailure = ""
     @Published var loading = false
     @Published var loadingChanges = false
+    @Published var changesFailure = ""
     @Published var committing = false
     @Published var status = ""
     @Published var evidenceWarning = ""
@@ -64,6 +75,7 @@ struct SidecarRequest: Identifiable {
     @Published var search = ""
     @Published var kind = "all"
     @Published var mcp = ""
+    @Published var reorderConfirmation:ReorderConfirmation?
     @Published var importSheet = false
     @Published var mappingSheet = false
     @Published var bundleSheet = false
@@ -78,6 +90,8 @@ struct SidecarRequest: Identifiable {
     private var started = false
     private var rangeGeneration = 0
     private var selectionGeneration = 0
+    private var mcpGeneration = 0
+    private var mcpProjectID = ""
     private var pendingRange: (key: String, generation: Int, task: Task<[JSON], Error>)?
     private var pageNavigation: (report:String, from:Int, to:Int, left:String, right:String)?
     init() {
@@ -93,6 +107,14 @@ struct SidecarRequest: Identifiable {
     var revisions: [JSON] { report["revisions"].array }
     var selected: JSON { changes.first { $0["change_id"].string == selectedChangeID } ?? JSON() }
     var filteredChanges: [JSON] { changes.filter { (kind == "all" || $0["kind"].string == kind) && (search.isEmpty || ($0["before"].string + " " + $0["after"].string).localizedCaseInsensitiveContains(search)) } }
+    var currentMCPConfig:String? {libraryAvailable && !initializing && !loading && mcpProjectID==projectID && !mcp.isEmpty ? mcp:nil}
+    var emptyChangesMessage:String {
+        if loadingChanges || loading {return "변경 목록을 불러오고 있습니다…"}
+        if !changesFailure.isEmpty {return "변경 목록을 불러오지 못했습니다. 구간을 다시 선택하거나 보고서를 다시 여세요."}
+        if revisions.count<2 {return "두 버전 이상을 가져오면 변경을 비교할 수 있습니다."}
+        if changes.isEmpty {return "선택한 구간에서 감지된 변경이 없습니다. 판독 보류와 관측 한계는 원문 근거에서 확인하세요."}
+        return "필터·검색과 일치하는 변경이 없습니다. 유형이나 검색어를 바꿔 보세요."
+    }
     func primaryPages(_ revision: JSON) -> [JSON] {
         let pptx = revision["assets"].array.filter { $0["format"].string == "pptx" }.map { $0["asset_id"].string }
         return revision["pages"].array.filter { pptx.isEmpty || pptx.contains($0["asset_id"].string) }
@@ -109,14 +131,14 @@ struct SidecarRequest: Identifiable {
             _ = try await bridge.call("recover")
             if let recovered=try? await bridge.call("sidecarRecover"),recovered["skipped"].int>0 {sidecarRecoveryWarning="이전 참고 작업 \(recovered["skipped"].int)개를 자동 정리하지 못했습니다. 원문과 변경 이력은 계속 사용할 수 있습니다."}
             if FileManager.default.fileExists(atPath:bridge.resources.appendingPathComponent("onlyoffice-sidecar/provider.json").path) {sidecarConfigured = (try? await bridge.call("sidecarInfo")["configured"].bool) ?? false}
-            try await refresh(); if let p = projects.first { await selectProject(p["project_id"].string) }
+            try await refresh(); if let p = projects.first(where:{!$0["unreadable"].bool}) { await selectProject(p["project_id"].string) }
         }
         catch { fail(error) }
     }
     func selectProject(_ id: String, snapshot: String? = nil) async {
         guard libraryAvailable && !busy else { return }
         selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loadingChanges=false;let generation=selectionGeneration;pageNavigation=nil
-        loading = true; error = ""; evidenceWarning = ""; projectID = id; report = JSON(); changes = []; selectedChangeID = nil
+        loading = true; error = ""; evidenceWarning = ""; changesFailure=""; projectID = id; report = JSON(); changes = []; selectedChangeID = nil
         do {
             try await refresh();let loadedReports = try await bridge.call("reports", ["project_id": id]).array
             guard generation==selectionGeneration else{return};reports=loadedReports
@@ -143,7 +165,7 @@ struct SidecarRequest: Identifiable {
             generation=pending.generation;task=pending.task
         } else {
             pendingRange?.task.cancel()
-            rangeGeneration += 1;generation=rangeGeneration;loadingChanges=true
+            rangeGeneration += 1;generation=rangeGeneration;loadingChanges=true;changesFailure=""
             task=Task { try await self.bridge.call("changes",["project_id":project,"report_id":reportID,"from":before,"to":after,"mode":mode]).array }
             pendingRange=(key,generation,task)
         }
@@ -158,7 +180,7 @@ struct SidecarRequest: Identifiable {
             if pendingRange?.generation==generation {pendingRange=nil}
         } catch {
             guard generation==rangeGeneration else{return}
-            loadingChanges=false
+            loadingChanges=false;changesFailure=error.localizedDescription
             if pendingRange?.generation==generation {pendingRange=nil}
             throw error
         }
@@ -195,7 +217,18 @@ struct SidecarRequest: Identifiable {
         if occurrence==after["revision_occurrence_id"].string{rightPageID=id}
         evidenceWarning="";pageNavigation=(report["report_id"].string,from,to,leftPageID,rightPageID)
     }
-    func chooseChange(_ id:String){guard !loadingChanges else{return};evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence()}
+    func chooseChange(_ id:String){
+        guard !loadingChanges else{return}
+        if tab=="history",let change=changes.first(where:{$0["change_id"].string==id}),let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["from_occurrence"].string}),let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["to_occurrence"].string}),a<b {
+            from=a;to=b;tab="compare";inspector=true;evidenceWarning="";pageNavigation=nil
+            Task {
+                do{try await updateChanges();guard from==a,to==b,changes.contains(where:{$0["change_id"].string==id})else{return};selectedChangeID=id;selectEvidence()}
+                catch{fail(error)}
+            }
+            return
+        }
+        evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence()
+    }
     func openHistoryPage(_ index:Int,_ pageID:String){
         evidenceWarning=""
         from=max(0,index-1);to=min(revisions.count-1,max(1,index))
@@ -209,7 +242,7 @@ struct SidecarRequest: Identifiable {
     }
     func changeRange() { Task { do { try await updateChanges() } catch { fail(error) } } }
     func run(_ id: String) async {
-        guard libraryAvailable && !initializing && !busy else { return };evidenceWarning="";let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
+        guard libraryAvailable && !initializing && !busy else { return };selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;evidenceWarning="";let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
         do {
             let result = try await bridge.call("analyze", ["project_id": id], analysis: true) { [weak self] p in
                 Task { @MainActor in guard let self,self.busy,!self.committing,self.analysisToken==token else{return}; self.progress = p; self.status = p["phase"].string == "match" ? "페이지 대응과 변경을 계산합니다" : p["phase"].string == "render" ? p["label"].string+" 화면 준비 중" : p["label"].string.isEmpty ? "원본을 추출합니다" : p["label"].string + " 추출 중" }
@@ -238,9 +271,11 @@ struct SidecarRequest: Identifiable {
     }
     func cancel() { guard busy && !committing else { return }; cancelRequested = true; bridge.cancel(); status = "분석을 취소하고 있습니다" }
     func create(title: String, rows: [ImportRow]) async throws -> JSON {
-        try await bridge.call("create", ["title": title, "revisions": rows.map(\.createPayload)])
+        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false
+        return try await bridge.call("create", ["title": title, "revisions": rows.map(\.createPayload)])
     }
     func demo() async {
+        guard !busy && !loading && !initializing else{return}
         do {
             let folder = bridge.resources.appendingPathComponent("demo/lifecycle-five")
             let manifest = JSON(try JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("manifest.json"))))
@@ -250,8 +285,22 @@ struct SidecarRequest: Identifiable {
         } catch { fail(error) }
     }
     func reorder(_ index: Int, delta: Int) async {
+        guard !busy && !loading && !initializing else{return}
         var order = Array(project["revisions"].array.indices); guard order.indices.contains(index + delta) else { return }; order.swapAt(index, index + delta)
-        do { _ = try await bridge.call("reorder", ["project_id": projectID, "order": order]); try await refresh(); status = "순서 변경은 재분석 후 새 보고서로 반영됩니다" } catch { fail(error) }
+        do {
+            let relations=project["mapping_relations"].array.count,pairs=project["mapping_decisions"].array.count,bundles=project["bundle_decision_count"].int
+            let request=ReorderConfirmation(project:projectID,draft:try project.data(),draftHash:project["draft_hash"].string,order:order,message:"순서를 바꾸면 현재 입력의 사용자 대응 \(relations)개·개별 결정 \(pairs)개와 제공 PDF 연결 이력 \(bundles)개가 초기화됩니다. 입력한 이유는 이전 고정 보고서에서 계속 확인할 수 있습니다. 대기 중인 연결 변경은 먼저 분석해야 합니다.")
+            if relations+pairs+bundles>0 {reorderConfirmation=request}else{await confirmReorder(request)}
+        }catch{fail(error)}
+    }
+    func confirmReorder(_ request:ReorderConfirmation) async {
+        reorderConfirmation=nil
+        guard !busy && !loading,request.project==projectID,(try? project.data())==request.draft else{error="입력이 바뀌었습니다. 현재 버전 순서를 확인한 뒤 다시 시도하세요.";return}
+        loading=true;defer{loading=false}
+        do {
+            _ = try await bridge.call("reorder",["project_id":request.project,"order":request.order,"discard_human_decisions":true,"draft_hash":request.draftHash])
+            try await refresh();status="순서 변경은 재분석 후 새 보고서로 반영됩니다. 이전 고정 보고서는 유지됩니다."
+        }catch{fail(error)}
     }
     func navigateEvidence(_ evidence: JSON) {
         guard !loadingChanges else{return}
@@ -301,11 +350,21 @@ struct SidecarRequest: Identifiable {
         let target = url.appendingPathComponent("Docver-" + report["report_id"].string.dropFirst(4).prefix(12))
         do { _ = try await bridge.call("export", ["project_id": projectID, "report_id": report["report_id"].string, "folder": target.path]); NSWorkspace.shared.open(target); status = "JSON·JSONL·Markdown 보고서를 저장했습니다" } catch { fail(error) }
     }
-    func loadMCP() async { do { mcp = try await bridge.call("mcpConfig", ["project_id": projectID]).string } catch { fail(error) } }
+    func loadMCP() async {
+        let project=projectID,generation=mcpGeneration
+        guard !project.isEmpty,libraryAvailable else{return}
+        do {
+            let config=try await bridge.call("mcpConfig",["project_id":project]).string
+            guard !Task.isCancelled,project==projectID,generation==mcpGeneration else{return}
+            mcpProjectID=project;mcp=config
+        } catch {if !Task.isCancelled,project==projectID,generation==mcpGeneration {fail(error)}}
+    }
     func openSidecar(_ revision:JSON,page:String) {
         guard libraryAvailable && !busy && !loading && sidecarConfigured && !page.isEmpty else{return}
         sidecarResult=JSON();sidecarFailure=""
-        sidecarRequest=SidecarRequest(project:projectID,report:report["report_id"].string,occurrence:revision["revision_occurrence_id"].string,page:page,label:revision["label"].string)
+        let index=revisions.firstIndex{$0["revision_occurrence_id"].string==revision["revision_occurrence_id"].string}
+        let label=index.map{versionDisplayName($0,revision)} ?? revision["label"].string
+        sidecarRequest=SidecarRequest(project:projectID,report:report["report_id"].string,occurrence:revision["revision_occurrence_id"].string,page:page,label:label)
     }
     func page(_ id: String) async throws -> JSON { try await bridge.call("page", ["project_id": projectID, "report_id": report["report_id"].string, "page_id": id]) }
 }
@@ -391,6 +450,19 @@ func changeDisplayName(_ change:JSON)->String {
 func versionDisplayName(_ index:Int,_ revision:JSON)->String {
     let prefix="v\(index+1)",label=revision["label"].string
     return label.trimmingCharacters(in:.whitespacesAndNewlines).caseInsensitiveCompare(prefix) == .orderedSame ? prefix:prefix+" "+label
+}
+func changeVersionSummary(_ change:JSON,revisions:[JSON])->String {
+    func name(_ key:String)->String {revisions.firstIndex{$0["revision_occurrence_id"].string==key}.map{versionDisplayName($0,revisions[$0])} ?? "버전 미확정"}
+    return name(change["from_occurrence"].string)+" → "+name(change["to_occurrence"].string)
+}
+func notesDisplayText(_ page:JSON)->String {
+    switch page["capabilities"]["notes"].string {
+    case "extraction_failed":return "노트 추출 실패 · 원본을 확인하세요."
+    case "unsupported":return "노트 추출 미지원 · 원본에서 확인하세요."
+    case "unavailable":return "노트 관측 불가 · 이 형식에는 발표자 노트 정보가 없습니다."
+    case "available":return page["notes"].isNull ? "노트 관측값을 확인할 수 없습니다.":page["notes"].string.isEmpty ? "노트 없음 · 원본 구조 관측":page["notes"].string
+    default:return "노트 관측 상태 미확정 · 원본에서 확인하세요."
+    }
 }
 func evidencePageSummary(_ change:JSON)->String {
     func pages(_ occurrence:String)->String {

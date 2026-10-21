@@ -2,9 +2,16 @@ import { type PageData, type MatchData, type MappingDecision, type MappingRelati
 import {grams,dice,matchingText,sameOriginalPage,sameSourceRaster} from '../schema/page-similarity.js';
 export {matchingText,pageSimilarity as similarity} from '../schema/page-similarity.js';
 import {relationEdges} from './relations.js';
+export const MATCHING_WORK_POLICY='hungarian-32m-costs-v1';
+export const MAX_ASSIGNMENT_COSTS=32_000_000;
 // Rectangular maximum-weight assignment with private dummy columns for unmatched rows.
-function assignment(weights:number[][]):number[] {
+function assignment(weights:number[][],maxCosts=Infinity):number[] {
   if(!weights.length) return [];
+  if(weights.every(row=>row.every(value=>value===0)))return weights.map(()=>-1);
+  // For a square uniform positive matrix the stable solver chooses its
+  // diagonal. Preserve that exact result without cubic repeated tie searches.
+  if(weights.length===weights[0].length&&weights[0][0]>0&&weights.every(row=>row.every(value=>value===weights[0][0])))return weights.map((_,i)=>i);
+  let costs=0;
   const n=weights.length,m=weights[0].length+n;
   const u=Array(n+1).fill(0),v=Array(m+1).fill(0),p=Array(m+1).fill(0),way=Array(m+1).fill(0);
   for(let i=1;i<=n;i++) {
@@ -13,6 +20,7 @@ function assignment(weights:number[][]):number[] {
     do {
       used[j0]=true;const i0=p[j0];let delta=Infinity,j1=0;
       for(let j=1;j<=m;j++) if(!used[j]) {
+        if(++costs>maxCosts)throw new DocverError('MATCHING_LIMIT','유사한 페이지 후보가 많아 대응 계산 한도에 도달했습니다. 새 보고서는 저장하지 않았습니다. 문서를 나눠 가져오거나 이전 보고서의 대응을 확인하세요.');
         const cur=-(weights[i0-1][j-1]??0)-u[i0]-v[j];
         if(cur<minv[j]) {minv[j]=cur;way[j]=j0;}
         if(minv[j]<delta) {delta=minv[j];j1=j;}
@@ -26,7 +34,7 @@ function assignment(weights:number[][]):number[] {
   for(let j=1;j<=m;j++) if(p[j]) out[p[j]-1]=j-1;
   return out;
 }
-export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecision[]=[],relations:MappingRelationData[]=[]):{matches:MatchData[],candidates:MatchData[]} {
+export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecision[]=[],relations:MappingRelationData[]=[],options:{maxCosts?:number}={}):{matches:MatchData[],candidates:MatchData[]} {
   const fromIds=new Set(from.map(p=>p.page_id)),toIds=new Set(to.map(p=>p.page_id)),groups=relations.filter(r=>r.from_page_ids.some(p=>fromIds.has(p))||r.to_page_ids.some(p=>toIds.has(p)));
   if(groups.some(r=>r.from_page_ids.some(p=>!fromIds.has(p))||r.to_page_ids.some(p=>!toIds.has(p))))throw new DocverError('MAPPING_INTERVAL','Relation is outside this primary comparison interval');
   const groupEdges=groups.flatMap(relationEdges);
@@ -71,7 +79,7 @@ export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecisi
   function anchor(unique:(i:number,j:number)=>boolean){for(let i=0;i<left.length;i++)if(chosen[i]<0){const j=right.findIndex((_,j)=>!used.has(j)&&weights[i][j]>0&&unique(i,j));if(j>=0){chosen[i]=j;used.add(j);}}}
   anchor(uniqueOriginal);anchor(uniqueRaster);
   const remainingLeft=left.map((_,i)=>i).filter(i=>chosen[i]<0),remainingRight=right.map((_,j)=>j).filter(j=>!used.has(j));
-  assignment(remainingLeft.map(i=>remainingRight.map(j=>weights[i][j]>=0.58?weights[i][j]:0))).forEach((j,k)=>{if(j>=0&&j<remainingRight.length)chosen[remainingLeft[k]]=remainingRight[j];});
+  assignment(remainingLeft.map(i=>remainingRight.map(j=>weights[i][j]>=0.58?weights[i][j]:0)),options.maxCosts).forEach((j,k)=>{if(j>=0&&j<remainingRight.length)chosen[remainingLeft[k]]=remainingRight[j];});
   chosen.forEach((j,i)=>{if(j<right.length&&j>=0&&weights[i][j]>=0.58) {matches.push(candidate(i,j));keep(i,j);}});
   return {matches,candidates};
 }

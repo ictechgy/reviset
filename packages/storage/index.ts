@@ -1,9 +1,10 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Report,Page,Asset, canonical, byteHash, DocverError, type ReportData,type RevisionData,type PageData } from '../schema/index.js';
 import { z } from 'zod';
+import {publishContentSync} from '../runtime/atomic-content.js';
 const NativePage=z.object({page:Page,asset:Asset,reference:Page.pick({asset_id:true,page:true,width:true,height:true,source_transform:true}).optional()});
 function pagePayload(report:ReportData,pageId:string):z.infer<typeof NativePage>{
   const revision=report.revisions.find(v=>v.pages.some(p=>p.page_id===pageId)),page=revision?.pages.find(p=>p.page_id===pageId);
@@ -59,7 +60,7 @@ export class Store {
     if(assetId!=='sha256:'+byteHash(bytes)) throw new DocverError('ASSET_HASH','Asset does not match bytes');
     const folder=join(this.root,'assets');mkdirSync(folder,{recursive:true});
     const path=join(folder,assetId.slice(7));
-    try { writeFileSync(path,bytes,{flag:'wx'}); } catch(e) {if((e as NodeJS.ErrnoException).code!=='EEXIST') throw e; if(byteHash(readFileSync(path))!==assetId.slice(7)) throw new DocverError('ASSET_CORRUPT','Stored asset hash mismatch');}
+    publishContentSync(path,bytes,assetId.slice(7));
   }
   report(projectId:string,reportId:string):ReportData {
     const row=reportId==='latest'?this.db.prepare('SELECT reports.body FROM reports JOIN runs ON runs.report_id=reports.id WHERE reports.project_id=? ORDER BY runs.rowid DESC LIMIT 1').get(projectId):this.db.prepare('SELECT body FROM reports WHERE project_id=? AND id=?').get(projectId,reportId);
@@ -67,6 +68,10 @@ export class Store {
     const parsed=Report.safeParse(JSON.parse(String(row.body)));
     if(!parsed.success)throw new DocverError('SCHEMA_INCOMPATIBLE','Stored snapshot does not match the supported schema; migration is not implemented');
     return parsed.data;
+  }
+  resolveReportId(projectId:string,alias:string):string {
+    const row=alias==='latest'?this.db.prepare('SELECT reports.id FROM reports JOIN runs ON runs.report_id=reports.id WHERE reports.project_id=? ORDER BY runs.rowid DESC LIMIT 1').get(projectId):this.db.prepare('SELECT id FROM reports WHERE project_id=? AND id=?').get(projectId,alias);
+    if(!row)throw new DocverError('REPORT_NOT_FOUND','No report in this project scope');return String(row.id);
   }
   nativePage(projectId:string,reportId:string,pageId:string):z.infer<typeof NativePage>{
     const indexed=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_pages'").get();

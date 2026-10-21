@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 struct JSON: @unchecked Sendable, Identifiable {
     let raw: Any
@@ -23,7 +24,7 @@ struct BridgeError: LocalizedError {
     var code: String; var message: String
     var errorDescription: String? { message }
 }
-// Read-only range queries can be superseded by another interval. Each request
+// Read-only range/page queries can be superseded by another selection. Each request
 // owns its process so cancelling one query never terminates another query or analysis.
 final class BridgeRequestCancellation: @unchecked Sendable {
     private let lock=NSLock()
@@ -51,11 +52,20 @@ final class Bridge: @unchecked Sendable {
     private var cancelled = false
     init(resources: URL, library: URL) { self.resources = resources; self.library = library }
     func cancel() { lock.lock(); cancelled = true; let process = analysisProcess; lock.unlock(); if process?.isRunning == true { process?.terminate() } }
+    func terminateAnalysis() {
+        lock.lock();cancelled=true;let process=analysisProcess;lock.unlock()
+        guard let process,process.isRunning else{return}
+        process.terminate()
+        // App termination cannot leave a delayed work item behind to kill the
+        // helper. Give its cancellation handler a bounded chance to clean up.
+        for _ in 0..<10 {if !process.isRunning{return};Thread.sleep(forTimeInterval:0.05)}
+        if process.isRunning {_ = Darwin.kill(process.processIdentifier,SIGKILL)}
+    }
     func cancelSidecars() {let owned=lock.withLock{Array(sidecarRequests.values)};for request in owned{request.cancel()}}
     func call(_ action: String, _ args: [String: Any] = [:], analysis: Bool = false, progress: (@Sendable (JSON) -> Void)? = nil, owner:BridgeRequestCancellation? = nil) async throws -> JSON {
         let request = try JSON(["action": action, "args": args]).data()
         if analysis { lock.withLock { cancelled = false } }
-        let cancellation=["changes","sidecarCreate"].contains(action) && !analysis ? (owner ?? BridgeRequestCancellation()):nil
+        let cancellation=["changes","page","sidecarCreate"].contains(action) && !analysis ? (owner ?? BridgeRequestCancellation()):nil
         let sidecarID=action=="sidecarCreate" ? UUID():nil
         if let sidecarID,let cancellation {lock.withLock{sidecarRequests[sidecarID]=cancellation}}
         return try await withTaskCancellationHandler(operation: {

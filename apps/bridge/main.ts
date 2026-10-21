@@ -8,11 +8,12 @@ import { DesktopService,type DesktopDraft } from '../../packages/desktop/service
 import { DocverError, Decision, RelationSelection, BundleSelection,bundleDirectiveState, byteHash, hash,comparisonText,textChunk,unresolvedComparisonText, SCHEMA_VERSION, ENGINE_VERSION } from '../../packages/schema/index.js';
 import { querySchemas } from '../../packages/query/index.js';
 import {SidecarScope,createOnlyOfficeSidecar,closeOnlyOfficeSidecar,recoverOnlyOfficeSidecars,onlyOfficeSidecarConfigured} from '../../packages/render/onlyoffice-sidecar.js';
+import {cancelActiveTools} from '../../packages/runtime/tools.js';
 const key=z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/),scope=z.object({project_id:key,report_id:key});
 const request=JSON.parse(readFileSync(0,'utf8')) as {action:string;args:any};
 const rootArg=process.argv.indexOf('--root');if(rootArg<0)throw new Error('Explicit app library required');
 const root=resolve(process.argv[rootArg+1]),service=new DesktopService(root),args=request.args??{};
-function projectResponse(project:DesktopDraft){const {bundle_decisions,...rest}=project;return {...rest,bundle_decision_count:bundle_decisions.length};}
+function projectResponse(project:DesktopDraft){const {bundle_decisions,...rest}=project;return {...rest,bundle_decision_count:bundle_decisions.length,draft_hash:hash(service.manifest(project.project_id))};}
 async function verifiedSource(assetId:string):Promise<string>{
   if(!/^sha256:[a-f0-9]{64}$/.test(assetId))throw new DocverError('ASSET_ID','잘못된 원본 ID입니다.');
   const path=join(root,'assets',assetId.slice(7)),digest=createHash('sha256');for await(const chunk of createReadStream(path,{highWaterMark:1024*1024}))digest.update(chunk);
@@ -31,12 +32,20 @@ try{
     }
     case 'sidecarClose':{const d=SidecarScope.parse(args);service.project(d.project_id);await closeOnlyOfficeSidecar(root,d);value={closed:true};break;}
     case 'sidecarRecover':value=await recoverOnlyOfficeSidecars(root);break;
-    case 'projects':value=service.projects().map(projectResponse);break;
+    case 'projects':{const projects=service.projects().map(projectResponse);value=[...projects,...service.unreadableProjects.map(p=>({...p,title:'입력 기록 확인 필요 · '+p.project_id.slice(0,20),unreadable:true,revisions:[]}))];break;}
     case 'recover':{const d=z.object({run_id:z.string().optional()}).parse(args);value=service.recover(d.run_id).map(projectResponse);const folder=join(root,'staging-v4');try{for(const name of await readdir(folder))if(/^run_[a-f0-9-]+\.json$/.test(name)&&(!d.run_id||name===d.run_id+'.json'))await rm(join(folder,name));}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}break;}
     case 'create':{const data=z.object({title:z.string().trim().min(1).max(200),revisions:z.array(z.object({label:z.string().trim().min(1).max(200),files:z.array(z.string()).min(1).max(2),expected_sha256:z.array(z.string().regex(/^[a-f0-9]{64}$/).nullable()).min(1).max(2).optional()}).refine(r=>!r.expected_sha256||r.expected_sha256.length===r.files.length,'File identity count must match input count')).min(1).max(100)}).parse(args);value=await service.create(data.title,data.revisions);break;}
-    case 'analyze':{const {project_id}=z.object({project_id:key}).parse(args);const result=await service.run(project_id,undefined,p=>process.stderr.write(JSON.stringify({event:'progress',progress:p})+'\n'),false);const data=Buffer.from(JSON.stringify(result.report));const folder=join(root,'staging-v4');await mkdir(folder,{recursive:true,mode:0o700});const name=result.analysis_run_id+'.json';await writeFile(join(folder,name),data,{flag:'wx',mode:0o600});value={analysis_run_id:result.analysis_run_id,report_id:result.report.report_id,staged_name:name,sha256:byteHash(data),draft_hash:result.draft_hash,project_id,schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION};break;}
+    case 'analyze':{
+      const {project_id}=z.object({project_id:key}).parse(args),controller=new AbortController(),cancel=()=>{controller.abort();cancelActiveTools();},parent=process.ppid;
+      process.once('SIGTERM',cancel);process.once('SIGINT',cancel);
+      const parentWatch=setInterval(()=>{if(parent<=1||process.ppid!==parent){clearInterval(parentWatch);cancel();}},100);parentWatch.unref();
+      try {
+        const result=await service.run(project_id,controller.signal,p=>process.stderr.write(JSON.stringify({event:'progress',progress:p})+'\n'),false);controller.signal.throwIfAborted();
+        const data=Buffer.from(JSON.stringify(result.report)),folder=join(root,'staging-v4');await mkdir(folder,{recursive:true,mode:0o700});controller.signal.throwIfAborted();const name=result.analysis_run_id+'.json';await writeFile(join(folder,name),data,{flag:'wx',mode:0o600});value={analysis_run_id:result.analysis_run_id,report_id:result.report.report_id,staged_name:name,sha256:byteHash(data),draft_hash:result.draft_hash,project_id,schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION};
+      }finally{clearInterval(parentWatch);process.removeListener('SIGTERM',cancel);process.removeListener('SIGINT',cancel);}break;
+    }
     case 'commit':{const {project_id}=z.object({project_id:key}).parse(args);const d=z.object({analysis_run_id:z.string().regex(/^run_[a-f0-9-]+$/),report_id:key,staged_name:z.string().regex(/^run_[a-f0-9-]+\.json$/),sha256:z.string().regex(/^[a-f0-9]{64}$/),draft_hash:z.string(),project_id:key,schema_version:z.literal(SCHEMA_VERSION),engine_version:z.literal(ENGINE_VERSION)}).parse(args.result);if(d.project_id!==project_id||d.staged_name!==d.analysis_run_id+'.json'||d.draft_hash!==hash(service.manifest(project_id)))throw new DocverError('STALE_RUN','입력이 바뀐 분석 결과는 저장하지 않습니다.');const path=join(root,'staging-v4',d.staged_name),data=await readFile(path);if(byteHash(data)!==d.sha256)throw new DocverError('STAGED_HASH','분석 결과 hash 검증에 실패했습니다.');const report=JSON.parse(data.toString('utf8'));if(report.report_id!==d.report_id)throw new DocverError('STAGED_ID','분석 보고서 ID가 일치하지 않습니다.');value=service.commit(project_id,{report,analysis_run_id:d.analysis_run_id,draft_hash:d.draft_hash});await rm(path);break;}
-    case 'reorder':{const d=z.object({project_id:key,order:z.array(z.number().int())}).parse(args);value=projectResponse(service.reorder(d.project_id,d.order));break;}
+    case 'reorder':{const d=z.object({project_id:key,order:z.array(z.number().int()),discard_human_decisions:z.boolean().default(false),draft_hash:z.string().regex(/^[a-f0-9]{64}$/).optional()}).parse(args);value=projectResponse(service.reorder(d.project_id,d.order,d.discard_human_decisions,d.draft_hash));break;}
     case 'mapping':{const d=scope.extend({decision:Decision}).parse(args);value=projectResponse(service.mapping(d.project_id,d.report_id,d.decision));break;}
     case 'mappingRelation':{const d=scope.extend({selection:RelationSelection,unlink:z.boolean().default(false),draft_hash:z.string().regex(/^[a-f0-9]{64}$/)}).parse(args);value=projectResponse(service.mappingRelation(d.project_id,d.report_id,d.selection,d.unlink,d.draft_hash));break;}
     case 'bundleMapping':{const d=scope.extend({selection:BundleSelection,draft_hash:z.string().regex(/^[a-f0-9]{64}$/)}).parse(args);value=service.bundleMapping(d.project_id,d.report_id,d.selection,d.draft_hash);break;}

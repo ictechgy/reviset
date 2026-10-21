@@ -204,6 +204,8 @@ struct BundlePagePreview:View {
     let title:String
     @State private var payload=JSON()
     @State private var failure=""
+    @State private var loadingPage=false
+    @State private var loadedScope=""
     var sourceCaption:String {payload["source"]["origin"].string=="pptx_converted" ? "LibreOffice 렌더":payload["source"]["kind"].string=="pptx" ? "구조 보기 · 원본 화면 미검증":" "}
     var body:some View {
         VStack(alignment:.leading,spacing:5){
@@ -217,9 +219,10 @@ struct BundlePagePreview:View {
                 else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size,inset:8) {StructureCanvas(page:payload["page"],evidence:JSON()).frame(width:size.width,height:size.height).frame(maxWidth:.infinity,maxHeight:.infinity)}
                 else {ContentUnavailableView("페이지 크기를 확인할 수 없습니다",systemImage:"exclamationmark.triangle")}
             }.background(Color(nsColor:.windowBackgroundColor).overlay(Color.primary.opacity(0.045))).clipShape(RoundedRectangle(cornerRadius:5))
+                .overlay{if loadingPage && !payload.isNull && failure.isEmpty{VStack{ProgressView();Text("페이지 검증 중 · 이전 조회 화면").font(.caption)}.padding(8).background(.regularMaterial,in:RoundedRectangle(cornerRadius:6))}}.allowsHitTesting(!loadingPage)
         }.frame(maxWidth:.infinity).task(id:projectID+reportID+pageID+basis){
-            payload=JSON();failure="";guard !pageID.isEmpty else{return}
-            do{let result=try await model.bridge.call("page",["project_id":projectID,"report_id":reportID,"page_id":pageID,"basis":basis]);if !Task.isCancelled{payload=result}}catch{if !Task.isCancelled{failure=error.localizedDescription}}
+            let scope=projectID+"|"+reportID+"|"+basis;if loadedScope != scope{payload=JSON()};failure="";loadingPage=true;defer{if !Task.isCancelled{loadingPage=false}};guard !pageID.isEmpty else{payload=JSON();return}
+            do{let result=try await model.bridge.call("page",["project_id":projectID,"report_id":reportID,"page_id":pageID,"basis":basis]);if !Task.isCancelled{payload=result;loadedScope=scope}}catch{if !Task.isCancelled{failure=error.localizedDescription}}
         }
     }
 }

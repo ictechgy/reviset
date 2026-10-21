@@ -7,6 +7,7 @@ import { box, Page, DocverError, id, normalize, type PageData, type ElementData 
 import { captureNativePages,ocrEnvironment,supplementPdfOcr,type OcrOptions } from './ocr.js';
 const require=createRequire(import.meta.url);
 const pdfRoot=dirname(require.resolve('pdfjs-dist/package.json'));
+export const PDF_TEXT_GEOMETRY_POLICY='viewport-scaled-run-advance-v2';
 export const pdfOptions = {isEvalSupported:false,useSystemFonts:false,standardFontDataUrl:join(pdfRoot,'standard_fonts/'),
   cMapUrl:join(pdfRoot,'cmaps/'),cMapPacked:true,wasmUrl:join(pdfRoot,'wasm/'),verbosity:0};
 export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOptions&{ocr?:'off'|'auto'|'all'}={}):Promise<PageData[]> {
@@ -27,7 +28,9 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
         if(!('str' in item)||!item.str.trim()) continue;
         const t=Util.transform(viewport.transform,item.transform);
         const vertical=!!content.styles[item.fontName]?.vertical;
-        const height=Math.hypot(t[2],t[3]), width=item.width;
+        // PDF.js reports run advance in unscaled PDF user space while the
+        // viewport includes /UserUnit. Apply that scale once, as for t's height.
+        const height=Math.hypot(t[2],t[3]), width=item.width*Math.hypot(viewport.transform[0],viewport.transform[1]);
         const angle=Math.atan2(t[1],t[0])+(vertical?Math.PI/2:0);
         const metrics=pdfFontMetrics(content.styles[item.fontName]),ascent=metrics.ascent;
         // Bounding rectangle of a transformed glyph run, including rotated text.

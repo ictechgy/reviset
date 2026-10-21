@@ -1,11 +1,12 @@
 import { resolve, dirname, join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { stat,readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { MAX_INPUT_BYTES,Manifest, Report, SCHEMA_VERSION, SCHEMA_HASH, ENGINE_VERSION, id, byteHash, DocverError, validBundleDecisionLog, type InputManifest, type RevisionData, type ReportData } from '../schema/index.js';
 import { ingest, type Extracted } from '../ingest/index.js';
 import {PPTX_TEXT_POLICY} from '../ingest/pptx.js';
-import { matchPages, similarity } from '../matching/index.js';
+import {PDF_TEXT_GEOMETRY_POLICY} from '../ingest/pdf.js';
+import { matchPages, similarity,MATCHING_WORK_POLICY,MAX_ASSIGNMENT_COSTS } from '../matching/index.js';
 import {primaryPages,validateMappings} from '../matching/relations.js';
 import { diffRevisions } from '../diff/index.js';
 import {applyBundleDecisions} from '../bundle/index.js';
@@ -29,7 +30,7 @@ export interface AnalyzeProgress {analysis_run_id:string;phase:'extract'|'render
 export async function analyze(input:InputManifest,baseDir:string,store:Store,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,options:{persist?:boolean;ocr?:'off'|'auto'|'all';pptxPreview?:boolean}={}):Promise<{report:ReportData,analysis_run_id:string}> {
   const manifest=Manifest.parse(input);
   const environment:Record<string,string>={node:process.version,platform:process.platform,arch:process.arch,engine:ENGINE_VERSION,
-    pdfjs:dependencyVersion('pdfjs-dist'),pdfjs_worker_sha256:await pdfWorkerEnvironment(),xml:dependencyVersion('fast-xml-parser'),fflate:dependencyVersion('fflate'),pptx_text_policy:PPTX_TEXT_POLICY,
+    pdfjs:dependencyVersion('pdfjs-dist'),pdfjs_worker_sha256:await pdfWorkerEnvironment(),pdf_text_geometry_policy:PDF_TEXT_GEOMETRY_POLICY,matching_work_policy:MATCHING_WORK_POLICY,xml:dependencyVersion('fast-xml-parser'),fflate:dependencyVersion('fflate'),pptx_text_policy:PPTX_TEXT_POLICY,
     renderer:options.pptxPreview===false?'disabled':manifest.revisions.some(r=>r.files.some(f=>/\.pptx$/i.test(f)))?await officeEnvironment()??'unavailable':'not_used',ocr:options.ocr==='off'?'disabled':await ocrEnvironment(),settings:`ocr:${options.ocr??'auto'};max-input-512MiB;max-pdf-pages-1000`};
   const run=store.beginRun(manifest.project_id,manifest.title);
   try {
@@ -87,7 +88,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
       let referenceQualified=false;
       if(extracted.length===2) {
         const secondary=extracted.find(e=>e!==primary)!;
-        const rendered=stamp(secondary.pages), visible=pages.filter(p=>!p.hidden),pairing=matchPages(visible,rendered);
+        const rendered=stamp(secondary.pages), visible=pages.filter(p=>!p.hidden),pairing=matchPages(visible,rendered,[],[],{maxCosts:MAX_ASSIGNMENT_COSTS});
         for(const m of pairing.matches.filter(m=>m.status!=='needs_review')) bundleMapping.push({source_page_id:m.from_page_id,rendered_page_id:m.to_page_id,score:m.score});
         if(pairing.matches.length!==visible.length||pairing.matches.length!==rendered.length||pairing.matches.some(m=>m.status==='needs_review'||m.score<0.95)||pairing.matches.some(m=>{
           const a=visible.find(p=>p.page_id===m.from_page_id)!,b=rendered.find(p=>p.page_id===m.to_page_id)!;
@@ -119,7 +120,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
       if(source&&options.pptxPreview!==false&&!allDisplayed){
         onProgress?.({analysis_run_id:run,phase:'render',current:index,total:revisions.length,label:revision.label});
         try{
-          const bytes=readFileSync(join(store.root,'assets',source.asset_id.slice(7)));
+          const bytes=await readFile(join(store.root,'assets',source.asset_id.slice(7)));
           if('sha256:'+byteHash(bytes)!==source.asset_id)throw new DocverError('ASSET_CORRUPT','Stored source hash mismatch');
           const derived=structuredClone(sourcePages);for(const page of derived)page.appearance=undefined;
           const sourcePath=manifest.revisions[index].files.find(file=>/\.pptx$/i.test(file))!;
@@ -136,7 +137,8 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     const matches:ReportData['matches']=[],candidates:ReportData['candidates']=[];
     for(let i=1;i<revisions.length;i++) {
       if(revisions[i-1].status==='failed'||revisions[i].status==='failed') continue;
-      const pairing=matchPages(primaryPages(revisions[i-1]),primaryPages(revisions[i]),decisions,relations.filter(r=>r.from_occurrence===revisions[i-1].revision_occurrence_id&&r.to_occurrence===revisions[i].revision_occurrence_id));
+      await new Promise<void>(resume=>setImmediate(resume));signal?.throwIfAborted();
+      const pairing=matchPages(primaryPages(revisions[i-1]),primaryPages(revisions[i]),decisions,relations.filter(r=>r.from_occurrence===revisions[i-1].revision_occurrence_id&&r.to_occurrence===revisions[i].revision_occurrence_id),{maxCosts:MAX_ASSIGNMENT_COSTS});
       matches.push(...pairing.matches);candidates.push(...pairing.candidates);
     }
     // A known hidden slide can bridge an intermediate PDF visibility gap; no fictional delete/add.
@@ -152,14 +154,16 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     function root(p:string):string {const next=parent.get(p)!;if(next===p)return p;const r=root(next);parent.set(p,r);return r;}
     for(const m of matches) parent.set(root(m.to_page_id),root(m.from_page_id));
     const entityFor=(p:string)=>id('ent',[manifest.project_id,ENGINE_VERSION,root(p)]);
-    const lineages:ReportData['lineages']=[];
+    const lineages:ReportData['lineages']=[],byEntity=new Map<string,ReportData['lineages'][number]>();
     for(const p of revisions.flatMap(r=>r.pages)) {
-      const entity=entityFor(p.page_id);let lineage=lineages.find(l=>l.entity_id===entity);
-      if(!lineage) {lineage={entity_id:entity,page_ids:[],status:'inferred'};lineages.push(lineage);}lineage.page_ids.push(p.page_id);
+      const entity=entityFor(p.page_id);let lineage=byEntity.get(entity);
+      if(!lineage) {lineage={entity_id:entity,page_ids:[],status:'inferred'};lineages.push(lineage);byEntity.set(entity,lineage);}lineage.page_ids.push(p.page_id);
     }
+    const edgeStates=new Map<string,{count:number;review:boolean;human:boolean}>();
+    for(const edge of matches){const entity=entityFor(edge.from_page_id),state=edgeStates.get(entity)??{count:0,review:false,human:true};state.count++;state.review ||= edge.status==='needs_review';state.human &&= edge.status==='human_confirmed';edgeStates.set(entity,state);}
     for(const lineage of lineages) {
-      const edges=matches.filter(m=>lineage.page_ids.includes(m.from_page_id));
-      lineage.status=edges.some(m=>m.status==='needs_review')?'needs_review':edges.length&&edges.every(m=>m.status==='human_confirmed')?'human_confirmed':'inferred';
+      const state=edgeStates.get(lineage.entity_id);
+      lineage.status=state?.review?'needs_review':state?.count&&state.human?'human_confirmed':'inferred';
     }
     const comparisons=revisions.map(r=>({...r,pages:primaryPages(r)}));
     const changes=comparisons.slice(1).flatMap((r,i)=>diffRevisions(comparisons[i],r,matches,candidates,entityFor));

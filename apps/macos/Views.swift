@@ -136,8 +136,9 @@ struct MainView: View {
                     Button {Task{await model.exportReport()}} label:{Label("내보내기",systemImage:"square.and.arrow.up")}
                 }
             }
-        }.onChange(of:model.tab){if model.tab=="export"{Task{await model.loadMCP()}}else{model.changeRange()}}
+        }.onChange(of:model.tab){if model.tab != "export"{model.changeRange()}}
         .sheet(isPresented:$model.importSheet){ImportView()}
+        .alert(item:$model.reorderConfirmation){request in Alert(title:Text("버전 순서를 바꿀까요?"),message:Text(request.message),primaryButton:.destructive(Text("순서 변경")){Task{await model.confirmReorder(request)}},secondaryButton:.cancel(Text("취소")))}
         .sheet(item:$model.sidecarRequest){request in OnlyOfficeSidecarSheet(request:request).environmentObject(model)}
         .sheet(isPresented:$model.bundleSheet){BundleSheet(projectID:model.bundleProjectID,reportID:model.bundleReportID,occurrence:model.bundleOccurrence,initialSource:model.bundleSourceID).environmentObject(model)}
         .task {await model.start()}
@@ -147,25 +148,25 @@ struct SidebarView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack{Text("프로젝트").font(.caption).foregroundStyle(.secondary);Spacer();Button{model.importSheet=true}label:{Image(systemName:"plus")}.buttonStyle(.borderless).disabled(model.busy)}.padding(.horizontal,14).padding(.top,18)
-            List(model.projects){p in Button{Task{await model.selectProject(p["project_id"].string)}}label:{HStack{Image(systemName:"folder.fill").foregroundStyle(.blue);VStack(alignment:.leading,spacing:3){Text(p["title"].string).lineLimit(1);Text("\(p["revisions"].array.count)개 버전"+(p["dirty"].bool ? " · 분석 대기":"")).font(.caption2).foregroundStyle(.secondary)}}.padding(.vertical,5)}.buttonStyle(.plain).disabled(model.busy||model.loading).listRowBackground(p["project_id"].string==model.projectID ? Color.blue.opacity(0.12):Color.clear)}.listStyle(.sidebar).frame(minHeight:80,maxHeight:220)
+            HStack{Text("프로젝트").font(.caption).foregroundStyle(.secondary);Spacer();Button{model.importSheet=true}label:{Image(systemName:"plus")}.buttonStyle(.borderless).disabled(model.busy || model.loading)}.padding(.horizontal,14).padding(.top,18)
+            List(model.projects){p in Button{Task{await model.selectProject(p["project_id"].string)}}label:{HStack{Image(systemName:"folder.fill").foregroundStyle(.blue);VStack(alignment:.leading,spacing:3){Text(p["title"].string).lineLimit(1);Text(p["unreadable"].bool ? "입력 손상 · 기존 자료 보존":"\(p["revisions"].array.count)개 버전"+(p["dirty"].bool ? " · 분석 대기":"")).font(.caption2).foregroundStyle(.secondary)}}.padding(.vertical,5)}.buttonStyle(.plain).disabled(model.busy||model.loading||p["unreadable"].bool).help(p["unreadable"].bool ? "입력 기록을 읽지 못했습니다. 기존 원문과 보고서는 보존했습니다.":p["title"].string).listRowBackground(p["project_id"].string==model.projectID ? Color.blue.opacity(0.12):Color.clear)}.listStyle(.sidebar).frame(minHeight:80,maxHeight:220)
             if !model.project.isNull {
                 Text("가져오기 순서").font(.caption).foregroundStyle(.secondary).padding(.horizontal,14)
-                ScrollView { LazyVStack(spacing:0){ForEach(Array(model.project["revisions"].array.enumerated()),id:\.offset){i,r in HStack(spacing:8){Text(String(format:"%02d",i+1)).foregroundStyle(.secondary).font(.caption2);VStack(alignment:.leading,spacing:4){Text(r["label"].string).lineLimit(1).font(.caption);Text(r["files"].array.map{$0["blob"].string.hasSuffix("pdf") ? "PDF":"PPTX"}.joined(separator:" + ")).font(.caption2).foregroundStyle(.secondary)};Spacer();VStack(spacing:3){Button{Task{await model.reorder(i,delta:-1)}}label:{Image(systemName:"chevron.up")}.disabled(i==0||model.busy);Button{Task{await model.reorder(i,delta:1)}}label:{Image(systemName:"chevron.down")}.disabled(i==model.project["revisions"].array.count-1||model.busy)}.buttonStyle(.borderless).font(.caption2)}.padding(.horizontal,14).padding(.vertical,9);Divider()}} }
-                Button(model.project["dirty"].bool ? "입력·대응 변경 분석":"다시 분석"){Task{await model.run(model.projectID)}}.disabled(model.busy).frame(maxWidth:.infinity).padding(.horizontal,14)
+                ScrollView { LazyVStack(spacing:0){ForEach(Array(model.project["revisions"].array.enumerated()),id:\.offset){i,r in HStack(spacing:8){Text(String(format:"%02d",i+1)).foregroundStyle(.secondary).font(.caption2);VStack(alignment:.leading,spacing:4){Text(r["label"].string).lineLimit(1).font(.caption);Text(r["files"].array.map{$0["blob"].string.hasSuffix("pdf") ? "PDF":"PPTX"}.joined(separator:" + ")).font(.caption2).foregroundStyle(.secondary)};Spacer();VStack(spacing:3){Button{Task{await model.reorder(i,delta:-1)}}label:{Image(systemName:"chevron.up")}.disabled(i==0||model.busy||model.loading);Button{Task{await model.reorder(i,delta:1)}}label:{Image(systemName:"chevron.down")}.disabled(i==model.project["revisions"].array.count-1||model.busy||model.loading)}.buttonStyle(.borderless).font(.caption2)}.padding(.horizontal,14).padding(.vertical,9);Divider()}} }
+                Button(model.project["dirty"].bool ? "입력·대응 변경 분석":"다시 분석"){Task{await model.run(model.projectID)}}.disabled(model.busy || model.loading).frame(maxWidth:.infinity).padding(.horizontal,14)
             }
             Spacer(minLength:5)
-            Button{model.importSheet=true}label:{Label("문서 버전 가져오기",systemImage:"plus")}.disabled(model.busy).frame(maxWidth:.infinity).padding(14)
+            Button{model.importSheet=true}label:{Label("문서 버전 가져오기",systemImage:"plus")}.disabled(model.busy || model.loading).frame(maxWidth:.infinity).padding(14)
         }.background(Color(nsColor:.underPageBackgroundColor))
     }
 }
 struct EmptyWorkspace: View {
     @EnvironmentObject var model: AppModel
-    var body: some View { VStack(spacing:22){Image(systemName:"doc.on.doc").font(.system(size:62,weight:.light)).foregroundStyle(.blue);Text("문서가 바뀐 모든 순간을\n한눈에 따라가세요.").font(.system(size:32,weight:.semibold)).multilineTextAlignment(.center);Text("PPTX와 PDF를 순서대로 모으면 숫자 수정부터\n중간에 사라진 페이지까지 원문과 함께 확인할 수 있습니다.").foregroundStyle(.secondary).multilineTextAlignment(.center);HStack{Button("문서 버전 가져오기"){model.importSheet=true}.buttonStyle(.borderedProminent);Button("5버전 합성 데모 열기"){Task{await model.demo()}}}.disabled(model.busy);Text("계정 없이 · 업로드 없이 · 네이티브 macOS 앱").font(.caption).foregroundStyle(.secondary)}.frame(maxWidth:.infinity,maxHeight:.infinity) }
+    var body: some View { VStack(spacing:22){Image(systemName:"doc.on.doc").font(.system(size:62,weight:.light)).foregroundStyle(.blue);Text("문서가 바뀐 모든 순간을\n한눈에 따라가세요.").font(.system(size:32,weight:.semibold)).multilineTextAlignment(.center);Text("PPTX와 PDF를 순서대로 모으면 숫자 수정부터\n중간에 사라진 페이지까지 원문과 함께 확인할 수 있습니다.").foregroundStyle(.secondary).multilineTextAlignment(.center);HStack{Button("문서 버전 가져오기"){model.importSheet=true}.buttonStyle(.borderedProminent);Button("5버전 합성 데모 열기"){Task{await model.demo()}}}.disabled(model.busy || model.loading);Text("계정 없이 · 업로드 없이 · 네이티브 macOS 앱").font(.caption).foregroundStyle(.secondary)}.frame(maxWidth:.infinity,maxHeight:.infinity) }
 }
 struct ReportBar: View {
     @EnvironmentObject var model: AppModel
-    var body: some View {HStack{Label("고정 보고서",systemImage:"lock.doc").font(.caption);Picker("보고서",selection:Binding(get:{model.report["report_id"].string},set:{id in Task{await model.selectProject(model.projectID,snapshot:id)}})){ForEach(model.reports){r in Text(String(r["report_id"].string.dropFirst(4).prefix(12))+" · "+String(r["created_at"].string.prefix(16))).tag(r["report_id"].string)}}.labelsHidden().frame(width:300).disabled(model.busy);Spacer();if model.project["dirty"].bool{Text("입력/대응 변경 · 아래는 이전 보고서").font(.caption).foregroundStyle(.orange)};Text("\(model.revisions.count)개 버전").font(.caption).foregroundStyle(.secondary)}.padding(.horizontal,16).padding(.vertical,8)}
+    var body: some View {HStack{Label("고정 보고서",systemImage:"lock.doc").font(.caption);Picker("보고서",selection:Binding(get:{model.report["report_id"].string},set:{id in Task{await model.selectProject(model.projectID,snapshot:id)}})){ForEach(model.reports){r in Text(String(r["report_id"].string.dropFirst(4).prefix(12))+" · "+String(r["created_at"].string.prefix(16))).tag(r["report_id"].string)}}.labelsHidden().frame(width:300).disabled(model.busy || model.loading);Spacer();if model.project["dirty"].bool{Text("입력/대응 변경 · 아래는 이전 보고서").font(.caption).foregroundStyle(.orange)};Text("\(model.revisions.count)개 버전").font(.caption).foregroundStyle(.secondary)}.padding(.horizontal,16).padding(.vertical,8)}
 }
 struct VersionBar: View {
     @EnvironmentObject var model: AppModel
@@ -175,8 +176,11 @@ struct ComparePagesView:View {
     @EnvironmentObject var model:AppModel
     var body:some View {
         HSplitView {
-            if model.pageMode != "after" {PageColumn(revision:model.revision(model.from),side:"이전",pageID:$model.leftPageID)}
-            if model.pageMode != "before" {PageColumn(revision:model.revision(model.to),side:"이후",pageID:$model.rightPageID)}
+            if model.revisions.count<2 {PageColumn(revision:model.revision(0),side:"원문",pageID:$model.leftPageID)}
+            else {
+                if model.pageMode != "after" {PageColumn(revision:model.revision(model.from),side:"이전",pageID:$model.leftPageID)}
+                if model.pageMode != "before" {PageColumn(revision:model.revision(model.to),side:"이후",pageID:$model.rightPageID)}
+            }
         }.frame(maxWidth:.infinity,maxHeight:.infinity)
     }
 }
@@ -186,14 +190,16 @@ struct CompareWorkspace: View {
     var body: some View {
         VStack(spacing:0){
             HStack(spacing:10){
+                if model.revisions.count>1 {
                 Picker("이전",selection:$model.from){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i<model.to{Text(versionDisplayName(i,r)).tag(i)}}}.frame(maxWidth:220)
                 Image(systemName:"arrow.right").foregroundStyle(.secondary)
                 Picker("이후",selection:$model.to){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i>model.from{Text(versionDisplayName(i,r)).tag(i)}}}.frame(maxWidth:220)
                 Text(model.to==model.from+1 ? "인접 비교":"선택 구간의 순변경").font(.caption).foregroundStyle(.secondary);Spacer()
+                }else{Text("원문 보기 · "+versionDisplayName(0,model.revision(0))).font(.headline);Spacer()}
                 Button{model.inspector.toggle()}label:{Label("근거",systemImage:"sidebar.right")}
             }.padding(.horizontal,16).padding(.top,12).onChange(of:model.from){model.changeRange()}.onChange(of:model.to){model.changeRange()}
             HStack{
-                Picker("문서 보기",selection:$model.pageMode){Text("두 페이지").tag("both");Text("이전만 크게").tag("before");Text("이후만 크게").tag("after")}.pickerStyle(.segmented).frame(width:295)
+                if model.revisions.count>1 {Picker("문서 보기",selection:$model.pageMode){Text("두 페이지").tag("both");Text("이전만 크게").tag("before");Text("이후만 크게").tag("after")}.pickerStyle(.segmented).frame(width:295)}
                 Picker("확대",selection:$model.zoom){Text("화면 맞춤").tag(0.0);Text("100%").tag(1.0);Text("150%").tag(1.5);Text("200%").tag(2.0)}.frame(width:160)
                 Spacer();Button(model.showChanges ? "변경 목록 접기":"변경 목록 열기"){model.showChanges.toggle()}
             }.controlSize(.small).padding(.horizontal,16).padding(.vertical,10)
@@ -215,16 +221,18 @@ struct CompareWorkspace: View {
 struct ChangeListView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {VStack(spacing:5){HStack{Picker("유형",selection:$model.kind){Text("전체 변경").tag("all");ForEach(changeNames.keys.sorted(),id:\.self){Text(changeNames[$0]!).tag($0)}}.frame(width:180);TextField("원문에서 검색",text:$model.search).textFieldStyle(.roundedBorder).frame(maxWidth:250);Spacer();if model.loadingChanges{ProgressView().controlSize(.small)};Text("\(model.filteredChanges.count)개").font(.caption).foregroundStyle(.secondary)}.padding(.horizontal,12).padding(.top,8)
-        ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear) } }.padding(6) }
+        if model.filteredChanges.isEmpty {Text(model.emptyChangesMessage).font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity).padding(12)}
+        else {ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges || !model.changesFailure.isEmpty).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear) } }.padding(6) }}
     }}
 }
 
 struct ChangeRow: View {
+    @EnvironmentObject var model:AppModel
     let change: JSON
     var kindName: String {changeDisplayName(change)}
     var text: String {(change["after"].isNull ? change["before"].string:change["after"].string).replacingOccurrences(of:"\n",with:" ")}
     var status: String {let value=change["lineage"]["status"].string;return value=="human_confirmed" ? "사용자 확정":value=="needs_review" ? "검토 필요":"추정 대응"}
-    var body: some View {HStack(spacing:10){Text(kindName).font(.caption).foregroundStyle(change["kind"].string=="coverage_gap" ? Color.secondary:Color.blue).frame(width:85,alignment:.leading);VStack(alignment:.leading,spacing:3){Text(text).lineLimit(1).font(.caption);Text(evidencePageSummary(change)).font(.caption2).foregroundStyle(.secondary)};Spacer();if change["region_pairing_assessment"].string == "inferred"{Text("영역 대응 추정").font(.caption2).foregroundStyle(.orange)};if change["text_assessment"].string == "inferred"{Text("OCR 추정 · 원문 확인").font(.caption2).foregroundStyle(.orange)};if !change["appearance_assessment"].string.isEmpty{Text(change["appearance_assessment"].string=="observed" ? "표시 관측":"표시 추정").font(.caption2).foregroundStyle(.orange)};Text(status).font(.caption2).foregroundStyle(.secondary)}.padding(.vertical,3)}
+    var body: some View {HStack(spacing:10){Text(kindName).font(.caption).foregroundStyle(change["kind"].string=="coverage_gap" ? Color.secondary:Color.blue).frame(width:85,alignment:.leading);VStack(alignment:.leading,spacing:3){Text(text).lineLimit(1).font(.caption);if model.tab=="history"{Text(changeVersionSummary(change,revisions:model.revisions)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)};Text(evidencePageSummary(change)).font(.caption2).foregroundStyle(.secondary)};Spacer();if change["region_pairing_assessment"].string == "inferred"{Text("영역 대응 추정").font(.caption2).foregroundStyle(.orange)};if change["text_assessment"].string == "inferred"{Text("OCR 추정 · 원문 확인").font(.caption2).foregroundStyle(.orange)};if !change["appearance_assessment"].string.isEmpty{Text(change["appearance_assessment"].string=="observed" ? "표시 관측":"표시 추정").font(.caption2).foregroundStyle(.orange)};Text(status).font(.caption2).foregroundStyle(.secondary)}.padding(.vertical,3)}
 }
 
 struct InspectorView: View {
@@ -240,12 +248,12 @@ struct InspectorView: View {
     }
     var editable: Bool { mappingUnavailableReason == nil }
     var structural: Bool { !model.selected["topology"].isNull }
-    var neutralText:Bool {structural || model.selected["kind"].string == "coverage_gap" || isReferenceAppearanceChange(model.selected)}
+    var neutralText:Bool {structural || ["coverage_gap","text_occluded","text_struck_through","text_revealed"].contains(model.selected["kind"].string) || isReferenceAppearanceChange(model.selected)}
     var body: some View {
         ScrollView {
             LazyVStack(alignment:.leading,spacing:16) {
                 Text("선택한 변경").font(.caption).foregroundStyle(.secondary)
-                Text(changeDisplayName(model.selected)).font(.title3.weight(.semibold))
+                Text(model.selected.isNull && model.filteredChanges.isEmpty ? model.emptyChangesMessage:changeDisplayName(model.selected)).font(.title3.weight(.semibold))
                 if !model.selected.isNull {
                     Text(structural ? "이전 구성" : "이전 원문").font(.caption).foregroundStyle(.secondary)
                     Text(model.selected["before"].isNull ? "해당 버전에서 원문 없음" : model.selected["before"].string).foregroundStyle(neutralText ? Color.primary : Color.red).textSelection(.enabled)
@@ -312,9 +320,9 @@ struct ExportView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {ScrollView{VStack(alignment:.leading,spacing:22){Text("원문과 이력을 함께 전달하세요.").font(.largeTitle.weight(.semibold));Text("같은 고정 보고서를 파일과 읽기 전용 MCP에서 조회합니다.").foregroundStyle(.secondary)
         GroupBox("보고서 파일 저장"){VStack(alignment:.leading,spacing:12){Text("전체 report, 변경 JSONL, 페이지·요소 원문, 버전·계보, 페이지별 Markdown과 근거 링크를 저장합니다.");Button("JSON·Markdown 내보내기"){Task{await model.exportReport()}}.buttonStyle(.borderedProminent)}.padding(12).frame(maxWidth:.infinity,alignment:.leading)}
-        GroupBox("읽기 전용 MCP 연결"){VStack(alignment:.leading,spacing:12){Text("앱에 포함된 Node 런타임과 현재 프로젝트의 보관소를 사용합니다. 앱 위치를 옮기면 설정을 다시 복사하세요.").font(.caption).foregroundStyle(.secondary);Text(model.mcp.isEmpty ? "설정을 준비하고 있습니다…":model.mcp).font(.system(.caption,design:.monospaced)).textSelection(.enabled).padding(14).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor));Button("설정 복사"){NSPasteboard.general.clearContents();NSPasteboard.general.setString(model.mcp,forType:.string);model.status="MCP 설정을 복사했습니다"}}.padding(12)}
+        GroupBox("읽기 전용 MCP 연결"){VStack(alignment:.leading,spacing:12){Text("앱에 포함된 Node 런타임과 현재 프로젝트의 보관소를 사용합니다. 앱 위치를 옮기면 설정을 다시 복사하세요.").font(.caption).foregroundStyle(.secondary);Text(model.currentMCPConfig ?? "현재 프로젝트의 설정을 준비하고 있습니다…").font(.system(.caption,design:.monospaced)).textSelection(.enabled).padding(14).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor));Button("설정 복사"){guard let config=model.currentMCPConfig else{return};NSPasteboard.general.clearContents();NSPasteboard.general.setString(config,forType:.string);model.status="현재 프로젝트의 MCP 설정을 복사했습니다"}.disabled(model.currentMCPConfig == nil)}.padding(12)}
         GroupBox("표시 상태와 표 구조의 한계"){Text("취소선 주석은 관측 사실로, 납작해진 선·박스 가림은 기하·그림 순서에 기반한 추정으로 구분합니다. 부분 가림·마스크·회전·이미지는 불확실성을 남깁니다. PDF 격자는 추정된 구조이며 원래 PPTX 표의 셀 의미를 복원했다고 단정하지 않습니다. 스캔 OCR과 화면 표는 추정 근거로 보존하며 낮은 점수·대안 충돌·누락 영역은 보류합니다. 원문 화면에서 확인하세요.").font(.callout).padding(12).frame(maxWidth:.infinity,alignment:.leading)}
-    }.padding(35).frame(maxWidth:1000,alignment:.leading)}.task{await model.loadMCP()}}
+    }.padding(35).frame(maxWidth:1000,alignment:.leading)}.task(id:model.projectID){await model.loadMCP()}}
 }
 struct ImportView: View {
     @EnvironmentObject var model: AppModel

@@ -192,7 +192,7 @@ export type MatchData = z.infer<typeof Match>;
 export const comparisonText=(p:PageData):string=>p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p).filter(e=>e.comparison_role==='selected').map(e=>e.text).join('\n'):p.comparison_basis==='raster_ocr'?p.ocr_text??'':p.visible_text??p.text;
 export const unresolvedComparisonText=(p:PageData):string=>p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p).filter(e=>e.comparison_role==='unresolved').map(e=>e.text).join('\n'):p.comparison_basis==='raster_ocr'?p.ocr_unresolved_text??'':p.unresolved_text??'';
 export const Manifest = z.object({ project_id: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/), title: z.string(),
-  revisions: z.array(z.object({ label: z.string(), files: z.array(z.string().min(1)).min(1).max(2) })).min(1),
+  revisions: z.array(z.object({ label: z.string(), files: z.array(z.string().min(1)).min(1).max(2) })).min(1).max(100),
   mapping_decisions: z.array(StoredDecision).default([]),mapping_relations:z.array(RelationSelection).optional(),bundle_decisions:z.array(BundleDecision).max(10000).optional() });
 export const FixtureMetadata=z.object({seed:z.number().int(),generator_version:z.string(),generators:z.record(z.string(),z.string()),
   assets:z.record(z.string(),z.string().regex(/^sha256:[a-f0-9]{64}$/)),

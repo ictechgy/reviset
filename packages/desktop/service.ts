@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
+import { readFile, mkdir, stat } from 'node:fs/promises';
 import { join, extname, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../storage/index.js';
@@ -15,9 +15,11 @@ const FileRef=z.object({blob:z.string().regex(/^[a-f0-9]{64}\.(pptx|pdf)$/),name
 export const DESKTOP_PROJECTS_TABLE='desktop_projects_v4';
 const Draft=z.object({project_id:z.string(),title:z.string().min(1).max(200),revisions:z.array(z.object({label:z.string().min(1).max(200),files:z.array(FileRef).min(1).max(2)})).min(1).max(100),mapping_decisions:z.array(StoredDecision),mapping_relations:z.array(MappingRelation).default([]),bundle_decisions:z.array(BundleDecision).max(10000).default([]),last_report_id:z.string().nullable(),dirty:z.boolean()});
 export type DesktopDraft=z.infer<typeof Draft>;
+import {publishContent} from '../runtime/atomic-content.js';
 export class DesktopService {
   readonly store:Store;
   private snapshots=new Map<string,ReportData>();
+  readonly unreadableProjects:{project_id:string;code:'DRAFT_UNREADABLE'}[]=[];
   constructor(readonly root:string) {
     this.store=new Store(root);
     this.store.db.exec(`PRAGMA busy_timeout=5000;
@@ -25,10 +27,18 @@ export class DesktopService {
       CREATE TABLE IF NOT EXISTS ${DESKTOP_PROJECTS_TABLE} (id TEXT PRIMARY KEY,body TEXT NOT NULL,updated_at TEXT NOT NULL);
       INSERT OR IGNORE INTO ${DESKTOP_PROJECTS_TABLE} SELECT legacy.id,legacy.body,legacy.updated_at FROM desktop_projects legacy WHERE NOT EXISTS (SELECT 1 FROM ${DESKTOP_PROJECTS_TABLE} current_draft WHERE current_draft.id=legacy.id);`);
   }
-  projects():DesktopDraft[]{return this.store.db.prepare(`SELECT body FROM ${DESKTOP_PROJECTS_TABLE} ORDER BY updated_at DESC,id`).all().map(r=>Draft.parse(JSON.parse(String(r.body))));}
+  projects():DesktopDraft[]{
+    this.unreadableProjects.length=0;const projects:DesktopDraft[]=[];
+    for(const row of this.store.db.prepare(`SELECT id,body FROM ${DESKTOP_PROJECTS_TABLE} ORDER BY updated_at DESC,id`).all()){
+      try{const project=Draft.parse(JSON.parse(String(row.body)));if(project.project_id!==String(row.id))throw new Error('Draft identity mismatch');projects.push(project);}
+      catch{this.unreadableProjects.push({project_id:String(row.id),code:'DRAFT_UNREADABLE'});}
+    }
+    return projects;
+  }
   project(projectId:string):DesktopDraft {
     const row=this.store.db.prepare(`SELECT body FROM ${DESKTOP_PROJECTS_TABLE} WHERE id=?`).get(projectId);
-    if(!row)throw new DocverError('PROJECT_NOT_FOUND','프로젝트를 찾을 수 없습니다.');return Draft.parse(JSON.parse(String(row.body)));
+    if(!row)throw new DocverError('PROJECT_NOT_FOUND','프로젝트를 찾을 수 없습니다.');
+    try{const project=Draft.parse(JSON.parse(String(row.body)));if(project.project_id!==projectId)throw new Error('Draft identity mismatch');return project;}catch{throw new DocverError('DRAFT_UNREADABLE','이 프로젝트의 입력 기록을 읽지 못했습니다. 저장된 원문과 고정 보고서는 보존했습니다. 다른 프로젝트는 계속 사용할 수 있습니다.');}
   }
   private save(project:DesktopDraft){this.store.db.prepare(`INSERT INTO ${DESKTOP_PROJECTS_TABLE} VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at`).run(project.project_id,JSON.stringify(Draft.parse(project)),new Date().toISOString());return project;}
   recover(runId?:string) {
@@ -49,7 +59,7 @@ export class DesktopService {
         const digest=byteHash(bytes);
         if(rev.expected_sha256?.[index]&&rev.expected_sha256[index]!==digest)throw new DocverError('SOURCE_CHANGED',`선택 후 파일 내용이 변경되었습니다: ${basename(path)}. 파일을 다시 선택하세요.`);
         const blob=digest+ext,target=join(this.root,'imports',blob);
-        try{await writeFile(target,bytes,{flag:'wx'});}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;if(byteHash(await readFile(target))!==byteHash(bytes))throw new DocverError('ASSET_CORRUPT','가져온 원본의 검증에 실패했습니다.');}
+        await publishContent(target,bytes,digest);
         files.push({blob,name:basename(path),bytes:bytes.length});
       }
       if(files.length===2&&extname(files[0].blob)===extname(files[1].blob))throw new DocverError('INVALID_BUNDLE','같은 버전은 PPTX와 PDF를 하나씩 묶을 수 있습니다.');
@@ -79,10 +89,14 @@ export class DesktopService {
   private mutate<T>(operation:()=>T):T {
     this.store.db.exec('BEGIN IMMEDIATE');try{const value=operation();this.store.db.exec('COMMIT');return value;}catch(e){this.store.db.exec('ROLLBACK');throw e;}
   }
-  reorder(projectId:string,order:number[]) {
+  reorder(projectId:string,order:number[],discardHumanDecisions=false,expectedDraftHash?:string) {
     return this.mutate(()=>{
       const p=this.project(projectId);
+      if(expectedDraftHash!==undefined&&expectedDraftHash!==hash(this.manifest(projectId)))throw new DocverError('STALE_REPORT','입력이나 연결이 바뀌었습니다. 현재 내용을 확인한 뒤 순서를 다시 변경하세요.');
       if(p.dirty&&p.bundle_decisions.length&&canonical(p.bundle_decisions)!==canonical(p.last_report_id?this.snapshot(projectId,p.last_report_id).bundle_decisions??[]:[]))throw new DocverError('PENDING_BUNDLE_DECISIONS','페이지 연결 변경을 먼저 분석한 뒤 버전 순서를 바꾸세요. 기존 보고서는 그대로 보존됩니다.');
+      const previous=p.last_report_id?this.snapshot(projectId,p.last_report_id):undefined;
+      if(p.dirty&&(canonical(p.mapping_decisions)!==canonical(previous?.mapping_decisions??[])||canonical(p.mapping_relations)!==canonical(previous?.mapping_relations??[])))throw new DocverError('PENDING_MAPPING_DECISIONS','대응 변경을 먼저 분석한 뒤 버전 순서를 바꾸세요. 입력한 이유와 기존 보고서는 유지됩니다.');
+      if((p.mapping_decisions.length||p.mapping_relations.length||p.bundle_decisions.length)&&!discardHumanDecisions)throw new DocverError('REORDER_CONFIRMATION_REQUIRED','순서를 바꾸면 현재 입력의 사용자 대응과 제공 PDF 연결 이력이 초기화됩니다. 이전 고정 보고서는 유지됩니다. 내용을 확인하고 순서 변경을 승인하세요.');
       if(order.length!==p.revisions.length||new Set(order).size!==order.length||order.some(n=>!Number.isInteger(n)||n<0||n>=order.length))throw new DocverError('INVALID_ORDER','버전 순서를 확인하세요.');
       return this.save({...p,revisions:order.map(n=>p.revisions[n]),mapping_decisions:[],mapping_relations:[],bundle_decisions:[],dirty:true});
     });

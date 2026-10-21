@@ -22,8 +22,9 @@ const rendered=()=>pages.map(p=>({width:p.width,height:p.height,text:p.text}));
 const metadata=(file='/System/Library/Fonts/Helvetica.ttc')=>Buffer.from(Object.entries({__all_fonts_js_version__:2,__fonts_files:[file],__fonts_infos:[['Helvetica',0,0,-1,-1,-1,-1,-1,-1]],__fonts_ranges:[0,127,0],g_fonts_selection_bin:'AA=='}).map(([k,v])=>`window["${k}"] = ${JSON.stringify(v)};`).join('\n'));
 
 test('host metadata requires explicit selection and the private app name',()=>{
-  for(const name of ['Docver.app','Docver-MCP.app','Docver-Render.app'])assert.equal(optionalSidecarBuild(name,undefined),false);
+  for(const name of ['Docver.app','Docver-MCP.app','Docver-Render.app','Docver-Review.app'])assert.equal(optionalSidecarBuild(name,undefined),false);
   assert.equal(optionalSidecarBuild('Docver-Render.app','host-bound'),true);
+  assert.equal(optionalSidecarBuild('Docver-Review.app','host-bound'),true);
   for(const [name,flag]of [['Docver.app','host-bound'],['Docver-MCP.app','host-bound'],['Docver-Render.app',''],['Docver-Render.app','true']])assert.throws(()=>optionalSidecarBuild(name,flag));
 });
 

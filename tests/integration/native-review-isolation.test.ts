@@ -1,0 +1,16 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import{mkdtemp,realpath,mkdir,writeFile,rm,readFile}from'node:fs/promises';import{join,resolve}from'node:path';import{execFileSync}from'node:child_process';import{createServer}from'node:net';
+import{nativeHelperLaunch,NATIVE_ISOLATION_POLICY}from'../../packages/runtime/native-isolation.js';import{rendererSandbox,convertPptx,officePipePath}from'../../packages/render/index.js';import{runTool,officeExecutable,visionExecutable}from'../../packages/runtime/tools.js';import{captureNativePages}from'../../packages/ingest/ocr.js';
+test('actual native/Office policies block outside files, inherited markers and unrelated TCP/Unix sockets',{skip:process.platform!=='darwin',timeout:30000},async()=>{
+ const root=await realpath(await mkdtemp('/private/tmp/dv-review-')),socket=join(root,'outside.sock'),server=createServer(s=>{s.destroy();});let connections=0;server.on('connection',()=>connections++);await new Promise<void>((done,reject)=>{server.once('error',reject);server.listen(socket,done);});const previous=process.env.DOCVER_PARENT_SENTINEL;process.env.DOCVER_PARENT_SENTINEL='public-test-marker';
+ try{
+  const canary=join(root,'outside-canary'),outside=join(root,'unexpected-write');await writeFile(canary,'Public outside canary');
+  for(const mode of ['vision','office']){const folder=join(root,mode),vendor=join(folder,'vendor');await mkdir(vendor,{recursive:true,mode:0o700});const probe=join(vendor,'probe'),inside=join(folder,'inside');await writeFile(inside,'Public inside canary');execFileSync('clang',['-O2','-Wall','-Wextra','-Werror','-Wno-deprecated-declarations',resolve('tests/native/ReviewIsolation.c'),'-o',probe],{timeout:10000});const launch=await nativeHelperLaunch(probe,folder);assert.equal(launch.policy,NATIVE_ISOLATION_POLICY);
+   const args=[inside,canary,outside,socket],result=JSON.parse(await runTool(mode==='vision'?launch.executable:'/usr/bin/sandbox-exec',mode==='vision'?[...launch.args,...args]:['-p',rendererSandbox(folder,probe),probe,...args],{inheritEnv:false,env:launch.env,timeout:10000}));
+   for(const key of ['inside_read','outside_read_denied','outside_write_denied','tcp_denied','unix_denied','signal_denied','env_absent'])assert.equal(result[key],true,mode+':'+key);if(mode==='vision')assert.equal(result.fork_denied,true);else assert.equal(result.preferences_broker_denied,true);assert.match(officePipePath(folder),/^\/private\/tmp\/OSL_PIPE_\d+_SingleOfficeIPC_[a-f0-9]+$/);
+  }
+  assert.equal(connections,0);assert.equal(await readFile(canary,'utf8'),'Public outside canary');
+ }finally{if(previous===undefined)delete process.env.DOCVER_PARENT_SENTINEL;else process.env.DOCVER_PARENT_SENTINEL=previous;await new Promise<void>(done=>server.close(()=>done()));await rm(root,{recursive:true,force:true});}
+});
+test('actual isolated Vision still observes a converted public fixture',{skip:process.platform!=='darwin'||!officeExecutable()||!visionExecutable(),timeout:90000},async()=>{
+ const bytes=await convertPptx(resolve('tests/fixtures/generated/forward/v1.pptx')),result=await captureNativePages(bytes,[1],[1]);assert.equal(result.failures.size,0);assert.ok(result.get(1)!.lines.length>0);assert.equal(result.get(1)!.ocr_performed,true);
+});

@@ -153,6 +153,8 @@ struct PageColumn: View {
     @Binding var pageID: String
     @State private var payload = JSON()
     @State private var failure = ""
+    @State private var loadingPage = false
+    @State private var loadedReport = ""
     @State private var pageInput = "1"
     @State private var rawOpen = false
     var pages: [JSON] { model.primaryPages(revision) }
@@ -164,10 +166,10 @@ struct PageColumn: View {
                 Picker("페이지", selection: Binding(get:{pageID},set:{model.navigatePage($0,in:revision["revision_occurrence_id"].string)})) { Text("원문 없음").tag(""); ForEach(pages) { p in Text("p.\(p["page"].int) · \(p["text"].string.prefix(24))").tag(p["page_id"].string) } }.labelsHidden().frame(maxWidth:260)
             }
             HStack(spacing: 8) {
-                Button { go(current["page"].int-1) } label: { Image(systemName:"chevron.left") }.disabled(current.isNull || current["page"].int <= 1)
-                TextField("페이지", text:$pageInput).frame(width:48).multilineTextAlignment(.center).onSubmit { if let n=Int(pageInput){go(n)} }
+                Button { go(current["page"].int-1) } label: { Image(systemName:"chevron.left") }.disabled(current.isNull || current["page"].int <= 1).accessibilityLabel("이전 원문 페이지")
+                TextField("페이지", text:$pageInput).frame(width:48).multilineTextAlignment(.center).onSubmit { go(Int(pageInput) ?? current["page"].int) }.accessibilityLabel(side+" 원문 페이지 번호")
                 Text("/ \(pages.count)").foregroundStyle(.secondary).font(.caption)
-                Button { go(current["page"].int+1) } label: { Image(systemName:"chevron.right") }.disabled(current.isNull || current["page"].int>=pages.count)
+                Button { go(current["page"].int+1) } label: { Image(systemName:"chevron.right") }.disabled(current.isNull || current["page"].int>=pages.count).accessibilityLabel("다음 원문 페이지")
                 Spacer(); Text(payload["source"]["origin"].string == "reference_pdf" ? (payload["page"]["appearance"]["association"].string == "human_confirmed" ? "제공 PDF · 사용자 연결 · 참고용":"제공 PDF · 페이지 대응 추정") : payload["source"]["origin"].string == "pptx_converted" ? "PPTX 렌더 · LibreOffice" : payload["source"]["kind"].string == "pdf" ? "원본 PDF · PDFKit" : "구조 보기 · 렌더 없음").font(.caption).foregroundStyle(.secondary)
                 if model.isBundle(revision) {Button{model.openBundle(revision,source:pageID)}label:{Image(systemName:"link")}.help(model.bundleEditingUnavailable == nil ? "이 버전의 PPTX와 제공 PDF 페이지 연결 수정":"이 보고서의 제공 PDF 연결·이력 조회").disabled(model.busy || model.loading).accessibilityLabel("제공 PDF 페이지 연결·이력 확인")}
                 if model.sidecarConfigured && revision["assets"].array.contains(where:{$0["format"].string=="pptx"&&$0["asset_id"].string==current["asset_id"].string}) {
@@ -183,7 +185,7 @@ struct PageColumn: View {
                 else if !failure.isEmpty { ContentUnavailableView("페이지를 열지 못했습니다",systemImage:"exclamationmark.triangle",description:Text(failure)) }
                 else if payload.isNull { ProgressView("원문 페이지 로딩…").frame(maxWidth:.infinity,maxHeight:.infinity) }
                 else if payload["source"]["kind"].string == "pdf" {
-                    OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:payload["source"]["origin"].string == "original" ? evidence : JSON(),page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
+                    OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:!loadingPage && payload["source"]["origin"].string == "original" ? evidence : JSON(),page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
                 } else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size,inset:8) {
                     ScrollView([.horizontal,.vertical]) {
                         let scale = model.zoom == 0 ? 1 : model.zoom
@@ -191,6 +193,7 @@ struct PageColumn: View {
                     }
                 } else {ContentUnavailableView("페이지 크기를 확인할 수 없습니다",systemImage:"exclamationmark.triangle")}
             }.background(Color(nsColor:.windowBackgroundColor).overlay(Color.primary.opacity(0.045))).clipShape(RoundedRectangle(cornerRadius:5))
+                .overlay {if loadingPage && !payload.isNull && failure.isEmpty {VStack(spacing:6){ProgressView();Text("다음 페이지를 검증하는 동안 이전 페이지를 표시합니다.").font(.caption)}.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:8))}}.allowsHitTesting(!loadingPage)
             DisclosureGroup("추출 내용·표·표시 상태",isExpanded:$rawOpen) {
                 ScrollView { LazyVStack(alignment:.leading,spacing:10) {
                     Text("원문 추출과 OCR 추정을 각각 보존합니다.").font(.caption).foregroundStyle(.secondary)
@@ -209,14 +212,17 @@ struct PageColumn: View {
                             if e["method"].string == "vision_ocr" {OcrContextEvidence(element:e)}
                         }.padding(8).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:4))
                     }
-                    Text("발표자 노트").font(.headline); Text(payload["page"]["notes"].isNull ? "관측 불가 · 이 형식에는 노트 정보가 없습니다." : payload["page"]["notes"].string)
+                    Text("발표자 노트").font(.headline); Text(notesDisplayText(payload["page"]))
                 }.frame(maxWidth:.infinity,alignment:.leading) }.frame(maxHeight:220)
-            }.font(.caption)
+            }.font(.caption).disabled(loadingPage)
         }.padding(12).task(id:model.report["report_id"].string+pageID) {
-            payload=JSON();failure="";pageInput=String(current["page"].int)
-            guard !pageID.isEmpty else{return}
-            do {let result=try await model.page(pageID);if !Task.isCancelled{payload=result}}catch{if !Task.isCancelled{failure=error.localizedDescription}}
+            let report=model.report["report_id"].string
+            if loadedReport != report {payload=JSON()}
+            failure="";pageInput=String(current["page"].int);loadingPage=true
+            defer{if !Task.isCancelled{loadingPage=false}}
+            guard !pageID.isEmpty else{payload=JSON();return}
+            do {let result=try await model.page(pageID);if !Task.isCancelled{payload=result;loadedReport=report}}catch{if !Task.isCancelled{failure=error.localizedDescription}}
         }
     }
-    func go(_ number: Int) { if let p=pages.first(where:{$0["page"].int==number}){model.navigatePage(p["page_id"].string,in:revision["revision_occurrence_id"].string);pageInput=String(number)} }
+    func go(_ number: Int) { if let p=pages.first(where:{$0["page"].int==number}){model.navigatePage(p["page_id"].string,in:revision["revision_occurrence_id"].string);pageInput=String(number)}else{pageInput=String(current["page"].int)} }
 }

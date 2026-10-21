@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Bbox,GridStatus,OcrReconsideration,box,byteHash,hash,id,normalize,type PageData,type ElementData,type Box,DocverError } from '../schema/index.js';
 import { runTool,visionExecutable,visionInfo } from '../runtime/tools.js';
+import {nativeHelperLaunch} from '../runtime/native-isolation.js';
 import {admitReconsideration} from './ocr-reconsideration.js';
 import {selectHybridComparison,sourceAppearanceBlocks} from './comparison-selection.js';
 
@@ -43,9 +44,10 @@ export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPage
   const keyFor=(page:number)=>hash([sourceHash,page,environment,wanted.has(page),'pdfkit-300dpi-4096-tiled-v4']);
   for(const page of pages){const path=cache?join(cache,keyFor(page)+'.json'):undefined;try{if(path){const saved=JSON.parse(await readFile(path,'utf8'));if(saved.key===keyFor(page)&&saved.sha256===hash(saved.value)){const value=Result.parse(saved.value);if(value.ocr_performed===wanted.has(page)){results.set(page,value);continue;}}}}catch{/* missing or corrupt cache is recomputed */}missing.push(page);}
   if(!missing.length){options.signal?.throwIfAborted();return results;}
-  const folder=options.sourceFile?undefined:await mkdtemp(join(tmpdir(),'docver-ocr-'));
+  const folder=await mkdtemp(join(tmpdir(),'docver-ocr-'));
   try{
-    const source=options.sourceFile??join(folder!,'source.pdf');if(folder)await writeFile(source,bytes,{mode:0o600});
+    const source=options.sourceFile??join(folder,'source.pdf');if(!options.sourceFile)await writeFile(source,bytes,{mode:0o600});
+    const launch=await nativeHelperLaunch(executable,folder,source);
     const writeCache=async(folder:string,key:string,value:NativePageResult)=>{
       const cached={...value};delete cached.cache_write_failed;
       await mkdir(folder,{recursive:true,mode:0o700});const staging=join(folder,key+'-'+randomUUID()+'.tmp');
@@ -87,7 +89,7 @@ export async function captureNativePages(bytes:Uint8Array,pages:number[],ocrPage
     // process/structure on the ruled-table control). Keep cancellation and a
     // finite60s/page process budget; ROI has its own smaller native budget.
     const observeBatches=async(queue:number[])=>{for(let start=0;start<queue.length;start+=16){
-      options.signal?.throwIfAborted();const chunk=queue.slice(start,start+16);try{const response=z.object({pages:z.array(z.object({page:z.number().int().positive(),result:z.unknown().optional(),error:z.string().optional()}).refine(row=>Boolean(row.result)!==Boolean(row.error))).max(16)}).parse(JSON.parse(await runTool(executable,[],{input:JSON.stringify({path:source,pages:chunk,ocr_pages:chunk.filter(n=>wanted.has(n))}),signal:options.signal,timeout:60_000*chunk.length,maxBytes:32*1024*1024})));
+      options.signal?.throwIfAborted();const chunk=queue.slice(start,start+16);try{const response=z.object({pages:z.array(z.object({page:z.number().int().positive(),result:z.unknown().optional(),error:z.string().optional()}).refine(row=>Boolean(row.result)!==Boolean(row.error))).max(16)}).parse(JSON.parse(await runTool(launch.executable,launch.args,{input:JSON.stringify({path:source,pages:chunk,ocr_pages:chunk.filter(n=>wanted.has(n))}),signal:options.signal,timeout:60_000*chunk.length,maxBytes:32*1024*1024,inheritEnv:false,env:launch.env})));
       if(response.pages.length!==chunk.length||new Set(response.pages.map(p=>p.page)).size!==chunk.length||response.pages.some(p=>!chunk.includes(p.page)))throw new DocverError('OCR_PROTOCOL','Native observation page set mismatch');
       for(const row of response.pages){if(!row.result){results.failures.set(row.page,'NATIVE_PAGE_HELPER_ERROR');continue;}const parsed=Result.safeParse(row.result);if(!parsed.success){results.failures.set(row.page,'NATIVE_RESULT_SCHEMA_INVALID');continue;}const result=parsed.data;delete result.cache_write_failed;if(result.ocr_performed!==wanted.has(row.page)){results.failures.set(row.page,'NATIVE_OCR_MODE_MISMATCH');continue;}if(rendered.get(row.page)?.cache_write_failed)result.cache_write_failed=true;results.set(row.page,result);
         await persist(result,async()=>{await save(row.page,result);if(cache&&result.ocr_performed)await writeCache(join(cache,'raster'),rasterKey(result),result);});

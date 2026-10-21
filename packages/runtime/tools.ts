@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile,mkdtemp,rm } from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {nativeHelperLaunch} from './native-isolation.js';
 import { dirname,join,resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { byteHash,DocverError } from '../schema/index.js';
@@ -9,6 +11,7 @@ import { byteHash,DocverError } from '../schema/index.js';
 const active=new Map<number,()=>void>();
 function kill(pid:number,signal:NodeJS.Signals='SIGTERM'){try{process.kill(-pid,signal);}catch{/* already exited */}}
 function stop(){for(const cancel of active.values())cancel();}
+export function cancelActiveTools(){stop();}
 const terminate=()=>stop(),interrupt=()=>stop();
 export async function runTool(executable:string,args:string[],options:{input?:string;timeout?:number;signal?:AbortSignal;maxBytes?:number;env?:NodeJS.ProcessEnv;inheritEnv?:boolean;supervised?:boolean;onSupervisorPid?:(pid:number)=>void}={}):Promise<string>{
   options.signal?.throwIfAborted();
@@ -57,17 +60,19 @@ export async function runTool(executable:string,args:string[],options:{input?:st
 }
 const repository=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 export function visionExecutable():string|undefined {
-  return [process.env.DOCVER_VISION,join(dirname(process.execPath),'DocverVision'),join(repository,'dist/native/DocverVision')].find(p=>p&&existsSync(p));
+  return [join(dirname(process.execPath),'DocverVision'),process.env.DOCVER_VISION,join(repository,'dist/native/DocverVision')].find(p=>p&&existsSync(p));
 }
 export function officeExecutable():string|undefined {
-  return [process.env.DOCVER_SOFFICE,join(dirname(process.execPath),'LibreOffice.app/Contents/MacOS/soffice'),join(repository,'dist/tools/LibreOffice.app/Contents/MacOS/soffice'),'/Applications/LibreOffice.app/Contents/MacOS/soffice'].find(p=>p&&existsSync(p));
+  return [join(dirname(process.execPath),'LibreOffice.app/Contents/MacOS/soffice'),process.env.DOCVER_SOFFICE,join(repository,'dist/tools/LibreOffice.app/Contents/MacOS/soffice'),'/Applications/LibreOffice.app/Contents/MacOS/soffice'].find(p=>p&&existsSync(p));
 }
 const HelperInfo=z.object({version:z.string().min(1),os:z.string().min(1),revision:z.literal(3),languages:z.array(z.string()).refine(l=>l.includes('ko-KR')&&l.includes('en-US')),language_correction:z.literal(false),font_inventory_sha256:z.string().regex(/^[a-f0-9]{64}$/),font_families:z.array(z.string())}).passthrough();
 let infoPromise:Promise<Record<string,any>|undefined>|undefined;
 async function probeVisionInfo(signal?:AbortSignal):Promise<Record<string,any>|undefined>{
   signal?.throwIfAborted();const executable=visionExecutable();if(!executable)return undefined;
-  try{return {...HelperInfo.parse(JSON.parse(await runTool(executable,['--info'],{timeout:30_000,signal}))),binary_sha256:byteHash(await readFile(executable))};}
+  const folder=await mkdtemp(join(tmpdir(),'docver-vision-info-'));
+  try{const launch=await nativeHelperLaunch(executable,folder);return {...HelperInfo.parse(JSON.parse(await runTool(launch.executable,[...launch.args,'--info'],{timeout:30_000,signal,inheritEnv:false,env:launch.env}))),binary_sha256:byteHash(await readFile(executable)),isolation_policy:launch.policy};}
   catch(e){signal?.throwIfAborted();if(e instanceof DocverError&&e.code==='CANCELLED')throw e;return undefined;}
+  finally{await rm(folder,{recursive:true,force:true});}
 }
 export function visionInfo(signal?:AbortSignal):Promise<Record<string,any>|undefined>{
   // A cancellable optional viewer owns its probe. Cancelling it must not abort
