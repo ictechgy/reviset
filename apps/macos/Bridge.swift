@@ -53,23 +53,24 @@ final class Bridge: @unchecked Sendable {
     init(resources: URL, library: URL) { self.resources = resources; self.library = library }
     func cancel() {
         lock.lock();cancelled=true;let process=analysisProcess;lock.unlock()
-        guard let process,process.isRunning else{return};process.terminate()
+        guard let process,process.isRunning else{return};let pid=process.processIdentifier;guard pid>1 else{return};process.terminate()
         // JS signal handlers cannot run during synchronous parsing/diff work.
         // Escalate only the captured, still-current cancelled analysis; a later
         // analysis or unrelated request must never inherit this delayed kill.
         DispatchQueue.global(qos:.utility).asyncAfter(deadline:.now()+3) { [self] in
             lock.lock();defer{lock.unlock()}
-            if cancelled,analysisProcess === process,process.isRunning {_ = Darwin.kill(process.processIdentifier,SIGKILL)}
+            if cancelled,analysisProcess === process,process.isRunning {_ = Darwin.kill(pid,SIGKILL)}
         }
     }
     func terminateAnalysis() {
         lock.lock();cancelled=true;let process=analysisProcess;lock.unlock()
         guard let process,process.isRunning else{return}
+        let pid=process.processIdentifier;guard pid>1 else{return}
         process.terminate()
         // App termination cannot leave a delayed work item behind to kill the
         // helper. Give its cancellation handler a bounded chance to clean up.
         for _ in 0..<10 {if !process.isRunning{return};Thread.sleep(forTimeInterval:0.05)}
-        if process.isRunning {_ = Darwin.kill(process.processIdentifier,SIGKILL)}
+        if process.isRunning {_ = Darwin.kill(pid,SIGKILL)}
     }
     func cancelSidecars() {let owned=lock.withLock{Array(sidecarRequests.values)};for request in owned{request.cancel()}}
     func call(_ action: String, _ args: [String: Any] = [:], analysis: Bool = false, progress: (@Sendable (JSON) -> Void)? = nil, owner:BridgeRequestCancellation? = nil) async throws -> JSON {

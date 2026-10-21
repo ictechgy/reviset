@@ -112,7 +112,7 @@ struct ReorderConfirmation:Identifiable {
     var emptyChangesMessage:String {
         if busy && changes.isEmpty {return "분석 중입니다. 완료 후 변경 목록을 다시 불러옵니다."}
         if loadingChanges || loading {return "변경 목록을 불러오고 있습니다…"}
-        if !changesFailure.isEmpty {return "변경 목록을 불러오지 못했습니다. 구간을 다시 선택하거나 보고서를 다시 여세요."}
+        if !changesFailure.isEmpty {return changesFailure=="새 입력 처리로 변경 목록 조회를 중단했습니다." ? changesFailure:"변경 목록을 불러오지 못했습니다. 구간을 다시 선택하거나 보고서를 다시 여세요."}
         if revisions.count<2 {return "두 버전 이상을 가져오면 변경을 비교할 수 있습니다."}
         if changes.isEmpty {return "선택한 구간에서 감지된 변경이 없습니다. 판독 보류와 관측 한계는 원문 근거에서 확인하세요."}
         return "필터·검색과 일치하는 변경이 없습니다. 유형이나 검색어를 바꿔 보세요."
