@@ -156,7 +156,7 @@ struct SidebarView: View {
                     Text("입력 기록을 읽지 못했습니다. 기존 보고서와 원문은 계속 열 수 있습니다. 다시 분석하려면 새 프로젝트로 가져오세요.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,14)
                 }else{
                 Text("가져오기 순서").font(.caption).foregroundStyle(.secondary).padding(.horizontal,14)
-                ScrollView { LazyVStack(spacing:0){ForEach(Array(model.project["revisions"].array.enumerated()),id:\.offset){i,r in HStack(spacing:8){Text(String(format:"%02d",i+1)).foregroundStyle(.secondary).font(.caption2);VStack(alignment:.leading,spacing:4){Text(r["label"].string).lineLimit(1).font(.caption);Text(r["files"].array.map{$0["blob"].string.hasSuffix("pdf") ? "PDF":"PPTX"}.joined(separator:" + ")).font(.caption2).foregroundStyle(.secondary)};Spacer();VStack(spacing:3){Button{Task{await model.reorder(i,delta:-1)}}label:{Image(systemName:"chevron.up")}.disabled(i==0||model.busy||model.loading);Button{Task{await model.reorder(i,delta:1)}}label:{Image(systemName:"chevron.down")}.disabled(i==model.project["revisions"].array.count-1||model.busy||model.loading)}.buttonStyle(.borderless).font(.caption2)}.padding(.horizontal,14).padding(.vertical,9);Divider()}} }
+                ScrollView { LazyVStack(spacing:0){ForEach(Array(model.project["revisions"].array.enumerated()),id:\.offset){i,r in HStack(spacing:8){Text(String(format:"%02d",i+1)).foregroundStyle(.secondary).font(.caption2);VStack(alignment:.leading,spacing:4){Text(r["label"].string).lineLimit(1).font(.caption);Text(r["files"].array.map{$0["blob"].string.hasSuffix("pdf") ? "PDF":"PPTX"}.joined(separator:" + ")).font(.caption2).foregroundStyle(.secondary)};Spacer();VStack(spacing:3){Button{Task{await model.reorder(i,delta:-1)}}label:{Image(systemName:"chevron.up")}.disabled(i==0||model.busy||model.loading||model.reorderConfirmation != nil);Button{Task{await model.reorder(i,delta:1)}}label:{Image(systemName:"chevron.down")}.disabled(i==model.project["revisions"].array.count-1||model.busy||model.loading||model.reorderConfirmation != nil)}.buttonStyle(.borderless).font(.caption2)}.padding(.horizontal,14).padding(.vertical,9);Divider()}} }
                 Button(model.project["dirty"].bool ? "입력·대응 변경 분석":"다시 분석"){Task{await model.run(model.projectID)}}.disabled(model.busy || model.loading || model.project["unreadable"].bool).frame(maxWidth:.infinity).padding(.horizontal,14)
                 }
             }
@@ -248,6 +248,7 @@ struct InspectorView: View {
         if model.loading || model.loadingChanges { return "변경 목록을 불러오고 있습니다." }
         if model.project["dirty"].bool { return "대기 중인 수정을 재분석한 뒤 대응을 수정하세요." }
         if model.project["last_report_id"].string != model.report["report_id"].string { return "최신 보고서를 선택하세요." }
+        if model.revisions.count<2 {return "다른 버전을 가져오면 페이지 대응을 검토할 수 있습니다."}
         if model.to != model.from+1 { return "서로 인접한 두 버전을 선택하세요." }
         if !model.primaryPages(model.revision(model.from)).contains(where:{$0["page_id"].string==model.leftPageID}) || !model.primaryPages(model.revision(model.to)).contains(where:{$0["page_id"].string==model.rightPageID}) { return "양쪽 원문 페이지를 하나씩 선택하세요." }
         return nil
@@ -255,21 +256,29 @@ struct InspectorView: View {
     var editable: Bool { mappingUnavailableReason == nil }
     var structural: Bool { !model.selected["topology"].isNull }
     var neutralText:Bool {structural || ["coverage_gap","text_occluded","text_struck_through","text_revealed"].contains(model.selected["kind"].string) || isReferenceAppearanceChange(model.selected)}
+    func sourceText(_ value:JSON,other:JSON,before:Bool)->Text {
+        if value.isNull{return Text("해당 버전에서 원문 없음").foregroundColor(.secondary)}
+        if neutralText{return Text(value.string).foregroundColor(.primary)}
+        return changeTextRuns(value.string,comparedWith:other.isNull ? "":other.string).reduce(Text("")){text,run in
+            text+Text(run.text).foregroundColor(run.changed ? (before ? .red:.green):.primary).underline(run.changed)
+        }
+    }
     var body: some View {
         ScrollView {
-            LazyVStack(alignment:.leading,spacing:16) {
+            LazyVStack(alignment:.leading,spacing:10) {
                 Text("선택한 변경").font(.caption).foregroundStyle(.secondary)
                 Text(model.selected.isNull && model.filteredChanges.isEmpty ? model.emptyChangesMessage:changeDisplayName(model.selected)).font(.title3.weight(.semibold))
                 if !model.selected.isNull {
                     Text(structural ? "이전 구성" : "이전 원문").font(.caption).foregroundStyle(.secondary)
-                    Text(model.selected["before"].isNull ? "해당 버전에서 원문 없음" : model.selected["before"].string).foregroundStyle(neutralText ? Color.primary : Color.red).textSelection(.enabled)
+                    sourceText(model.selected["before"],other:model.selected["after"],before:true).textSelection(.enabled)
                     Text(structural ? "이후 구성" : "이후 원문").font(.caption).foregroundStyle(.secondary)
-                    Text(model.selected["after"].isNull ? "해당 버전에서 원문 없음" : model.selected["after"].string).foregroundStyle(neutralText ? Color.primary : Color.green).textSelection(.enabled)
+                    sourceText(model.selected["after"],other:model.selected["before"],before:false).textSelection(.enabled)
+                    if !neutralText {Text("색과 밑줄은 비교에서 달라진 문구입니다. 긴 원문은 강조를 생략할 수 있습니다.").font(.caption2).foregroundStyle(.secondary)}
                     if structural { Text("아래의 각 페이지를 눌러 원문을 확인하세요. 계보의 같은 묶음에 있어도 모든 페이지가 서로 직접 연결되는 것은 아닙니다.").font(.caption).foregroundStyle(.secondary) }
                     Divider();Text("원문 근거").font(.headline)
                     ForEach(Array(model.selected["evidence"].array.enumerated()),id:\.offset) { _,e in
                         VStack(alignment:.leading,spacing:6) {
-                            Button { model.navigateEvidence(e) } label: { Label("page \(e["page"].int) · "+evidenceMethodName(e["method"].string,provenance:e["provenance"].string),systemImage:"doc.text.magnifyingglass").font(.caption) }.buttonStyle(.plain)
+                            Button { model.navigateEvidence(e) } label: { Label(evidenceVersionLabel(e,change:model.selected,revisions:model.revisions)+" · "+evidenceMethodName(e["method"].string,provenance:e["provenance"].string),systemImage:"doc.text.magnifyingglass").font(.caption) }.buttonStyle(.plain)
                             Text(e["quote"].string).font(.caption).textSelection(.enabled)
                         }.padding(9).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:6))
                     }
@@ -326,7 +335,7 @@ struct ExportView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {ScrollView{VStack(alignment:.leading,spacing:22){Text("원문과 이력을 함께 전달하세요.").font(.largeTitle.weight(.semibold));Text("같은 고정 보고서를 파일과 읽기 전용 MCP에서 조회합니다.").foregroundStyle(.secondary)
         GroupBox("보고서 파일 저장"){VStack(alignment:.leading,spacing:12){Text("전체 report, 변경 JSONL, 페이지·요소 원문, 버전·계보, 페이지별 Markdown과 근거 링크를 저장합니다.");Button("JSON·Markdown 내보내기"){Task{await model.exportReport()}}.buttonStyle(.borderedProminent)}.padding(12).frame(maxWidth:.infinity,alignment:.leading)}
-        GroupBox("읽기 전용 MCP 연결"){VStack(alignment:.leading,spacing:12){Text("앱에 포함된 Node 런타임과 현재 프로젝트의 보관소를 사용합니다. 앱 위치를 옮기면 설정을 다시 복사하세요.").font(.caption).foregroundStyle(.secondary);Text(model.currentMCPConfig ?? "현재 프로젝트의 설정을 준비하고 있습니다…").font(.system(.caption,design:.monospaced)).textSelection(.enabled).padding(14).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor));Button("설정 복사"){guard let config=model.currentMCPConfig else{return};NSPasteboard.general.clearContents();NSPasteboard.general.setString(config,forType:.string);model.status="현재 프로젝트의 MCP 설정을 복사했습니다"}.disabled(model.currentMCPConfig == nil)}.padding(12)}
+        GroupBox("읽기 전용 MCP 연결"){VStack(alignment:.leading,spacing:12){Text("앱에 포함된 Node 런타임과 현재 프로젝트의 보관소를 사용합니다. 앱 위치를 옮기면 설정을 다시 복사하세요.").font(.caption).foregroundStyle(.secondary);Text(model.currentMCPConfig ?? (model.mcpFailure.isEmpty ? "현재 프로젝트의 설정을 준비하고 있습니다…":"설정을 불러오지 못했습니다. "+model.mcpFailure)).font(.system(.caption,design:.monospaced)).textSelection(.enabled).padding(14).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor));Button("설정 복사"){guard let config=model.currentMCPConfig else{return};NSPasteboard.general.clearContents();NSPasteboard.general.setString(config,forType:.string);model.status="현재 프로젝트의 MCP 설정을 복사했습니다"}.disabled(model.currentMCPConfig == nil);if !model.mcpFailure.isEmpty {Button("설정 다시 불러오기"){Task{await model.loadMCP()}}}}.padding(12)}
         GroupBox("표시 상태와 표 구조의 한계"){Text("취소선 주석은 관측 사실로, 납작해진 선·박스 가림은 기하·그림 순서에 기반한 추정으로 구분합니다. 부분 가림·마스크·회전·이미지는 불확실성을 남깁니다. PDF 격자는 추정된 구조이며 원래 PPTX 표의 셀 의미를 복원했다고 단정하지 않습니다. 스캔 OCR과 화면 표는 추정 근거로 보존하며 낮은 점수·대안 충돌·누락 영역은 보류합니다. 원문 화면에서 확인하세요.").font(.callout).padding(12).frame(maxWidth:.infinity,alignment:.leading)}
     }.padding(35).frame(maxWidth:1000,alignment:.leading)}.task(id:model.projectID){await model.loadMCP()}}
 }

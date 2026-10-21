@@ -13,10 +13,10 @@ function kill(pid:number,signal:NodeJS.Signals='SIGTERM'){try{process.kill(-pid,
 function stop(){for(const cancel of active.values())cancel();}
 export function cancelActiveTools(){stop();}
 const terminate=()=>stop(),interrupt=()=>stop();
-export async function runTool(executable:string,args:string[],options:{input?:string;timeout?:number;signal?:AbortSignal;maxBytes?:number;env?:NodeJS.ProcessEnv;inheritEnv?:boolean;supervised?:boolean;onSupervisorPid?:(pid:number)=>void}={}):Promise<string>{
+export async function runTool(executable:string,args:string[],options:{input?:string;cwd?:string;timeout?:number;signal?:AbortSignal;maxBytes?:number;env?:NodeJS.ProcessEnv;inheritEnv?:boolean;supervised?:boolean;onSupervisorPid?:(pid:number)=>void}={}):Promise<string>{
   options.signal?.throwIfAborted();
   return new Promise((resolveRun,reject)=>{
-    const child=spawn(executable,args,{detached:true,stdio:options.supervised?['pipe','pipe','pipe','pipe']:['pipe','pipe','pipe'],env:{...(options.inheritEnv===false?{}:process.env),SAL_DISABLE_OPENCL:'1',...options.env}});
+    const child=spawn(executable,args,{cwd:options.cwd,detached:true,stdio:options.supervised?['pipe','pipe','pipe','pipe']:['pipe','pipe','pipe'],env:{...(options.inheritEnv===false?{}:process.env),SAL_DISABLE_OPENCL:'1',...options.env}});
     const output={chunks:[] as Buffer[],bytes:0},diagnostic={chunks:[] as Buffer[],bytes:0};let failure:Error|undefined;
     let status='',monitor:number|undefined,monitorOK=!options.supervised;
     const abort=(error:Error)=>{if(failure)return;failure=error;if(child.pid)kill(child.pid,'SIGKILL');};
@@ -70,7 +70,7 @@ let infoPromise:Promise<Record<string,any>|undefined>|undefined;
 async function probeVisionInfo(signal?:AbortSignal):Promise<Record<string,any>|undefined>{
   signal?.throwIfAborted();const executable=visionExecutable();if(!executable)return undefined;
   const folder=await mkdtemp(join(tmpdir(),'docver-vision-info-'));
-  try{const launch=await nativeHelperLaunch(executable,folder);return {...HelperInfo.parse(JSON.parse(await runTool(launch.executable,[...launch.args,'--info'],{timeout:30_000,signal,inheritEnv:false,env:launch.env}))),binary_sha256:byteHash(await readFile(executable)),isolation_policy:launch.policy};}
+  try{const launch=await nativeHelperLaunch(executable,folder);return {...HelperInfo.parse(JSON.parse(await runTool(launch.executable,[...launch.args,'--info'],{timeout:30_000,signal,cwd:folder,inheritEnv:false,env:launch.env}))),binary_sha256:byteHash(await readFile(executable)),isolation_policy:launch.policy};}
   catch(e){signal?.throwIfAborted();if(e instanceof DocverError&&e.code==='CANCELLED')throw e;return undefined;}
   finally{await rm(folder,{recursive:true,force:true});}
 }

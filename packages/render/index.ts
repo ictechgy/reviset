@@ -16,7 +16,7 @@ import {prepareOfficeInput} from './office-input.js';
 import {readXml,xmlDecoder,decodeXmlReferences} from '../xml/index.js';
 export const officeFilter='pdf:impress_pdf_Export:'+JSON.stringify({ExportHiddenSlides:{type:'boolean',value:'true'},ExportNotesPages:{type:'boolean',value:'false'}});
 export const svgResourcePolicy='fragment-only-no-xml-base-v1';
-export const officeIsolationPolicy='isolated-env-profile-ipc-mach-allowlist-v1';
+export const officeIsolationPolicy='isolated-env-profile-ipc-mach-no-directory-enumeration-v2';
 export function validateRenderPackage(bytes:Uint8Array,depth=0,budget={total:0}):void{
   if(depth>2)throw new DocverError('ZIP_LIMIT','Nested render package exceeds limit');
   const parts=new Set<string>();
@@ -96,12 +96,13 @@ export function rendererSandbox(folder:string,executable:string):string{
   const canonicalExecutable=realpathSync(executable),vendor=canonicalExecutable.endsWith('/Contents/MacOS/soffice')?resolve(dirname(canonicalExecutable),'../..'):dirname(canonicalExecutable);
   const readable=['/System','/usr/lib','/usr/share','/bin','/sbin','/private/etc','/private/var/db','/Library/Fonts',join(homedir(),'Library/Fonts'),vendor,folder,'/dev'];
   const pipe=officePipePath(folder);
+  const jobAncestors:string[]=[];for(let p=dirname(folder);;p=dirname(p)){jobAncestors.push(p);if(p===dirname(p))break;}
   const services=['com.apple.CoreServices.coreservicesd','com.apple.logd','com.apple.windowserver.active','com.apple.coreservices.launchservicesd','com.apple.DiskArbitration.diskarbitrationd','com.apple.SystemConfiguration.configd','com.apple.system.notification_center','com.apple.system.opendirectoryd.libinfo','com.apple.distributed_notifications@Uv3'];
-  return `(version 1)(allow default)(deny lsopen)(deny mach-lookup)(allow mach-lookup ${services.map(p=>`(global-name ${JSON.stringify(p)})`).join(' ')})(deny mach-register)(deny user-preference-write)(deny signal (target others))(deny system-debug)(deny process-exec)(allow process-exec (subpath ${JSON.stringify(vendor)}))(deny network*)(allow network* (local unix-socket (literal ${JSON.stringify(pipe)})) (remote unix-socket (literal ${JSON.stringify(pipe)})))(deny file-read-data)(allow file-read-data (literal ${JSON.stringify(pipe)}) (vnode-type DIRECTORY))(allow file-read-data ${readable.map(p=>`(subpath ${JSON.stringify(p)})`).join(' ')})(deny file-write*)(allow file-write* (subpath "/dev") (literal "/private/tmp") (literal ${JSON.stringify(pipe)}) (subpath ${JSON.stringify(folder)}))(deny file-write* (subpath ${JSON.stringify(vendor)}))`;
+  return `(version 1)(allow default)(deny lsopen)(deny mach-lookup)(allow mach-lookup ${services.map(p=>`(global-name ${JSON.stringify(p)})`).join(' ')})(deny mach-register)(deny user-preference-write)(deny signal (target others))(deny system-debug)(deny process-exec)(allow process-exec (subpath ${JSON.stringify(vendor)}))(deny network*)(allow network* (local unix-socket (literal ${JSON.stringify(pipe)})) (remote unix-socket (literal ${JSON.stringify(pipe)})))(deny file-read-data)(allow file-read-data ${jobAncestors.map(p=>`(literal ${JSON.stringify(p)})`).join(' ')} (literal ${JSON.stringify(pipe)}))(allow file-read-data ${readable.map(p=>`(subpath ${JSON.stringify(p)})`).join(' ')})(deny file-write*)(allow file-write* (subpath "/dev") (literal "/private/tmp") (literal ${JSON.stringify(pipe)}) (subpath ${JSON.stringify(folder)}))(deny file-write* (subpath ${JSON.stringify(vendor)}))`;
 }
 export async function isolatedOfficeVersion(executable:string):Promise<string>{
   const folder=await realpath(await mkdtemp(join(tmpdir(),'docver-office-probe-')));
-  try{return (await runTool(process.platform==='darwin'?'/usr/bin/sandbox-exec':executable,process.platform==='darwin'?['-p',rendererSandbox(folder,executable),executable,'--version']:['--version'],{timeout:30_000,inheritEnv:false,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin',LANG:'en_US.UTF-8',LC_ALL:'en_US.UTF-8',CFFIXED_USER_HOME:folder,HOME:folder,TMPDIR:folder+'/',XDG_CACHE_HOME:join(folder,'cache'),PYTHONDONTWRITEBYTECODE:'1'}})).trim();}
+  try{return (await runTool(process.platform==='darwin'?'/usr/bin/sandbox-exec':executable,process.platform==='darwin'?['-p',rendererSandbox(folder,executable),executable,'--version']:['--version'],{timeout:30_000,cwd:folder,inheritEnv:false,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin',LANG:'en_US.UTF-8',LC_ALL:'en_US.UTF-8',CFFIXED_USER_HOME:folder,HOME:folder,TMPDIR:folder+'/',XDG_CACHE_HOME:join(folder,'cache'),PYTHONDONTWRITEBYTECODE:'1'}})).trim();}
   finally{await rm(folder,{recursive:true,force:true});}
 }
 export async function convertPptx(path:string,executable=officeExecutable()??'soffice',timeout=120_000,signal?:AbortSignal,sourceBytes?:Uint8Array):Promise<Buffer> {
@@ -126,7 +127,7 @@ export async function convertPptxDetailed(path:string,executable=officeExecutabl
     // explicit OS/font dependencies, including nested SVG/resource resolution.
     const sandbox=rendererSandbox(folder,executable);
     const remaining=deadline-performance.now();if(remaining<=0)throw new DocverError('TOOL_TIMEOUT','Renderer preparation exceeded conversion budget');
-    await runTool(process.platform==='darwin'?'/usr/bin/sandbox-exec':executable,process.platform==='darwin'?['-p',sandbox,executable,...args]:args,{timeout:remaining,signal,maxBytes:1024*1024,inheritEnv:false,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin',LANG:'en_US.UTF-8',LC_ALL:'en_US.UTF-8',CFFIXED_USER_HOME:folder,HOME:folder,TMPDIR:folder+'/',XDG_CACHE_HOME:join(folder,'cache'),FONTCONFIG_FILE:fontConfig,FONTCONFIG_PATH:folder,PYTHONDONTWRITEBYTECODE:'1'}});
+    await runTool(process.platform==='darwin'?'/usr/bin/sandbox-exec':executable,process.platform==='darwin'?['-p',sandbox,executable,...args]:args,{timeout:remaining,cwd:folder,signal,maxBytes:1024*1024,inheritEnv:false,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin',LANG:'en_US.UTF-8',LC_ALL:'en_US.UTF-8',CFFIXED_USER_HOME:folder,HOME:folder,TMPDIR:folder+'/',XDG_CACHE_HOME:join(folder,'cache'),FONTCONFIG_FILE:fontConfig,FONTCONFIG_PATH:folder,PYTHONDONTWRITEBYTECODE:'1'}});
     return {pdf:normalizeConvertedPdf(await readFile(join(output,'input.pdf'))),input:prepared.metadata};
   } catch(e) {
     const err=e as NodeJS.ErrnoException&{killed?:boolean};

@@ -27,7 +27,7 @@ import Foundation
   let shutdownA=Task{try await bridge.call("sidecarCreate",["tag":"shutdown-a","delay":5000])},shutdownB=Task{try await bridge.call("sidecarCreate",["tag":"shutdown-b","delay":5000])},other=Task{try await bridge.call("changes",["tag":"shutdown-keep","delay":750])}
   try await started("shutdown-a");try await started("shutdown-b");try await started("shutdown-keep");bridge.cancelSidecars();try await cancelled(shutdownA);try await cancelled(shutdownB)
   guard try await other.value["tag"].string=="shutdown-keep"else{throw NSError(domain:"SidecarShutdownKilledRead",code:1)}
-  let cpu=Task{try await bridge.call("analyze",["tag":"cpu-analysis","cpu_delay":10000],analysis:true)},cpuPeer=Task{try await bridge.call("reports",["tag":"cpu-peer","delay":250])}
+  let cpu=Task{try await bridge.call("analyze",["tag":"cpu-analysis","cpu_delay":10000],analysis:true)},cpuPeer=Task{try await bridge.call("reports",["tag":"cpu-peer","delay":4000])}
   try await started("cpu-analysis");let cpuCancelledAt=Date();bridge.cancel()
   do{_ = try await cpu.value;throw NSError(domain:"CPUCancelReturnedSuccess",code:1)}catch let error as BridgeError{guard error.code=="CANCELLED"else{throw error}}
   guard Date().timeIntervalSince(cpuCancelledAt)<4.5,try await cpuPeer.value["tag"].string=="cpu-peer"else{throw NSError(domain:"CPUCancelUnboundedOrKilledPeer",code:1)}
@@ -35,6 +35,7 @@ import Foundation
   do{_ = try await quick.value;throw NSError(domain:"QuickCancelReturnedSuccess",code:1)}catch let error as BridgeError{guard error.code=="CANCELLED"else{throw error}}
   let replacement=try await bridge.call("analyze",["tag":"replacement-analysis","delay":3500],analysis:true)
   guard replacement["tag"].string=="replacement-analysis"else{throw NSError(domain:"OldEscalationKilledReplacement",code:1)}
+  guard ((try? fm.contentsOfDirectory(atPath:library.appendingPathComponent("logs").path)) ?? []).isEmpty else{throw NSError(domain:"EscalatedCancellationProducedCrashDiagnostic",code:1)}
   print("PASS 10: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; pagecancelendsownhelperandpreservespeer; nonrangeunchanged;24midlaunchcancellationraces; nofalsecrashlog; shutdownterminatesonlyownedsidecars; CPUcancelboundedandpeerpreserved; oldescalationpreservesreplacement")
   try JSONSerialization.data(withJSONObject:records(),options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("observed.json"))
  }

@@ -3,6 +3,13 @@ import AppKit
 import SwiftUI
 @main struct ReviewWorkflowProbe {
  @MainActor static func main() async throws {
+  let previous="매출 전망\n예상 매출 120억",next="매출 전망\n예상 매출 110억"
+  let old=changeTextRuns(previous,comparedWith:next),new=changeTextRuns(next,comparedWith:previous)
+  guard old.map(\.text).joined()==previous,new.map(\.text).joined()==next,old.filter(\.changed).map(\.text).joined()=="120",new.filter(\.changed).map(\.text).joined()=="110" else{throw NSError(domain:"InlineDiffChangedUnchangedTitle",code:1)}
+  let unicode="가족 👨‍👩‍👧‍👦\n 금액 −120억";guard changeTextRuns(unicode,comparedWith:"가족 👨‍👩‍👧‍👦\n 금액 −110억").map(\.text).joined()==unicode,changeTextRuns(String(repeating:"x",count:5000),comparedWith:"").allSatisfy({!$0.changed}) else{throw NSError(domain:"InlineDiffLostUnicodeOrExceededWorkBound",code:1)}
+  let revisions=[JSON(["revision_occurrence_id":"first","revision_id":"same"]),JSON(["revision_occurrence_id":"second","revision_id":"same"])]
+  let event=JSON(["from_occurrence":"first","to_occurrence":"second"])
+  guard evidenceVersionLabel(JSON(["revision_occurrence_id":"second","page":3]),change:event,revisions:revisions)=="이후 · v2 · p.3",evidenceVersionLabel(JSON(["revision_id":"same","page":3]),change:event,revisions:revisions)=="버전 확인 필요 · p.3" else{throw NSError(domain:"EvidenceVersionGuessedDuplicateAlias",code:1)}
   let model=AppModel();model.initializing=false;guard model.libraryAvailable else{throw NSError(domain:"LibraryLock",code:1)}
   let events=model.bridge.library.appendingPathComponent("review-events.jsonl")
   func records()->[JSON]{guard let text=try? String(contentsOf:events,encoding:.utf8)else{return []};return text.split(separator:"\n").compactMap{try? JSONSerialization.jsonObject(with:Data($0.utf8))}.map(JSON.init)}
@@ -13,12 +20,14 @@ import SwiftUI
   await model.loadMCP();await a.value;try require(model.currentMCPConfig?.contains("prj_b")==true && !model.mcp.contains("prj_a"),"LateAReplacedBConfiguration")
   model.projectID="prj_a";let oldA=Task{await model.loadMCP()};try await started("mcpConfig","prj_a",2);model.projectID="prj_b";model.projectID="prj_a";await model.loadMCP();await oldA.value
   let config=JSON(try JSONSerialization.jsonObject(with:Data(model.mcp.utf8)));try require(config["mcpServers"]["docver"]["generation"].int==3,"ABASwitchAcceptedStaleGeneration")
+  model.projectID="prj_mcp_retry";await model.loadMCP();try require(!model.mcpFailure.isEmpty && model.currentMCPConfig==nil,"MCPFailureLooksLikeLoadingOrCopyable");await model.loadMCP();try require(model.mcpFailure.isEmpty && model.currentMCPConfig?.contains("prj_mcp_retry")==true,"MCPRetryDidNotRecover");model.projectID="prj_a"
   let select=Task{await model.selectProject("prj_a")};try await started("reports","prj_a");_ = try await model.create(title:"new",rows:[ImportRow(label:"new",urls:[URL(fileURLWithPath:"/synthetic.pdf")])]);model.projectID="prj_b";model.report=JSON();await select.value
   try require(model.projectID=="prj_b"&&model.report.isNull && !model.loading,"OldSelectionPublishedAfterCreate")
   let project=JSON(["project_id":"prj_b","revisions":[["label":"one"],["label":"two"]],"mapping_relations":[["reason":"preserved reason"]],"mapping_decisions":[],"bundle_decision_count":2,"draft_hash":String(repeating:"a",count:64)])
   model.projects=[project];await model.reorder(0,delta:1);guard let confirmation=model.reorderConfirmation else{throw NSError(domain:"DestructiveReorderNoConfirmation",code:1)}
   try require(!records().contains(where:{$0["action"].string=="reorder"}),"ReorderWroteBeforeConfirmation");model.reorderConfirmation=nil
   try require(model.project["mapping_relations"].array.count==1&&model.project["bundle_decision_count"].int==2,"CancelChangedDraft")
+  var dirty=project.dictionary;dirty["dirty"]=true;model.projects=[JSON(dirty)];await model.reorder(0,delta:1);try require(model.reorderConfirmation==nil && model.error.contains("먼저 분석"),"PendingDecisionsOfferedDestructiveReset");model.projects=[project]
   model.projectID="prj_a";await model.confirmReorder(confirmation);try require(!records().contains(where:{$0["action"].string=="reorder"}),"StaleConfirmationWroteOtherProject")
   model.projectID="prj_history";model.error="";model.report=JSON(["report_id":"rpt_history","revisions":["a","b","c"].map{k in ["revision_occurrence_id":"occ_"+k,"label":k,"assets":[["asset_id":"asset_"+k,"format":"pdf"]],"pages":[["page_id":"page_"+k,"asset_id":"asset_"+k,"page":1]]]},"matches":[]]);model.from=0;model.to=2;model.tab="history";model.changes=[JSON(["change_id":"chg_history","from_occurrence":"occ_b","to_occurrence":"occ_c"])];model.chooseChange("chg_history");model.changeRange()
   for _ in 0..<200 {if model.selectedChangeID=="chg_history"&&model.leftPageID=="page_b"&&model.rightPageID=="page_c"{break};try await Task.sleep(nanoseconds:5_000_000)}

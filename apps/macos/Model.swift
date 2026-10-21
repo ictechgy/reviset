@@ -32,7 +32,7 @@ struct ReorderConfirmation:Identifiable {
     @Published var initializing = true
     @Published var projects: [JSON] = []
     @Published var projectID = "" {
-        didSet {if oldValue != projectID {mcp="";mcpProjectID="";mcpGeneration += 1}}
+        didSet {if oldValue != projectID {mcp="";mcpFailure="";mcpProjectID="";mcpGeneration += 1}}
     }
     @Published var report = JSON()
     @Published var reports: [JSON] = []
@@ -75,6 +75,7 @@ struct ReorderConfirmation:Identifiable {
     @Published var search = ""
     @Published var kind = "all"
     @Published var mcp = ""
+    @Published var mcpFailure = ""
     @Published var reorderConfirmation:ReorderConfirmation?
     @Published var importSheet = false
     @Published var mappingSheet = false
@@ -109,7 +110,7 @@ struct ReorderConfirmation:Identifiable {
     var filteredChanges: [JSON] { changes.filter { (kind == "all" || $0["kind"].string == kind) && (search.isEmpty || ($0["before"].string + " " + $0["after"].string).localizedCaseInsensitiveContains(search)) } }
     var currentMCPConfig:String? {libraryAvailable && !initializing && !loading && mcpProjectID==projectID && !mcp.isEmpty ? mcp:nil}
     var emptyChangesMessage:String {
-        if busy {return "분석 중입니다. 완료 후 변경 목록을 다시 불러옵니다."}
+        if busy && changes.isEmpty {return "분석 중입니다. 완료 후 변경 목록을 다시 불러옵니다."}
         if loadingChanges || loading {return "변경 목록을 불러오고 있습니다…"}
         if !changesFailure.isEmpty {return "변경 목록을 불러오지 못했습니다. 구간을 다시 선택하거나 보고서를 다시 여세요."}
         if revisions.count<2 {return "두 버전 이상을 가져오면 변경을 비교할 수 있습니다."}
@@ -274,7 +275,8 @@ struct ReorderConfirmation:Identifiable {
     }
     func cancel() { guard busy && !committing else { return }; cancelRequested = true; bridge.cancel(); status = "분석을 취소하고 있습니다" }
     func create(title: String, rows: [ImportRow]) async throws -> JSON {
-        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailure=report.isNull ? "":"새 입력 처리로 변경 목록 조회를 중단했습니다."
+        let interrupted=pendingRange != nil || loadingChanges
+        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailure=(!report.isNull && interrupted) ? "새 입력 처리로 변경 목록 조회를 중단했습니다.":""
         do{return try await bridge.call("create", ["title": title, "revisions": rows.map(\.createPayload)])}
         catch{if !report.isNull {try? await updateChanges()};throw error}
     }
@@ -289,11 +291,12 @@ struct ReorderConfirmation:Identifiable {
         } catch { fail(error) }
     }
     func reorder(_ index: Int, delta: Int) async {
-        guard !busy && !loading && !initializing else{return}
+        guard !busy && !loading && !initializing && reorderConfirmation == nil else{return}
         var order = Array(project["revisions"].array.indices); guard order.indices.contains(index + delta) else { return }; order.swapAt(index, index + delta)
         do {
             let relations=project["mapping_relations"].array.count,pairs=project["mapping_decisions"].array.count,bundles=project["bundle_decision_count"].int
-            let request=ReorderConfirmation(project:projectID,draft:try project.data(),draftHash:project["draft_hash"].string,order:order,message:"순서를 바꾸면 현재 입력의 사용자 대응 \(relations)개·개별 결정 \(pairs)개와 제공 PDF 연결 이력 \(bundles)개가 초기화됩니다. 입력한 이유는 이전 고정 보고서에서 계속 확인할 수 있습니다. 대기 중인 연결 변경은 먼저 분석해야 합니다.")
+            if project["dirty"].bool && relations+pairs+bundles>0 {error="대기 중인 페이지 대응·제공 PDF 연결 변경을 먼저 분석한 뒤 순서를 바꾸세요.";return}
+            let request=ReorderConfirmation(project:projectID,draft:try project.data(),draftHash:project["draft_hash"].string,order:order,message:"순서를 바꾸면 현재 입력의 사용자 대응 \(relations)개·개별 결정 \(pairs)개와 제공 PDF 연결 이력 \(bundles)개가 초기화됩니다. 입력한 이유는 이전 고정 보고서에서 계속 확인할 수 있습니다.")
             if relations+pairs+bundles>0 {reorderConfirmation=request}else{await confirmReorder(request)}
         }catch{fail(error)}
     }
@@ -356,13 +359,14 @@ struct ReorderConfirmation:Identifiable {
         do { _ = try await bridge.call("export", ["project_id": projectID, "report_id": report["report_id"].string, "folder": target.path]); NSWorkspace.shared.open(target); status = "JSON·JSONL·Markdown 보고서를 저장했습니다" } catch { fail(error) }
     }
     func loadMCP() async {
-        let project=projectID,generation=mcpGeneration
+        let project=projectID;mcpGeneration += 1;let generation=mcpGeneration
         guard !project.isEmpty,libraryAvailable else{return}
+        mcp="";mcpProjectID="";mcpFailure=""
         do {
             let config=try await bridge.call("mcpConfig",["project_id":project]).string
             guard !Task.isCancelled,project==projectID,generation==mcpGeneration else{return}
             mcpProjectID=project;mcp=config
-        } catch {if !Task.isCancelled,project==projectID,generation==mcpGeneration {fail(error)}}
+        } catch {if !Task.isCancelled,project==projectID,generation==mcpGeneration {mcpFailure=error.localizedDescription;fail(error)}}
     }
     func openSidecar(_ revision:JSON,page:String) {
         guard libraryAvailable && !busy && !loading && sidecarConfigured && !page.isEmpty else{return}
@@ -475,4 +479,31 @@ func evidencePageSummary(_ change:JSON)->String {
         return numbers.isEmpty ? "—":numbers.map{"p.\($0)"}.joined(separator:", ")
     }
     return pages(change["from_occurrence"].string)+" → "+pages(change["to_occurrence"].string)
+}
+
+struct ChangeTextRun {let text:String;let changed:Bool}
+// Presentation only: preserve exact characters; bound the token diff so a long
+// source cannot turn an inspector redraw into unbounded CPU work.
+func changeTextRuns(_ text:String,comparedWith other:String)->[ChangeTextRun] {
+    guard text.utf16.count<=4096,other.utf16.count<=4096 else{return [ChangeTextRun(text:text,changed:false)]}
+    func tokens(_ value:String)->[String] {
+        var result:[String]=[],current="",previous = -1
+        for c in value {let kind=c.isWhitespace ? 0:c.isNumber ? 1:c.isLetter ? 2:3
+            if kind != previous || kind==3 {if !current.isEmpty{result.append(current)};current=""}
+            current.append(c);previous=kind
+        };if !current.isEmpty{result.append(current)};return result
+    }
+    let target=tokens(text),reference=tokens(other)
+    guard target.count<=512,reference.count<=512 else{return [ChangeTextRun(text:text,changed:false)]}
+    let changed=Set(target.difference(from:reference).compactMap{change->Int? in if case let .insert(offset,_,_)=change{return offset};return nil})
+    return target.enumerated().map{ChangeTextRun(text:$0.element,changed:changed.contains($0.offset))}
+}
+func evidenceVersionLabel(_ evidence:JSON,change:JSON,revisions:[JSON])->String {
+    let occurrence=evidence["revision_occurrence_id"].string
+    var indices=revisions.indices.filter{!occurrence.isEmpty && revisions[$0]["revision_occurrence_id"].string==occurrence}
+    if indices.isEmpty && occurrence.isEmpty {let revision=evidence["revision_id"].string;indices=revisions.indices.filter{!revision.isEmpty && revisions[$0]["revision_id"].string==revision}}
+    guard indices.count==1,let index=indices.first else{return "버전 확인 필요 · p.\(evidence["page"].int)"}
+    let id=revisions[index]["revision_occurrence_id"].string
+    let side=id==change["from_occurrence"].string ? "이전":id==change["to_occurrence"].string ? "이후":"다른 버전"
+    return "\(side) · v\(index+1) · p.\(evidence["page"].int)"
 }
