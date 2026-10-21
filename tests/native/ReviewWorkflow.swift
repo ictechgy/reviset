@@ -27,8 +27,8 @@ import SwiftUI
   for mode in ["run","cancel","create"] {
    model.projectID="prj_pending_"+mode;model.report=validReport;model.error="";let pending=Task{try? await model.updateChanges()};try await started("changes",model.projectID)
    try require(model.loadingChanges,"PendingRangeDidNotOwnLoadingState");try require(model.changes.isEmpty && model.selected.isNull,"LoadingNewRangeDisplayedPriorChanges")
-   if mode=="create" {var failed=false;do{_ = try await model.create(title:"fail",rows:[])}catch let error as BridgeError{failed=error.code=="CONTROLLED_CREATE_FAILURE"};try require(failed,"CreateDidNotFailAsExpected")}
-   else {let run=Task{await model.run(model.projectID)};try await started("analyze",model.projectID);if mode=="cancel" {model.cancel()};await run.value;try require(mode=="cancel" ? model.status.contains("취소"):model.error.contains("controlled run failure"),"RunDidNotReachExpectedFailureOrCancellation")}
+   if mode=="create" {let create=Task{try await model.create(title:"fail",rows:[])};try await started("create","create:fail");try require(!model.changesFailure.isEmpty && !model.emptyChangesMessage.contains("감지된 변경이 없습니다"),"ImportInterruptedRangeClaimedNoChanges");var failed=false;do{_ = try await create.value}catch let error as BridgeError{failed=error.code=="CONTROLLED_CREATE_FAILURE"};try require(failed,"CreateDidNotFailAsExpected")}
+   else {let run=Task{await model.run(model.projectID)};try await started("analyze",model.projectID);try require(model.emptyChangesMessage.contains("분석 중") && !model.emptyChangesMessage.contains("감지된 변경이 없습니다"),"BusyInterruptedRangeClaimedNoChanges");if mode=="cancel" {model.cancel()};await run.value;try require(mode=="cancel" ? model.status.contains("취소"):model.error.contains("controlled run failure"),"RunDidNotReachExpectedFailureOrCancellation")}
    await pending.value;try require(!model.loadingChanges && !model.busy,"FailedActionLeftChangesLoading")
   }
   model.projectID="prj_history";var bad=validReport.dictionary;bad["report_id"]="rpt_range_fail";model.report=JSON(bad);model.changes=[JSON(["change_id":"stale_change"])];model.selectedChangeID="stale_change"

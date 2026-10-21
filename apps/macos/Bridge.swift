@@ -51,7 +51,17 @@ final class Bridge: @unchecked Sendable {
     private var sidecarRequests: [UUID:BridgeRequestCancellation] = [:]
     private var cancelled = false
     init(resources: URL, library: URL) { self.resources = resources; self.library = library }
-    func cancel() { lock.lock(); cancelled = true; let process = analysisProcess; lock.unlock(); if process?.isRunning == true { process?.terminate() } }
+    func cancel() {
+        lock.lock();cancelled=true;let process=analysisProcess;lock.unlock()
+        guard let process,process.isRunning else{return};process.terminate()
+        // JS signal handlers cannot run during synchronous parsing/diff work.
+        // Escalate only the captured, still-current cancelled analysis; a later
+        // analysis or unrelated request must never inherit this delayed kill.
+        DispatchQueue.global(qos:.utility).asyncAfter(deadline:.now()+3) { [self] in
+            lock.lock();defer{lock.unlock()}
+            if cancelled,analysisProcess === process,process.isRunning {_ = Darwin.kill(process.processIdentifier,SIGKILL)}
+        }
+    }
     func terminateAnalysis() {
         lock.lock();cancelled=true;let process=analysisProcess;lock.unlock()
         guard let process,process.isRunning else{return}

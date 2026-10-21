@@ -109,6 +109,7 @@ struct ReorderConfirmation:Identifiable {
     var filteredChanges: [JSON] { changes.filter { (kind == "all" || $0["kind"].string == kind) && (search.isEmpty || ($0["before"].string + " " + $0["after"].string).localizedCaseInsensitiveContains(search)) } }
     var currentMCPConfig:String? {libraryAvailable && !initializing && !loading && mcpProjectID==projectID && !mcp.isEmpty ? mcp:nil}
     var emptyChangesMessage:String {
+        if busy {return "분석 중입니다. 완료 후 변경 목록을 다시 불러옵니다."}
         if loadingChanges || loading {return "변경 목록을 불러오고 있습니다…"}
         if !changesFailure.isEmpty {return "변경 목록을 불러오지 못했습니다. 구간을 다시 선택하거나 보고서를 다시 여세요."}
         if revisions.count<2 {return "두 버전 이상을 가져오면 변경을 비교할 수 있습니다."}
@@ -273,7 +274,7 @@ struct ReorderConfirmation:Identifiable {
     }
     func cancel() { guard busy && !committing else { return }; cancelRequested = true; bridge.cancel(); status = "분석을 취소하고 있습니다" }
     func create(title: String, rows: [ImportRow]) async throws -> JSON {
-        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailure=""
+        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailure=report.isNull ? "":"새 입력 처리로 변경 목록 조회를 중단했습니다."
         do{return try await bridge.call("create", ["title": title, "revisions": rows.map(\.createPayload)])}
         catch{if !report.isNull {try? await updateChanges()};throw error}
     }

@@ -93,6 +93,8 @@ function* matchingSteps(from:PageData[],to:PageData[],decisions:MappingDecision[
 // At most n existing rows can participate in an augmentation. For n,m<=1000,
 // sum_i(sum_{k=0}^{i-1}(m+n-k)) <=834,333,500 cost evaluations. The 1B limit
 // admits that supported domain, while bounded yields keep cancellation live.
+// A cell cap alone also admits asymmetric shapes outside n,m<=1000; those
+// may still exhaust the cost cap and must fail explicitly, never imply absence.
 export function matchPages(from:PageData[],to:PageData[],decisions:MappingDecision[]=[],relations:MappingRelationData[]=[],options:{maxCosts?:number;maxMatrixCells?:number}={}):{matches:MatchData[],candidates:MatchData[]} {
   const steps=matchingSteps(from,to,decisions,relations,options);
   for(;;){const step=steps.next();if(step.done)return step.value;}
