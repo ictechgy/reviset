@@ -40,6 +40,7 @@ struct MappingSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack { Text("페이지 대응 수정").font(.title2.weight(.semibold)); Spacer(); Button("취소") { dismiss() }.keyboardShortcut(.cancelAction).disabled(saving) }
+            ScrollView { VStack(alignment:.leading,spacing:10) {
             Picker("대응 유형", selection: $mode) { Text("연결 1:1").tag("continuation"); Text("분할 1:N").tag("split"); Text("병합 N:1").tag("merge"); Text("해제·차단").tag("unlink") }.pickerStyle(.segmented).disabled(saving)
             Text("문구의 삭제·변경 여부는 원문 근거로 별도 검토합니다. 페이지 대응을 적용하면 새 보고서를 분석합니다.").font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 16) {
@@ -56,9 +57,10 @@ struct MappingSheet: View {
             }
             if mode == "unlink" { Text(conflicts.isEmpty ? "현재 연결은 없습니다. 적용하면 이 두 페이지의 자동 연결을 차단합니다. 한 번에 한 쌍을 지정합니다." : "한 번에 한 연결을 해제합니다. 나머지 분기 연결은 유지합니다.").font(.caption).foregroundStyle(.secondary) }
             TextField("수정 이유 (필수)", text: $reason, axis:.vertical).lineLimit(2...3).textFieldStyle(.roundedBorder).disabled(saving)
+            if !failure.isEmpty { Text(failure).font(.caption).foregroundStyle(.red) }
+            }.frame(maxWidth:.infinity,alignment:.leading) }
             HStack { if let message=validationMessage { Text(message).foregroundStyle(message=="수정 이유를 입력하세요." ? Color.secondary:Color.orange) };Spacer();Text("입력 길이 \(reason.utf16.count)/2000").help("일부 이모지는 여러 단위로 계산됩니다.").foregroundStyle(reason.utf16.count>2000 ? Color.orange : Color.secondary) }.font(.caption)
 
-            if !failure.isEmpty { Text(failure).font(.caption).foregroundStyle(.red) }
             HStack { Text("적용 전 취소하면 저장하지 않습니다.").font(.caption).foregroundStyle(.secondary); Spacer(); if saving { ProgressView().controlSize(.small) }; Button("적용하고 재분석") { Task { await apply() } }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).disabled(!valid || saving || model.busy).accessibilityHint(Text(validationMessage ?? "선택한 관계를 적용하고 새 보고서로 분석합니다")) }
         }.padding(24).frame(width: 900, height: 720).background(Color(nsColor:.windowBackgroundColor))
     }
@@ -70,7 +72,7 @@ struct MappingSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title + " · " + revision["label"].string).font(.headline)
                 TextField("번호·요약 검색", text: search).textFieldStyle(.roundedBorder)
-                List(pages, selection: selection) { page in HStack(alignment: .top) { Text("p.\(page["page"].int)").monospacedDigit().frame(width: 50, alignment: .leading); Text(page["text"].string.isEmpty ? "판독된 요약 없음" : page["text"].string).lineLimit(2).font(.caption) }.padding(.vertical, 4).tag(page["page_id"].string).id(page["page_id"].string) }.frame(minHeight:260).scrollIndicators(.visible)
+                List(pages, selection: selection) { page in HStack(alignment: .top) { Text("p.\(page["page"].int)").monospacedDigit().frame(width: 50, alignment: .leading); Text(page["text"].string.isEmpty ? "판독된 요약 없음" : page["text"].string).lineLimit(2).font(.caption) }.padding(.vertical, 4).tag(page["page_id"].string).id(page["page_id"].string) }.frame(height:280).scrollIndicators(.visible)
                 ScrollView(.horizontal) {
                     HStack(spacing:5) {
                         Text("선택:").font(.caption2).foregroundStyle(.secondary)
