@@ -356,7 +356,7 @@ async function extractXlsx(parts: Map<string,Uint8Array>, state: State): Promise
         if (state.cells >= WORKBOOK_LIMITS.cells) fail('WORKBOOK_LIMIT','Workbook materialized cell budget exceeded');
         if (styleRaw !== undefined || styleList.length) { const index = integer(styleRaw,0,Math.max(0,styleList.length - 1),'cell style index',0); const style = styleList.get(index); cell.number_format = style.number; cell.style = style.values; }
         if (['f','v','is'].some(name => children(node,name).length > 1)) fail('INVALID_WORKBOOK','Duplicate cell content');
-        const f = first(node,'f'), valueNode = first(node,'v'), type = attr(node,'t') ?? 'n'; if (f) { cell.formula = f.text; cell.formula_dialect = 'xlsx_a1'; cell.formula_interpretation = 'explicit'; cell.cached_result = valueNode || first(node,'is') ? 'present' : 'missing'; if (attr(f,'t') && attr(f,'t') !== 'normal') { cell.formula_interpretation = 'unresolved'; const ref = attr(f,'ref'), sharedId = attr(f,'si'); if (ref) { addFormulaRange(formulaRanges,parseRange(ref)); if (attr(f,'t') === 'shared' && sharedId !== undefined) sharedWithRange.add(sharedId); } else if (attr(f,'t') === 'shared' && sharedId !== undefined) sharedWithoutRange.add(sharedId); else wholeFormulaSheet = true; gap(sheet.coverage_gaps,'shared_array_formulas','Shared/array/spill/data-table formulas are not expanded; source text and saved values are retained with unresolved interpretation.',sheet.sheet_id); } }
+        const f = first(node,'f'), valueNode = first(node,'v'), type = attr(node,'t') ?? 'n', emptyNumericValue = type === 'n' && valueNode?.text === ''; if (f) { cell.formula = f.text; cell.formula_dialect = 'xlsx_a1'; cell.formula_interpretation = 'explicit'; cell.cached_result = !emptyNumericValue && (valueNode || first(node,'is')) ? 'present' : 'missing'; if (attr(f,'t') && attr(f,'t') !== 'normal') { cell.formula_interpretation = 'unresolved'; const ref = attr(f,'ref'), sharedId = attr(f,'si'); if (ref) { addFormulaRange(formulaRanges,parseRange(ref)); if (attr(f,'t') === 'shared' && sharedId !== undefined) sharedWithRange.add(sharedId); } else if (attr(f,'t') === 'shared' && sharedId !== undefined) sharedWithoutRange.add(sharedId); else wholeFormulaSheet = true; gap(sheet.coverage_gaps,'shared_array_formulas','Shared/array/spill/data-table formulas are not expanded; source text and saved values are retained with unresolved interpretation.',sheet.sheet_id); } }
         if (type === 'inlineStr') { cell.value_type = 'string'; cell.value = xlsxPrimaryText(first(node,'is'),sheet.coverage_gaps,sheet.sheet_id); }
         else if (valueNode) { const value = valueNode.text;
           if (type === 's') { const index = integer(value,0,Math.max(0,shared.length - 1),'shared string index',0); if (shared[index] === undefined) fail('INVALID_WORKBOOK','Missing shared string'); cell.value_type = 'string'; cell.value = shared[index]; }
@@ -367,9 +367,9 @@ async function extractXlsx(parts: Map<string,Uint8Array>, state: State): Promise
           else if (type === 'e') { cell.value_type = 'error'; cell.value = value; }
           else fail('UNSUPPORTED_WORKBOOK','Unsupported XLSX cell value type');
         } else if (!['n','s','str','b','d','e'].includes(type)) fail('UNSUPPORTED_WORKBOOK','Unsupported XLSX cell type');
-        if (valueNode || first(node,'is')) savedCells.add(cell);
+        if (!emptyNumericValue && (valueNode || first(node,'is'))) savedCells.add(cell);
         if (attr(node,'cm') !== undefined || attr(node,'vm') !== undefined) { wholeFormulaSheet = true; gap(sheet.coverage_gaps,'cell_metadata','Cell metadata can encode dynamic arrays or richer types; this sheet is conservatively unresolved.',sheet.sheet_id); }
-        if (f && !valueNode && type !== 'inlineStr') gap(sheet.coverage_gaps,'missing_formula_cache','Formula has no saved calculation result; formulas are never recalculated.',sheet.sheet_id);
+        if (f && (!valueNode || emptyNumericValue) && type !== 'inlineStr') gap(sheet.coverage_gaps,'missing_formula_cache','Formula has no saved calculation result; formulas are never recalculated.',sheet.sheet_id);
         addCell(state,sheet,cell);
       }
     }
@@ -401,7 +401,7 @@ function odsPrimaryText(paragraphs: Element[],gaps: WorkbookGapData[],sheet_id?:
   for (const [index,paragraph] of paragraphs.entries()) { if (index) write('\n'); visit(paragraph); }
   return result;
 }
-function canonicalStyle(node: Element): string { const attrs = Object.fromEntries(Object.entries(node.attrs).filter(([name]) => !['name','display-name'].includes(local(name)) && !name.startsWith('xmlns')).map(([name,value]) => [local(name),value]).sort(([a],[b]) => a.localeCompare(b))); return JSON.stringify({name:node.name,attrs,content:node.content.map(item => typeof item === 'string' ? item : canonicalStyle(item))}); }
+function canonicalStyle(node: Element): string { const attrs = Object.fromEntries(Object.entries(node.attrs).filter(([name]) => !['name','display-name'].includes(local(name)) && !name.startsWith('xmlns')).map(([name,value]) => [local(name),value]).sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0)); return JSON.stringify({name:node.name,attrs,content:node.content.map(item => typeof item === 'string' ? item : canonicalStyle(item))}); }
 type OdsStyles = { cell(name?: string): Style; effective(name?: string): boolean; hidden(name?: string): boolean; size(name: string | undefined, kind: 'row' | 'column'): string | null };
 type OdsStyleScope = { styles: Map<string,Element>; formats: Map<string,Element> };
 function odsStyles(roots: Element[], state: State): OdsStyles {

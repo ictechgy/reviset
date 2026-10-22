@@ -63,7 +63,7 @@ export class WorkbookQueryService {
   private permit(projectId: string) { if (!this.allowedProjects.has(projectId)) throw new DocverError('PROJECT_SCOPE', 'Workbook project is not configured in this reader scope'); }
   async query(name: WorkbookQueryName | string, input: unknown, measure?: (result: Record<string, any>) => number): Promise<Record<string, any>> {
     if (!(name in workbookQuerySchemas)) throw new DocverError('UNKNOWN_QUERY', 'Unknown read-only workbook query');
-    const args: any = workbookQuerySchemas[name as WorkbookQueryName].parse(input); let report: WorkbookReportData | undefined, items: any[] = [], extra: Record<string, any> = {};
+    const args: any = workbookQuerySchemas[name as WorkbookQueryName].parse(input); let report: WorkbookReportData | undefined, items: any[] = [], extra: Record<string, any> = {}, projectItem: ((item: any) => any) | undefined;
     if (name === 'list_workbook_projects') items = this.service.projects().filter(p => this.allowedProjects.has(p.project_id)).map(({ revisions: _revisions, ...p }) => p);
     else {
       this.permit(args.project_id);
@@ -98,7 +98,10 @@ export class WorkbookQueryService {
           }
           case 'search_workbook_cells': {
             const r = revision(), sheets = args.sheet_id ? [selectedSheet()] : r.sheets, needle = args.case_sensitive ? args.query : args.query.toLocaleLowerCase('en-US');
-            for (const s of sheets) for (const cell of this.service.indexedCells(args.project_id,report.report_id,r.revision_occurrence_id,s.sheet_id,1,1_048_577,1,16_385,report)) { const found = [cell.value, cell.formula].some(v => v !== null && (args.case_sensitive ? v : v.toLocaleLowerCase('en-US')).includes(needle)); if (found) items.push({ ...boundedCell(cell, args.text_offset, args.text_length), sheet_id: s.sheet_id, revision_occurrence_id: r.revision_occurrence_id }); }
+            // Scan stored source observations, retaining references rather than expanding styles
+            // and allocating text/continuation objects for every match before pagination.
+            for (const s of sheets) for (const cell of this.service.indexedCells(args.project_id,report.report_id,r.revision_occurrence_id,s.sheet_id,1,1_048_577,1,16_385,report,false)) { const found = [cell.value, cell.formula].some(v => v !== null && (args.case_sensitive ? v : v.toLocaleLowerCase('en-US')).includes(needle)); if (found) items.push({ cell, sheet_id: s.sheet_id }); }
+            projectItem = item => ({ ...boundedCell(this.cellStyle(report!,r.revision_occurrence_id,item.cell), args.text_offset, args.text_length), sheet_id: item.sheet_id, revision_occurrence_id: r.revision_occurrence_id });
             extra = { matching: 'literal_stored_value_or_formula_source_no_execution' }; break;
           }
           case 'get_workbook_cell_history': {
@@ -127,7 +130,7 @@ export class WorkbookQueryService {
         }
       }
     }
-    await pause(); return this.paginate(name, args, items, extra, measure);
+    await pause(); return this.paginate(name, args, items, extra, measure, projectItem);
   }
   private changes(report: WorkbookReportData, args: any) {
     const from = report.revisions.findIndex(r => r.revision_occurrence_id === args.from_revision_occurrence_id), to = report.revisions.findIndex(r => r.revision_occurrence_id === args.to_revision_occurrence_id);
@@ -149,7 +152,7 @@ export class WorkbookQueryService {
     const {before,after,...metadata}=c;
     return {...metadata,description:c.description.slice(0,2048),component,before_observation:before?'available':'not_materialized',after_observation:after?'available':'not_materialized',raw_detail_query:'get_workbook_change',raw_detail_components:['before','after'],...(component==='before'?{before:boundedCell(report?this.cellStyle(report,c.from_revision_occurrence_id,before):before,args.text_offset,args.text_length)}:component==='after'?{after:boundedCell(report?this.cellStyle(report,c.to_revision_occurrence_id,after):after,args.text_offset,args.text_length)}:{})};
   }
-  private paginate(name: string, args: any, all: any[], extra: Record<string, any>, measure?: (result: Record<string, any>) => number) {
+  private paginate(name: string, args: any, all: any[], extra: Record<string, any>, measure?: (result: Record<string, any>) => number, projectItem?: (item: any) => any) {
     const { cursor, limit, max_output_tokens,text_offset:_textOffset,text_length:_textLength, ...selectors } = args, binding = hash({ name, selectors }); let index = 0;
     if (cursor) {
       try { const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')); if (parsed.scope !== binding || parsed.checksum !== hash({ scope: parsed.scope, index: parsed.index }) || !Number.isSafeInteger(parsed.index) || parsed.index < 0 || parsed.index > all.length) throw new Error('cursor'); index = parsed.index; }
@@ -160,12 +163,12 @@ export class WorkbookQueryService {
     // Match the existing reader's conservative byte budget, including duplicated MCP wire copies when measured by its adapter.
     const budget = max_output_tokens, size = measure ?? ((value: Record<string,any>) => Buffer.byteLength(JSON.stringify(value))), selected: any[] = []; let outputLimited = false;
     for (let i = index; i < Math.min(all.length, index + limit); i++) {
-      const next = i + 1 < all.length ? encode(i + 1) : null, candidate = { ...base, items: [...selected, all[i]], next_cursor: next };
+      const projected = projectItem ? projectItem(all[i]) : all[i], next = i + 1 < all.length ? encode(i + 1) : null, candidate = { ...base, items: [...selected, projected], next_cursor: next };
       if (size(candidate) > budget) { if (!selected.length) {
         // Long strings use explicit text offsets; shrink a single cell/change until it fits.
         let shrunk: any, fitted = false;
         for (const textLimit of [256,64,16,2]) {
-          shrunk = JSON.parse(JSON.stringify(all[i]));
+          shrunk = JSON.parse(JSON.stringify(projected));
           const truncate = (v: any) => { if (!v || typeof v !== 'object') return; if (v.text_continuations) for (const field of ['value', 'formula', 'number_format']) { const s = v[field]; if (typeof s === 'string' && s.length > textLimit) { const part = chunk(s, 0, textLimit); v[field] = part.value; const info = v.text_continuations[field]; if (info) { info.next_offset = info.offset + String(part.value).length; info.state = 'truncated'; } } } if (textLimit <= 16 && v.style && Object.keys(v.style).length) { v.style = {}; v.style_truncated = true; } for (const [key, value] of Object.entries(v)) if (key !== 'text_continuations') truncate(value); }; truncate(shrunk);
           const short = { ...base, items: [shrunk], next_cursor: next, output_limited: true };
           if (size(short) <= budget) { fitted = true; break; }
@@ -173,7 +176,7 @@ export class WorkbookQueryService {
         if (!fitted) throw new DocverError('OUTPUT_BUDGET_TOO_SMALL', 'Output budget cannot fit one structured workbook item; increase max_output_tokens');
         selected.push(shrunk); outputLimited = true;
       } break; }
-      selected.push(all[i]);
+      selected.push(projected);
     }
     const next = index + selected.length < all.length ? encode(index + selected.length) : null;
     const result = { ...base, items: selected, next_cursor: next, ...(outputLimited ? { output_limited:true } : {}) }; if (size(result) > budget) throw new DocverError('OUTPUT_BUDGET_TOO_SMALL', 'Workbook output metadata exceeds the requested budget; increase max_output_tokens'); return result;

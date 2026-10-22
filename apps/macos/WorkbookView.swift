@@ -35,6 +35,7 @@ private extension JSON {
     @Published var selectedChangeID = ""
     @Published var selectedRow = 0
     @Published var selectedColumn = 0
+    @Published var revealGeneration = 0
     @Published var beforeAddress = ""
     @Published var afterAddress = ""
     @Published var cellTextOffset = 0
@@ -57,6 +58,7 @@ private extension JSON {
     @Published var cellHistoryPreviousCursors: [String] = []
     @Published var cellHistoryPageNumber = 1
     private var cellHistoryPageCursor = ""
+    private var cellHistoryCursorAnchor: HistoryAnchor?
     @Published var loadingHistory = false
     @Published var cellHistoryFailure = ""
     @Published var cellHistoryTotal = 0
@@ -100,6 +102,13 @@ private extension JSON {
         let generation: Int
         let owner: BridgeRequestCancellation
     }
+    struct HistoryAnchor: Equatable {
+        let occurrence: String
+        let sheet: String
+        let address: String
+        let row: Int
+        let column: Int
+    }
     init(bridge: Bridge) { self.bridge = bridge }
     var revisions: [JSON] { report["revisions"].array }
     var scope: String { projectID + "|" + reportID }
@@ -115,6 +124,13 @@ private extension JSON {
     func paneCoordinate(before: Bool) -> (row: Int,column: Int)? {
         guard !(before ? beforeSheetID : afterSheetID).isEmpty,let (row,column) = WorkbookGrid.parseAddress(before ? beforeAddress : afterAddress) else { return nil }
         return (row,column)
+    }
+    var cellHistoryAnchor: HistoryAnchor? {
+        for before in [false,true] {
+            let occurrence = before ? beforeID : afterID,sheet = before ? beforeSheetID : afterSheetID,address = before ? beforeAddress : afterAddress
+            if !occurrence.isEmpty,!sheet.isEmpty,let (row,column) = WorkbookGrid.parseAddress(address) { return HistoryAnchor(occurrence:occurrence,sheet:sheet,address:address,row:row,column:column) }
+        }
+        return nil
     }
     func versionLabel(_ id: String) -> String {
         let r = revision(id)
@@ -156,7 +172,7 @@ private extension JSON {
     private func resetChangePaging() { changeCursor = ""; changePreviousCursors = []; changePageCursor = ""; changePageNumber = 1 }
     private func resetCellHistory() {
         invalidate("history"); cellHistory = []; cellHistoryMessage = ""; cellHistoryCursor = ""; cellHistoryTotal = 0
-        cellHistoryPreviousCursors = []; cellHistoryPageCursor = ""; cellHistoryPageNumber = 1; loadingHistory = false; cellHistoryFailure = ""
+        cellHistoryPreviousCursors = []; cellHistoryPageCursor = ""; cellHistoryCursorAnchor = nil; cellHistoryPageNumber = 1; loadingHistory = false; cellHistoryFailure = ""
     }
     func start() async {
         active = true
@@ -228,6 +244,7 @@ private extension JSON {
     }
     func changeVersions(before: String? = nil, after: String? = nil) async {
         guard ready else { return }
+        revealGeneration += 1
         var left = before ?? beforeID,right = after ?? afterID
         guard let leftIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == left}),let rightIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == right}) else { return }
         if leftIndex > rightIndex { swap(&left,&right); status = "저장된 버전 순서에 맞게 이전·이후를 자동으로 정렬했습니다." }
@@ -241,6 +258,7 @@ private extension JSON {
     }
     func changeSheet(before: String? = nil, after: String? = nil) async {
         guard ready else { return }; clearCells()
+        revealGeneration += 1
         if let before { beforeSheetID = before }; if let after { afterSheetID = after }
         rowStart = 1; columnStart = 1; addressInput = "A1"
         await loadRange()
@@ -320,6 +338,7 @@ private extension JSON {
     }
     func moveWindow(rows: Int = 0, columns: Int = 0) async {
         guard ready else { return }
+        revealGeneration += 1
         rowStart = min(1_048_576-rowLimit+1,max(1,rowStart+rows))
         columnStart = min(16_384-columnLimit+1,max(1,columnStart+columns))
         clearCells(); addressInput = WorkbookGrid.address(rowStart,columnStart); await loadRange()
@@ -333,6 +352,7 @@ private extension JSON {
     }
     func selectCell(_ row: Int, _ column: Int) async {
         guard ready else { return }
+        revealGeneration += 1
         let previousRange = rangeScope
         if beforeRowStart != afterRowStart || row < beforeRowStart || row >= beforeRowStart+rowLimit {
             rowStart = min(row,1_048_576-rowLimit+1)
@@ -382,6 +402,7 @@ private extension JSON {
     }
     func chooseChange(_ id: String) async {
         guard ready, let change = changes.first(where:{$0["change_id"].string == id}) else { return }
+        revealGeneration += 1
         invalidate("cell"); resetCellHistory(); beforeCell = JSON(); afterCell = JSON(); cellFailure = ""; loadingCell = true
         let a = change["from_revision_occurrence_id"].string, b = change["to_revision_occurrence_id"].string
         guard revisions.contains(where:{$0["revision_occurrence_id"].string == a}), revisions.contains(where:{$0["revision_occurrence_id"].string == b}) else { loadingCell = false; cellFailure = "변경의 버전 근거를 찾지 못했습니다."; return }
@@ -415,10 +436,10 @@ private extension JSON {
         }
     }
     func loadCellHistory(next: Bool = false,previous: Bool = false) async {
-        guard ready, selectedRow > 0, selectedColumn > 0, !afterSheetID.isEmpty else { return }
-        guard let (row,column) = WorkbookGrid.parseAddress(afterAddress) else { return }
+        guard ready,let anchor = cellHistoryAnchor else { return }
+        if (next || previous),cellHistoryCursorAnchor != anchor { resetCellHistory(); return }
         guard !(next && previous),!next || !cellHistoryCursor.isEmpty,!previous || !cellHistoryPreviousCursors.isEmpty else { return }
-        let ticket = begin("history"), identity = rangeScope, address = afterAddress
+        let ticket = begin("history"), identity = rangeScope
         let cursor = next ? cellHistoryCursor : previous ? cellHistoryPreviousCursors.last ?? "" : ""
         var back = !next && !previous ? [] : cellHistoryPreviousCursors
         let targetPage = next ? cellHistoryPageNumber+1 : previous ? max(1,cellHistoryPageNumber-1) : 1
@@ -426,16 +447,16 @@ private extension JSON {
         if previous { back.removeLast() }
         loadingHistory = true; cellHistoryFailure = ""
         do {
-            var args: [String:Any] = ["revision_occurrence_id":afterID,"sheet_id":afterSheetID,"row":row,"column":column,"limit":100,"max_output_tokens":pagingOutputBudget,"text_length":128]
+            var args: [String:Any] = ["revision_occurrence_id":anchor.occurrence,"sheet_id":anchor.sheet,"row":anchor.row,"column":anchor.column,"limit":100,"max_output_tokens":pagingOutputBudget,"text_length":128]
             if !cursor.isEmpty { args["cursor"] = cursor }
             let value = try await query("get_workbook_cell_history",args,ticket:ticket)
-            guard current(ticket), rangeScope == identity, afterAddress == address else { return }
+            guard current(ticket), rangeScope == identity, cellHistoryAnchor == anchor else { return }
             cellHistory = value["items"].array
             cellHistoryCursor = value["next_cursor"].string; cellHistoryTotal = value["total"].int
-            cellHistoryPageCursor = cursor; cellHistoryPreviousCursors = back; cellHistoryPageNumber = targetPage; loadingHistory = false
+            cellHistoryPageCursor = cursor; cellHistoryCursorAnchor = anchor; cellHistoryPreviousCursors = back; cellHistoryPageNumber = targetPage; loadingHistory = false
             cellHistoryMessage = cellHistory.isEmpty ? "기록된 셀 이력이 없습니다." : "이번 페이지 \(cellHistory.count)개 / 총 \(cellHistoryTotal)개 · 첫 열 고유 키로 추정한 이력이며 대응 미확정 위치는 명시합니다."
         } catch {
-            guard current(ticket), rangeScope == identity, afterAddress == address else { return }
+            guard current(ticket), rangeScope == identity, cellHistoryAnchor == anchor else { return }
             loadingHistory = false; cellHistoryFailure = error.localizedDescription
         }
     }
@@ -741,7 +762,7 @@ struct WorkbookWorkspace: View {
                 if let coordinate { Text("근거 \(WorkbookGrid.address(coordinate.row,coordinate.column))").font(.system(.caption,design:.monospaced)).foregroundStyle(.blue) }
             }.padding(.horizontal,8).padding(.bottom,5)
             if id.isEmpty { WorkbookStatus(title:"대응 시트 없음",detail:"다른 시트를 선택하거나 변경 근거에서 추가·삭제 여부를 확인하세요.",loading:false) }
-            else { WorkbookGrid(pane:before ? "before" : "after",cells:cells,rowStart:row,columnStart:column,rowCount:model.rowLimit,columnCount:model.columnLimit,selectedRow:coordinate?.row ?? 0,selectedColumn:coordinate?.column ?? 0,onSelect:{row,column in Task { await model.selectCell(row,column) }}).disabled(!model.ready || model.loadingRange) }
+            else { WorkbookGrid(pane:before ? "before" : "after",revealIntent:[model.scope,occurrence,id,String(model.revealGeneration)].joined(separator:"|"),cells:cells,rowStart:row,columnStart:column,rowCount:model.rowLimit,columnCount:model.columnLimit,selectedRow:coordinate?.row ?? 0,selectedColumn:coordinate?.column ?? 0,onSelect:{row,column in Task { await model.selectCell(row,column) }}).disabled(!model.ready || model.loadingRange) }
         }.frame(minWidth:280,maxWidth:.infinity,maxHeight:.infinity)
     }
     private var changesPane: some View {
@@ -847,7 +868,12 @@ private struct WorkbookInspector: View {
                     }.disabled(!model.ready || model.loadingCell || model.loadingHistory)
                     if !model.cellHistory.isEmpty { Text("\(model.cellHistoryPageNumber)페이지 · 최대 최근 128페이지 되돌리기").font(.caption2).foregroundStyle(.secondary) }
                     ForEach(Array(model.cellHistory.enumerated()),id:\.offset) { _, event in
-                        VStack(alignment:.leading,spacing:3) { Text(verbatim:model.versionLabel(event["revision_occurrence_id"].string)).lineLimit(2); Text(verbatim:event["cell"]["address"].string + " · " + event["cell"]["value"].string); Text(verbatim:event["availability"].string + " · " + WorkbookLabels.association(event["association"].string)); Text(verbatim:event["alignment_method"].string) }.font(.caption).textSelection(.enabled)
+                        VStack(alignment:.leading,spacing:3) {
+                            Text(verbatim:model.versionLabel(event["revision_occurrence_id"].string)).lineLimit(2)
+                            Text(verbatim:(event["cell"]["address"].string.isEmpty ? event["address"].string : event["cell"]["address"].string) + (event["cell"].isNull ? "" : " · " + event["cell"]["value"].string))
+                            Text(verbatim:WorkbookLabels.availability(event["availability"].string) + " · " + WorkbookLabels.association(event["association"].string))
+                            Text(verbatim:WorkbookLabels.method(event["alignment_method"].string))
+                        }.font(.caption).textSelection(.enabled)
                     }
                 }
                 Divider()
@@ -1062,6 +1088,7 @@ private struct WorkbookPublishSheet: View {
 }
 
 private enum WorkbookLabels {
+    static func availability(_ value: String) -> String { switch value { case "not_materialized": return "저장된 셀 관측 없음 · 빈 셀·삭제로 단정하지 않음"; case "correspondence_unresolved": return "대응 미확정 · 다른 셀로 건너뛰지 않음"; case "available": return "저장된 관측 있음"; default: return value } }
     static func association(_ value: String) -> String { switch value { case "exact": return "원문 일치"; case "inferred": return "추정 대응"; case "needs_review": return "대응 확인 필요"; default: return value.isEmpty ? "대응 미확정" : value } }
     static func method(_ value: String) -> String { switch value { case "unique_nonempty_first_column_key": return "첫 열의 중복 없는 값으로 추정"; case "unique_exact_row_content": return "중복 없는 행 내용의 일치로 추정"; case "unique_exact_sheet_name": return "중복 없는 시트 이름으로 추정"; case "unique_exact_sheet_content": return "중복 없는 시트 내용으로 추정"; case "physical_row_fallback": return "같은 물리 행 번호 · 대응 확인 필요"; case "unmatched_row_observation": return "행 대응을 찾지 못함"; case "unmatched_sheet_observation": return "시트 대응을 찾지 못함"; case "selected_physical_cell": return "직접 선택한 물리 셀"; case "no_unambiguous_cell_lineage": return "모호하지 않은 셀 이력을 찾지 못함"; default: return value } }
     static func kind(_ value: String) -> String { switch value { case "formula": return "수식 변경"; case "cache_availability": return "저장 결과 유무 변경"; case "calculation_settings": return "저장된 계산 설정 변경"; case "stored_value": return "저장값 변경"; case "value_type": return "값 유형 변경"; case "number_format": return "숫자 형식 변경"; case "style": return "기본 서식 변경"; case "visibility": return "숨김 상태 변경"; case "cell_observation": return "셀 관측 차이"; case "row_position": return "행 위치 변경"; case "row_correspondence": return "행 대응 확인"; case "sheet_name": return "시트 이름 변경"; case "sheet_position": return "시트 순서 변경"; case "sheet_visibility": return "시트 숨김 변경"; case "sheet_dimensions": return "행·열 메타 변경"; case "sheet_observation": return "시트 관측 차이"; case "merges": return "병합 범위 변경"; case "date_system": return "날짜 기준 변경"; default: return value } }
@@ -1072,6 +1099,7 @@ private enum WorkbookLabels {
 // workbook. Formula text remains plain text and is never evaluated by AppKit.
 struct WorkbookGrid: NSViewRepresentable {
     let pane: String
+    let revealIntent: String
     let cells: [JSON]
     let rowStart: Int
     let columnStart: Int
@@ -1125,7 +1153,7 @@ struct WorkbookGrid: NSViewRepresentable {
             if value.selectedRow >= value.rowStart,value.selectedRow < value.rowStart+value.rowCount,value.selectedColumn >= value.columnStart,value.selectedColumn < value.columnStart+value.columnCount {
                 let row = value.selectedRow-value.rowStart,column = value.selectedColumn-value.columnStart+1
                 table.selectRowIndexes(IndexSet(integer:row),byExtendingSelection:false)
-                let reveal = "\(value.rowStart):\(value.columnStart):\(value.selectedRow):\(value.selectedColumn)"
+                let reveal = "\(value.revealIntent):\(value.rowStart):\(value.columnStart):\(value.selectedRow):\(value.selectedColumn)"
                 if lastRevealed != reveal {
                     table.scrollRowToVisible(row); table.scrollColumnToVisible(column)
                     // AppKit aligns the selected data column to x=0 and can
@@ -1304,6 +1332,8 @@ struct WorkbookGrid: NSViewRepresentable {
                 checkedMoves.append(["before_address":expected["before_address"].string,"after_address":expected["after_address"].string,"panes":panes])
             }
             if !checkedMoves.isEmpty { checks["independent_expected_moves"] = checkedMoves }
+            if request["require_before_only_history"].bool { checks["before_only_history"] = try await exerciseBeforeOnlyHistory(model,request:request,window:window,folder:folder) }
+            if request["exercise_same_address_reveal"].bool || request["require_same_address_reveal"].bool { checks["same_address_reveal"] = try await exerciseSameAddressReveal(model,request:request,window:window,folder:folder) }
             checks["paging"] = try await exercisePaging(model,request:request)
 
             // The old request is cancelled while its owned Bridge process is
@@ -1396,6 +1426,89 @@ struct WorkbookGrid: NSViewRepresentable {
             checks["history_single_page"] = true
         }
         return checks
+    }
+    private static func exerciseSameAddressReveal(_ model: WorkbookModel,request: JSON,window: NSWindow,folder: URL) async throws -> [String:Any] {
+        let address = request["same_address_reveal_address"].string.isEmpty ? "B2" : request["same_address_reveal_address"].string
+        guard WorkbookGrid.parseAddress(address) != nil else { throw BridgeError(code:"WORKBOOK_SMOKE_REVEAL_ADDRESS",message:"다시 표시할 셀 검증 주소가 올바르지 않습니다.") }
+        if let first = model.revisions.first,let last = model.revisions.last { await model.changeVersions(before:first["revision_occurrence_id"].string,after:last["revision_occurrence_id"].string) }
+        await model.changeMode("history")
+        var first: JSON?,second: JSON?,firstPage = 1,secondPage = 1,pages = 0
+        while second == nil,pages < 100 {
+            pages += 1
+            for change in model.changes where change["before_address"].string == address && change["after_address"].string == address {
+                if let selected = first {
+                    if change["change_id"].string != selected["change_id"].string,change["from_revision_occurrence_id"].string == selected["from_revision_occurrence_id"].string,change["to_revision_occurrence_id"].string == selected["to_revision_occurrence_id"].string { second = change; secondPage = model.changePageNumber; break }
+                } else { first = change; firstPage = model.changePageNumber }
+            }
+            if second != nil || model.changeCursor.isEmpty { break }
+            await model.loadChanges(next:true)
+            guard model.changesFailure.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_REVEAL_CHANGES",message:model.changesFailure) }
+        }
+        guard let first,let second else {
+            if request["require_same_address_reveal"].bool { throw BridgeError(code:"WORKBOOK_SMOKE_REVEAL_FIXTURE",message:"동일 버전 쌍의 같은 셀 주소에서 두 변경을 확인할 원본이 없습니다: " + address) }
+            return ["not_applicable":"no_two_changes_at_same_address_in_same_occurrence_pair"]
+        }
+        while model.changePageNumber > firstPage { await model.loadChanges(previous:true); guard model.changesFailure.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_REVEAL_PAGE",message:model.changesFailure) } }
+        await model.chooseChange(first["change_id"].string)
+        try await Task.sleep(nanoseconds:250_000_000)
+        _ = try assertPanes(model,window:window)
+        var scrollPositions: [String:CGFloat] = [:]
+        for pane in ["before","after"] {
+            guard let table = grid(window.contentView,pane:pane),let state = table.dataSource as? WorkbookGrid.Coordinator else { throw BridgeError(code:"WORKBOOK_SMOKE_REVEAL_GRID",message:"다시 표시 검증의 실제 셀 그리드가 없습니다.") }
+            table.scrollRowToVisible(state.parent.rowCount-1)
+        }
+        try await Task.sleep(nanoseconds:100_000_000)
+        for pane in ["before","after"] {
+            guard let table = grid(window.contentView,pane:pane),let state = table.dataSource as? WorkbookGrid.Coordinator else { throw BridgeError(code:"WORKBOOK_SMOKE_REVEAL_GRID",message:"실제 셀 그리드가 없습니다.") }
+            let row = state.parent.selectedRow-state.parent.rowStart,column = state.parent.selectedColumn-state.parent.columnStart+1
+            guard !table.visibleRect.intersects(table.frameOfCell(atColumn:column,row:row)) else { throw BridgeError(code:"WORKBOOK_SMOKE_REVEAL_SCROLL",message:"검증할 셀을 화면 밖으로 스크롤하지 못했습니다.") }
+            scrollPositions[pane] = table.visibleRect.minY
+        }
+        // A real passive viewport read must not override the user's scroll.
+        await model.loadRange(); try await Task.sleep(nanoseconds:200_000_000)
+        for pane in ["before","after"] {
+            guard let table = grid(window.contentView,pane:pane),let previous = scrollPositions[pane],abs(table.visibleRect.minY-previous) < 1 else { throw BridgeError(code:"WORKBOOK_SMOKE_REVEAL_PASSIVE",message:"수동 새로고침이 사용자의 스크롤 위치를 바꿨습니다.") }
+        }
+        while model.changePageNumber < secondPage { await model.loadChanges(next:true); guard model.changesFailure.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_REVEAL_PAGE",message:model.changesFailure) } }
+        let generation = model.revealGeneration
+        await model.chooseChange(second["change_id"].string)
+        try await Task.sleep(nanoseconds:250_000_000)
+        guard model.revealGeneration > generation,model.beforeAddress == address,model.afterAddress == address,model.selectedChangeID == second["change_id"].string else { throw BridgeError(code:"WORKBOOK_SMOKE_REVEAL_INTENT",message:"같은 주소의 다른 변경이 새 표시 요청으로 처리되지 않았습니다.") }
+        let panes = try assertPanes(model,window:window)
+        try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-same-address-reveal.png"))
+        return ["address":address,"first_change_id":first["change_id"].string,"second_change_id":second["change_id"].string,"same_occurrence_pair":true,"passive_refresh_preserves_manual_scroll":true,"explicit_same_address_navigation_reveals_cell":true,"panes":panes]
+    }
+    private static func exerciseBeforeOnlyHistory(_ model: WorkbookModel,request: JSON,window: NSWindow,folder: URL) async throws -> [String:Any] {
+        let address = request["before_only_history_address"].string.isEmpty ? "B2" : request["before_only_history_address"].string
+        if let first = model.revisions.first,let last = model.revisions.last { await model.changeVersions(before:first["revision_occurrence_id"].string,after:last["revision_occurrence_id"].string) }
+        await model.changeMode("history")
+        func matches(_ change: JSON) -> Bool { change["before_address"].string == address && change["after_address"].string.isEmpty }
+        var change = model.changes.first(where:matches),pages = 1
+        while change == nil,!model.changeCursor.isEmpty,pages < 100 {
+            await model.loadChanges(next:true); pages += 1; change = model.changes.first(where:matches)
+            guard model.changesFailure.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_BEFORE_HISTORY_CHANGES",message:model.changesFailure) }
+        }
+        guard let change else { throw BridgeError(code:"WORKBOOK_SMOKE_BEFORE_HISTORY_FIXTURE",message:"이전 쪽에만 관측된 셀 변경 원본이 없습니다: " + address) }
+        await model.chooseChange(change["change_id"].string)
+        guard let anchor = model.cellHistoryAnchor,anchor.occurrence == change["from_revision_occurrence_id"].string,anchor.sheet == change["from_sheet_id"].string,anchor.address == address,model.afterAddress.isEmpty,!model.beforeCell.isNull else { throw BridgeError(code:"WORKBOOK_SMOKE_BEFORE_HISTORY_ANCHOR",message:"이전 쪽 셀을 이력의 원본 근거로 선택하지 못했습니다.") }
+        await model.loadCellHistory()
+        var sourceObserved = false,laterMissing = false,historyPages = 0
+        repeat {
+            historyPages += 1
+            guard model.cellHistoryAnchor == anchor,model.cellHistoryFailure.isEmpty,!model.cellHistory.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_BEFORE_HISTORY_READ",message:model.cellHistoryFailure.isEmpty ? "이전 셀 근거의 이력이 비어 있습니다." : model.cellHistoryFailure) }
+            for event in model.cellHistory {
+                guard model.revisions.contains(where:{$0["revision_occurrence_id"].string == event["revision_occurrence_id"].string}) else { throw BridgeError(code:"WORKBOOK_SMOKE_BEFORE_HISTORY_SCOPE",message:"고정 보고서 밖의 셀 이력이 표시됐습니다.") }
+                if event["revision_occurrence_id"].string == anchor.occurrence,event["cell"]["address"].string == address,!event["cell"].isNull { sourceObserved = true }
+                if event["revision_occurrence_id"].string == change["to_revision_occurrence_id"].string,event["availability"].string == "not_materialized",event["cell"].isNull,!event["address"].string.isEmpty { laterMissing = true }
+            }
+            if sourceObserved && laterMissing || model.cellHistoryCursor.isEmpty || historyPages >= 100 { break }
+            await model.loadCellHistory(next:true)
+        } while true
+        guard sourceObserved,laterMissing else { throw BridgeError(code:"WORKBOOK_SMOKE_BEFORE_HISTORY_TRUTH",message:"이전 셀 관측과 이후의 명시된 관측 공백을 이력에서 확인하지 못했습니다.") }
+        try await Task.sleep(nanoseconds:250_000_000)
+        let panes = try assertPanes(model,window:window)
+        try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-before-only-history.png"))
+        return ["address":address,"anchor_occurrence":anchor.occurrence,"anchor_sheet":anchor.sheet,"source_observation_present":true,"later_hole_explicitly_not_materialized":true,"history_pages":historyPages,"project_report_scope_preserved":true,"panes":panes]
     }
     private static func exerciseModeInterval(_ model: WorkbookModel,request: JSON) async throws -> [String:Any] {
         guard model.revisions.count >= 3,let first = model.revisions.first,let last = model.revisions.last else { return ["not_applicable":"fewer_than_three_versions"] }
