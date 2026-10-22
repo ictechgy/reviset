@@ -387,7 +387,14 @@ struct ImportFileIdentity: Equatable {
     let sha256:String
     let bytes:Int
     static func capture(_ url:URL)throws->ImportFileIdentity {
-        let handle=try FileHandle(forReadingFrom:url);defer{try? handle.close()}
+        // Reject special files atomically; opening a FIFO for reading otherwise
+        // waits for a writer before the import sheet can report any error.
+        let descriptor=Darwin.open(url.path,O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard descriptor>=0 else{throw BridgeError(code:"FILE_INPUT",message:"일반 원본 파일을 열지 못했습니다.")}
+        let handle=FileHandle(fileDescriptor:descriptor,closeOnDealloc:true);defer{try? handle.close()}
+        var metadata=stat()
+        guard Darwin.fstat(descriptor,&metadata)==0,metadata.st_mode & S_IFMT == S_IFREG else{throw BridgeError(code:"FILE_INPUT",message:"일반 원본 파일만 가져올 수 있습니다.")}
+        guard metadata.st_size<=512*1024*1024 else{throw BridgeError(code:"FILE_LIMIT",message:"파일당 512 MiB 이하를 지원합니다.")}
         var digest=SHA256(),count=0
         while let data=try handle.read(upToCount:1024*1024),!data.isEmpty {
             count += data.count

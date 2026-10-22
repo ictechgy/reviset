@@ -155,7 +155,7 @@ const ODS_CELL_ATTRIBUTES = new Map<string,Set<string>>([
   ...['value-type','value','string-value','boolean-value','date-value','time-value','currency'].map(name => [name,new Set([ODF_NS + 'office:1.0',...(name === 'value-type' ? ['urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0'] : [])])] as [string,Set<string>]),
   ...['formula','number-columns-repeated','number-columns-spanned','number-rows-spanned','number-matrix-columns-spanned','number-matrix-rows-spanned','matrix-covered'].map(name => [name,new Set([ODF_NS + 'table:1.0'])] as [string,Set<string>]),
 ]);
-function xmlNamespaceMatches(uri: string,expected: string) { return !uri || (expected === 'xlsx' ? MAIN_NS.has(uri) : uri === expected); }
+function xmlNamespaceMatches(uri: string,expected: string) { return expected === 'xlsx' ? MAIN_NS.has(uri) : uri === expected; }
 function rootContext(name: string,uri: string): XmlContext | null {
   let domain: XmlContext['domain'] | undefined, expected = '';
   if (['workbook','worksheet','sst','styleSheet'].includes(name)) { domain = 'xlsx'; expected = 'xlsx'; }
@@ -212,7 +212,7 @@ function parseXml(bytes: Uint8Array, state: State): Element {
 function appendCellText(previous: string,next: string): string { if (next.length > WORKBOOK_LIMITS.cellText - previous.length) fail('WORKBOOK_LIMIT','Expanded primary cell text exceeds limit'); return previous + next; }
 function xlsxPrimaryText(container: Element | undefined,gaps: WorkbookGapData[],sheet_id?: string): string {
   let result = '';
-  const requireMain = (node: Element) => { if (node.namespace && !MAIN_NS.has(node.namespace)) fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary spreadsheet text'); };
+  const requireMain = (node: Element) => { if (!MAIN_NS.has(node.namespace)) fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary spreadsheet text'); };
   const primary = (node: Element) => { requireMain(node); if (node.children.length) fail('INVALID_WORKBOOK','Nested elements in XLSX primary text'); for (const item of node.content) if (typeof item === 'string') result = appendCellText(result,item); };
   for (const child of container?.children ?? []) {
     if (child.name === 't') primary(child);
@@ -392,7 +392,7 @@ function odsPrimaryText(paragraphs: Element[],gaps: WorkbookGapData[],sheet_id?:
   let result = '';
   const write = (value: string) => { result = appendCellText(result,value); };
   const visit = (node: Element) => {
-    if (node.namespace && node.namespace !== ODF_NS + 'text:1.0') {
+    if (node.namespace !== ODF_NS + 'text:1.0') {
       if (['p','span','s','tab','line-break','ruby','ruby-base','ruby-text'].includes(node.name)) fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary ODS text');
       gap(gaps,'rich_text_extensions','Embedded/foreign rich-text annotations are excluded from primary cell text.',sheet_id); return;
     }

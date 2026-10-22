@@ -84,14 +84,14 @@ test('XML declarations/entities/depth, malformed addresses, relationships and du
   await assert.rejects(extractWorkbook(xlsxFixture('<!DOCTYPE worksheet [<!ENTITY x "boom">]><worksheet><sheetData/></worksheet>'),'xlsx'),code('XML_DTD'));
   await assert.rejects(extractWorkbook(xlsxFixture('<sheetData>' + '<x>'.repeat(101) + '</x>'.repeat(101) + '</sheetData>'),'xlsx'),code('XML_DEPTH'));
   for (const sheet of ['<sheetData><row r="1"><c r="A0"/></row></sheetData>','<sheetData><row r="1"><c r="A1"/><c r="A1"/></row></sheetData>','<sheetData><row r="1"><c r="XFE1"/></row></sheetData>','<sheetData><row r="1"><c r="A1"><v>1</v><v>2</v></c></row></sheetData>']) await assert.rejects(extractWorkbook(xlsxFixture(sheet),'xlsx'));
-  await assert.rejects(extractWorkbook(xlsxFixture('<sheetData/>',{relationships:'<Relationships><Relationship Id="sheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="../../../outside"/></Relationships>'}),'xlsx'),code('INVALID_WORKBOOK'));
+  await assert.rejects(extractWorkbook(xlsxFixture('<sheetData/>',{relationships:'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="sheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="../../../outside"/></Relationships>'}),'xlsx'),code('INVALID_WORKBOOK'));
 });
 
 test('external links never open; missing caches, scripts, encrypted ODS and binary XLS are explicit',async () => {
-  const external = '<Relationships><Relationship Id="remote" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" TargetMode="External" Target="file:///private/not-opened"/></Relationships>';
+  const external = '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="remote" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" TargetMode="External" Target="file:///private/not-opened"/></Relationships>';
   const observed = await extractWorkbook(xlsxFixture('<sheetData/>',{extra:{'xl/worksheets/_rels/sheet1.xml.rels':external}}),'xlsx'); assert.ok(observed.coverage_gaps.some(gap => gap.feature === 'external_relationships'));
   await assert.rejects(extractWorkbook(xlsxFixture('<sheetData/>',{extra:{'xl/vbaProject.bin':new Uint8Array([1])}}),'xlsx'),code('UNSUPPORTED_WORKBOOK'));
-  await assert.rejects(extractWorkbook(odsFixture('<table:table-row/>',{manifest:'<manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:encryption-data/></manifest>'}),'ods'),code('ENCRYPTED_WORKBOOK'));
+  await assert.rejects(extractWorkbook(odsFixture('<table:table-row/>',{manifest:'<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:encryption-data/></manifest:manifest>'}),'ods'),code('ENCRYPTED_WORKBOOK'));
   await assert.rejects(extractWorkbook(odsFixture('<table:table-row/>',{extra:{'Scripts/python/x.py':'print(1)'}}),'ods'),code('UNSUPPORTED_WORKBOOK'));
   await assert.rejects(extractWorkbook(new Uint8Array([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]),'xlsx'),code('UNSUPPORTED_WORKBOOK'));
 });
@@ -104,7 +104,7 @@ test('workbook import cooperatively cancels before parsing and during dense CSV 
 test('advanced XLSX and ODS features produce individually named coverage gaps',async () => {
   const xlsx = await extractWorkbook(xlsxFixture('<sheetData><row r="1"><c r="A1"><f t="array" ref="A1">1</f><v>1</v></c></row></sheetData><conditionalFormatting sqref="A1"/><dataValidations/><tableParts/>',{extra:{'xl/charts/chart1.xml':'<chart/>','xl/pivotTables/pivot1.xml':'<pivot/>','xl/connections.xml':'<connections/>','xl/externalLinks/link1.xml':'<externalLink/>','xl/tables/table1.xml':'<table/>'}}),'xlsx');
   const xlsxGaps = new Set([...xlsx.coverage_gaps,...xlsx.sheets[0].coverage_gaps].map(gap => gap.feature)); for (const name of ['charts','pivots','connections','external_links','structured_tables','conditional_formatting','data_validation','shared_array_formulas']) assert.ok(xlsxGaps.has(name),name);
-  const ods = await extractWorkbook(odsFixture('<table:table table:name="Sheet1"><table:named-expressions/><table:data-pilot-tables/><table:database-ranges/><table:content-validations/><table:table-row><table:table-cell table:content-validation-name="v1" office:value-type="float" office:value="1"/></table:table-row></table:table>',{manifest:'<manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:media-type="application/vnd.oasis.opendocument.chart" manifest:full-path="Object1/"/></manifest>'}),'ods');
+  const ods = await extractWorkbook(odsFixture('<table:table table:name="Sheet1"><table:named-expressions/><table:data-pilot-tables/><table:database-ranges/><table:content-validations/><table:table-row><table:table-cell table:content-validation-name="v1" office:value-type="float" office:value="1"/></table:table-row></table:table>',{manifest:'<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:media-type="application/vnd.oasis.opendocument.chart" manifest:full-path="Object1/"/></manifest:manifest>'}),'ods');
   const odsGaps = new Set([...ods.coverage_gaps,...ods.sheets[0].coverage_gaps].map(gap => gap.feature)); for (const name of ['charts','pivots','defined_names','structured_tables','data_validation']) assert.ok(odsGaps.has(name),name);
 });
 
@@ -114,7 +114,7 @@ test('repeated long semantic styles are interned once without imposing an artifi
 });
 
 test('calculation flags are known bounded metadata and never arbitrary unpaged XML attributes',async () => {
-  const workbook = '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="sheet1"/></sheets><calcPr calcMode="manual" privatePayload="' + 'x'.repeat(4096) + '"/></workbook>';
+  const workbook = '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="sheet1"/></sheets><calcPr calcMode="manual" privatePayload="' + 'x'.repeat(4096) + '"/></workbook>';
   const observed = await extractWorkbook(xlsxFixture('<sheetData/>',{workbook}),'xlsx'); assert.deepEqual(observed.calc_flags,{calcMode:'manual'}); assert.ok(observed.coverage_gaps.some(gap => gap.feature === 'calculation_metadata'));
   await assert.rejects(extractWorkbook(xlsxFixture('<sheetData/>',{workbook:workbook.replace('calcMode="manual"','calcMode="' + 'x'.repeat(129) + '"')}),'xlsx'),code('WORKBOOK_LIMIT'));
 });
@@ -310,4 +310,16 @@ test('allocated XLSX cells default to style0 instead of inheriting row/column st
   assert.deepEqual(diffWorkbooks(revision(before,0),revision(after,1)),[]);
   const rowDefault = await extractWorkbook(source(2,undefined,2),'xlsx'); assert.equal(cell(rowDefault,'B2').number_format,'General'); assert.equal(style(rowDefault,'B2')['font.b'],undefined);
   const explicitZero = await extractWorkbook(source(2,0,2),'xlsx'), explicitDate = await extractWorkbook(source(1,2,1),'xlsx'); assert.equal(cell(explicitZero,'B2').number_format,'General'); assert.equal(cell(explicitDate,'B2').number_format,'mm-dd-yy'); assert.equal(style(explicitDate,'B2')['font.b'],'true'); const positive = diffWorkbooks(revision(explicitZero,0),revision(explicitDate,1)); assert.ok(positive.some(item => item.kind === 'number_format')); assert.ok(positive.some(item => item.kind === 'style'));
+});
+
+test('default namespace undeclaration cannot make foreign XLSX values/formulas/inline text authoritative',async () => {
+  for (const content of ['<f xmlns="">1+1</f><v>2</v>','<f>1+1</f><v xmlns="">999</v>','<is xmlns=""><t>fake</t></is>','<is><t xmlns="">fake</t></is>']) await assert.rejects(extractWorkbook(xlsxFixture(`<sheetData><row r="1"><c r="A1"${content.includes('<is') ? ' t="inlineStr"' : ''}>${content}</c></row></sheetData>`),'xlsx'),code('UNSUPPORTED_NAMESPACE'));
+  await assert.rejects(extractWorkbook(xlsxFixture('<worksheet><sheetData/></worksheet>'),'xlsx'),code('UNSUPPORTED_NAMESPACE'));
+  const valid = await extractWorkbook(xlsxFixture('<cols><col min="1" max="1" hidden="1"/></cols><sheetData><row r="1" hidden="1"><c r="A1" s="0" t="n"><f>1+1</f><v>2</v></c></row></sheetData>',{styles:workbookStyles}),'xlsx'); assert.equal(cell(valid,'A1').value,'2'); assert.equal(cell(valid,'A1').hidden_row,true); assert.equal(cell(valid,'A1').hidden_column,true); assert.equal(cell(valid,'A1').number_format,'General');
+});
+
+test('empty-namespace ODS table/text lookalikes reject while qualified aliases keep authority',async () => {
+  const invalid = ['<table-row xmlns=""><table:table-cell office:value-type="float" office:value="999"/></table-row>','<table:table-row><table-cell xmlns="" office:value-type="float" office:value="999"/></table:table-row>','<table:table-row><table:table-cell office:value-type="string"><p xmlns="">fake</p></table:table-cell></table:table-row>','<table:table-row><table:table-cell office:value-type="string"><text:p><s xmlns="" text:c="5"/></text:p></table:table-cell></table:table-row>'];
+  for (const xml of invalid) await assert.rejects(extractWorkbook(odsFixture(xml),'ods'),code('UNSUPPORTED_NAMESPACE'));
+  const parts = unzipSync(odsFixture('<table:table-row><table:table-cell office:value-type="float" office:value="7"/></table:table-row>')); parts['content.xml'] = strToU8(new TextDecoder().decode(parts['content.xml']).replace('<table:table table:name="Sheet1">','<table xmlns="" table:name="Sheet1">').replace('</table:table>','</table>')); await assert.rejects(extractWorkbook(zipSync(parts),'ods'),code('UNSUPPORTED_NAMESPACE'));
 });

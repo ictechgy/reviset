@@ -26,7 +26,8 @@ function reportSerialization<T>(serialize:()=>T):T {
 
 async function regularFile(path: string, expected?: string, maxBytes=MAX_WORKBOOK_INPUT_BYTES): Promise<Buffer> {
   let handle; try {
-    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); const stat = await handle.stat();
+    // A FIFO must not block open before we can reject its descriptor type.
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); const stat = await handle.stat();
     if (!stat.isFile() || stat.size > maxBytes) throw new DocverError('WORKBOOK_INPUT_LIMIT', `Workbook source/stage must be a regular file of at most ${maxBytes/(1024*1024)} MiB`);
     const chunks: Buffer[] = []; let size = 0; const digest = createHash('sha256');
     for await (const chunk of handle.createReadStream({ autoClose: false, highWaterMark: 1024 * 1024 })) { size += chunk.length; if (size > maxBytes) throw new DocverError('WORKBOOK_INPUT_LIMIT', `Workbook source/stage grew beyond ${maxBytes/(1024*1024)} MiB`); chunks.push(chunk); digest.update(chunk); }

@@ -45,5 +45,13 @@ import SwiftUI
   try Data("abd".utf8).write(to:aURL)
   try require(try ImportFileIdentity.capture(aURL) != a.members[0].identity,"Same-length file mutation must change digest")
   try require((a.createPayload["expected_sha256"] as? [String])==["ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"],"Create keeps the reviewed selection identity after external mutation")
+  let pipe=root.appendingPathComponent("named-pipe.xlsx")
+  try require(mkfifo(pipe.path,0o600)==0,"FIFO fixture creation")
+  let began=Date()
+  do{_=try ImportFileIdentity.capture(pipe);throw NSError(domain:"AcceptedFIFO",code:1)}catch let error as BridgeError{try require(error.code=="FILE_INPUT","FIFO must fail as a nonregular input")}
+  try require(Date().timeIntervalSince(began)<1,"FIFO selection must not wait for a writer")
+  let link=root.appendingPathComponent("source-link.pdf")
+  try FileManager.default.createSymbolicLink(at:link,withDestinationURL:aURL)
+  do{_=try ImportFileIdentity.capture(link);throw NSError(domain:"AcceptedSymlink",code:1)}catch let error as BridgeError{try require(error.code=="FILE_INPUT","Selected identity must not follow symlinks")}
  }
 }

@@ -31,6 +31,22 @@ async function fixture(inputs: string[] = ['id,amount\na,100\n','id,amount\na,12
   return {root,paths,store,service,draft,stage,report,q,close:async()=>{store.close();await rm(root,{recursive:true,force:true});}};
 }
 
+test('the real bridge rejects a writerless FIFO promptly without retaining a workbook, report or asset', {skip: process.platform === 'win32'}, async()=>{
+  const {spawnSync}=await import('node:child_process'),root=await mkdtemp(join(tmpdir(),'docver-workbook-fifo-')),path=join(root,'named-pipe.xlsx'),library=join(root,'library');
+  try {
+    const fifo=spawnSync('/usr/bin/mkfifo',[path],{encoding:'utf8',timeout:2000});assert.ifError(fifo.error);assert.equal(fifo.status,0,fifo.stderr);
+    // A blocking O_RDONLY open would wait forever for a writer. The child
+    // timeout makes that regression fail without hanging the test runner.
+    const result=spawnSync(process.execPath,['--import','tsx',join(process.cwd(),'apps/bridge/main.ts'),'--root',library],{input:JSON.stringify({action:'workbookCreate',args:{title:'Nonregular input',revisions:[{label:'pipe',path}]}}),encoding:'utf8',timeout:8000});
+    assert.ifError(result.error);assert.equal(result.status,1,result.stderr);const response=JSON.parse(result.stdout);assert.equal(response.ok,false);assert.equal(response.error.code,'WORKBOOK_INPUT_LIMIT');
+    const store=new Store(library),service=new WorkbookService(store);try {
+      assert.deepEqual(service.projects(),[]);for(const table of ['workbook_reports_v1','workbook_runs_v1','workbook_cells_v1'])assert.equal(store.db.prepare('SELECT count(*) AS n FROM '+table).get()!.n,0);
+      assert.deepEqual(await readdir(join(library,'assets')).catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return [];throw error;}),[]);
+      const regular=join(root,'ordinary.csv'),bytes=Buffer.from('id,value\na,1\n');await writeFile(regular,bytes);const draft=await service.create('Regular control',[{label:'regular',path:regular,expected_sha256:byteHash(bytes)}]);assert.equal(draft.revisions[0].asset_id,'sha256:'+byteHash(bytes));
+    }finally{store.close();}
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
 test('workbook diff separates formulas, cached results, exact decimals, blanks, types, styles and hidden metadata without executing anything',()=>{
   const before = revision('before',[cell(1,1,'a'),cell(1,2,'10',{value_type:'number',formula:'SUM(C1:D1)',formula_dialect:'xlsx_a1',cached_result:'present',cache_freshness:'unknown'}),cell(1,3,'9007199254740993',{value_type:'number'}),cell(1,4,'1.0',{value_type:'number'}),cell(1,5,null,{value_type:'blank'}),cell(1,6,'x',{style:{'font.bold':'true'}})]);
   const after = revision('after',[cell(1,1,'a'),cell(1,2,'10',{value_type:'number'}),cell(1,3,'9007199254740992',{value_type:'number'}),cell(1,4,'1e0',{value_type:'number'}),cell(1,5,'0',{value_type:'number'}),cell(1,6,'x',{style:{'font.bold':'false'},hidden_row:true})]);
