@@ -279,8 +279,8 @@ struct ReorderConfirmation:Identifiable {
             guard committed["status"].string=="complete",!committed["report_id"].string.isEmpty else { throw BridgeError(code:"COMMIT_REPLY",message:"분석 저장 응답을 확인하지 못했습니다.") }
             bridge.releaseAnalysis(owner:token)
             analysisToken=nil;busy = false; committing = false
-            guard generation==selectionGeneration else { return }
             if committed["cleanup_pending"].bool { documentRecoveryWarning="분석 결과는 저장됐으며 임시 파일 정리를 확인해야 합니다." }
+            guard generation==selectionGeneration else { return }
             await openCompletedReport(id,snapshot:committed["report_id"].string,recovered:false)
         } catch {
             let runError=error
@@ -307,10 +307,10 @@ struct ReorderConfirmation:Identifiable {
             // report reads must not hold another window's analysis reservation.
             bridge.releaseAnalysis(owner:token)
             analysisToken=nil;committing=false;busy=false
-            guard generation==selectionGeneration else { return }
             if cleanupPending { recoveryWarning="분석 결과는 저장됐으며 임시 파일 정리를 확인해야 합니다." }
             if uncertain && recoveryWarning.isEmpty { recoveryWarning="이번 분석의 저장 여부를 확인하지 못했습니다. 저장 상태를 다시 확인해야 합니다." }
             if !recoveryWarning.isEmpty { documentRecoveryWarning=recoveryWarning }
+            guard generation==selectionGeneration else { return }
             if !recoveredReport.isEmpty {
                 await openCompletedReport(id,snapshot:recoveredReport,recovered:true)
                 return

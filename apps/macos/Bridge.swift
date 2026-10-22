@@ -22,7 +22,13 @@ struct JSON: @unchecked Sendable, Identifiable {
 }
 struct BridgeError: LocalizedError {
     var code: String; var message: String
-    var errorDescription: String? { message }
+    var errorDescription: String? {
+        switch code {
+        case "FILE_LIMIT": return "파일당 512 MiB 이하를 지원합니다."
+        case "INPUT_NOT_REGULAR": return "일반 파일만 가져올 수 있습니다. 링크·폴더·특수 파일은 지원하지 않습니다."
+        default: return message
+        }
+    }
 }
 // Read-only range/page queries can be superseded by another selection. Each request
 // owns its process so cancelling one query never terminates another query or analysis.

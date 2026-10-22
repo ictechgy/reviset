@@ -15,6 +15,7 @@ process.stdin.on('end',()=>{
   else if(action==='reports')value=[{report_id:'retained'},{report_id:'saved_'+mode}];
   else if(action==='view')value={project_id:project,report_id:args.report_id,revisions,matches:[],quality_counts:{}};
   else if(action==='changes')value=[];
+  else if(action==='create')value={project_id:'created-input'};
   else if(action==='recover'){
     if(!args.run_id)error={code:'CLEANUP_FAILURE',message:'controlled startup staging cleanup failure'};
     else value=[];
@@ -25,11 +26,12 @@ process.stdin.on('end',()=>{
     if(mode==='owned-failure'||mode==='unowned-failure'){delay=40;error={code:'ANALYZE_FAILURE',message:'controlled analyze failure'};}
     else value={analysis_run_id:run,project_id:project,report_id:'staged_'+mode};
   }else if(action==='commit'){
-    if(mode==='cleanup')value={report_id:'saved_'+mode,status:'complete',cleanup_pending:true};
+    if(mode==='cleanup'||mode==='superseded-cleanup'){value={report_id:'saved_'+mode,status:'complete',cleanup_pending:true};if(mode==='superseded-cleanup')delay=300;}
     else if(mode==='normal')value={report_id:'saved_'+mode,status:'complete',cleanup_pending:false};
+    else if(mode==='superseded-unknown'){setTimeout(()=>process.exit(71),300);return;}
     else process.exit(71); // Simulate a reply lost after the commit boundary.
   }else if(action==='runStatus'){
-    if(mode==='unknown')error={code:'STATUS_UNAVAILABLE',message:'controlled run status unavailable'};
+    if(mode==='unknown'||mode==='superseded-unknown')error={code:'STATUS_UNAVAILABLE',message:'controlled run status unavailable'};
     else value={project_id:mode==='wrong-scope'?'foreign':project,analysis_run_id:args.analysis_run_id,status:mode==='noncommitted'?'running':mode==='partial'?'partial':'success',report_id:mode==='noncommitted'?null:'saved_'+mode,cleanup_pending:mode==='lost-cleanup'};
   }else if(action==='workbookProjects')value=[];
   else if(action==='workbookReports')value=[{report_id:'workbook-report'}];

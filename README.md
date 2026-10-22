@@ -98,6 +98,7 @@ A `latest` query resolves to a fixed report ID in the response. Use that ID for 
 ## Support and limits
 
 - Supported inputs: `.pptx`, `.pdf`, `.xlsx`, `.ods`, and UTF-8 comma-separated CSV. Legacy `.ppt`/`.xls` and encrypted files are outside the supported scope.
+- Inputs must be directly selected regular files; final-component symlinks and special files are rejected in the app and document CLI. PPTX packages require consistent ZIP headers, sizes and CRCs, UTF-8 names, and stored or deflated members; ZIP64 and noncanonical paths are unsupported.
 - PDF strikethrough annotations are observations. Flattened lines, covering boxes, and OCR associations are inferred. Occlusion or an OCR miss does not establish semantic deletion.
 - PDF table extraction does not recover original PPTX cell identifiers. Vision document table structure requires macOS 26 or later; earlier supported systems provide general OCR and an unsupported-structure status.
 - Formulas, macros, and external links are not executed or recalculated. Saved formula results can be absent or stale.

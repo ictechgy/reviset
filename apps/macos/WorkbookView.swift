@@ -1349,7 +1349,14 @@ struct WorkbookGrid: NSViewRepresentable {
             let column = index > 0 && index < table.tableColumns.count ? Int(table.tableColumns[index].identifier.rawValue) ?? parent.columnStart : max(parent.columnStart,min(parent.selectedColumn,parent.columnStart+parent.columnCount-1))
             select(table.selectedRow,column)
         }
-        @objc func clicked(_ table: NSTableView) { let row = table.clickedRow,column = table.clickedColumn; guard row >= 0,column > 0,column < table.tableColumns.count,let physicalColumn = Int(table.tableColumns[column].identifier.rawValue) else { return }; select(row,physicalColumn) }
+        @objc func clicked(_ table: NSTableView) {
+            let row = table.clickedRow,column = table.clickedColumn
+            guard row >= 0,column >= 0,column < table.tableColumns.count else { return }
+            let physicalColumn: Int
+            if column == 0 { physicalColumn = max(parent.columnStart,min(parent.selectedColumn,parent.columnStart+parent.columnCount-1)) }
+            else { guard let value = Int(table.tableColumns[column].identifier.rawValue) else { return }; physicalColumn = value }
+            select(row,physicalColumn)
+        }
     }
 }
 

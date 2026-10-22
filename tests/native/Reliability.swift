@@ -27,6 +27,10 @@ import AppKit
             }
             throw NSError(domain:"RequestDidNotStart-"+mode+"-"+action,code:1)
         }
+        for (code,expected) in [("FILE_LIMIT","파일당 512 MiB 이하를 지원합니다."),("INPUT_NOT_REGULAR","일반 파일만 가져올 수 있습니다. 링크·폴더·특수 파일은 지원하지 않습니다."),("OTHER_FAILURE","original diagnostic")] {
+            let error=BridgeError(code:code,message:"original diagnostic")
+            try require(error.localizedDescription==expected && error.code==code && error.message=="original diagnostic","NativeErrorLocalizationLostCodeOrMessage-"+code)
+        }
         try require(JSON(1.9).int==1 && JSON(-1.9).int == -1,"IntegerTruncationChanged")
         for value in [Double.infinity,-Double.infinity,Double.nan,1e300,-1e300,Double(Int.max)] {
             try require(JSON(value).int==0,"UnrepresentableNumberDidNotFallBack")
@@ -67,6 +71,18 @@ import AppKit
             if scenario=="unowned-failure" { try require(!calls.contains(where:{$0["action"].string=="recover"}),"FailureSweptUnownedRuns") }
             try require(!calls.contains(where:{$0["action"].string=="recover" && $0["args"]["run_id"].string.isEmpty}),"BroadRecoveryDuringRun-"+scenario)
             try require(model.reports.contains(where:{$0["report_id"].string=="saved_"+scenario}),"ReportListNotRefreshed-"+scenario)
+        }
+
+        for outcome in ["cleanup","unknown"] {
+            let mode="superseded-"+outcome
+            try control(mode);await model.selectProject("project",snapshot:"retained");model.documentRecoveryWarning=""
+            let running=Task { await model.run("project") }
+            try await waitFor(mode,"commit")
+            let created=try await model.create(title:"open import sheet",rows:[ImportRow(label:"input",urls:[URL(fileURLWithPath:"/synthetic.pdf")])])
+            model.report=JSON();try await model.refresh();model.projectID=created["project_id"].string
+            await model.run(model.projectID);await running.value
+            try require(!model.documentRecoveryWarning.isEmpty,"SupersededRunLostLibraryWarning-"+outcome)
+            try require(model.projectID==created["project_id"].string && model.report.isNull && !model.busy,"SupersededRunReopenedPriorSelection-"+outcome)
         }
 
         let workbook=WorkbookModel(bridge:model.bridge)

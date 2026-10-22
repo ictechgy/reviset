@@ -12,7 +12,7 @@ import PDFKit
         let document = PDFDocument()
         for index in 0..<3 {
             let page = PDFPage()
-            page.setBounds(CGRect(x: 0, y: 0, width: 500, height: 500), for: .mediaBox)
+            page.setBounds(CGRect(x: 0, y: 0, width: 500, height: 1500), for: .mediaBox)
             document.insert(page, at: index)
         }
         let url = folder.appendingPathComponent("source.pdf")
@@ -49,7 +49,79 @@ import PDFKit
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         try requirePage(3, "Explicit model navigation with zoom")
-        print("PASS production PDFKit page ownership: keys, destination links, previous-page actions, and explicit model navigation")
+        func settle() { RunLoop.current.run(until: Date().addingTimeInterval(0.03)) }
+        func select(_ page: Int, zoom: Double, path: String? = nil) {
+            host.rootView = OriginalPDFView(path: path ?? url.path, pageNumber: page, zoom: zoom, evidence: JSON(), page: JSON())
+            host.layoutSubtreeIfNeeded()
+            settle()
+        }
+        guard let clip = pdf.documentView?.enclosingScrollView?.contentView, let first = loaded.page(at: 0) else { throw NSError(domain: "PDFClipMissing", code: 1) }
+        func viewport(_ point: NSPoint) -> NSPoint {
+            var bounds = clip.bounds
+            bounds.origin = point
+            clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+            clip.enclosingScrollView?.reflectScrolledClipView(clip)
+            settle()
+            return clip.bounds.origin
+        }
+        var failures = [String]()
+        func requireViewport(_ expected: NSPoint, _ context: String) {
+            let actual = clip.bounds.origin
+            if abs(actual.x - expected.x) > 0.5 || abs(actual.y - expected.y) > 0.5 {
+                failures.append("\(context): viewport \(actual), expected \(expected)")
+            }
+            if abs(pdf.scaleFactor - 2) > 0.001 { failures.append("\(context): lost zoom") }
+        }
+        select(1, zoom: 2)
+        // Check both axes: a link may scroll horizontally after PageChanged,
+        // while PageDown can reset vertical bounds before that notification.
+        for position in [NSPoint(x: 100, y: 500), NSPoint(x: 100, y: 10000)] {
+            let beforeLink = viewport(position)
+            pdf.perform(PDFActionGoTo(destination: PDFDestination(page: second, at: CGPoint(x: 0, y: 200))))
+            settle()
+            try requirePage(1, "Zoomed destination link")
+            requireViewport(beforeLink, "Zoomed destination link")
+        }
+        let beforeKey = viewport(NSPoint(x: 100, y: 10000))
+        let pageDown = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "\u{f72d}", charactersIgnoringModifiers: "\u{f72d}", isARepeat: false, keyCode: 121)!
+        pdf.keyDown(with: pageDown)
+        settle()
+        try requirePage(1, "Zoomed PageDown")
+        requireViewport(beforeKey, "Zoomed PageDown")
+        // Ordinary within-page scrolling and destinations remain available.
+        let firstScroll = viewport(NSPoint(x: 100, y: 500))
+        let secondScroll = viewport(NSPoint(x: 120, y: 700))
+        if firstScroll == secondScroll { failures.append("Within-page scrolling stopped") }
+        pdf.go(to: PDFDestination(page: first, at: CGPoint(x: 40, y: 500)))
+        settle()
+        try requirePage(1, "Same-page destination")
+        if clip.bounds.origin == secondScroll { failures.append("Same-page destination stopped") }
+        // Invalidate a queued restoration when the model changes its selection.
+        _ = viewport(NSPoint(x: 100, y: 10000))
+        pdf.perform(PDFActionGoTo(destination: PDFDestination(page: second, at: .zero)))
+        select(2, zoom: 1)
+        try requirePage(2, "Explicit selection during pending viewport restoration")
+        if abs(pdf.scaleFactor - 1) > 0.001 { failures.append("Explicit zoom change was overwritten") }
+        select(3, zoom: 2)
+        try requirePage(3, "Explicit zoomed page selection")
+        let beforePrevious = viewport(NSPoint(x: 100, y: 700))
+        pdf.goToPreviousPage(nil)
+        settle()
+        try requirePage(3, "Zoomed previous-page action")
+        requireViewport(beforePrevious, "Zoomed previous-page action")
+        let replacement = PDFDocument()
+        let replacementPage = PDFPage()
+        replacementPage.setBounds(CGRect(x: 0, y: 0, width: 350, height: 700), for: .mediaBox)
+        replacement.insert(replacementPage, at: 0)
+        let replacementURL = folder.appendingPathComponent("replacement.pdf")
+        guard replacement.write(to: replacementURL) else { throw NSError(domain: "ReplacementPDFWrite", code: 1) }
+        pdf.goToPreviousPage(nil)
+        select(1, zoom: 1, path: replacementURL.path)
+        if pdf.document === loaded || pdf.currentPage !== pdf.document?.page(at: 0) || abs(pdf.scaleFactor - 1) > 0.001 {
+            failures.append("Explicit document replacement was overwritten")
+        }
+        if !failures.isEmpty { throw NSError(domain: "PDFViewportOwnership", code: failures.count, userInfo: [NSLocalizedDescriptionKey: failures.joined(separator: "\n")]) }
+        print("PASS production PDFKit page ownership: keys, destination links, previous-page actions, explicit model navigation, zoomed viewport preservation, within-page scrolling, and document changes")
         withExtendedLifetime(window) {}
     }
 }

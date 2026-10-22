@@ -81,15 +81,74 @@ struct OriginalPDFView: NSViewRepresentable {
         var path = ""; var pageNumber = -1; var zoom = -1.0
         var marks: [(PDFPage, PDFAnnotation)] = []
         var selectedPage: PDFPage?
+        private weak var observedView: PDFView?
+        private weak var clipView: NSClipView?
+        private var viewportOrigin: NSPoint?
+        private var viewportScale = 0.0
+        private var viewportGeneration = 0
+        private var pendingCaptureGeneration: Int?
+        private var restoringViewport = false
         func observe(_ view: PDFView) {
+            observedView = view
             NotificationCenter.default.addObserver(self, selector: #selector(pageChanged(_:)), name: .PDFViewPageChanged, object: view)
+        }
+        func resetViewport() {
+            viewportGeneration &+= 1
+            pendingCaptureGeneration = nil
+            restoringViewport = false
+            viewportOrigin = nil
+        }
+        func observeViewport(_ view: PDFView) {
+            let clip = view.documentView?.enclosingScrollView?.contentView
+            if clipView !== clip {
+                if let clipView { NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: clipView) }
+                clipView = clip
+                clip?.postsBoundsChangedNotifications = true
+                if let clip { NotificationCenter.default.addObserver(self, selector: #selector(boundsChanged(_:)), name: NSView.boundsDidChangeNotification, object: clip) }
+            }
+            captureViewport(view)
+        }
+        private func captureViewport(_ view: PDFView) {
+            guard !restoringViewport, let selectedPage, view.currentPage === selectedPage,
+                  let clipView else { return }
+            viewportOrigin = clipView.bounds.origin
+            viewportScale = view.scaleFactor
+        }
+        @objc private func boundsChanged(_ notification: Notification) {
+            guard !restoringViewport else { return }
+            let generation = viewportGeneration
+            guard pendingCaptureGeneration != generation else { return }
+            pendingCaptureGeneration = generation
+            // PDFKit can scroll to the next page's top before publishing its page
+            // change. Only retain a viewport after that navigation has settled.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.viewportGeneration == generation, let view = self.observedView else { return }
+                self.pendingCaptureGeneration = nil
+                self.captureViewport(view)
+            }
         }
         @objc private func pageChanged(_ notification: Notification) {
             guard let view = notification.object as? PDFView, let selectedPage,
                   selectedPage.document === view.document, view.currentPage !== selectedPage else { return }
+            let origin = viewportOrigin, scale = viewportScale
+            viewportGeneration &+= 1
+            pendingCaptureGeneration = nil
+            let generation = viewportGeneration
+            restoringViewport = true
             // The model owns source/reference associations. PDF links and native
             // keys cannot independently change the page behind its evidence.
             view.go(to: selectedPage)
+            // Destination actions can still scroll after PageChanged returns.
+            // Restore the selected page's viewport when the action has finished.
+            DispatchQueue.main.async { [weak self, weak view] in
+                guard let self, let view, self.viewportGeneration == generation else { return }
+                if view.currentPage === self.selectedPage, let origin, view.scaleFactor == scale, let clip = self.clipView {
+                    clip.scroll(to: origin)
+                    clip.enclosingScrollView?.reflectScrolledClipView(clip)
+                }
+                self.restoringViewport = false
+                self.captureViewport(view)
+            }
         }
         deinit { NotificationCenter.default.removeObserver(self) }
     }
@@ -100,11 +159,14 @@ struct OriginalPDFView: NSViewRepresentable {
         context.coordinator.observe(view); return view
     }
     static func dismantleNSView(_ view: PDFView, coordinator: Coordinator) {
-        NotificationCenter.default.removeObserver(coordinator, name: .PDFViewPageChanged, object: view)
+        NotificationCenter.default.removeObserver(coordinator)
         coordinator.selectedPage = nil
+        coordinator.resetViewport()
     }
     func updateNSView(_ view: PDFView, context: Context) {
         let sourceChanged=context.coordinator.path != path
+        let selectionChanged = sourceChanged || context.coordinator.pageNumber != pageNumber || context.coordinator.zoom != zoom
+        if selectionChanged { context.coordinator.resetViewport() }
         context.coordinator.selectedPage = nil
         if sourceChanged { view.document = PDFDocument(url: URL(fileURLWithPath: path)); context.coordinator.path = path }
         for (p, a) in context.coordinator.marks { p.removeAnnotation(a); view.annotationsChanged(on: p) }; context.coordinator.marks = []
@@ -114,6 +176,7 @@ struct OriginalPDFView: NSViewRepresentable {
             view.autoScales = zoom == 0;view.go(to:current);if zoom>0{view.scaleFactor=zoom}
             context.coordinator.pageNumber=pageNumber;context.coordinator.zoom=zoom
         }
+        context.coordinator.observeViewport(view)
         let b = evidence["bbox"].array.map(\.number), t = page["source_transform"].array.map(\.number)
         if canHighlightEvidence(evidence,page:page) && t.count == 6 {
             let det = t[0] * t[3] - t[1] * t[2]
