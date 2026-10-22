@@ -842,7 +842,10 @@ private struct WorkbookInspector: View {
                 Text("수식은 재계산하지 않음 · 저장값 기준").font(.caption.weight(.medium)).foregroundStyle(.orange)
                 Text(verbatim:"날짜 기준: 이전 " + model.revision(model.beforeID)["date_system"].string + " / 이후 " + model.revision(model.afterID)["date_system"].string).font(.caption).foregroundStyle(.secondary)
                 if model.loadingCell { ProgressView("셀을 읽는 중…") }
-                else if !model.cellFailure.isEmpty { Text(verbatim:model.cellFailure).font(.caption).foregroundStyle(.red) }
+                else if !model.cellFailure.isEmpty {
+                    Text(verbatim:model.cellFailure).font(.caption).foregroundStyle(.red)
+                    if model.cellTextOffset > 0 { Button("원문 처음부터 다시 읽기") { Task { await model.loadSelectedCells() } }.disabled(!model.ready) }
+                }
                 else if model.selectedRow == 0, model.selectedChangeID.isEmpty { Text("셀 또는 변경 항목을 선택하면 수식 원문·저장된 값·유형을 확인할 수 있습니다.").foregroundStyle(.secondary) }
                 else { cellSection("이전 · " + model.versionLabel(model.beforeID),cell:model.beforeCell); Divider(); cellSection("이후 · " + model.versionLabel(model.afterID),cell:model.afterCell) }
                 if !model.selectedChange.isNull {
@@ -1138,7 +1141,7 @@ private enum WorkbookLabels {
         case "date_system":
             if raw.hasPrefix("Date system changed from "),let end = raw.firstIndex(of:";") {
                 let transition = raw[raw.index(raw.startIndex,offsetBy:"Date system changed from ".count)..<end].replacingOccurrences(of:" to ",with:" → ")
-                return "날짜 기준이 \(transition)(으)로 바뀌었습니다. 숫자 날짜값을 변환하거나 같은 값으로 단정하지 않습니다."
+                return "날짜 기준이 바뀌었습니다 (\(transition)). 숫자 날짜값을 변환하거나 같은 값으로 단정하지 않습니다."
             }
             return "날짜 기준이 바뀌었습니다. 숫자 날짜값을 변환하거나 같은 값으로 단정하지 않습니다."
         default: return raw
@@ -1396,6 +1399,7 @@ struct WorkbookGrid: NSViewRepresentable {
                 _ = try assertPanes(model,window:window)
                 try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-dense-raw-continuation.png"))
                 await model.loadSelectedCells()
+                guard model.cellFailure.isEmpty,model.cellTextOffset == 0,model.beforeCell["address"].string == "A1",model.afterCell["address"].string == "A1",model.beforeCell["text_continuations"]["value"]["offset"].int == 0,model.afterCell["text_continuations"]["value"]["offset"].int == 0 else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_RESTORE",message:"원문 첫 조각으로 되돌아온 상태를 확인하지 못했습니다.") }
             }
             checks["actual_native_grid_capture"] = true
 
@@ -1575,11 +1579,12 @@ struct WorkbookGrid: NSViewRepresentable {
         // This is the same shared production pager used by each cell section's
         // visible continuation button, without claiming an OS button click.
         await model.loadSelectedCells(offset:next)
-        guard model.cellFailure.isEmpty,model.beforeAddress == "A1",model.afterAddress == "A1" else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_NEXT_SCOPE",message:"이어 읽은 A1의 원본 범위가 달라졌습니다.") }
+        guard model.cellFailure.isEmpty,model.cellTextOffset == next,model.beforeAddress == "A1",model.afterAddress == "A1" else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_NEXT_SCOPE",message:"이어 읽은 A1의 원본 범위가 달라졌습니다.") }
         var excerpts: [[String:Any]] = []
         for (side,cell,previous) in [("before",model.beforeCell,firstBefore),("after",model.afterCell,firstAfter)] {
             let continuation = cell["text_continuations"]["value"],start = continuation["offset"].int,units = Array(cell["value"].string.utf16),end = start+units.count
-            guard start > previous,start <= end,end <= expected.count,continuation["total_length"].int == expected.count,units == Array(expected[start..<end]) else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_NEXT_TRUTH",message:"이어 읽은 조각의 범위·내용이 독립 원본과 다릅니다: " + side) }
+            // This fixture's shared next offset is a complete UTF-16 boundary.
+            guard cell["address"].string == "A1",start == next,start > previous,start <= end,end <= expected.count,continuation["total_length"].int == expected.count,units == Array(expected[start..<end]) else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_NEXT_TRUTH",message:"이어 읽은 조각의 범위·내용이 독립 원본과 다릅니다: " + side) }
             excerpts.append(["side":side,"address":cell["address"].string,"start_utf16":start,"end_utf16_exclusive":end,"total_utf16":expected.count,"excerpt_matches_independent_fixture":true])
         }
         return ["requested_shared_offset":next,"both_sides_advanced":true,"excerpts":excerpts,"interaction_scope":"production pager action plus separate actual static capture; no OS click automation"]
