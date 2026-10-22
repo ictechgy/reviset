@@ -11,6 +11,6 @@ test('superseded native range requests terminate only their own child and preser
     const binary=join(root,'probe');
     execFileSync('swiftc',['-swift-version','5','-O','-parse-as-library','apps/macos/Bridge.swift','tests/native/QueryCancellation.swift','-o',binary],{timeout:20_000,stdio:'pipe'});
     const output=execFileSync(binary,[join(root,'app'),process.execPath,resolve('tests/native/query-fixture.mjs')],{timeout:18000,encoding:'utf8'});
-    assert.match(output,/PASS 10:/);
+    assert.match(output,/PASS 14:/);
   } finally {await rm(root,{recursive:true,force:true});}
 });

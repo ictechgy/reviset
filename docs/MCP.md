@@ -101,3 +101,16 @@ Claude도 모델 계정 변경 없이 읽기 전용 MCP만 사용해 합성5버�
 앱의 설정 복사는 현재 프로젝트/시도의 준비 완료 값만 허용한다. 실패는 준비 중과 구별하며 **설정 다시 불러오기**로 복구한다. MCP 실패·재시도는 별도 글로벌 오류를 덮거나 남기지 않는다. `latest`는 매번 최신 run의 고정 ID로 해석하고 scope 검사를 캐시 조회 전에 한다. report2개/64MiB·range8개/16MiB는 직렬화 데이터 한도이며 heap 보장이 아니다. custom snapshot loader는 양 캐시를 우회한다.
 
 v2 대응 비용/행렬 정책을 관측 환경에 기록하고, v1 저장 보고서는32M 비용과 원래 admission을 유지한다. engine44의 역사적 selector 기반 ID도 보존한다. 계산 제한이나 판독 공백은 변경 없음·삭제 증거가 아니다. 새 Markdown 파일명은8자리 prefix 대신 전체64hex asset ID를 사용하며 링크도 함께 갱신했다. JSON/JSONL 원문·고정 report/change ID와 과거 내보내기 파일은 바꾸지 않는다.
+
+## 스프레드시트 조회 (workbook.1)
+
+XLSX·ODS·UTF-8 CSV 프로젝트는 문서와 별도 ID(`wprj_…`)를 사용합니다. 네이티브 앱에서 **스프레드시트 버전 비교…**를 열고 가져온 뒤 해당 창의 MCP 설정을 복사합니다. MCP는 읽기 전용이며 가져오기·분석·배포본 기록·파일 저장 도구를 제공하지 않습니다. 지정한 프로젝트만 노출하고 `latest`는 각 응답에서 고정 `wreport_…` ID로 바꿉니다. 이후 호출에는 그 고정 ID를 사용하세요.
+
+1. `list_workbook_projects` → `list_workbook_reports` → `get_workbook_report`로 보고서의 범위·엔진·한계를 확인합니다.
+2. `list_workbook_revisions` → `list_workbook_sheets`로 `revision_occurrence_id`, `sheet_id`를 선택합니다. 같은 파일이 다시 나타나도 버전 occurrence는 별개입니다.
+3. `get_workbook_range`로 물리 좌표 영역을 읽고 `get_workbook_cell`로 원본 저장값·수식·유형·서식을 확인합니다. `cell.text_continuations`의 `next_offset`으로 `text_offset`을 이어 읽습니다. 오프셋 단위는 UTF-16이며 빈 문자열·누락·아직 읽지 않은 부분은 구분됩니다. 긴 서식은 `component=style`과 커서로 읽습니다.
+4. `list_workbook_changes`에 두 occurrence ID와 `mode=history`를 주면 구간 내 인접 변경 이력을, `mode=range_net`을 주면 양 끝의 차이를 읽습니다. A→B→A는 이력이 존재해도 양 끝 차이는 0일 수 있습니다. `get_workbook_change`는 원문 전후·대응 방법·판정 상태를 제공합니다.
+5. `get_workbook_cell_history`로 선택 셀의 추정 계보를, `search_workbook_cells`로 저장값/수식의 리터럴 검색을 합니다. 대응이 모호하면 계보를 중단하며 같은 주소의 다음 점유자를 같은 항목으로 단정하지 않습니다.
+6. `list_workbook_coverage_gaps`와 `list_workbook_sheets`의 메타데이터 페이지를 끝까지 읽습니다. 출력 크기와 커서 제한 때문에 한 응답이 전체 시트를 뜻하지 않습니다.
+
+수식은 실행하거나 재계산하지 않습니다. 저장된 결과의 최신 여부는 알 수 없고, 공유·배열·행렬 수식의 셀별 의미가 미해결이면 `formula_interpretation=unresolved`입니다. CSV의 수식처럼 보이는 문자열은 입력 텍스트입니다. XLSX↔ODS의 수식 방언·서식 표현과 CSV의 유형/수식/숨김 기능 부재를 삭제로 해석하지 않습니다. `comparison_coverage=supported_cells_only`는 지원하는 셀 관측만을 뜻합니다. 차트·피벗·매크로·외부 연결 등의 완전한 의미나 실제 편집자·편집 시각을 인증하지 않습니다. 로컬 배포본의 작성자 입력과 기록 시각도 실제 문서 편집 이력의 증거가 아닙니다.

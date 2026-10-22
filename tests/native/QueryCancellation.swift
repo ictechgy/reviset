@@ -36,7 +36,25 @@ import Foundation
   let replacement=try await bridge.call("analyze",["tag":"replacement-analysis","delay":3500],analysis:true)
   guard replacement["tag"].string=="replacement-analysis"else{throw NSError(domain:"OldEscalationKilledReplacement",code:1)}
   guard ((try? fm.contentsOfDirectory(atPath:library.appendingPathComponent("logs").path)) ?? []).isEmpty else{throw NSError(domain:"EscalatedCancellationProducedCrashDiagnostic",code:1)}
-  print("PASS 10: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; pagecancelendsownhelperandpreservespeer; nonrangeunchanged;24midlaunchcancellationraces; nofalsecrashlog; shutdownterminatesonlyownedsidecars; CPUcancelboundedandpeerpreserved; oldescalationpreservesreplacement")
+  let workbookOwner=UUID()
+  let workbook=Task{try await bridge.call("workbookAnalyze",["tag":"workbook-owner","delay":400],analysis:true,analysisOwner:workbookOwner)}
+  try await started("workbook-owner")
+  do{_ = try await bridge.call("analyze",["tag":"forbidden-peer"],analysis:true);throw NSError(domain:"ConcurrentAnalysisAdmitted",code:1)}catch let error as BridgeError{guard error.code=="ANALYSIS_BUSY"else{throw error}}
+  bridge.cancel();bridge.cancel(owner:UUID())
+  guard try await workbook.value["tag"].string=="workbook-owner",!records().contains(where:{$0["tag"]as?String=="forbidden-peer"}),!records().contains(where:{$0["tag"]as?String=="workbook-owner" && $0["event"]as?String=="terminated"})else{throw NSError(domain:"ForeignWindowTouchedAnalysis",code:1)}
+  let ownToken=UUID(),own=Task{try await bridge.call("workbookAnalyze",["tag":"workbook-cancel","delay":5000],analysis:true,analysisOwner:ownToken)}
+  try await started("workbook-cancel");bridge.cancel(owner:ownToken)
+  do{_ = try await own.value;throw NSError(domain:"WorkbookCancelSucceeded",code:1)}catch let error as BridgeError{guard error.code=="CANCELLED"else{throw error}}
+  let grid=Task{try await bridge.call("workbookGrid",["tag":"workbook-grid","delay":5000])},gridPeer=Task{try await bridge.call("workbookView",["tag":"workbook-view","delay":100])}
+  try await started("workbook-grid");grid.cancel();try await cancelled(grid)
+  guard try await gridPeer.value["tag"].string=="workbook-view"else{throw NSError(domain:"WorkbookGridCancelledPeer",code:1)}
+  let heldOwner=UUID()
+  _ = try await bridge.call("workbookAnalyze",["tag":"held-analysis","delay":50],analysis:true,analysisOwner:heldOwner,holdAnalysis:true)
+  bridge.releaseAnalysis(owner:UUID())
+  do{_ = try await bridge.call("analyze",["tag":"forbidden-between-stage-commit"],analysis:true);throw NSError(domain:"StagedReservationLost",code:1)}catch let error as BridgeError{guard error.code=="ANALYSIS_BUSY"else{throw error}}
+  bridge.releaseAnalysis(owner:heldOwner)
+  guard try await bridge.call("analyze",["tag":"after-commit-release","delay":20],analysis:true)["tag"].string=="after-commit-release"else{throw NSError(domain:"CompletedReservationNotReleased",code:1)}
+  print("PASS 14: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; pagecancelendsownhelperandpreservespeer; nonrangeunchanged;24midlaunchcancellationraces; nofalsecrashlog; shutdownterminatesonlyownedsidecars; CPUcancelboundedandpeerpreserved; oldescalationpreservesreplacement; sharedanalysisadmission-and-owner; workbookowncancel; workbookgrid-owncancel; heldreservation-between-stage-and-commit")
   try JSONSerialization.data(withJSONObject:records(),options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("observed.json"))
  }
 }

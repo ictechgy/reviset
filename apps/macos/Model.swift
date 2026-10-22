@@ -246,10 +246,11 @@ struct ReorderConfirmation:Identifiable {
     func changeRange() { Task { do { try await updateChanges() } catch { fail(error) } } }
     func run(_ id: String) async {
         guard libraryAvailable && !initializing && !busy && !projects.contains(where:{$0["project_id"].string==id && $0["unreadable"].bool}) else { return };selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailure="";evidenceWarning="";let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
+        defer{bridge.releaseAnalysis(owner:token)}
         do {
-            let result = try await bridge.call("analyze", ["project_id": id], analysis: true) { [weak self] p in
+            let result = try await bridge.call("analyze", ["project_id": id], analysis: true,progress:{ [weak self] p in
                 Task { @MainActor in guard let self,self.busy,!self.committing,self.analysisToken==token else{return}; self.progress = p; self.status = p["phase"].string == "match" ? "페이지 대응과 변경을 계산합니다" : p["phase"].string == "render" ? p["label"].string+" 화면 준비 중" : p["label"].string.isEmpty ? "원본을 추출합니다" : p["label"].string + " 추출 중" }
-            }
+            },analysisOwner:token,holdAnalysis:true)
             if cancelRequested { throw BridgeError(code: "CANCELLED", message: "분석을 취소했습니다.") }
             committing = true; status = "고정 보고서를 저장합니다"
             _ = try await bridge.call("commit", ["project_id": id, "result": result.raw])
@@ -273,7 +274,7 @@ struct ReorderConfirmation:Identifiable {
             if !report.isNull {try? await updateChanges()}
         }
     }
-    func cancel() { guard busy && !committing else { return }; cancelRequested = true; bridge.cancel(); status = "분석을 취소하고 있습니다" }
+    func cancel() { guard busy && !committing,let token=analysisToken else { return }; cancelRequested = true; bridge.cancel(owner:token); status = "분석을 취소하고 있습니다" }
     func create(title: String, rows: [ImportRow]) async throws -> JSON {
         let interrupted=pendingRange != nil || loadingChanges
         selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailure=(!report.isNull && interrupted) ? "새 입력 처리로 변경 목록 조회를 중단했습니다.":""

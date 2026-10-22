@@ -9,6 +9,7 @@ import { DocverError, Decision, RelationSelection, BundleSelection,bundleDirecti
 import { querySchemas } from '../../packages/query/index.js';
 import {SidecarScope,createOnlyOfficeSidecar,closeOnlyOfficeSidecar,recoverOnlyOfficeSidecars,onlyOfficeSidecarConfigured} from '../../packages/render/onlyoffice-sidecar.js';
 import {cancelActiveTools} from '../../packages/runtime/tools.js';
+import {handleWorkbookAction} from './workbook.js';
 const key=z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/),scope=z.object({project_id:key,report_id:key});
 const request=JSON.parse(readFileSync(0,'utf8')) as {action:string;args:any};
 const rootArg=process.argv.indexOf('--root');if(rootArg<0)throw new Error('Explicit app library required');
@@ -23,7 +24,12 @@ async function verifiedSource(assetId:string):Promise<string>{
 }
 try{
   let value:unknown;
-  switch(request.action){
+  if(request.action.startsWith('workbook')) {
+    if(request.action==='workbookMcpConfig') {
+      const {project_id}=z.object({project_id:key}).parse(args);await handleWorkbookAction(service.store,'workbookReports',{project_id});
+      value=JSON.stringify({mcpServers:{docver:{command:process.execPath,args:[join(dirname(fileURLToPath(import.meta.url)),'mcp.mjs'),'--store',root,'--project',project_id]}}},null,2);
+    }else value=await handleWorkbookAction(service.store,request.action,args);
+  }else switch(request.action){
     case 'sidecarInfo':value={configured:await onlyOfficeSidecarConfigured(join(dirname(fileURLToPath(import.meta.url)),'../onlyoffice-sidecar'))};break;
     case 'sidecarCreate':{
       const d=SidecarScope.parse(args),report=service.snapshot(d.project_id,d.report_id),controller=new AbortController(),cancel=()=>controller.abort();

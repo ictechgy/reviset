@@ -5,14 +5,18 @@ import CryptoKit
 
 @main struct DocverApp: App {
     @StateObject private var model=AppModel()
+    @Environment(\.openWindow) private var openWindow
     var body: some Scene {
-        Window("Docver", id:"main") {MainView().environmentObject(model).task {await Smoke.runIfRequested(model)}.onReceive(NotificationCenter.default.publisher(for:NSApplication.willTerminateNotification)){_ in model.bridge.terminateAnalysis();model.sidecarRequest=nil;model.bridge.cancelSidecars()}}
+        Window("Docver", id:"main") {MainView().environmentObject(model).task {await Smoke.runIfRequested(model);if ProcessInfo.processInfo.environment["DOCVER_WORKBOOK_SMOKE_REQUEST"] != nil {openWindow(id:"workbooks")}}.onReceive(NotificationCenter.default.publisher(for:NSApplication.willTerminateNotification)){_ in model.bridge.terminateAnalysis();model.sidecarRequest=nil;model.bridge.cancelSidecars()}}
         .defaultSize(width:1440,height:960)
         .windowToolbarStyle(.unifiedCompact)
         .commands {
-            CommandGroup(after:.newItem){Button("문서 버전 가져오기…"){model.importSheet=true}.keyboardShortcut("o").disabled(model.busy || model.loading || !model.libraryAvailable || model.initializing)}
+            CommandGroup(after:.newItem){Button("문서 버전 가져오기…"){model.importSheet=true}.keyboardShortcut("o").disabled(model.busy || model.loading || !model.libraryAvailable || model.initializing);Button("스프레드시트 버전 비교…"){openWindow(id:"workbooks")}.keyboardShortcut("o",modifiers:[.command,.shift]).disabled(!model.libraryAvailable || model.initializing)}
             CommandGroup(after:.sidebar){Button("문서 크게 보기"){model.focus.toggle()}.keyboardShortcut("f",modifiers:[.command,.option]);Button("근거 패널"){model.inspector.toggle()}.keyboardShortcut("i",modifiers:[.command,.option])}
         }
+        Window("Docver · 스프레드시트",id:"workbooks") {
+            WorkbookWorkspace(bridge:model.bridge).disabled(!model.libraryAvailable || model.initializing)
+        }.defaultSize(width:1440,height:960).windowToolbarStyle(.unifiedCompact)
     }
 }
 @MainActor enum Smoke {

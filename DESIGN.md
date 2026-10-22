@@ -143,3 +143,13 @@ Actual48fivecaptureClaude review confirms largerdocumentcanvas/pageedges/compact
 - Initial page verification says a page is being checked unless a retained payload actually exists. Pending human decisions prompt analysis before reorder, without offering a destructive reset; active confirmation freezes reorder arrows. MCP errors have project-owned failure text and an explicit retry; retry generations prevent an older same-project response from overwriting a newer attempt. Native/Office helper directory enumeration is limited to the read allowlist while directory metadata traversal remains available.
 
 - Mapping sheet keeps its title/cancel, validation and Apply footer outside a scrolling middle form. The two page lists have a stable280pt height; long conflicts, selection captions, reasons and failures scroll without pushing the primary controls out of the fixed720pt sheet.
+
+
+## Spreadsheet workspace · 2026-10-22
+
+- Source contract: docs/SPREADSHEETS.md. Add a workbook window in this native app, sharing its exclusive library and Bridge. Existing document views/reports retain their contracts. Entry points: toolbar and File menu, with Command-Shift-O.
+- Preserve the selected light macOS direction. Central space belongs to a large native, virtualized cell grid; projects/sheets/versions and changes/details surround it. A file's print pagination is not worksheet structure.
+- Read XLSX/ODS/CSV, show exact physical addresses and raw formulas separately from saved results. Never label cached results as freshly calculated. Preserve strings, number types, blank/zero, hidden content and unsupported coverage. Show inferred row association.
+- Scoped loading/failure supersedes old actions. Independent query generations own their processes; stale data cannot become authority for copy/export/publish. Both workspace kinds share one admitted analysis; only the owner may cancel.
+- Local releases require an explicit fixed report, bounded label and reason. UI describes them as local records, not a network delivery, user authentication, or server approval. Export and MCP always pin report/occurrence/sheet identities.
+- Native verification covers actual AppKit grid data, formula/value inspector, version and change navigation, CSV/XLSX/ODS sources, Unicode, error/retry/cancel state, and packaged MCP. Actual screenshots are reviewed by Claude; Grok source/UI review is separately attributed. No pre-credit for future tests.

@@ -43,16 +43,24 @@ final class BridgeRequestCancellation: @unchecked Sendable {
         lock.lock();defer {lock.unlock()};process=nil;return cancelled
     }
 }
+final class BridgeStderrBuffer: @unchecked Sendable {
+    private let lock=NSLock()
+    private var bytes=Data()
+    func append(_ chunk:Data) {lock.withLock {bytes.append(chunk);if bytes.count>262144{bytes.removeFirst(bytes.count-262144)}}}
+    func snapshot()->Data {lock.withLock{bytes}}
+}
 final class Bridge: @unchecked Sendable {
     let resources: URL
     let library: URL
     private let lock = NSLock()
     private var analysisProcess: Process?
+    private var analysisReserved = false
+    private var currentAnalysisOwner: UUID?
     private var sidecarRequests: [UUID:BridgeRequestCancellation] = [:]
     private var cancelled = false
     init(resources: URL, library: URL) { self.resources = resources; self.library = library }
-    func cancel() {
-        lock.lock();cancelled=true;let process=analysisProcess;lock.unlock()
+    func cancel(owner:UUID? = nil) {
+        lock.lock();guard analysisReserved,currentAnalysisOwner == owner else{lock.unlock();return};cancelled=true;let process=analysisProcess;lock.unlock()
         guard let process,process.isRunning else{return};let pid=process.processIdentifier;guard pid>1 else{return};process.terminate()
         // JS signal handlers cannot run during synchronous parsing/diff work.
         // Escalate only the captured, still-current cancelled analysis; a later
@@ -73,10 +81,16 @@ final class Bridge: @unchecked Sendable {
         if process.isRunning {_ = Darwin.kill(pid,SIGKILL)}
     }
     func cancelSidecars() {let owned=lock.withLock{Array(sidecarRequests.values)};for request in owned{request.cancel()}}
-    func call(_ action: String, _ args: [String: Any] = [:], analysis: Bool = false, progress: (@Sendable (JSON) -> Void)? = nil, owner:BridgeRequestCancellation? = nil) async throws -> JSON {
+    func releaseAnalysis(owner:UUID?) {lock.withLock {
+        if analysisReserved,currentAnalysisOwner==owner,analysisProcess==nil {analysisReserved=false;currentAnalysisOwner=nil}
+    }}
+    func call(_ action: String, _ args: [String: Any] = [:], analysis: Bool = false, progress: (@Sendable (JSON) -> Void)? = nil, owner:BridgeRequestCancellation? = nil, analysisOwner:UUID? = nil, holdAnalysis:Bool = false) async throws -> JSON {
         let request = try JSON(["action": action, "args": args]).data()
-        if analysis { lock.withLock { cancelled = false } }
-        let cancellation=["changes","page","sidecarCreate"].contains(action) && !analysis ? (owner ?? BridgeRequestCancellation()):nil
+        if analysis {try lock.withLock {
+            guard !analysisReserved else{throw BridgeError(code:"ANALYSIS_BUSY",message:"다른 창에서 분석 중입니다. 해당 분석이 끝난 뒤 다시 시도하세요.")}
+            analysisReserved=true;currentAnalysisOwner=analysisOwner;cancelled=false
+        }}
+        let cancellation=["changes","page","sidecarCreate","workbookQuery","workbookGrid","workbookProjects","workbookReports","workbookView","workbookReleases","workbookMcpConfig"].contains(action) && !analysis ? (owner ?? BridgeRequestCancellation()):nil
         let sidecarID=action=="sidecarCreate" ? UUID():nil
         if let sidecarID,let cancellation {lock.withLock{sidecarRequests[sidecarID]=cancellation}}
         return try await withTaskCancellationHandler(operation: {
@@ -92,14 +106,13 @@ final class Bridge: @unchecked Sendable {
                 env.removeValue(forKey: "ELECTRON_RUN_AS_NODE"); env.removeValue(forKey: "NODE_OPTIONS"); env.removeValue(forKey: "NODE_PATH")
                 process.environment = env
                 let stderrDone = DispatchGroup(); stderrDone.enter()
-                var stderrData = Data()
+                let stderrData = BridgeStderrBuffer()
                 DispatchQueue.global(qos:.utility).async {
                     var pending = Data()
                     while true {
                         let chunk = errors.fileHandleForReading.availableData
                         if chunk.isEmpty { break }
                         stderrData.append(chunk)
-                        if stderrData.count > 262144 { stderrData.removeFirst(stderrData.count - 262144) }
                         pending.append(chunk)
                         while let range = pending.firstRange(of: Data([10])) {
                             let line = pending.subdata(in:0..<range.lowerBound); pending.removeSubrange(0...range.lowerBound)
@@ -110,11 +123,18 @@ final class Bridge: @unchecked Sendable {
                     stderrDone.leave()
                 }
                 func failure(_ code:String,_ message:String) -> BridgeError {
+                    let stderr=stderrData.snapshot()
                     let folder=self.library.appendingPathComponent("logs")
                     try? FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
                     let log=folder.appendingPathComponent("helper-"+UUID().uuidString+".log")
-                    do {try stderrData.write(to:log);return BridgeError(code:code,message:message+" 진단 로그: "+log.path)}
-                    catch {return BridgeError(code:code,message:message+" "+String(decoding:stderrData.suffix(1000),as:UTF8.self))}
+                    do {try stderr.write(to:log);return BridgeError(code:code,message:message+" 진단 로그: "+log.path)}
+                    catch {return BridgeError(code:code,message:message+" "+String(decoding:stderr.suffix(1000),as:UTF8.self))}
+                }
+                func finishAnalysis(success:Bool = false) {
+                    if analysis {self.lock.withLock {
+                        if self.analysisProcess === process {self.analysisProcess=nil}
+                        if !success || !holdAnalysis {self.analysisReserved=false;self.currentAnalysisOwner=nil}
+                    }}
                 }
                 do {
                     if analysis { self.lock.lock(); let stopped = self.cancelled; self.lock.unlock(); if stopped { throw BridgeError(code:"CANCELLED",message:"분석을 취소했습니다.") } }
@@ -134,12 +154,12 @@ final class Bridge: @unchecked Sendable {
                     let reply = JSON(object)
                     guard reply["protocol_version"].string == "0.1.0" && reply["schema_version"].string == "0.4.0" else { throw BridgeError(code:"PROTOCOL_MISMATCH",message:"앱과 분석 엔진의 계약 버전이 다릅니다.") }
                     guard reply["ok"].bool else { throw BridgeError(code: reply["error"]["code"].string, message: reply["error"]["message"].string) }
-                    continuation.resume(returning: reply["value"])
+                    finishAnalysis(success:true);continuation.resume(returning: reply["value"])
                 } catch {
                     if analysis { self.lock.lock(); if self.analysisProcess === process { self.analysisProcess = nil }; self.lock.unlock() }
                     let rangeCancelled=cancellation?.finish() == true
                     try? input.fileHandleForWriting.close();try? errors.fileHandleForWriting.close()
-                    continuation.resume(throwing: rangeCancelled ? CancellationError():error)
+                    finishAnalysis();continuation.resume(throwing: rangeCancelled ? CancellationError():error)
                 }
             }
           }

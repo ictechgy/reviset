@@ -108,6 +108,7 @@ struct CoverageGapEvidence:View {
 
 struct MainView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
     var body: some View {
         VStack(spacing:0) {
             if !model.error.isEmpty { HStack { Image(systemName:"exclamationmark.triangle.fill");Text(model.error).textSelection(.enabled);Spacer();Button("닫기"){model.error=""} }.padding(10).background(.red.opacity(0.1)) }
@@ -131,6 +132,7 @@ struct MainView: View {
             ToolbarItem(placement:.navigation){Button {model.focus.toggle()} label:{Image(systemName:model.focus ? "sidebar.left" : "arrow.up.left.and.arrow.down.right")}.help(model.focus ? "기본 화면" : "문서 크게 보기")}
             ToolbarItem { Text(model.project["title"].string.isEmpty ? "Docver" : model.project["title"].string).font(.headline) }
             ToolbarItemGroup(placement:.primaryAction) {
+                Button{openWindow(id:"workbooks")}label:{Label("스프레드시트",systemImage:"tablecells")}.help("XLSX·ODS·CSV 버전 비교")
                 if !model.report.isNull {
                     Picker("작업",selection:$model.tab){Text("비교").tag("compare");Text("전체 이력").tag("history");Text("AI·내보내기").tag("export")}.pickerStyle(.segmented).frame(width:265)
                     Button {Task{await model.exportReport()}} label:{Label("내보내기",systemImage:"square.and.arrow.up")}

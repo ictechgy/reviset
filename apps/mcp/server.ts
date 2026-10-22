@@ -4,8 +4,9 @@ import { QueryService, querySchemas, Envelope, type QueryName } from '../../pack
 import { DocverError } from '../../packages/schema/index.js';
 import { ZodError } from 'zod';
 import { MCP_API_VERSION, mcpInstructions, registerReadingPrompts, toolDescriptions } from './guidance.js';
-export function createMcpServer(service:QueryService):McpServer {
-  const server=new McpServer({name:'document-version-tracker',version:MCP_API_VERSION},{instructions:mcpInstructions});
+import { registerWorkbookTools,workbookInstructions } from './workbook.js';
+export function createMcpServer(service:QueryService,workbookScope:ReadonlySet<string>=service.allowedProjects):McpServer {
+  const server=new McpServer({name:'document-version-tracker',version:MCP_API_VERSION},{instructions:mcpInstructions+'\n\n'+workbookInstructions});
   for(const [name,schema] of Object.entries(querySchemas)) server.registerTool(name,{
     description:toolDescriptions[name as QueryName],
     inputSchema:schema,outputSchema:Envelope,annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false}
@@ -40,6 +41,7 @@ export function createMcpServer(service:QueryService):McpServer {
       return {contents:[{uri:uri.href,mimeType:'application/json',text:JSON.stringify(result)}]};
     });
   registerReadingPrompts(server,service);
+  registerWorkbookTools(server,service.store,new Set(workbookScope));
   return server;
 }
-export async function serveMcp(service:QueryService) { const server=createMcpServer(service);await server.connect(new StdioServerTransport());return server; }
+export async function serveMcp(service:QueryService,workbookScope?:ReadonlySet<string>) { const server=createMcpServer(service,workbookScope);await server.connect(new StdioServerTransport());return server; }
