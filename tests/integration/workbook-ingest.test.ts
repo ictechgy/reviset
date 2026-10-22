@@ -246,3 +246,14 @@ test('XLSX default row/column formatting over absent cells is a coverage gap, ne
   const column = await extractWorkbook(xlsxFixture('<cols><col min="1" max="16384" style="1"/></cols><sheetData/>',{styles:workbookStyles}),'xlsx'); assert.equal(column.sheets[0].cells.length,0); assert.ok(column.sheets[0].coverage_gaps.some(item => item.feature === 'row_column_default_styles'));
   const row = await extractWorkbook(xlsxFixture('<sheetData><row r="1048576" s="1" customFormat="1"/></sheetData>',{styles:workbookStyles}),'xlsx'); assert.equal(row.sheets[0].cells.length,0); assert.ok(row.sheets[0].coverage_gaps.some(item => item.feature === 'row_column_default_styles'));
 });
+
+test('ODS row/column visibility rejects unknown enumerations instead of silently showing hidden content',async () => {
+  // OASIS ODF1.3 normative RNG: table-table-row/column-attlist ->
+  // table-visibility-value = visible | collapse | filter.
+  // https://docs.oasis-open.org/office/OpenDocument/v1.3/os/schemas/OpenDocument-v1.3-schema.rng
+  for (const invalid of ['hidden','garbage','VISIBLE','']) {
+    await assert.rejects(extractWorkbook(odsFixture(`<table:table-row table:visibility="${invalid}"><table:table-cell office:value-type="float" office:value="1"/></table:table-row>`),'ods'),code('INVALID_WORKBOOK'));
+    await assert.rejects(extractWorkbook(odsFixture(`<table:table-column table:visibility="${invalid}"/><table:table-row><table:table-cell office:value-type="float" office:value="1"/></table:table-row>`),'ods'),code('INVALID_WORKBOOK'));
+  }
+  for (const value of ['visible','collapse','filter']) { const observed = await extractWorkbook(odsFixture(`<table:table-column table:visibility="${value}"/><table:table-row table:visibility="${value}"><table:table-cell office:value-type="float" office:value="1"/></table:table-row>`),'ods'); assert.equal(cell(observed,'A1').hidden_row,value !== 'visible'); assert.equal(cell(observed,'A1').hidden_column,value !== 'visible'); }
+});

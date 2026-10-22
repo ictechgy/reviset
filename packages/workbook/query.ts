@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { canonical, hash, DocverError } from '../schema/index.js';
 import { WorkbookService } from './service.js';
 import { diffWorkbooks, WorkbookChange, type WorkbookChangeData, type WorkbookReportData } from './diff.js';
-import { workbookID,type WorkbookCellData, type WorkbookSheetData } from './types.js';
+import { workbookID,cellAddress,type WorkbookCellData, type WorkbookSheetData } from './types.js';
 
 const key = z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/), scope = { project_id: key, report_id: key };
 const paging = { limit: z.number().int().min(1).max(200).default(50), cursor: z.string().max(2048).optional(), max_output_tokens: z.number().int().min(256).max(8000).default(4000) };
@@ -97,18 +97,18 @@ export class WorkbookQueryService {
             const keyIndex=(r:typeof selected,sheet:WorkbookSheetData)=>{const key=r.revision_occurrence_id+'|'+sheet.sheet_id,existing=columns.get(key);if(existing)return existing;const byRow=new Map<number,string>(),byKey=new Map<string,{count:number;row:number}>();for(const cell of this.service.indexedCells(report!.project_id,report!.report_id,r.revision_occurrence_id,sheet.sheet_id,1,1_048_577,1,2,report,false)){if(cell.value===null||cell.value===''||cell.formula!==null||cell.formula_interpretation==='unresolved')continue;const value=canonical([cell.value_type,cell.value]);byRow.set(cell.row,value);const previous=byKey.get(value);if(previous)previous.count++;else byKey.set(value,{count:1,row:cell.row});}const index={byRow,byKey};columns.set(key,index);return index;};
             // Every row is grounded in a physical location. Follow only unique inferred anchors;
             // uncertain links stop, rather than silently hopping to another occupant of A1.
-            const located = new Map<number, { sheet: WorkbookSheetData; cell: WorkbookCellData | null; association: string; method: string }>(); located.set(selected.index, { sheet: s, cell: startCell, association: 'exact', method: 'selected_physical_cell' });
+            const located = new Map<number, { sheet: WorkbookSheetData; row:number;column:number;cell: WorkbookCellData | null; association: string; method: string }>(); located.set(selected.index, { sheet: s,row:args.row,column:args.column, cell: startCell, association: 'exact', method: 'selected_physical_cell' });
             for (const direction of [-1, 1]) { let current = selected.index; while (located.has(current)) {
               const next = current + direction; if (next < 0 || next >= report.revisions.length) break;
               const at = located.get(current)!, target = report.revisions[next], sheetCandidates = target.sheets.filter(v => v.name === at.sheet.name);
-              if (sheetCandidates.length !== 1 || !at.cell) break; const targetSheet = sheetCandidates[0];
-              const oldIndex=keyIndex(report.revisions[current],at.sheet),key=oldIndex.byRow.get(at.cell.row);
-              let row = at.cell.row, method = 'physical_row_fallback', association = 'needs_review';
+              if (sheetCandidates.length !== 1) break; const targetSheet = sheetCandidates[0];
+              const oldIndex=keyIndex(report.revisions[current],at.sheet),key=oldIndex.byRow.get(at.row);
+              let row = at.row, method = 'physical_row_fallback', association = 'needs_review';
               if (key) {const oldMatch=oldIndex.byKey.get(key),match=keyIndex(target,targetSheet).byKey.get(key);if(oldMatch?.count===1&&match?.count===1){row=match.row;method='unique_nonempty_first_column_key';association='inferred';}}
               if (association === 'needs_review') break;
-              located.set(next, { sheet: targetSheet, cell: readCell(target,targetSheet,row,at.cell.column), association, method }); current = next;
+              located.set(next, { sheet: targetSheet,row,column:at.column, cell: readCell(target,targetSheet,row,at.column), association, method }); current = next;
             } }
-            items = report.revisions.map(r => { const at = located.get(r.index); return { revision_occurrence_id: r.revision_occurrence_id, label: r.label, sheet_id: at?.sheet.sheet_id ?? null, cell: at ? boundedCell(this.cellStyle(report!,r.revision_occurrence_id,at.cell), args.text_offset, args.text_length) : null, availability: at ? at.cell ? 'available' : 'not_materialized' : 'correspondence_unresolved', association: at?.association ?? 'needs_review', alignment_method: at?.method ?? 'no_unambiguous_cell_lineage' }; }); extra = { inference_warning: 'Unique first-column keys infer lineage; no true edit author/time is inferred' }; break;
+            items = report.revisions.map(r => { const at = located.get(r.index); return { revision_occurrence_id: r.revision_occurrence_id, label: r.label, sheet_id: at?.sheet.sheet_id ?? null,row:at?.row??null,column:at?.column??null,address:at?cellAddress(at.row,at.column):null, cell: at ? boundedCell(this.cellStyle(report!,r.revision_occurrence_id,at.cell), args.text_offset, args.text_length) : null, availability: at ? at.cell ? 'available' : 'not_materialized' : 'correspondence_unresolved', association: at?.association ?? 'needs_review', alignment_method: at?.method ?? 'no_unambiguous_cell_lineage' }; }); extra = { inference_warning: 'Unique first-column keys infer lineage; no true edit author/time is inferred' }; break;
           }
           case 'list_workbook_coverage_gaps': {
             if (args.revision_occurrence_id) revision(); if (args.sheet_id && !report.revisions.some(r => (!args.revision_occurrence_id || r.revision_occurrence_id === args.revision_occurrence_id) && r.sheets.some(s => s.sheet_id === args.sheet_id))) throw new DocverError('WORKBOOK_SHEET_SCOPE', 'Coverage sheet is outside the selected scope');

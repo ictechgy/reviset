@@ -487,6 +487,10 @@ function odsStyles(roots: Element[], state: State): OdsStyles {
     size(name,kind) { let size: string | null = null; for (const node of resolve(name,`table-${kind}`)) { const properties = first(node,`table-${kind}-properties`); size = attr(properties,kind === 'row' ? 'style:row-height' : 'style:column-width') ?? size; } return size; },
   };
 }
+function odsVisibility(node: Element): 'visible' | 'collapse' | 'filter' {
+  const value = attr(node,'table:visibility'); if (value === undefined) return 'visible';
+  if (value !== 'visible' && value !== 'collapse' && value !== 'filter') fail('INVALID_WORKBOOK','Invalid ODS row/column visibility'); return value;
+}
 type OdsAxisNode = { node: Element; inheritedHidden: boolean };
 function flattenOdsAxis(table: Element, axis: 'row' | 'column'): OdsAxisNode[] {
   const result: OdsAxisNode[] = [];
@@ -523,7 +527,7 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
     await checkpoint(state,true); const name = attr(table,'table:name') ?? ''; if (names.has(name.toLowerCase())) fail('INVALID_WORKBOOK','Duplicate ODS sheet name'); names.add(name.toLowerCase());
     const sheet = newSheet('ods',name,`content.xml#table/${sheets.length}`,sheets.length), formulaRanges: FormulaRange[] = []; let wholeFormulaSheet = false; sheet.hidden = attr(table,'table:display') === 'false' || styles.hidden(attr(table,'table:style-name'));
     const columns: {start: number; end: number; hidden: boolean; style: string | undefined}[] = []; let nextColumn = 1;
-    for (const {node:col,inheritedHidden} of flattenOdsColumns(table)) { const repeat = integer(attr(col,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS column repetition'), end = nextColumn + repeat - 1; if (end > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS column repetition exceeds worksheet bounds'); const visibility = attr(col,'table:visibility'), hidden = inheritedHidden || visibility === 'collapse' || visibility === 'filter'; const size = styles.size(attr(col,'table:style-name'),'column'); columns.push({start:nextColumn,end,hidden,style:attr(col,'table:default-cell-style-name')}); if (hidden || size !== null) { sheet.column_metadata.push({start:nextColumn,end,hidden,size}); sheet.column_count = Math.max(sheet.column_count,end); } nextColumn = end + 1; }
+    for (const {node:col,inheritedHidden} of flattenOdsColumns(table)) { const repeat = integer(attr(col,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS column repetition'), end = nextColumn + repeat - 1; if (end > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS column repetition exceeds worksheet bounds'); const visibility = odsVisibility(col), hidden = inheritedHidden || visibility === 'collapse' || visibility === 'filter'; const size = styles.size(attr(col,'table:style-name'),'column'); columns.push({start:nextColumn,end,hidden,style:attr(col,'table:default-cell-style-name')}); if (hidden || size !== null) { sheet.column_metadata.push({start:nextColumn,end,hidden,size}); sheet.column_count = Math.max(sheet.column_count,end); } nextColumn = end + 1; }
     const effectiveColumns: ({hidden:boolean;style:string|undefined}|undefined)[] = new Array(WORKBOOK_LIMITS.columns + 1); for (const column of columns) for (let cc = column.start; cc <= column.end; cc++) effectiveColumns[cc] = column;
     const styledColumnPrefix = new Uint32Array(WORKBOOK_LIMITS.columns + 1); for (let cc = 1; cc <= WORKBOOK_LIMITS.columns; cc++) styledColumnPrefix[cc] = styledColumnPrefix[cc - 1] + (styles.effective(effectiveColumns[cc]?.style) ? 1 : 0);
     const styleRuns: {start:number;end:number;effective:boolean}[] = [];
@@ -533,7 +537,7 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
       await checkpoint(state);
       if (sheet.row_metadata.length >= WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Too many row metadata entries');
       const rowRepeat = integer(attr(rowNode,'table:number-rows-repeated'),1,WORKBOOK_LIMITS.rows,'ODS row repetition'), lastRow = row + rowRepeat - 1; if (lastRow > WORKBOOK_LIMITS.rows) fail('WORKBOOK_LIMIT','ODS row repetition exceeds worksheet bounds');
-      const visibility = attr(rowNode,'table:visibility'), hiddenRow = inheritedHidden || visibility === 'collapse' || visibility === 'filter', rowSize = styles.size(attr(rowNode,'table:style-name'),'row'); if (hiddenRow || rowSize !== null) { sheet.row_metadata.push({start:row,end:lastRow,hidden:hiddenRow,size:rowSize}); sheet.row_count = Math.max(sheet.row_count,lastRow); }
+      const visibility = odsVisibility(rowNode), hiddenRow = inheritedHidden || visibility === 'collapse' || visibility === 'filter', rowSize = styles.size(attr(rowNode,'table:style-name'),'row'); if (hiddenRow || rowSize !== null) { sheet.row_metadata.push({start:row,end:lastRow,hidden:hiddenRow,size:rowSize}); sheet.row_count = Math.max(sheet.row_count,lastRow); }
       const rowCells: {node: Element; column: number; repeat: number; style: string | undefined; material: boolean}[] = []; let column = 1;
       for (const node of rowNode.children.filter(child => child.name === 'table-cell' || child.name === 'covered-table-cell')) {
         const repeat = integer(attr(node,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS cell repetition'); if (column + repeat - 1 > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS cell repetition exceeds worksheet bounds');

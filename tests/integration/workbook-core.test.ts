@@ -173,6 +173,23 @@ test('fresh native-style readers use immutable indexes for adjacent and nonadjac
   }finally{await f.close();}
 });
 
+test('cell history follows unique physical row keys through a moved middle hole and cleared latest cell while duplicate keys stay unresolved',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'docver-workbook-history-holes-')),store=new Store(join(root,'library')),service=new WorkbookService(store);try{
+    const key=(row:number,value:string)=>'<c r="A'+row+'" t="inlineStr"><is><t>'+xmlEscape(value)+'</t></is></c>',header='<row r="1">'+key(1,'id')+'<c r="B1" t="inlineStr"><is><t>value</t></is></c></row>',sources=[
+      header+'<row r="2">'+key(2,'K')+'<c r="B2"><v>100</v></c></row>',
+      header+'<row r="2">'+key(2,'Other')+'<c r="B2"><v>9</v></c></row><row r="3">'+key(3,'K')+'</row>',
+      header+'<row r="2">'+key(2,'K')+'</row>',
+      header+'<row r="2">'+key(2,'K')+'</row><row r="3">'+key(3,'K')+'</row>',
+    ],paths:string[]=[];for(const [i,rows]of sources.entries()){const path=join(root,i+'.xlsx');await writeFile(path,xlsxFixture('<sheetData>'+rows+'</sheetData>'));paths.push(path);}
+    const analyze=async(selected:string[])=>{const project=await service.create('History holes',selected.map((path,i)=>({path,label:'v'+i}))),stage=await service.run(project.project_id);await service.commit(project.project_id,stage);return service.report(project.project_id,stage.report_id);};
+    const report=await analyze(paths.slice(0,3)),ambiguous=await analyze([paths[0],paths[3],paths[2]]),originalReader=service.report;service.report=()=>{throw Error('hole lineage must use scoped indexes, not full report');};
+    try{
+      for(const selected of [0,2]){const r=report.revisions[selected],args={project_id:report.project_id,report_id:report.report_id,revision_occurrence_id:r.revision_occurrence_id,sheet_id:r.sheets[0].sheet_id,row:2,column:2,limit:1,max_output_tokens:8000},items:any[]=[];let cursor:string|undefined;do{const response=await new WorkbookQueryService(service,new Set([report.project_id])).query('get_workbook_cell_history',{...args,...(cursor?{cursor}:{})},wireBytes);assert.ok(wireBytes(response)<=8000);items.push(...response.items);cursor=response.next_cursor??undefined;}while(cursor);assert.deepEqual(items.map(c=>c.availability),['available','not_materialized','not_materialized']);assert.deepEqual(items.map(c=>c.address),['B2','B3','B2']);assert.deepEqual(items.map(c=>c.cell?.value??null),['100',null,null]);assert.ok(items.filter(c=>!c.cell).every(c=>c.column===2&&c.row>0));}
+      const r=ambiguous.revisions[2],negative=await new WorkbookQueryService(service,new Set([ambiguous.project_id])).query('get_workbook_cell_history',{project_id:ambiguous.project_id,report_id:ambiguous.report_id,revision_occurrence_id:r.revision_occurrence_id,sheet_id:r.sheets[0].sheet_id,row:2,column:2,max_output_tokens:8000},wireBytes);assert.deepEqual(negative.items.map((c:any)=>c.availability),['correspondence_unresolved','correspondence_unresolved','not_materialized']);assert.ok(negative.items.slice(0,2).every((c:any)=>c.association==='needs_review'&&c.address===null));
+    }finally{service.report=originalReader;}
+  }finally{store.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('ordinary change summaries and individual endpoint components fit conservative 4000-byte MCP responses without duplicated cells',async()=>{
   const f=await fixture();try{
     const scope={project_id:f.draft.project_id,report_id:f.report.report_id},interval={...scope,from_revision_occurrence_id:f.report.revisions[0].revision_occurrence_id,to_revision_occurrence_id:f.report.revisions[2].revision_occurrence_id,max_output_tokens:4000};
