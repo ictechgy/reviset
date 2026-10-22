@@ -1,22 +1,24 @@
 import { z } from 'zod';
 import { canonical, hash, DocverError } from '../schema/index.js';
-import { WorkbookCell, WorkbookObservation, WorkbookGap, workbookID, WORKBOOK_SCHEMA_VERSION, WORKBOOK_ENGINE_VERSION, type WorkbookCellData, type WorkbookSheetData } from './types.js';
+import { blankRangeCell, rangeAddress, compareBlankRanges } from './sparse.js';
+import { WorkbookCell, WorkbookBlankStyleRange, WorkbookObservation, WorkbookGap, workbookID, cellAddress, WORKBOOK_SCHEMA_VERSION, WORKBOOK_ENGINE_VERSION, type WorkbookCellData, type WorkbookSheetData } from './types.js';
 
 export const WorkbookRevision = WorkbookObservation.extend({
   revision_occurrence_id: z.string(), label: z.string().max(200), index: z.number().int().nonnegative(), asset_id: z.string().regex(/^sha256:[a-f0-9]{64}$/),
 });
 export type WorkbookRevisionData = z.infer<typeof WorkbookRevision>;
 export const WorkbookChange = z.object({
-  change_id: z.string(), kind: z.enum(['formula', 'stored_value', 'cache_availability', 'calculation_settings', 'value_type', 'number_format', 'style', 'visibility', 'cell_observation', 'row_position', 'row_correspondence', 'sheet_name', 'sheet_position', 'sheet_visibility', 'sheet_dimensions', 'sheet_observation', 'merges', 'date_system']),
+  change_id: z.string(), kind: z.enum(['formula', 'stored_value', 'cache_availability', 'calculation_settings', 'value_type', 'number_format', 'style', 'visibility', 'cell_observation', 'row_position', 'row_correspondence', 'sheet_name', 'sheet_position', 'sheet_visibility', 'sheet_dimensions', 'sheet_observation', 'merges', 'date_system', 'formatting_range']),
   from_revision_occurrence_id: z.string(), to_revision_occurrence_id: z.string(),
   from_sheet_id: z.string().nullable(), to_sheet_id: z.string().nullable(),
   before_address: z.string().nullable(), after_address: z.string().nullable(),
   before: WorkbookCell.nullable(), after: WorkbookCell.nullable(),
+  before_blank_style_range: WorkbookBlankStyleRange.nullable().optional(), after_blank_style_range: WorkbookBlankStyleRange.nullable().optional(),
   association: z.enum(['exact', 'inferred', 'needs_review']), alignment_method: z.string(), description: z.string(),
 });
 export type WorkbookChangeData = z.infer<typeof WorkbookChange>;
 export const WorkbookReport = z.object({
-  schema_version: z.literal(WORKBOOK_SCHEMA_VERSION), engine_version: z.literal(WORKBOOK_ENGINE_VERSION),
+  schema_version: z.literal(WORKBOOK_SCHEMA_VERSION), engine_version: z.enum(['workbook.1.0', WORKBOOK_ENGINE_VERSION]),
   project_id: z.string().regex(/^wprj_[a-zA-Z0-9_-]+$/), report_id: z.string(), title: z.string().max(200),
   status: z.literal('complete'), comparison_coverage: z.literal('supported_cells_only'), calculation: z.literal('stored_values_only_no_recalculation'),
   revisions: z.array(WorkbookRevision).min(1).max(100), changes: z.array(WorkbookChange), coverage_gaps: z.array(WorkbookGap.extend({ revision_occurrence_id: z.string().optional() })),
@@ -27,7 +29,7 @@ type Pair = { before?: WorkbookSheetData; after?: WorkbookSheetData; association
 function uniqueGroups<T>(values: T[], key: (v: T) => string): Map<string, T[]> {
   const map = new Map<string, T[]>(); for (const v of values) { const k = key(v); const group = map.get(k); if (group) group.push(v); else map.set(k, [v]); } return map;
 }
-type StyleIdentity=(cell:WorkbookCellData,revision:WorkbookRevisionData)=>string;
+type StyleIdentity=(cell:Pick<WorkbookCellData,'style'|'style_ref'>,revision:WorkbookRevisionData)=>string;
 function stylesForComparison(revisions:WorkbookRevisionData[]):StyleIdentity{
   const identities=new WeakMap<Record<string,string>,string>(),references=new WeakMap<WorkbookRevisionData,Map<string,string>>(),empty=workbookID('wstyle',{});
   const identity=(style:Record<string,string>)=>{let value=identities.get(style);if(value)return value;if(!Object.keys(style).length)return empty;value=workbookID('wstyle',style);identities.set(style,value);return value;};
@@ -35,11 +37,11 @@ function stylesForComparison(revisions:WorkbookRevisionData[]):StyleIdentity{
   const cellIdentity:StyleIdentity=(cell,revision)=>{if(!cell.style_ref)return identity(cell.style);const value=references.get(revision)?.get(cell.style_ref);if(!value)throw new DocverError('WORKBOOK_STYLE_SCOPE','Cell style definition is missing in its source occurrence');return value;};
   // Validate references once before matching, including cells whose cross-format
   // style comparison is unsupported. Fingerprints contain identities, never definitions.
-  for(const revision of revisions)for(const sheet of revision.sheets)for(const cell of sheet.cells)cellIdentity(cell,revision);
+  for(const revision of revisions)for(const sheet of revision.sheets)for(const cell of [...sheet.cells,...(sheet.blank_style_ranges??[])])cellIdentity(cell,revision);
   return cellIdentity;
 }
 const cellContent = (c: WorkbookCellData,revision:WorkbookRevisionData,styleIdentity:StyleIdentity) => [c.column, c.value_type, c.value, c.formula, c.formula_interpretation, c.number_format, styleIdentity(c,revision), c.hidden_column, c.hidden_row];
-function sheetContent(s: WorkbookSheetData,revision:WorkbookRevisionData,styleIdentity:StyleIdentity) { return hash(s.cells.map(c=>cellContent(c,revision,styleIdentity))); }
+function sheetContent(s: WorkbookSheetData,revision:WorkbookRevisionData,styleIdentity:StyleIdentity) { return hash({cells:s.cells.map(c=>cellContent(c,revision,styleIdentity)),blank_style_ranges:(s.blank_style_ranges??[]).map(r=>[r.row_start,r.row_end,r.column_start,r.column_end,styleIdentity(r,revision),r.number_format,r.hidden_row,r.hidden_column,r.formula_interpretation])}); }
 function sheetPairs(before: WorkbookSheetData[], after: WorkbookSheetData[],beforeRevision:WorkbookRevisionData,afterRevision:WorkbookRevisionData,styleIdentity:StyleIdentity): Pair[] {
   const left = new Set(before), right = new Set(after), pairs: Pair[] = [];
   function match(key: (s: WorkbookSheetData,revision:WorkbookRevisionData) => string, method: string) {
@@ -57,8 +59,8 @@ function sheetPairs(before: WorkbookSheetData[], after: WorkbookSheetData[],befo
 }
 
 type Row = { row: number; cells: WorkbookCellData[] };
-function rows(s: WorkbookSheetData): Row[] {
-  const map = new Map<number, WorkbookCellData[]>(); for (const c of s.cells) { const list = map.get(c.row); if (list) list.push(c); else map.set(c.row, [c]); }
+function rows(s: WorkbookSheetData, excludeBlankStyles=false): Row[] {
+  const map = new Map<number, WorkbookCellData[]>(); for (const c of s.cells) { if(excludeBlankStyles&&c.blank_style_only)continue; const list = map.get(c.row); if (list) list.push(c); else map.set(c.row, [c]); }
   return [...map].sort((a, b) => a[0] - b[0]).map(([row, cells]) => ({ row, cells: cells.sort((a, b) => a.column - b.column) }));
 }
 const firstKey = (r: Row) => { const c = r.cells.find(c => c.column === 1); return c && c.value !== null && c.value !== '' && c.formula === null && c.formula_interpretation!=='unresolved' ? canonical([c.value_type, c.value]) : ''; };
@@ -119,7 +121,13 @@ export function diffWorkbooks(before: WorkbookRevisionData, after: WorkbookRevis
     if (sheetStructureComparable&&a.hidden !== b.hidden) add(pair, 'sheet_visibility', `Sheet hidden: ${a.hidden} → ${b.hidden}`);
     if (before.format===after.format&&(canonical(a.row_metadata) !== canonical(b.row_metadata) || canonical(a.column_metadata) !== canonical(b.column_metadata))) add(pair, 'sheet_dimensions', 'Supported row/column dimensions or hidden ranges changed, including unmaterialized blank cells');
     if (sheetStructureComparable&&canonical([...a.merges].sort()) !== canonical([...b.merges].sort())) add(pair, 'merges', 'Merged range observations changed');
-    for (const row of rowPairs(rows(a), rows(b),before,after,styleIdentity)) {
+    const sparseFormatting=before.format===after.format&&!!((a.blank_style_ranges?.length??0)+(b.blank_style_ranges?.length??0));
+    if(sparseFormatting)for(const difference of compareBlankRanges(a,b,(range,side)=>canonical([styleIdentity(range,side===0?before:after),range.number_format,range.hidden_row,range.hidden_column,range.formula_interpretation??'not_formula']),signal)){
+      const old=difference.before,next=difference.after,range=old??next!;
+      const data={kind:'formatting_range' as const,from_revision_occurrence_id:before.revision_occurrence_id,to_revision_occurrence_id:after.revision_occurrence_id,from_sheet_id:a.sheet_id,to_sheet_id:b.sheet_id,before_address:old?cellAddress(old.row_start,old.column_start):null,after_address:next?cellAddress(next.row_start,next.column_start):null,before:old?blankRangeCell(a,old,old.row_start,old.column_start):null,after:next?blankRangeCell(b,next,next.row_start,next.column_start):null,before_blank_style_range:old,after_blank_style_range:next,association:'needs_review' as const,alignment_method:'physical_blank_formatting_range',description:`Explicit blank formatting observations differ at ${rangeAddress(range)}. Coordinates are physical; this does not assert row lineage or a semantic content insertion/deletion.`};
+      if(result.length>=100_000)throw new DocverError('WORKBOOK_DIFF_LIMIT','Workbook exceeds 100000 change observations');result.push({change_id:workbookID('wchg',data),...data});
+    }
+    for (const row of rowPairs(rows(a,sparseFormatting), rows(b,sparseFormatting),before,after,styleIdentity)) {
       signal?.throwIfAborted(); const x = row.before, y = row.after;
       if (!x || !y) { for (const c of x?.cells ?? y!.cells) add(pair, 'row_correspondence', 'Cell observed on an unmatched row; no confirmed semantic deletion/addition', x ? c : null, y ? c : null, 'needs_review', row.method); continue; }
       if (x.row !== y.row) add(pair, 'row_position', `Inferred corresponding row moved from ${x.row} to ${y.row}`, x.cells[0] ?? null, y.cells[0] ?? null, row.association, row.method);

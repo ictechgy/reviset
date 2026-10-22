@@ -171,6 +171,15 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
           gap.evidence=sourceReviews.flatMap(s=>[...s.review.runs.slice(0,16).map(e=>evidence(s.revision,s.page,false,e)),evidence(s.revision,s.page,false,s.ocr)]);
         }
         if(budgetExceeded||sourceReviews.some(s=>s.review.numericConflict)||lexicalRasterPair&&disagreement)continue;
+        // A page association and overlapping boxes do not establish that two
+        // unrelated PDF sentences, or bare axes from different charts, are an
+        // edit of the same region. Require a local lexical anchor even for
+        // readable source text; preserve both observations as an explicit gap.
+        const anchoredPdfRegion=supportedNumericPair&&/\p{L}/u.test(numericPattern(old.text))||oneAnchoredWordChange(old.text,current.text);
+        if(sourcePdfAppearance&&(m.status==='needs_review'||!anchoredPdfRegion)){
+          add('coverage_gap',a,b,m,m.status==='needs_review'?'pdf_region_page_correspondence_requires_review':'pdf_region_correspondence_without_text_anchor');
+          const gap=changes.at(-1)!;gap.before=old.text;gap.after=current.text;gap.evidence=[evidence(from,a,false,old),evidence(to,b,false,current)];continue;
+        }
         add('text_modified',a,b,m,'other_page_regions_unresolved');const change=changes.at(-1)!;change.before=old.text;change.after=current.text;change.text_scope='region';change.region_pairing_assessment='inferred';change.text_assessment=old.provenance==='inferred'||current.provenance==='inferred'?'inferred':'observed';
         change.evidence=[evidence(from,a,false,old),evidence(to,b,false,current)];
         if(rasterPair&&left.concat(right).some(isEstimatedPdfSource))change.coverage_gaps.push({feature:'pdf_geometry',reason:'estimated_source_geometry_not_used_for_raster_pairing'});

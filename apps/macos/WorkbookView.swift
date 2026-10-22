@@ -946,6 +946,7 @@ private struct WorkbookCellDetail: View {
             if cell.isNull { Text("저장된 셀 관측 없음 · 삭제를 확정하지 않음").font(.caption).foregroundStyle(.secondary) }
             else {
                 Text(verbatim:cell["address"].string + " · " + cell["value_type"].string).font(.system(.caption,design:.monospaced))
+                if !cell["source_range"].string.isEmpty { Text(verbatim:"빈 셀 서식 범위: " + cell["source_range"].string).font(.caption).textSelection(.enabled) }
                 if cell["formula_interpretation"].string == "unresolved" { Text("공유·배열 수식의 셀별 의미 확인 필요").font(.caption.weight(.medium)).foregroundStyle(.orange) }
                 if !cell["formula"].isNull { rawDetail("수식 원문",field:"formula"); Text("수식은 실행하지 않았습니다.").font(.caption2).foregroundStyle(.secondary) }
                 rawDetail(cell["formula_interpretation"].string == "unresolved" ? "저장된 관측값 · 입력/계산 결과 미확정" : cell["formula"].isNull ? "저장된 입력값" : "저장된 계산 결과",field:"value")
@@ -1005,6 +1006,7 @@ private struct WorkbookSheetMetadata: View {
                 Text(verbatim:title).font(.caption.weight(.semibold))
                 Text(verbatim:sheet["name"].string + (sheet["hidden"].bool ? " · 숨김 시트" : "")).font(.caption)
                 Text("병합 \(sheet["merge_count"].int)개 · 행 메타 \(sheet["row_metadata_count"].int)개 · 열 메타 \(sheet["column_metadata_count"].int)개").font(.caption).foregroundStyle(.secondary)
+                if sheet["blank_style_range_count"].int > 0 { Text("빈 셀 서식 범위 \(sheet["blank_style_range_count"].int)개 · 화면 밖의 서식도 보존됩니다. 전체 범위는 고정 보고서/MCP에서 확인하세요.").font(.caption).foregroundStyle(.secondary) }
                 ForEach(Array(sheet["row_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text("숨김 행 \(range["start"].int)–\(range["end"].int)").font(.caption) }
                 ForEach(Array(sheet["column_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text("숨김 열 \(WorkbookGrid.columnLabel(range["start"].int))–\(WorkbookGrid.columnLabel(range["end"].int))").font(.caption) }
                 if !sheet["merges"].array.isEmpty { Text(verbatim:"병합 범위: " + sheet["merges"].array.map(\.string).joined(separator:", ")).font(.caption).textSelection(.enabled) }
@@ -1178,6 +1180,9 @@ private enum WorkbookLabels {
         case "calculation_settings": return "지원하는 저장된 계산 설정이 바뀌었습니다. 재계산을 수행하거나 결과의 최신성을 확인한 것은 아닙니다."
         case "number_format": return "원본 숫자 형식이 바뀌었습니다."
         case "style": return "지원하는 기본 서식이 바뀌었습니다."
+        case "formatting_range":
+            let before = change["before_blank_style_range"]["address"].string,after = change["after_blank_style_range"]["address"].string
+            return "빈 셀 서식 범위의 관측 차이: " + (before.isEmpty ? "관측 없음" : before) + " → " + (after.isEmpty ? "관측 없음" : after) + ". 물리 좌표 비교이며 행의 이동·삭제를 확정하지 않습니다."
         case "visibility": return "관측된 행·열의 숨김 상태가 바뀌었습니다."
         case "row_correspondence": return "대응되지 않은 행에서 셀이 관측되었습니다. 실제 추가·삭제로 단정하지 않습니다."
         case "cell_observation":
@@ -1201,8 +1206,8 @@ private enum WorkbookLabels {
     }
     static func availability(_ value: String) -> String { switch value { case "not_materialized": return "저장된 셀 관측 없음 · 빈 셀·삭제로 단정하지 않음"; case "correspondence_unresolved": return "대응 미확정 · 다른 셀로 건너뛰지 않음"; case "available": return "저장된 관측 있음"; default: return value } }
     static func association(_ value: String) -> String { switch value { case "exact": return "원문 일치"; case "inferred": return "추정 대응"; case "needs_review": return "대응 확인 필요"; default: return value.isEmpty ? "대응 미확정" : value } }
-    static func method(_ value: String) -> String { switch value { case "unique_nonempty_first_column_key": return "첫 열의 중복 없는 값으로 추정"; case "unique_exact_row_content": return "중복 없는 행 내용의 일치로 추정"; case "unique_exact_sheet_name": return "중복 없는 시트 이름으로 추정"; case "unique_exact_sheet_content": return "중복 없는 시트 내용으로 추정"; case "physical_row_fallback": return "같은 물리 행 번호 · 대응 확인 필요"; case "unmatched_row_observation": return "행 대응을 찾지 못함"; case "unmatched_sheet_observation": return "시트 대응을 찾지 못함"; case "selected_physical_cell": return "직접 선택한 물리 셀"; case "no_unambiguous_cell_lineage": return "모호하지 않은 셀 이력을 찾지 못함"; default: return value } }
-    static func kind(_ value: String) -> String { switch value { case "formula": return "수식 변경"; case "cache_availability": return "저장 결과 유무 변경"; case "calculation_settings": return "저장된 계산 설정 변경"; case "stored_value": return "저장값 변경"; case "value_type": return "값 유형 변경"; case "number_format": return "숫자 형식 변경"; case "style": return "기본 서식 변경"; case "visibility": return "숨김 상태 변경"; case "cell_observation": return "셀 관측 차이"; case "row_position": return "행 위치 변경"; case "row_correspondence": return "행 대응 확인"; case "sheet_name": return "시트 이름 변경"; case "sheet_position": return "시트 순서 변경"; case "sheet_visibility": return "시트 숨김 변경"; case "sheet_dimensions": return "행·열 메타 변경"; case "sheet_observation": return "시트 관측 차이"; case "merges": return "병합 범위 변경"; case "date_system": return "날짜 기준 변경"; default: return value } }
+    static func method(_ value: String) -> String { switch value { case "unique_nonempty_first_column_key": return "첫 열의 중복 없는 값으로 추정"; case "unique_exact_row_content": return "중복 없는 행 내용의 일치로 추정"; case "unique_exact_sheet_name": return "중복 없는 시트 이름으로 추정"; case "unique_exact_sheet_content": return "중복 없는 시트 내용으로 추정"; case "physical_blank_formatting_range": return "같은 물리 좌표의 빈 셀 서식 범위 · 행 대응 추정 없음"; case "physical_row_fallback": return "같은 물리 행 번호 · 대응 확인 필요"; case "unmatched_row_observation": return "행 대응을 찾지 못함"; case "unmatched_sheet_observation": return "시트 대응을 찾지 못함"; case "selected_physical_cell": return "직접 선택한 물리 셀"; case "no_unambiguous_cell_lineage": return "모호하지 않은 셀 이력을 찾지 못함"; default: return value } }
+    static func kind(_ value: String) -> String { switch value { case "formula": return "수식 변경"; case "cache_availability": return "저장 결과 유무 변경"; case "calculation_settings": return "저장된 계산 설정 변경"; case "stored_value": return "저장값 변경"; case "value_type": return "값 유형 변경"; case "number_format": return "숫자 형식 변경"; case "style": return "기본 서식 변경"; case "formatting_range": return "빈 셀 서식 범위"; case "visibility": return "숨김 상태 변경"; case "cell_observation": return "셀 관측 차이"; case "row_position": return "행 위치 변경"; case "row_correspondence": return "행 대응 확인"; case "sheet_name": return "시트 이름 변경"; case "sheet_position": return "시트 순서 변경"; case "sheet_visibility": return "시트 숨김 변경"; case "sheet_dimensions": return "행·열 메타 변경"; case "sheet_observation": return "시트 관측 차이"; case "merges": return "병합 범위 변경"; case "date_system": return "날짜 기준 변경"; default: return value } }
 }
 
 // AppKit creates reusable cells only for visible rows. The data source is a

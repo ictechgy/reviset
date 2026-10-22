@@ -17,6 +17,8 @@ export async function ingest(path:string,options:IngestOptions={}):Promise<Extra
   if(options.expectedSha256&&digest!==options.expectedSha256)throw new DocverError('SOURCE_CHANGED','Document input no longer matches its expected original hash');
   const asset=Asset.parse({asset_id:'sha256:'+digest,format:ext.slice(1),bytes:bytes.length});
   const pages=asset.format==='pptx'?extractPptx(bytes,asset.asset_id):await extractPdf(bytes,asset.asset_id,options);
-  const validated=pages.map(page=>{const result=Page.safeParse(page);if(!result.success)throw new DocverError('INVALID_PAGE_OBSERVATION','Extracted page '+page.page+' failed canonical validation');return result.data;});
-  return {asset,pages:validated,bytes};
+  // extractPdf already validates its public return value. PPTX retains its
+  // validation boundary here; replace pages without another full-page array.
+  if(asset.format==='pptx')for(let i=0;i<pages.length;i++){const result=Page.safeParse(pages[i]);if(!result.success)throw new DocverError('INVALID_PAGE_OBSERVATION','Extracted page '+pages[i].page+' failed canonical validation');pages[i]=result.data;}
+  return {asset,pages,bytes};
 }

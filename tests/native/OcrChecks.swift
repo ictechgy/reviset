@@ -79,6 +79,9 @@ import Vision
         let pixels=image.bitmapData!,stride=image.bytesPerRow
         func clear(){for y in 0..<160{for x in 0..<240{pixels[y*stride+x]=255}}}
         clear();for x in 20...220{pixels[40*stride+x]=0}
+        // A stroke alone is a rule, not evidence of struck text. Add separated
+        // glyph ink above and below the candidate to exercise the strike path.
+        for left in Swift.stride(from:30,through:190,by:40){for y in 32...48{for x in left...(left+12){pixels[y*stride+x]=0}}}
         let line=CGRect(x:20.0/240,y:30.0/160,width:200.0/240,height:20.0/160)
         precondition(DocverVision.supportedPixels(image))
         precondition(DocverVision.strikeCandidate(image,line) != nil,"8-bit grayscale strikes must be evaluated")

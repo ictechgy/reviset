@@ -6,6 +6,26 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DesktopService } from '../../packages/desktop/service.js';
 import { Report, SCHEMA_VERSION, ENGINE_VERSION, SCHEMA_HASH, hash, byteHash } from '../../packages/schema/index.js';
+import { Store } from '../../packages/storage/index.js';
+
+test('store revalidates mutable reports and preserves the cause of an automatic SQLite rollback', async () => {
+  const root=await mkdtemp(join(tmpdir(),'reviset-store-rollback-')),store=new Store(root);
+  try{
+    const report=Report.parse({schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION,schema_hash:SCHEMA_HASH,project_id:'project_rollback',report_id:'report_rollback',timeline_revision_id:'timeline',mapping_revision_id:'mapping',observation_environment:{},revisions:[],matches:[],candidates:[],mapping_decisions:[],lineages:[],changes:[],coverage_gaps:[]});
+    const run=store.beginRun(report.project_id,'Rollback boundary');
+    (report as any).schema_version='invalid';
+    assert.throws(()=>store.finishRun(run,report));
+    assert.equal(store.reports(report.project_id).length,0);
+    report.schema_version=SCHEMA_VERSION;
+    store.db.exec("CREATE TRIGGER reject_report BEFORE INSERT ON reports BEGIN SELECT RAISE(ROLLBACK,'original storage rejection'); END;");
+    assert.throws(()=>store.finishRun(run,report),/original storage rejection/);
+    assert.equal(store.reports(report.project_id).length,0);
+    assert.equal(store.db.prepare('SELECT status FROM runs WHERE id=?').get(run)?.status,'running');
+    store.db.exec('DROP TRIGGER reject_report');
+    store.finishRun(run,report);
+    assert.deepEqual(store.report(report.project_id,report.report_id),report);
+  }finally{store.close();await rm(root,{recursive:true,force:true});}
+});
 
 test('document commit remains successful after stage cleanup fails and run status reconciles the fixed snapshot', async () => {
   const root = await mkdtemp(join(tmpdir(), 'reviset-commit-boundary-'));

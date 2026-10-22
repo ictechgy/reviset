@@ -17,6 +17,7 @@ import {pdfWorkerEnvironment} from '../runtime/pdfjs-environment.js';
 import { ocrEnvironment } from '../ingest/ocr.js';
 import { officeEnvironment,preparePptxPreview } from '../render/pptx-preview.js';
 import {qualifyReferenceAppearance,attachReferenceAppearance} from '../render/reference-appearance.js';
+import {canonicalJsonDigest} from '../runtime/canonical-json.js';
 const require=createRequire(import.meta.url);
 function dependencyVersion(name:string):string {
   let folder=dirname(require.resolve(name));
@@ -62,18 +63,24 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     }
     const timelineId=id('timeline',timelineIdentity);
     const cache=new Map<string,Omit<Extracted,'bytes'>>();
+    const remainingUses=new Map<string,number>();
+    const observationKey=(expected:string,file:string)=>JSON.stringify([expected,/\.pptx$/i.test(file)?'pptx':'pdf']);
+    for(const [index,entry] of manifest.revisions.entries())for(const [fileIndex,file] of entry.files.entries()){
+      const key=observationKey(inputIdentities[index][fileIndex],file);remainingUses.set(key,(remainingUses.get(key)??0)+1);
+    }
     for(const [index,entry] of manifest.revisions.entries()) {
       signal?.throwIfAborted();
       onProgress?.({analysis_run_id:run,phase:'extract',current:index,total:manifest.revisions.length,label:entry.label});
       const extracted:Omit<Extracted,'bytes'>[]=[], errors:RevisionData['errors']=[],failedInputs:string[]=[];
       for(const [fileIndex,file] of entry.files.entries()) {
         const path=resolve(baseDir,file);
+        const expected=inputIdentities[index][fileIndex],cacheKey=observationKey(expected,file),futureUses=remainingUses.get(cacheKey)!-1;
+        remainingUses.set(cacheKey,futureUses);
         try {
-          const expected=inputIdentities[index][fileIndex],cacheKey=JSON.stringify([expected,/\.pptx$/i.test(file)?'pptx':'pdf']);
           let observation=cache.get(cacheKey);
           if(!observation){const loaded=await ingest(path,{ocr:options.ocr??'auto',expectedSha256:expected.startsWith('sha256:')?expected.slice(7):undefined,reuseRasterOcr:revisions.some(r=>r.pages.some(p=>p.ocr?.status==='available')),cacheRoot:join(store.root,'cache'),signal,onPage:(current,total)=>onProgress?.({analysis_run_id:run,phase:'extract',current:index,total:manifest.revisions.length,label:entry.label+` · PDF ${current}/${total}`})});
             if(loaded.asset.asset_id!==expected)throw new DocverError('SOURCE_CHANGED','Input changed while analysis was starting; retry with stable source files');
-            store.putAsset(loaded.asset.asset_id,loaded.bytes);const {bytes,...metadata}=loaded;observation=structuredClone(metadata);cache.set(cacheKey,observation);
+            store.putAsset(loaded.asset.asset_id,loaded.bytes);const {bytes,...metadata}=loaded;observation=metadata;if(futureUses)cache.set(cacheKey,observation);
           }else{
             // Cached parsing cannot certify a different occurrence's current
             // path. Verify its bytes before reusing the observation.
@@ -83,7 +90,8 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
           }
           // Raw parse observations belong to the asset. Bundle/preview enrichment
           // belongs to this occurrence and must never leak through the cache.
-          extracted.push(structuredClone(observation));
+          if(futureUses)extracted.push(structuredClone(observation));
+          else{cache.delete(cacheKey);extracted.push(observation);}
 
         } catch(e) {
           if(signal?.aborted||(e instanceof DocverError&&['CANCELLED','SOURCE_CHANGED'].includes(e.code)))throw e;
@@ -98,8 +106,9 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
       const revisionId=id('rev',[extracted.map(e=>e.asset.asset_id).sort(),failedInputs.sort()]);
       const occurrence=id('occ',[timelineId,index,revisionId]);
       const primary=extracted.find(e=>e.asset.format==='pptx')??extracted[0];
-      const stamp=(pages:Extracted['pages'])=>pages.map(p=>({...p,page_id:id('pg',[occurrence,p.page_id]),
-        elements:p.elements.map(e=>({...e,observation_id:id('obs',[occurrence,e.observation_id])}))}));
+      // Each occurrence now owns these trees: retained cache entries were
+      // cloned above, and last uses were removed before ownership transfer.
+      const stamp=(pages:Extracted['pages'])=>{for(const p of pages){p.page_id=id('pg',[occurrence,p.page_id]);for(const e of p.elements)e.observation_id=id('obs',[occurrence,e.observation_id]);}return pages;};
       const pages=stamp(primary?.pages??[]),bundleMapping:RevisionData['bundle_mapping']=[],gaps:RevisionData['coverage_gaps']=[];
       let referenceQualified=false;
       if(extracted.length===2) {
@@ -186,7 +195,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     const coverage=revisions.flatMap(r=>r.coverage_gaps);
     const base={schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION,project_id:manifest.project_id,timeline_revision_id:timelineId,
       mapping_revision_id:id('mapping',[decisions,relations,bundleDecisions]),schema_hash:SCHEMA_HASH,observation_environment:environment,revisions,matches,candidates,mapping_decisions:decisions,mapping_relations:relations,bundle_decisions:bundleDecisions,lineages,changes,coverage_gaps:coverage};
-    const reportId=id('rpt',base);
+    const reportId='rpt_'+canonicalJsonDigest(base);
     changes.forEach((c,i)=>{c.report_id=reportId;c.change_id=id('chg',[reportId,i,c]);c.evidence_uri=`docver://projects/${manifest.project_id}/reports/${reportId}/changes/${c.change_id}`;});
     const report=Report.parse({...base,report_id:reportId});
     onProgress?.({analysis_run_id:run,phase:'save',current:revisions.length,total:revisions.length});

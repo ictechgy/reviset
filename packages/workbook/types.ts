@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { hash } from '../schema/index.js';
 
 export const WORKBOOK_SCHEMA_VERSION = 'workbook.1';
-export const WORKBOOK_ENGINE_VERSION = 'workbook.1.0';
+export const WORKBOOK_ENGINE_VERSION = 'workbook.1.1';
 export const WorkbookFormat = z.enum(['xlsx', 'ods', 'csv']);
 export type WorkbookFormatData = z.infer<typeof WorkbookFormat>;
 export const CellValueType = z.enum(['blank', 'string', 'number', 'boolean', 'date', 'time', 'error']);
@@ -18,10 +18,24 @@ export const WorkbookCell = z.object({
   style_ref: z.string().regex(/^wstyle_[a-f0-9]{64}$/).optional(),
   hidden_row: z.boolean(), hidden_column: z.boolean(),
   source_ref: z.string(),
+  blank_style_only: z.literal(true).optional(),
+  source_range: z.string().optional(),
 });
+// Optional in workbook.1 so immutable 1.0 reports retain their original identity.
+// New reports use engine 1.1; these source rectangles never expand during ingestion.
+export const WorkbookBlankStyleRange = z.object({
+  row_start: z.number().int().min(1).max(1_048_576), row_end: z.number().int().min(1).max(1_048_576),
+  column_start: z.number().int().min(1).max(16_384), column_end: z.number().int().min(1).max(16_384),
+  number_format: z.string().nullable(), style: z.record(z.string(), z.string()),
+  style_ref: z.string().regex(/^wstyle_[a-f0-9]{64}$/).optional(),
+  hidden_row: z.boolean(), hidden_column: z.boolean(), source_ref: z.string(),
+  formula_interpretation: z.literal('unresolved').optional(),
+}).refine(r => r.row_start <= r.row_end && r.column_start <= r.column_end, 'Reversed blank formatting range');
+export type WorkbookBlankStyleRangeData = z.infer<typeof WorkbookBlankStyleRange>;
 export const WorkbookSheet = z.object({
   sheet_id: z.string(), name: z.string(), index: z.number().int().nonnegative(), hidden: z.boolean(),
   row_count: z.number().int().nonnegative(), column_count: z.number().int().nonnegative(),
+  blank_style_ranges: z.array(WorkbookBlankStyleRange).max(100_000).optional(),
   cells: z.array(WorkbookCell), merges: z.array(z.string()), coverage_gaps: z.array(WorkbookGap), source_ref: z.string(),
   row_metadata: z.array(z.object({ start: z.number().int().positive(), end: z.number().int().positive(), hidden: z.boolean(), size: z.string().nullable() })),
   column_metadata: z.array(z.object({ start: z.number().int().positive(), end: z.number().int().positive(), hidden: z.boolean(), size: z.string().nullable() })),

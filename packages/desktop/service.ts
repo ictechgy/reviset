@@ -7,7 +7,7 @@ import { QueryService } from '../query/index.js';
 import { analyze, type AnalyzeProgress } from '../engine/index.js';
 import { exportReport } from '../export/index.js';
 import { renderPdf } from '../render/index.js';
-import { byteHash, DocverError, Report, Decision, StoredDecision, MappingRelation,hash,canonical,BundleDecision,type BundleSelectionData,type RelationSelectionData, type InputManifest, type ReportData } from '../schema/index.js';
+import { byteHash, DocverError, Decision, StoredDecision, MappingRelation,hash,canonical,BundleDecision,type BundleSelectionData,type RelationSelectionData, type InputManifest, type ReportData } from '../schema/index.js';
 import { readRegularFile } from '../runtime/regular-file.js';
 
 import {createBundleDecision} from '../bundle/index.js';
@@ -77,7 +77,9 @@ export class DesktopService {
     if(persist){try{this.commit(projectId,result);}catch(e){this.store.failRun(result.analysis_run_id,e instanceof DocverError?e.code:'COMMIT_FAILED');throw e;}}return result;
   }
   commit(projectId:string,result:{report:ReportData;analysis_run_id:string;draft_hash:string}) {
-    const report=Report.parse(result.report);
+    // Store.finishRun validates and normalizes the complete mutable input at
+    // the write boundary. Avoid retaining another full report clone here.
+    const report=result.report;
     const run=this.store.db.prepare('SELECT status FROM runs WHERE id=? AND project_id=?').get(result.analysis_run_id,projectId);
     if(report.project_id!==projectId||run?.status!=='running')throw new DocverError('INVALID_RUN','분석 실행을 저장할 수 없습니다.');
     this.store.finishRun(result.analysis_run_id,report,report.revisions.some(r=>r.status!=='success')?'partial':'success',()=>{

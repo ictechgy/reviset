@@ -14,6 +14,7 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
   // Load outline paths for precise rectangular-clip checks. Source text and
   // metric boxes remain unchanged; unsupported/missing paths stay unverified.
   const task=getDocument({...pdfOptions,disableFontFace:true,data:new Uint8Array(bytes)});
+  let destroyed=false;
   try {
     const document=await task.promise;
     if(document.numPages>1000) throw new DocverError('PAGE_LIMIT','PDF exceeds 1000 pages');
@@ -57,20 +58,28 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
       }
       page.cleanup();
     }
+    // Canonical source observations no longer depend on PDF.js. Release its
+    // document/font/operator caches before retaining native OCR observations.
+    await task.destroy();destroyed=true;
     if(options.ocr&&options.ocr!=='off'){
       const environment=await ocrEnvironment();
       try{
         const observations=await captureNativePages(bytes,pages.map(p=>p.page),ocrPages,options);
-        for(const p of pages){const result=observations.get(p.page);if(!result){const reason=observations.failures.get(p.page)??'NATIVE_PAGE_FAILED';p.coverage_gaps.push({feature:'raster_verification',reason});if(ocrPages.includes(p.page))p.ocr={status:'failed',engine:'native-vision-helper',environment,reason};continue;}
+        for(const p of pages){options.signal?.throwIfAborted();const result=observations.get(p.page);if(!result){const reason=observations.failures.get(p.page)??'NATIVE_PAGE_FAILED';p.coverage_gaps.push({feature:'raster_verification',reason});if(ocrPages.includes(p.page))p.ocr={status:'failed',engine:'native-vision-helper',environment,reason};continue;}
           p.raster={sha256:result.render_sha256,width:result.width,height:result.height,renderer:result.renderer,environment,page_box:'cropBox',rotation:result.rotation,render_policy:'pdfkit-300dpi-max4096-source-color-profile-v1'};
           if(result.cache_write_failed&&!ocrPages.includes(p.page))p.coverage_gaps.push({feature:'native_cache',reason:'optional_cache_write_failed_observations_retained'});
           if(ocrPages.includes(p.page))await supplementPdfOcr(p,bytes,{...options,nativeResult:result});
+          observations.delete(p.page);
+          if(p.page%16===0)await new Promise<void>(resume=>setImmediate(resume));
         }
       }catch(e){if(options.signal?.aborted||(e instanceof DocverError&&e.code==='CANCELLED'))throw e;for(const p of pages){p.coverage_gaps.push({feature:'raster_verification',reason:e instanceof DocverError?e.code:'NATIVE_PAGE_FAILED'});if(ocrPages.includes(p.page))p.ocr={status:e instanceof DocverError&&e.code==='OCR_UNAVAILABLE'?'unavailable':'failed',engine:'native-vision-helper',environment,reason:e instanceof DocverError?e.code:'NATIVE_PAGE_FAILED'};}}
     }
-    return pages.map(p=>{const result=Page.safeParse(p);if(!result.success)throw new DocverError('INVALID_PAGE_OBSERVATION','PDF page '+p.page+' failed canonical validation at '+result.error.issues[0]?.path.join('.'));return result.data;});
+    // Replace one page at a time instead of retaining a second complete array
+    // of schema-cloned page trees until the final page has been validated.
+    for(let i=0;i<pages.length;i++){options.signal?.throwIfAborted();const result=Page.safeParse(pages[i]);if(!result.success)throw new DocverError('INVALID_PAGE_OBSERVATION','PDF page '+pages[i].page+' failed canonical validation at '+result.error.issues[0]?.path.join('.'));pages[i]=result.data;}
+    return pages;
   } catch(e) {
     if(e instanceof DocverError) throw e;
     throw new DocverError((e as Error).name==='PasswordException'?'ENCRYPTED_PDF':'INVALID_PDF','PDF extraction failed: '+(e as Error).name);
-  } finally { await task.destroy(); }
+  } finally { if(!destroyed)await task.destroy(); }
 }

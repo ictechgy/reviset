@@ -10,7 +10,7 @@ import CoreText
 @main
 #endif
 struct DocverVision {
-    static let version = "docver-vision-26-all-profile-raw-guard"
+    static let version = "docver-vision-27-strike-ink-separation"
     static var raster: CGImage?
     static var cachedPath=""
     static var cachedDocument:PDFDocument?
@@ -352,14 +352,43 @@ struct DocverVision {
         func color(_ x:Int,_ y:Int)->[Int]{let p=max(0,min(h-1,y))*image.bytesPerRow+max(0,min(w-1,x))*s+offset;return gray ? [Int](repeating:Int(data[p]),count:3) : [Int(data[p]),Int(data[p+1]),Int(data[p+2])]}
         let samples=[x0,(x0+x1)/2,x1].flatMap{x in [color(x,y0-4),color(x,y1+4)]}
         let bg=(0..<3).map{c in samples.map{$0[c]}.sorted()[samples.count/2]}
+        func ink(_ x:Int,_ y:Int)->Bool {
+            let p=y*image.bytesPerRow+x*s+offset
+            if gray{return 3*abs(Int(data[p])-bg[0])>135}
+            return abs(Int(data[p])-bg[0])+abs(Int(data[p+1])-bg[1])+abs(Int(data[p+2])-bg[2])>135
+        }
         var band=0,bestBand=0,bestX=x0,bestY=y0,bestWidth=0
         for y in (y0+(y1-y0)/4)...(y0+3*(y1-y0)/4){
             var run=0,longest=0,start=x0
-            for x in x0...x1 {let c=color(x,y);if zip(c,bg).reduce(0,{$0+abs($1.0-$1.1)})>135 {run+=1;if run>longest{longest=run;start=x-run+1}}else{run=0}}
+            for x in x0...x1 {if ink(x,y) {run+=1;if run>longest{longest=run;start=x-run+1}}else{run=0}}
             if Double(longest)>0.72*Double(x1-x0){band+=1;if band>bestBand{bestBand=band;bestX=start;bestY=y-band+1;bestWidth=longest}}else{band=0}
         }
         guard bestBand>0,Double(bestBand)<=0.22*Double(y1-y0) else {return (nil,"not_detected")}
-        return ([Double(bestX)/Double(w),Double(bestY)/Double(h),Double(bestWidth)/Double(w),Double(bestBand)/Double(h)],"detected")
+        // A long row alone is also the crossbar of a glyph (for example 6),
+        // or part of a rotated chart label. A strike needs independent ink
+        // evidence: it crosses a blank column between glyphs or extends past
+        // their outline. Exclude the band and its antialiased edge from the
+        // outline, and require text ink on both sides of the candidate.
+        // OCR may tightly bound the glyph and omit the strike's overhang.
+        // Follow only connected ink, within a small text-height-based margin.
+        let margin=max(2,Int(ceil(Double(y1-y0)*0.2))),sampleY=bestY+bestBand/2
+        var strokeLeft=bestX,strokeRight=bestX+bestWidth-1
+        while strokeLeft>max(0,x0-margin),ink(strokeLeft-1,sampleY){strokeLeft-=1}
+        while strokeRight<min(w-1,x1+margin),ink(strokeRight+1,sampleY){strokeRight+=1}
+        let padding=max(1,bestBand/2),upperEnd=bestY-padding,lowerStart=bestY+bestBand+padding
+        var outline=[Bool](repeating:false,count:strokeRight-strokeLeft+1),above=false,below=false
+        if upperEnd>y0,lowerStart<=y1 {
+            for x in strokeLeft...strokeRight {
+                for y in y0..<upperEnd where ink(x,y) {outline[x-strokeLeft]=true;above=true;break}
+                for y in lowerStart...y1 where ink(x,y) {outline[x-strokeLeft]=true;below=true;break}
+            }
+        }
+        var gap=0,longestGap=0,inkColumns=0
+        for occupied in outline {
+            if occupied{gap=0;inkColumns+=1}else{gap+=1;longestGap=max(longestGap,gap)}
+        }
+        guard above,below,inkColumns>=max(2,outline.count/5),longestGap>=max(2,Int(ceil(Double(y1-y0)*0.08))) else {return (nil,"ambiguous_glyph_stroke")}
+        return ([Double(strokeLeft)/Double(w),Double(bestY)/Double(h),Double(outline.count)/Double(w),Double(bestBand)/Double(h)],"detected")
     }
     @available(macOS 26.0, *)
     static func structure(_ image:CGImage) async throws -> [String:Any] {

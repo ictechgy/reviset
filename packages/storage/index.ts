@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Report,Page,Asset, canonical, byteHash, DocverError, type ReportData,type RevisionData,type PageData } from '../schema/index.js';
 import { z } from 'zod';
+import {canonicalJson} from '../runtime/canonical-json.js';
 import {publishContentSync} from '../runtime/atomic-content.js';
 const NativePage=z.object({page:Page,asset:Asset,reference:Page.pick({asset_id:true,page:true,width:true,height:true,source_transform:true}).optional()});
 function pagePayload(report:ReportData,pageId:string):z.infer<typeof NativePage>{
@@ -39,7 +40,8 @@ export class Store {
     this.db.prepare('INSERT INTO runs VALUES (?,?,NULL,?,NULL,?,NULL)').run(runId,projectId,new Date().toISOString(),'running');return runId;
   }
   finishRun(runId:string,report:ReportData,status='success',onCommit?:()=>void) {
-    const body=canonical(Report.parse(report));
+    report=Report.parse(report);
+    const body=canonicalJson(report);
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const run=this.db.prepare('SELECT project_id,status FROM runs WHERE id=?').get(runId);
@@ -52,7 +54,12 @@ export class Store {
       this.db.prepare('UPDATE runs SET report_id=?,finished_at=?,status=? WHERE id=?').run(report.report_id,new Date().toISOString(),status,runId);
       onCommit?.();
       this.db.exec('COMMIT');
-    } catch(e) {this.db.exec('ROLLBACK');throw e;}
+    } catch(e) {
+      // SQLite can already have rolled back after a full disk or an I/O error.
+      // Preserve that original failure instead of hiding it with ROLLBACK.
+      try{this.db.exec('ROLLBACK');}catch{/* transaction already ended */}
+      throw e;
+    }
   }
   failRun(runId:string,code:string) {this.db.prepare('UPDATE runs SET finished_at=?,status=?,error=? WHERE id=?').run(new Date().toISOString(),'failed',code,runId);}
   putAsset(assetId:string,bytes:Uint8Array) {

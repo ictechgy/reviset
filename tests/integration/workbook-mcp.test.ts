@@ -23,7 +23,7 @@ test('real workbook MCP scopes a read-only library and reconstructs bounded untr
     assert.equal(client.getServerVersion()?.name,'reviset');
     const tools=(await client.listTools()).tools;
     const workbookTools=tools.filter(t=>t.name.includes('workbook'));
-    assert.equal(workbookTools.length,12);for(const tool of workbookTools){assert.equal(tool.annotations?.readOnlyHint,true);assert.equal(tool.annotations?.openWorldHint,false);assert.ok(tool.outputSchema);}
+    assert.equal(workbookTools.length,13);for(const tool of workbookTools){assert.equal(tool.annotations?.readOnlyHint,true);assert.equal(tool.annotations?.openWorldHint,false);assert.ok(tool.outputSchema);}
     assert.ok(!tools.some(t=>/publish|analy[sz]e|commit|export|create/.test(t.name)));
     const invoke=async(name:string,args:Record<string,unknown>={})=>{
       const result=await client!.callTool({name,arguments:args});assert.notEqual(result.isError,true,JSON.stringify(result));

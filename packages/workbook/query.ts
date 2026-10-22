@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { canonical, hash, DocverError } from '../schema/index.js';
 import { WorkbookService } from './service.js';
 import { diffWorkbooks, WorkbookChange, type WorkbookChangeData, type WorkbookReportData } from './diff.js';
-import { workbookID,cellAddress,type WorkbookCellData, type WorkbookSheetData } from './types.js';
+import { rangeAddress } from './sparse.js';
+import { workbookID,cellAddress,type WorkbookBlankStyleRangeData,type WorkbookCellData, type WorkbookSheetData } from './types.js';
 
 const key = z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/), scope = { project_id: key, report_id: key };
 const paging = { limit: z.number().int().min(1).max(200).default(50), cursor: z.string().max(2048).optional(), max_output_tokens: z.number().int().min(256).max(8000).default(4000) };
@@ -15,6 +16,7 @@ export const workbookQuerySchemas = {
   get_workbook_report: z.object({ ...scope, ...paging }),
   list_workbook_revisions: z.object({ ...scope, ...paging }),
   list_workbook_sheets: z.object({ ...version, sheet_id: key.optional(), metadata_offset: z.number().int().min(0).max(500_000).default(0), metadata_limit: z.number().int().min(1).max(100).default(20), ...paging }),
+  list_workbook_formatting_ranges: z.object({ ...sheet, ...paging, ...text }),
   get_workbook_range: z.object({ ...sheet, row_start: z.number().int().min(1).max(1_048_576), row_limit: z.number().int().min(1).max(200).default(50), column_start: z.number().int().min(1).max(16_384), column_limit: z.number().int().min(1).max(200).default(50), ...paging, ...text }),
   get_workbook_cell: z.object({ ...sheet, row: z.number().int().min(1).max(1_048_576), column: z.number().int().min(1).max(16_384), component: z.enum(['cell','style']).default('cell'), ...text, ...paging }),
   list_workbook_changes: z.object({ ...scope, from_revision_occurrence_id: key, to_revision_occurrence_id: key, mode: z.enum(['history', 'range_net']).default('history'), sheet_id: key.optional(), kind: WorkbookChange.shape.kind.optional(), ...text, ...paging }),
@@ -42,8 +44,9 @@ export function boundedWorkbookCell(cell: WorkbookCellData | null, offset: numbe
   const styleTruncated = Object.entries(cell.style).length > 4 || Object.values(cell.style).some(v => v.length > 64);
   return { ...cell, value: value.value, formula: formula.value, number_format: format.value, style, source_ref: cell.source_ref, text_continuations: { value: value.continuation, formula: formula.continuation, number_format: format.continuation }, ...(styleTruncated ? {style_truncated:true,full_style_query:'get_workbook_cell component=style'}:{}) };
 }
+function rangeSummary(range:WorkbookBlankStyleRangeData|null){if(!range)return null;const {number_format:_format,style:_style,...metadata}=range;return {...metadata,address:rangeAddress(range)};}
 const boundedCell = boundedWorkbookCell;
-function summary(sheet: WorkbookSheetData, offset: number, limit: number) { return { sheet_id: sheet.sheet_id, name: sheet.name, index: sheet.index, hidden: sheet.hidden, row_count: sheet.row_count, column_count: sheet.column_count, cell_count: (sheet as any).cell_count ?? sheet.cells.length, merges: sheet.merges.slice(offset, offset + limit), merge_count: sheet.merges.length, row_metadata: sheet.row_metadata.slice(offset, offset + limit), row_metadata_count: sheet.row_metadata.length, column_metadata: sheet.column_metadata.slice(offset, offset + limit), column_metadata_count: sheet.column_metadata.length, coverage_gap_count: sheet.coverage_gaps.length, metadata_offset: offset, next_metadata_offset: Math.max(sheet.merges.length, sheet.row_metadata.length, sheet.column_metadata.length) > offset + limit ? offset + limit : null }; }
+function summary(sheet: WorkbookSheetData, offset: number, limit: number) { return { sheet_id: sheet.sheet_id, name: sheet.name, index: sheet.index, hidden: sheet.hidden, row_count: sheet.row_count, column_count: sheet.column_count, cell_count: (sheet as any).cell_count ?? sheet.cells.length, blank_style_range_count:sheet.blank_style_ranges?.length??0,blank_style_range_query:"list_workbook_formatting_ranges", merges: sheet.merges.slice(offset, offset + limit), merge_count: sheet.merges.length, row_metadata: sheet.row_metadata.slice(offset, offset + limit), row_metadata_count: sheet.row_metadata.length, column_metadata: sheet.column_metadata.slice(offset, offset + limit), column_metadata_count: sheet.column_metadata.length, coverage_gap_count: sheet.coverage_gaps.length, metadata_offset: offset, next_metadata_offset: Math.max(sheet.merges.length, sheet.row_metadata.length, sheet.column_metadata.length) > offset + limit ? offset + limit : null }; }
 const pause = () => new Promise<void>(resolve => setImmediate(resolve));
 const NET_CACHE_BYTES=16*1024*1024;
 export function boundedWorkbookNetCacheBytes(changes:readonly WorkbookChangeData[]):number|null{
@@ -78,10 +81,13 @@ export class WorkbookQueryService {
           }
           case 'list_workbook_revisions': items = report.revisions.map(({ sheets, coverage_gaps,style_definitions:_styles, ...r }) => ({ ...r, sheet_count: sheets.length, coverage_gap_count: coverage_gaps.length })); break;
           case 'list_workbook_sheets': if (args.sheet_id) selectedSheet(); items = revision().sheets.filter(s => !args.sheet_id || s.sheet_id === args.sheet_id).map(s => summary(s,args.metadata_offset,args.metadata_limit)); break;
+          case 'list_workbook_formatting_ranges': {
+            const s=selectedSheet(); items=s.blank_style_ranges??[];projectItem=range=>{const format=chunk(range.number_format,args.text_offset,args.text_length);return {...rangeSummary(range),number_format:format.value,text_continuations:{number_format:format.continuation},style_query:'get_workbook_cell component=style at row_start,column_start'};};extra={revision_occurrence_id:args.revision_occurrence_id,sheet_id:s.sheet_id,semantics:'explicit_source_blank_style_rectangles_no_area_expansion',text_offset_unit:'utf16_code_units'};break;
+          }
           case 'get_workbook_range': {
             const s = selectedSheet(), rowEnd = Math.min(1_048_577, args.row_start + args.row_limit), columnEnd = Math.min(16_385, args.column_start + args.column_limit);
             items = this.service.indexedCells(args.project_id, report.report_id, args.revision_occurrence_id, s.sheet_id, args.row_start, rowEnd, args.column_start, columnEnd,report).map(c => boundedCell(c, args.text_offset, args.text_length));
-            extra = { revision_occurrence_id: revision().revision_occurrence_id, sheet_id: s.sheet_id, row_start: args.row_start, row_limit: rowEnd - args.row_start, column_start: args.column_start, column_limit: columnEnd - args.column_start, sparse: true, missing_cell_meaning: 'not_materialized_not_confirmed_blank', metadata_query: 'list_workbook_sheets' }; break;
+            extra = { revision_occurrence_id: revision().revision_occurrence_id, sheet_id: s.sheet_id, row_start: args.row_start, row_limit: rowEnd - args.row_start, column_start: args.column_start, column_limit: columnEnd - args.column_start, sparse: true, missing_cell_meaning: 'not_materialized_not_confirmed_blank', metadata_query: 'list_workbook_sheets',blank_style_range_query:'list_workbook_formatting_ranges' }; break;
           }
           case 'get_workbook_cell': {
             const s = selectedSheet(), raw = this.service.indexedCells(args.project_id, report.report_id, args.revision_occurrence_id, s.sheet_id, args.row, args.row + 1, args.column, args.column + 1,report)[0] ?? null, cell = boundedCell(raw, args.text_offset, args.text_length);
@@ -100,14 +106,14 @@ export class WorkbookQueryService {
             const r = revision(), sheets = args.sheet_id ? [selectedSheet()] : r.sheets, needle = args.case_sensitive ? args.query : args.query.toLocaleLowerCase('en-US');
             // Scan stored source observations, retaining references rather than expanding styles
             // and allocating text/continuation objects for every match before pagination.
-            for (const s of sheets) for (const cell of this.service.indexedCells(args.project_id,report.report_id,r.revision_occurrence_id,s.sheet_id,1,1_048_577,1,16_385,report,false)) { const found = [cell.value, cell.formula].some(v => v !== null && (args.case_sensitive ? v : v.toLocaleLowerCase('en-US')).includes(needle)); if (found) items.push({ cell, sheet_id: s.sheet_id }); }
+            for (const s of sheets) for (const cell of this.service.indexedCells(args.project_id,report.report_id,r.revision_occurrence_id,s.sheet_id,1,1_048_577,1,16_385,report,false,false)) { const found = [cell.value, cell.formula].some(v => v !== null && (args.case_sensitive ? v : v.toLocaleLowerCase('en-US')).includes(needle)); if (found) items.push({ cell, sheet_id: s.sheet_id }); }
             projectItem = item => ({ ...boundedCell(this.cellStyle(report!,r.revision_occurrence_id,item.cell), args.text_offset, args.text_length), sheet_id: item.sheet_id, revision_occurrence_id: r.revision_occurrence_id });
             extra = { matching: 'literal_stored_value_or_formula_source_no_execution' }; break;
           }
           case 'get_workbook_cell_history': {
             const s = selectedSheet(), selected = revision(),readCell=(r:typeof selected,sheet:WorkbookSheetData,row:number,column:number)=>this.service.indexedCells(report!.project_id,report!.report_id,r.revision_occurrence_id,sheet.sheet_id,row,row+1,column,column+1,report,false)[0]??null;
             const startCell=readCell(selected,s,args.row,args.column),columns=new Map<string,{byRow:Map<number,string>;byKey:Map<string,{count:number;row:number}>}>();
-            const keyIndex=(r:typeof selected,sheet:WorkbookSheetData)=>{const key=r.revision_occurrence_id+'|'+sheet.sheet_id,existing=columns.get(key);if(existing)return existing;const byRow=new Map<number,string>(),byKey=new Map<string,{count:number;row:number}>();for(const cell of this.service.indexedCells(report!.project_id,report!.report_id,r.revision_occurrence_id,sheet.sheet_id,1,1_048_577,1,2,report,false)){if(cell.value===null||cell.value===''||cell.formula!==null||cell.formula_interpretation==='unresolved')continue;const value=canonical([cell.value_type,cell.value]);byRow.set(cell.row,value);const previous=byKey.get(value);if(previous)previous.count++;else byKey.set(value,{count:1,row:cell.row});}const index={byRow,byKey};columns.set(key,index);return index;};
+            const keyIndex=(r:typeof selected,sheet:WorkbookSheetData)=>{const key=r.revision_occurrence_id+'|'+sheet.sheet_id,existing=columns.get(key);if(existing)return existing;const byRow=new Map<number,string>(),byKey=new Map<string,{count:number;row:number}>();for(const cell of this.service.indexedCells(report!.project_id,report!.report_id,r.revision_occurrence_id,sheet.sheet_id,1,1_048_577,1,2,report,false,false)){if(cell.value===null||cell.value===''||cell.formula!==null||cell.formula_interpretation==='unresolved')continue;const value=canonical([cell.value_type,cell.value]);byRow.set(cell.row,value);const previous=byKey.get(value);if(previous)previous.count++;else byKey.set(value,{count:1,row:cell.row});}const index={byRow,byKey};columns.set(key,index);return index;};
             // Every row is grounded in a physical location. Follow only unique inferred anchors;
             // uncertain links stop, rather than silently hopping to another occupant of A1.
             const located = new Map<number, { sheet: WorkbookSheetData; row:number;column:number;cell: WorkbookCellData | null; association: string; method: string }>(); located.set(selected.index, { sheet: s,row:args.row,column:args.column, cell: startCell, association: 'exact', method: 'selected_physical_cell' });
@@ -140,7 +146,7 @@ export class WorkbookQueryService {
       if(to===from+1)return this.service.indexedChanges(report.project_id,report.report_id,[report.revisions[to].revision_occurrence_id],args.change_id);
       const key=hash({project_id:report.project_id,report_id:report.report_id,from:args.from_revision_occurrence_id,to:args.to_revision_occurrence_id}),cached=this.netCache.get(key);
       if(cached){this.netCache.delete(key);this.netCache.set(key,cached);return cached.changes;}
-      const endpoint=(index:number)=>{const revision=report.revisions[index];return {...revision,sheets:revision.sheets.map(sheet=>({...sheet,cells:this.service.indexedCells(report.project_id,report.report_id,revision.revision_occurrence_id,sheet.sheet_id,1,1_048_577,1,16_385,report,false)}))};};
+      const endpoint=(index:number)=>{const revision=report.revisions[index];return {...revision,sheets:revision.sheets.map(sheet=>({...sheet,cells:this.service.indexedCells(report.project_id,report.report_id,revision.revision_occurrence_id,sheet.sheet_id,1,1_048_577,1,16_385,report,false,false)}))};};
       const changes=diffWorkbooks(endpoint(from),endpoint(to)),bytes=boundedWorkbookNetCacheBytes(changes);
       if(bytes!==null){while(this.netCache.size>=2||this.netBytes+bytes>NET_CACHE_BYTES){const oldest=this.netCache.keys().next().value;if(oldest===undefined)break;this.netBytes-=this.netCache.get(oldest)!.bytes;this.netCache.delete(oldest);}this.netCache.set(key,{changes,bytes});this.netBytes+=bytes;}
       return changes;
@@ -149,8 +155,8 @@ export class WorkbookQueryService {
   }
   private cellStyle(report:WorkbookReportData,occurrence:string,cell:WorkbookCellData|null){if(!cell?.style_ref)return cell;const style=report.revisions.find(r=>r.revision_occurrence_id===occurrence)?.style_definitions?.[cell.style_ref];if(!style||workbookID('wstyle',style)!==cell.style_ref)throw new DocverError('WORKBOOK_STYLE_SCOPE','Cell style definition is outside this source occurrence or damaged');return {...cell,style};}
   private boundedChange(c: WorkbookChangeData, args: any, component:'summary'|'before'|'after'='summary',report?:WorkbookReportData) {
-    const {before,after,...metadata}=c;
-    return {...metadata,description:c.description.slice(0,2048),component,before_observation:before?'available':'not_materialized',after_observation:after?'available':'not_materialized',raw_detail_query:'get_workbook_change',raw_detail_components:['before','after'],...(component==='before'?{before:boundedCell(report?this.cellStyle(report,c.from_revision_occurrence_id,before):before,args.text_offset,args.text_length)}:component==='after'?{after:boundedCell(report?this.cellStyle(report,c.to_revision_occurrence_id,after):after,args.text_offset,args.text_length)}:{})};
+    const {before,after,before_blank_style_range,after_blank_style_range,...metadata}=c;
+    return {...metadata,...(before_blank_style_range!==undefined?{before_blank_style_range:rangeSummary(before_blank_style_range),after_blank_style_range:rangeSummary(after_blank_style_range??null)}:{}),description:c.description.slice(0,2048),component,before_observation:before?'available':'not_materialized',after_observation:after?'available':'not_materialized',raw_detail_query:'get_workbook_change',raw_detail_components:['before','after'],...(component==='before'?{before:boundedCell(report?this.cellStyle(report,c.from_revision_occurrence_id,before):before,args.text_offset,args.text_length)}:component==='after'?{after:boundedCell(report?this.cellStyle(report,c.to_revision_occurrence_id,after):after,args.text_offset,args.text_length)}:{})};
   }
   private paginate(name: string, args: any, all: any[], extra: Record<string, any>, measure?: (result: Record<string, any>) => number, projectItem?: (item: any) => any) {
     const { cursor, limit, max_output_tokens,text_offset:_textOffset,text_length:_textLength, ...selectors } = args, binding = hash({ name, selectors }); let index = 0;

@@ -4,12 +4,12 @@ import { posix } from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import { DocverError } from '../schema/index.js';
 import { readXml, decodeXmlReferences } from '../xml/index.js';
-import { cellAddress, workbookID, type WorkbookCellData, type WorkbookFormatData, type WorkbookGapData, type WorkbookObservationData, type WorkbookSheetData } from './types.js';
+import { cellAddress, workbookID, type WorkbookBlankStyleRangeData, type WorkbookCellData, type WorkbookFormatData, type WorkbookGapData, type WorkbookObservationData, type WorkbookSheetData } from './types.js';
 
 // These are rejection limits, never truncation targets. No workbook code is evaluated.
 export const WORKBOOK_LIMITS = Object.freeze({ input: 64 * 1024 * 1024, expanded: 128 * 1024 * 1024, part: 32 * 1024 * 1024, entries: 4096, sheets: 100, cells: 500_000, rows: 1_048_576, columns: 16_384, cellText: 1024 * 1024, xmlNodes: 2_000_000, metadata: 100_000, styleEntries: 2_000_000, text: 64 * 1024 * 1024 });
 type Element = { name: string; namespace: string; attrs: Record<string,string>; children: Element[]; text: string; content: (string | Element)[] };
-type State = { signal?: AbortSignal; cells: number; nodes: number; text: number; ticks: number; styleEntries: number; styleDefinitions: Record<string,Record<string,string>>; styleRefs: WeakMap<Record<string,string>,string>; stylesByCanonical: Map<string,string>; numberFormats: Set<string>; gaps: WorkbookGapData[] };
+type State = { signal?: AbortSignal; cells: number; nodes: number; text: number; ticks: number; styleEntries: number; blankRanges: number; styleDefinitions: Record<string,Record<string,string>>; styleRefs: WeakMap<Record<string,string>,string>; stylesByCanonical: Map<string,string>; numberFormats: Set<string>; gaps: WorkbookGapData[] };
 function fail(code: string, message: string): never { throw new DocverError(code, message); }
 const array = <T>(value: T | T[] | undefined): T[] => value === undefined ? [] : Array.isArray(value) ? value : [value];
 const children = (node: Element | undefined, name: string) => node?.children.filter(child => child.name === name) ?? [];
@@ -33,6 +33,10 @@ function addCell(state: State, sheet: WorkbookSheetData, cell: WorkbookCellData)
   if (cell.formula !== null) cell.cache_freshness = 'unknown';
   if (++state.cells > WORKBOOK_LIMITS.cells) fail('WORKBOOK_LIMIT', 'Workbook exceeds 500000 materialized cells');
   if (cell.value !== null) textBudget(state, cell.value); if (cell.formula !== null) textBudget(state, cell.formula);
+  internStyle(state,cell);
+  sheet.cells.push(cell); sheet.row_count = Math.max(sheet.row_count, cell.row); sheet.column_count = Math.max(sheet.column_count, cell.column);
+}
+function internStyle(state: State, cell: Pick<WorkbookCellData,'style'|'style_ref'|'number_format'>) {
   // Retain the complete default style, but store and charge each distinct
   // semantic definition once instead of copying it into every source cell.
   let styleRef = state.styleRefs.get(cell.style);
@@ -55,7 +59,6 @@ function addCell(state: State, sheet: WorkbookSheetData, cell: WorkbookCellData)
     state.numberFormats.add(cell.number_format); state.text += cell.number_format.length;
   }
   if (state.text > WORKBOOK_LIMITS.text) fail('WORKBOOK_LIMIT','Workbook values and distinct styles exceed text limit');
-  sheet.cells.push(cell); sheet.row_count = Math.max(sheet.row_count, cell.row); sheet.column_count = Math.max(sheet.column_count, cell.column);
 }
 function makeCell(sheet: WorkbookSheetData, row: number, column: number): WorkbookCellData { const address = cellAddress(row,column); return { address, row, column, value_type: 'blank', value: null, formula: null, number_format: null, style: {}, cached_result: 'not_applicable', cache_freshness: 'not_applicable', formula_dialect: null, formula_interpretation: 'not_formula', hidden_row: false, hidden_column: false, source_ref: `${sheet.source_ref}!${address}` }; }
 
@@ -75,6 +78,12 @@ async function applyFormulaInterpretation(sheet: WorkbookSheetData, ranges: Form
     if (wholeSheet || contains(cell.column)) {
       cell.formula_interpretation = 'unresolved'; cell.cached_result = saved?.has(cell) || cell.value !== null ? 'present' : 'missing'; cell.cache_freshness = 'unknown';
     }
+  }
+  let rangeChecks=0;
+  for(const blank of sheet.blank_style_ranges??[]){
+    await checkpoint(state);let intersects=wholeSheet;
+    if(!intersects)for(const [row,column,endRow,endColumn]of ranges){if(++rangeChecks>2_000_000)fail('WORKBOOK_LIMIT','Formula and blank formatting intersections exceed bounded comparison budget');if(row<=blank.row_end&&endRow>=blank.row_start&&column<=blank.column_end&&endColumn>=blank.column_start){intersects=true;break;}}
+    if(intersects){blank.formula_interpretation='unresolved';gap(sheet.coverage_gaps,'blank_range_formula_interpretation','An explicit blank formatting rectangle intersects an unresolved formula-dependent region. The whole retained rectangle is conservatively unresolved; its absence of a saved value is not certified direct input.',sheet.sheet_id);}
   }
   gap(sheet.coverage_gaps,'formula_interpretation',wholeSheet ? 'Formula-dependent ranges cannot be safely resolved; every source cell on this sheet is conservatively unresolved, with saved values only.' : 'Shared/array/matrix source ranges are unresolved; saved follower values are not certified direct inputs or expanded formulas.',sheet.sheet_id);
 }
@@ -607,27 +616,40 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
     const columns: {start: number; end: number; hidden: boolean; style: string | undefined}[] = []; let nextColumn = 1;
     for (const {node:col,inheritedHidden} of flattenOdsColumns(table)) { const repeat = integer(attr(col,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS column repetition'), end = nextColumn + repeat - 1; if (end > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS column repetition exceeds worksheet bounds'); const visibility = odsVisibility(col), hidden = inheritedHidden || visibility === 'collapse' || visibility === 'filter'; const size = styles.size(attr(col,'table:style-name'),'column'); columns.push({start:nextColumn,end,hidden,style:attr(col,'table:default-cell-style-name')}); if (hidden || size !== null) { addAxisMetadata(sheet.column_metadata,{start:nextColumn,end,hidden,size}); sheet.column_count = Math.max(sheet.column_count,end); } nextColumn = end + 1; }
     const effectiveColumns: ({hidden:boolean;style:string|undefined}|undefined)[] = new Array(WORKBOOK_LIMITS.columns + 1); for (const column of columns) for (let cc = column.start; cc <= column.end; cc++) effectiveColumns[cc] = column;
-    if (columns.some(column => column.style !== undefined)) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles can cover absent cells; only materialized cell formatting is compared, and blank formatted rectangles are not expanded.',sheet.sheet_id);
+    if (columns.some(column => column.style !== undefined)) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles covering absent cells are not expanded. Explicit blank-cell styles are retained as materialized cells or bounded sparse rectangles.',sheet.sheet_id);
     let row = 1;
     for (const {node:rowNode,inheritedHidden} of flattenOdsRows(table)) {
       await checkpoint(state);
       const rowRepeat = integer(attr(rowNode,'table:number-rows-repeated'),1,WORKBOOK_LIMITS.rows,'ODS row repetition'), lastRow = row + rowRepeat - 1; if (lastRow > WORKBOOK_LIMITS.rows) fail('WORKBOOK_LIMIT','ODS row repetition exceeds worksheet bounds');
       const visibility = odsVisibility(rowNode), hiddenRow = inheritedHidden || visibility === 'collapse' || visibility === 'filter', rowSize = styles.size(attr(rowNode,'table:style-name'),'row'); if (hiddenRow || rowSize !== null) { addAxisMetadata(sheet.row_metadata,{start:row,end:lastRow,hidden:hiddenRow,size:rowSize}); sheet.row_count = Math.max(sheet.row_count,lastRow); }
-      const rowDefaultStyle = attr(rowNode,'table:default-cell-style-name'); if (rowDefaultStyle !== undefined) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles can cover absent cells; only materialized cell formatting is compared, and blank formatted rectangles are not expanded.',sheet.sheet_id);
-      const rowCells: {node: Element; column: number; repeat: number; style: string | undefined; material: boolean}[] = []; let column = 1;
+      const rowDefaultStyle = attr(rowNode,'table:default-cell-style-name'); if (rowDefaultStyle !== undefined) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles covering absent cells are not expanded. Explicit blank-cell styles are retained as materialized cells or bounded sparse rectangles.',sheet.sheet_id);
+      const rowCells: {node: Element; column: number; repeat: number; style: string | undefined; material: boolean; sparse: boolean}[] = []; let column = 1;
       for (const node of rowNode.children.filter(child => child.name === 'table-cell' || child.name === 'covered-table-cell')) {
         const repeat = integer(attr(node,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS cell repetition'); if (column + repeat - 1 > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS cell repetition exceeds worksheet bounds');
         const directStyle = attr(node,'table:style-name'), style = directStyle ?? rowDefaultStyle;
-        const sourceContent = node.name === 'covered-table-cell' || attr(node,'office:value-type') !== undefined || attr(node,'table:formula') !== undefined || node.children.length > 0 || attr(node,'table:number-columns-spanned') !== undefined || attr(node,'table:number-rows-spanned') !== undefined;
+        const sourceContent = node.name === 'covered-table-cell' || node.children.length > 0 || Object.keys(node.attrs).some(key => !['table:style-name','table:number-columns-repeated'].includes(key));
         if (node.name === 'covered-table-cell' && (attr(node,'office:value-type') || attr(node,'table:formula') || node.children.length)) { wholeFormulaSheet = true; gap(sheet.coverage_gaps,'covered_cell_content','Covered source cells contain independent saved content; the sheet is conservatively unresolved.',sheet.sheet_id); }
-        if (sourceContent || directStyle !== undefined && styles.effective(directStyle)) rowCells.push({node,column,repeat,style,material:true});
+        if (sourceContent || directStyle !== undefined && styles.effective(directStyle)) rowCells.push({node,column,repeat,style,material:sourceContent,sparse:!sourceContent && repeat * rowRepeat > 64});
         column += repeat;
       }
-      const perRow = rowCells.reduce((count,cell) => count + (cell.material ? cell.repeat : 0),0); if (perRow * rowRepeat > WORKBOOK_LIMITS.cells - state.cells) fail('WORKBOOK_LIMIT','ODS materialized repetitions exceed cell budget');
+      const perRow = rowCells.reduce((count,cell) => count + (!cell.sparse ? cell.repeat : 0),0); if (perRow * rowRepeat > WORKBOOK_LIMITS.cells - state.cells) fail('WORKBOOK_LIMIT','ODS materialized repetitions exceed cell budget');
+      for (const item of rowCells) if (item.sparse) {
+        // Split only at hidden-column boundaries; the explicit cell style overrides
+        // column defaults. The rectangle remains independent of its cell area.
+        const semantic = styles.cell(item.style); let start = item.column;
+        while (start < item.column + item.repeat) {
+          await checkpoint(state); const hidden = effectiveColumns[start]?.hidden ?? false; let end = start;
+          while (end + 1 < item.column + item.repeat && (effectiveColumns[end + 1]?.hidden ?? false) === hidden) end++;
+          if (++state.blankRanges > WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Workbook explicit blank formatting ranges exceed 100000 entries');
+          const range: WorkbookBlankStyleRangeData = {row_start:row,row_end:lastRow,column_start:start,column_end:end,number_format:semantic.number,style:semantic.values,hidden_row:hiddenRow,hidden_column:hidden,source_ref:`${sheet.source_ref}!${cellAddress(row,start)}:${cellAddress(lastRow,end)}`};
+          internStyle(state,range); (sheet.blank_style_ranges ??= []).push(range);
+          sheet.row_count = Math.max(sheet.row_count,lastRow); sheet.column_count = Math.max(sheet.column_count,end); start = end + 1;
+        }
+      }
       // Empty repeated rows/cells only advance physical coordinates. This is
       // important for Calc's million-row trailing empty representation.
-      if (perRow > 0) for (let rr = row; rr <= lastRow; rr++) for (const item of rowCells) if (item.material) for (let cc = item.column; cc < item.column + item.repeat; cc++) {
-        await checkpoint(state); const node = item.node, cell = makeCell(sheet,rr,cc), col = effectiveColumns[cc], semantic = styles.cell(item.style ?? col?.style); cell.style = semantic.values; cell.number_format = semantic.number; cell.hidden_row = hiddenRow; cell.hidden_column = col?.hidden ?? false; cell.formula = attr(node,'table:formula') ?? null; if (cell.formula !== null) { cell.formula_dialect = 'ods_openformula'; cell.formula_interpretation = 'explicit'; }
+      if (perRow > 0) for (let rr = row; rr <= lastRow; rr++) for (const item of rowCells) if (!item.sparse) for (let cc = item.column; cc < item.column + item.repeat; cc++) {
+        await checkpoint(state); const node = item.node, cell = makeCell(sheet,rr,cc), col = effectiveColumns[cc], semantic = styles.cell(item.style ?? col?.style); cell.style = semantic.values; cell.number_format = semantic.number; if (!item.material) cell.blank_style_only = true; cell.hidden_row = hiddenRow; cell.hidden_column = col?.hidden ?? false; cell.formula = attr(node,'table:formula') ?? null; if (cell.formula !== null) { cell.formula_dialect = 'ods_openformula'; cell.formula_interpretation = 'explicit'; }
         const type = attr(node,'office:value-type'), extensionType = attr(node,'calcext:value-type'), explicitString = attr(node,'office:string-value'), paragraphs = children(node,'p'), unknownExtension = extensionType !== undefined && extensionType !== 'error' && extensionType !== type;
         if (extensionType === 'error') {
           // Actual LibreOffice26.8 saves errors with an empty office string
@@ -691,7 +713,7 @@ async function extractCsv(bytes: Uint8Array, state: State): Promise<WorkbookObse
   return {format:'csv',sheets:[sheet],coverage_gaps:state.gaps,calculation:'stored_values_only_no_recalculation',date_system:'unknown',calc_flags:{}};
 }
 export async function extractWorkbook(bytes: Uint8Array, format: WorkbookFormatData, options: {signal?: AbortSignal} = {}): Promise<WorkbookObservationData> {
-  const state: State = {signal:options.signal,cells:0,nodes:0,text:0,ticks:0,styleEntries:0,styleDefinitions:Object.create(null) as Record<string,Record<string,string>>,styleRefs:new WeakMap(),stylesByCanonical:new Map(),numberFormats:new Set(),gaps:[]}; abort(state);
+  const state: State = {signal:options.signal,cells:0,nodes:0,text:0,ticks:0,styleEntries:0,blankRanges:0,styleDefinitions:Object.create(null) as Record<string,Record<string,string>>,styleRefs:new WeakMap(),stylesByCanonical:new Map(),numberFormats:new Set(),gaps:[]}; abort(state);
   if (bytes.byteLength > WORKBOOK_LIMITS.input) fail('WORKBOOK_LIMIT','Workbook input exceeds 64 MiB');
   if (bytes.length >= 8 && Buffer.from(bytes.subarray(0,8)).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]))) fail('UNSUPPORTED_WORKBOOK','Legacy binary or encrypted Office workbooks are unsupported');
   await checkpoint(state,true);
