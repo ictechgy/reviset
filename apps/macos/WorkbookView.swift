@@ -312,7 +312,11 @@ private extension JSON {
         }
     }
     func changeMode(_ value: String) async {
-        guard ready else { return }; mode = value; comparisonNotice = ""; await loadChanges()
+        guard ready else { return }
+        // Evidence navigation may show an adjacent pair inside a wider interval.
+        // Changing the comparison method does not constitute a new version pick.
+        let preserve = revisions.contains(where:{$0["revision_occurrence_id"].string == changesFromID}) && revisions.contains(where:{$0["revision_occurrence_id"].string == changesToID})
+        mode = value; comparisonNotice = ""; await loadChanges(preserveEndpoints:preserve)
     }
     func moveWindow(rows: Int = 0, columns: Int = 0) async {
         guard ready else { return }
@@ -1208,6 +1212,7 @@ struct WorkbookGrid: NSViewRepresentable {
                 checkedCells += 1
             }
             checks["independent_expected_cells"] = checkedCells
+            checks["mode_interval"] = try await exerciseModeInterval(model,request:request)
 
             if let first = model.revisions.first,let last = model.revisions.last {
                 await model.changeVersions(before:first["revision_occurrence_id"].string,after:last["revision_occurrence_id"].string)
@@ -1349,6 +1354,39 @@ struct WorkbookGrid: NSViewRepresentable {
             checks["history_single_page"] = true
         }
         return checks
+    }
+    private static func exerciseModeInterval(_ model: WorkbookModel,request: JSON) async throws -> [String:Any] {
+        guard model.revisions.count >= 3,let first = model.revisions.first,let last = model.revisions.last else { return ["not_applicable":"fewer_than_three_versions"] }
+        let from = first["revision_occurrence_id"].string,to = last["revision_occurrence_id"].string
+        await model.changeVersions(before:from,after:to); await model.changeMode("history")
+        guard model.changesFailure.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_MODE_HISTORY",message:model.changesFailure) }
+        let historyCount = model.changeTotal,firstPageIDs = model.changes.map { $0["change_id"].string }
+        func intermediate(_ change: JSON) -> Bool {
+            change["to_revision_occurrence_id"].string != to && (!change["before_address"].string.isEmpty || !change["after_address"].string.isEmpty)
+        }
+        var selected = model.changes.first(where:intermediate),pages = 1
+        while selected == nil,!model.changeCursor.isEmpty,pages < 100 { await model.loadChanges(next:true); pages += 1; selected = model.changes.first(where:intermediate) }
+        guard let selected else {
+            if request["require_mode_interval_check"].bool { throw BridgeError(code:"WORKBOOK_SMOKE_MODE_FIXTURE",message:"넓은 구간 안의 중간 변경을 검증할 원본 이력이 없습니다.") }
+            return ["not_applicable":"no_intermediate_cell_change"]
+        }
+        await model.chooseChange(selected["change_id"].string)
+        guard model.cellFailure.isEmpty,model.rangeFailure.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_MODE_EVIDENCE",message:model.cellFailure + model.rangeFailure) }
+        let paneState = [model.beforeID,model.afterID,model.beforeAddress,model.afterAddress,String(model.beforeRowStart),String(model.beforeColumnStart),String(model.afterRowStart),String(model.afterColumnStart),String(model.selectedRow),String(model.selectedColumn)]
+        let beforeCell = try model.beforeCell.data(),afterCell = try model.afterCell.data()
+        for method in ["range_net","history"] {
+            await model.changeMode(method)
+            let currentPanes = [model.beforeID,model.afterID,model.beforeAddress,model.afterAddress,String(model.beforeRowStart),String(model.beforeColumnStart),String(model.afterRowStart),String(model.afterColumnStart),String(model.selectedRow),String(model.selectedColumn)]
+            guard model.changesFromID == from,model.changesToID == to,paneState == currentPanes,try model.beforeCell.data() == beforeCell,try model.afterCell.data() == afterCell,model.changesFailure.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_MODE_INTERVAL",message:"비교 방법 변경이 넓은 구간이나 선택한 셀 근거를 바꿨습니다.") }
+            if method == "history" {
+                guard model.changeTotal == historyCount,model.changes.map({$0["change_id"].string}) == firstPageIDs else { throw BridgeError(code:"WORKBOOK_SMOKE_MODE_HISTORY_TRUTH",message:"전체 이력으로 돌아온 뒤 넓은 구간의 변경이 달라졌습니다.") }
+            } else {
+                let ticket = model.begin("mode-smoke-check")
+                let expected = try await model.query("list_workbook_changes",["from_revision_occurrence_id":from,"to_revision_occurrence_id":to,"mode":model.changesMode,"limit":100,"max_output_tokens":model.pagingOutputBudget,"text_length":128],ticket:ticket)
+                guard model.changeTotal == expected["total"].int,model.changes.map({$0["change_id"].string}) == expected["items"].array.map({$0["change_id"].string}) else { throw BridgeError(code:"WORKBOOK_SMOKE_MODE_NET_TRUTH",message:"순변경 응답이 명시한 넓은 구간과 다릅니다.") }
+            }
+        }
+        return ["wide_from":from,"wide_to":to,"selected_from":paneState[0],"selected_to":paneState[1],"wide_interval_retained_across_mode_switch":true,"pane_versions_coordinates_and_raw_cells_retained":true,"actual_scoped_query_matches":true]
     }
     private static func grid(_ view: NSView?,pane: String) -> NSTableView? {
         guard let view else { return nil }

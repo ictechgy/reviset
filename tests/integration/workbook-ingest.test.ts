@@ -221,3 +221,28 @@ test('Excel xm:f extension formulas remain metadata while direct cell lookalike 
   const observed = await extractWorkbook(xlsxFixture('<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData><extLst><ext xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><x14:sparklineGroups><x14:sparklineGroup><x14:sparklines><x14:sparkline><xm:f>Sheet1!A1:A4</xm:f></x14:sparkline></x14:sparklines></x14:sparklineGroup></x14:sparklineGroups><x14:dataValidations><x14:dataValidation><x14:formula1><xm:f>Sheet2!$A$1:$A$4</xm:f></x14:formula1></x14:dataValidation></x14:dataValidations></ext></extLst>'),'xlsx'); assert.equal(cell(observed,'A1').value,'42'); assert.equal(cell(observed,'A1').formula,null); assert.ok(observed.sheets[0].coverage_gaps.some(item => item.feature === 'extension_features'));
   await assert.rejects(extractWorkbook(xlsxFixture('<sheetData><row r="1"><c r="A1"><xm:f xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">999</xm:f><v>42</v></c></row></sheetData>'),'xlsx'),code('UNSUPPORTED_NAMESPACE'));
 });
+
+test('unused XF fanout stays lazy and equivalent referenced XFs share one semantic definition',async () => {
+  // The ZIP contains ~1MiB of font attribute text and100000tinyXFdefinitions.
+  // Eager XF expansion would amplify this source toward100GiB with onlyonecell.
+  const font = Array.from({length:240},(_,index) => `<p${index} val="${String(index).padStart(3,'0') + 'x'.repeat(4093)}"/>`).join('');
+  const styles = '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts><font>' + font + '</font></fonts><cellStyleXfs><xf fontId="0" numFmtId="0"/></cellStyleXfs><cellXfs>' + '<xf fontId="0" numFmtId="0" xfId="0"/>'.repeat(100000) + '</cellXfs></styleSheet>';
+  const one = await extractWorkbook(xlsxFixture('<sheetData><row r="1"><c r="A1" s="99999"><v>1</v></c></row></sheetData>',{styles}),'xlsx'); assert.equal(one.sheets[0].cells.length,1); assert.equal(Object.keys(one.style_definitions ?? {}).length,1); assert.equal(Object.keys(style(one,'A1')).length,240);
+  const many = await extractWorkbook(xlsxFixture('<sheetData>' + Array.from({length:250},(_,index) => `<row r="${index + 1}"><c r="A${index + 1}" s="${index}"><v>1</v></c></row>`).join('') + '</sheetData>',{styles}),'xlsx'); assert.equal(many.sheets[0].cells.length,250); assert.equal(Object.keys(many.style_definitions ?? {}).length,1); assert.equal(cell(many,'A1').style_ref,cell(many,'A250').style_ref);
+});
+
+test('many ODS default-equivalent aliases and columns reuse a large inherited style without amplifying blanks',async () => {
+  const properties = Array.from({length:230},(_,index) => ` fo:p${index}="${String(index).padStart(3,'0') + 'x'.repeat(4093)}"`).join('');
+  const aliases = Array.from({length:16000},(_,index) => `<style:style style:name="Alias${index}" style:family="table-cell" style:parent-style-name="Default"/>`).join('');
+  const styles = `<style:default-style style:family="table-cell"><style:text-properties${properties}/></style:default-style><style:style style:name="Default" style:family="table-cell"/>` + aliases;
+  const columns = Array.from({length:16000},(_,index) => `<table:table-column table:default-cell-style-name="Alias${index}"/>`).join('');
+  const observed = await extractWorkbook(odsFixture(columns + '<table:table-row><table:table-cell office:value-type="float" office:value="1"/></table:table-row><table:table-row table:number-rows-repeated="1048575"><table:table-cell table:number-columns-repeated="16000"/></table:table-row>',{styles}),'ods');
+  assert.equal(observed.sheets[0].cells.length,1); assert.equal(observed.sheets[0].row_count,1); assert.equal(Object.keys(observed.style_definitions ?? {}).length,1); assert.equal(Object.keys(style(observed,'A1')).length,230);
+  // Explicit redundant properties must also collapse onto the inherited plan.
+  const redundant = await extractWorkbook(odsFixture('<table:table-column table:number-columns-repeated="16384" table:default-cell-style-name="Alias"/><table:table-row table:number-rows-repeated="1048576"><table:table-cell table:number-columns-repeated="16384"/></table:table-row>',{styles:'<style:default-style style:family="table-cell"><style:text-properties fo:font-size="10pt"/></style:default-style><style:style style:name="Default" style:family="table-cell"/><style:style style:name="Alias" style:family="table-cell" style:parent-style-name="Default"><style:text-properties fo:font-size="10pt"/></style:style>'}),'ods'); assert.equal(redundant.sheets[0].cells.length,0);
+});
+
+test('XLSX default row/column formatting over absent cells is a coverage gap, never an empty-change assurance',async () => {
+  const column = await extractWorkbook(xlsxFixture('<cols><col min="1" max="16384" style="1"/></cols><sheetData/>',{styles:workbookStyles}),'xlsx'); assert.equal(column.sheets[0].cells.length,0); assert.ok(column.sheets[0].coverage_gaps.some(item => item.feature === 'row_column_default_styles'));
+  const row = await extractWorkbook(xlsxFixture('<sheetData><row r="1048576" s="1" customFormat="1"/></sheetData>',{styles:workbookStyles}),'xlsx'); assert.equal(row.sheets[0].cells.length,0); assert.ok(row.sheets[0].coverage_gaps.some(item => item.feature === 'row_column_default_styles'));
+});

@@ -236,37 +236,46 @@ function xlsxString(value: string) { return value.replace(/_x([0-9a-fA-F]{4})_/g
 const BUILTIN_FORMATS: Record<number,string> = { 0:'General',1:'0',2:'0.00',3:'#,##0',4:'#,##0.00',9:'0%',10:'0.00%',11:'0.00E+00',12:'# ?/?',13:'# ??/??',14:'mm-dd-yy',15:'d-mmm-yy',16:'d-mmm',17:'mmm-yy',18:'h:mm AM/PM',19:'h:mm:ss AM/PM',20:'h:mm',21:'h:mm:ss',22:'m/d/yy h:mm',37:'#,##0 ;(#,##0)',38:'#,##0 ;[Red](#,##0)',39:'#,##0.00;(#,##0.00)',40:'#,##0.00;[Red](#,##0.00)',45:'mm:ss',46:'[h]:mm:ss',47:'mmss.0',48:'##0.0E+0',49:'@' };
 type Style = { number: string | null; values: Record<string,string> };
 function xmlStyle(node: Element | undefined, prefix: string, result: Record<string,string>) { if (!node) return; if (prefix.length > 255) fail('WORKBOOK_LIMIT','Style property nesting exceeds supported length'); for (const [key,value] of Object.entries(node.attrs)) { if (key.length > 255 || value.length > 4096 || Object.keys(result).length > 256) fail('WORKBOOK_LIMIT','Semantic style exceeds bounded properties'); result[`${prefix}.${local(key)}`] = value; } for (const child of node.children) { const name = `${prefix}.${child.name}`; if (Object.keys(child.attrs).length === 0 && child.children.length === 0) { if (name.length > 255 || child.text.length > 4096 || Object.keys(result).length >= 256) fail('WORKBOOK_LIMIT','Semantic style exceeds bounded properties'); result[name] = child.text || 'true'; } else xmlStyle(child,name,result); } }
-function xlsxStyles(parts: Map<string,Uint8Array>, path: string | undefined, state: State): Style[] {
-  if (!path) return [];
+type XlsxStyleResolver = {length:number;get(index:number):Style};
+function xlsxStyles(parts: Map<string,Uint8Array>, path: string | undefined, state: State): XlsxStyleResolver {
+  if (!path) return {length:0,get:() => fail('INVALID_WORKBOOK','Missing cell style')};
   const root = parseXml(requiredPart(parts,path),state); if (root.name !== 'styleSheet') fail('INVALID_WORKBOOK', 'Invalid XLSX styles');
-  const fonts = children(first(root,'fonts'),'font'), fills = children(first(root,'fills'),'fill'), borders = children(first(root,'borders'),'border'), baseXfs = children(first(root,'cellStyleXfs'),'xf');
+  const fonts = children(first(root,'fonts'),'font'), fills = children(first(root,'fills'),'fill'), borders = children(first(root,'borders'),'border'), baseXfs = children(first(root,'cellStyleXfs'),'xf'), cellXfs = children(first(root,'cellXfs'),'xf');
   const formats = new Map<number,string>(); for (const node of children(first(root,'numFmts'),'numFmt')) { const id = integer(attr(node,'numFmtId'),0,65535,'number format ID',0), code = attr(node,'formatCode'); if (!code || formats.has(id)) fail('INVALID_WORKBOOK', 'Invalid number format'); formats.set(id,textBudget(state,code)); }
   if (first(root,'dxfs')?.children.length || first(root,'colors')) gap(state.gaps,'advanced_styles','Conditional/differential styles and theme/indexed color resolution are not evaluated.');
   const applyNames = ['applyFont','applyFill','applyBorder','applyAlignment','applyNumberFormat','applyProtection'] as const;
-  const readApply = (node: Element | undefined,values?: Record<string,string>,prefix = 'xf') => {
+  // Validate small raw booleans even on unused definitions, without resolving
+  // or copying any referenced font/fill/border properties.
+  for (const nodes of [baseXfs,cellXfs]) for (const node of nodes) for (const name of applyNames) { const raw = attr(node,name); if (raw !== undefined && !['0','1','false','true'].includes(raw)) fail('INVALID_WORKBOOK','Invalid XLSX style application boolean'); }
+  const readApply = (node: Element | undefined,values: Record<string,string>,prefix = 'xf') => {
     const flags = new Map<string,boolean>();
-    for (const name of applyNames) { const raw = attr(node,name); if (raw === undefined) continue; if (!['0','1','false','true'].includes(raw)) fail('INVALID_WORKBOOK','Invalid XLSX style application boolean'); flags.set(name,truth(raw)); if (values) values[`${prefix}.${name}`] = raw; }
+    for (const name of applyNames) { const raw = attr(node,name); if (raw === undefined) continue; if (!['0','1','false','true'].includes(raw)) fail('INVALID_WORKBOOK','Invalid XLSX style application boolean'); flags.set(name,truth(raw)); values[`${prefix}.${name}`] = raw; }
     return flags;
   };
-  for (const base of baseXfs) readApply(base);
-  const nodeValues = new WeakMap<Element,Record<string,string>>();
-  const properties = (node: Element | undefined,prefix: string): Record<string,string> => { if (!node) return {}; const known = nodeValues.get(node); if (known) return known; const values: Record<string,string> = {}; xmlStyle(node,prefix,values); nodeValues.set(node,values); return values; };
-  const signature = (values: Record<string,string>) => JSON.stringify(Object.entries(values).sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0));
-  return children(first(root,'cellXfs'),'xf').map(xf => {
+  type StyleGroup = {values:Record<string,string>;ref:string;count:number};
+  const emptyGroup: StyleGroup = {values:{},ref:'empty',count:0}, nodeGroups = new WeakMap<Element,StyleGroup>(), formatRefs = new Map<string|null,string>(), combined = new Map<string,Style>(), resolved = new Map<number,Style>();
+  const properties = (node: Element | undefined,prefix: string): StyleGroup => {
+    if (!node) return emptyGroup; const known = nodeGroups.get(node); if (known) return known;
+    const values: Record<string,string> = {}; xmlStyle(node,prefix,values); const count = Object.keys(values).length, result = count ? {values,ref:workbookID('wgroup',values),count} : emptyGroup; nodeGroups.set(node,result); return result;
+  };
+  const formatRef = (number: string | null) => { const known = formatRefs.get(number); if (known) return known; const ref = workbookID('wformat',number); formatRefs.set(number,ref); return ref; };
+  return {length:cellXfs.length,get(index) {
+    const cached = resolved.get(index); if (cached) return cached;
+    const xf = cellXfs[index]; if (!xf) fail('INVALID_WORKBOOK','Missing cell style');
     const inherited = attr(xf,'xfId') === undefined ? baseXfs[0] : baseXfs[integer(attr(xf,'xfId'),0,Math.max(0,baseXfs.length - 1),'base style index',0)];
     if (attr(xf,'xfId') !== undefined && !inherited) fail('INVALID_WORKBOOK','Missing inherited cell style');
-    const values: Record<string,string> = {}, flags = readApply(xf,values); let number: string | null = null;
-    const baseFlags = readApply(inherited,values,'base'); if (baseFlags.size) gap(state.gaps,'style_application','Base-style application flags are retained as source evidence; exact named-style rendering is not certified.');
+    const rawFlags: Record<string,string> = {}, flags = readApply(xf,rawFlags), groups: StyleGroup[] = []; let number: string | null = null;
+    const baseFlags = readApply(inherited,rawFlags,'base'); if (baseFlags.size) gap(state.gaps,'style_application','Base-style application flags are retained as source evidence; exact named-style rendering is not certified.');
     for (const [prop,collection,prefix,flag] of [['fontId',fonts,'font','applyFont'],['fillId',fills,'fill','applyFill'],['borderId',borders,'border','applyBorder']] as const) {
-      const lookup = (raw: string | undefined) => { if (raw === undefined) return undefined; const index = integer(raw,0,Math.max(0,collection.length - 1),`${prefix} index`,0); if (!collection[index]) fail('INVALID_WORKBOOK','Missing semantic style definition'); return collection[index]; };
+      const lookup = (raw: string | undefined) => { if (raw === undefined) return undefined; const item = collection[integer(raw,0,Math.max(0,collection.length - 1),`${prefix} index`,0)]; if (!item) fail('INVALID_WORKBOOK','Missing semantic style definition'); return item; };
       const direct = lookup(attr(xf,prop)), base = lookup(attr(inherited,prop)), selected = flags.get(flag) === false ? base ?? collection[0] : direct ?? base;
-      if (!flags.has(flag) && direct && base && signature(properties(direct,prefix)) !== signature(properties(base,prefix))) gap(state.gaps,'style_application','Some style groups omit apply flags while direct and base properties differ; observed properties are retained and exact Excel application is not certified.');
-      Object.assign(values,properties(selected,prefix)); if (Object.keys(values).length > 256) fail('WORKBOOK_LIMIT','Combined semantic style exceeds property limit');
+      if (!flags.has(flag) && direct && base && properties(direct,prefix).ref !== properties(base,prefix).ref) gap(state.gaps,'style_application','Some style groups omit apply flags while direct and base properties differ; observed properties are retained and exact Excel application is not certified.');
+      groups.push(properties(selected,prefix));
     }
     for (const [name,flag] of [['alignment','applyAlignment'],['protection','applyProtection']] as const) {
       const direct = first(xf,name), base = first(inherited,name), selected = flags.get(flag) === false ? base : direct ?? base;
-      if (!flags.has(flag) && direct && signature(properties(direct,name)) !== signature(properties(base,name))) gap(state.gaps,'style_application','Some style groups omit apply flags while direct and base properties differ; observed properties are retained and exact Excel application is not certified.');
-      Object.assign(values,properties(selected,name)); if (Object.keys(values).length > 256) fail('WORKBOOK_LIMIT','Combined semantic style exceeds property limit');
+      if (!flags.has(flag) && direct && properties(direct,name).ref !== properties(base,name).ref) gap(state.gaps,'style_application','Some style groups omit apply flags while direct and base properties differ; observed properties are retained and exact Excel application is not certified.');
+      groups.push(properties(selected,name));
     }
     const directNumber = attr(xf,'numFmtId'), baseNumber = attr(inherited,'numFmtId');
     const format = (raw: string | undefined) => { const id = integer(raw,0,65535,'number format ID',0); return formats.get(id) ?? BUILTIN_FORMATS[id] ?? null; };
@@ -274,8 +283,16 @@ function xlsxStyles(parts: Map<string,Uint8Array>, path: string | undefined, sta
     number = flags.get('applyNumberFormat') === false ? baseFormat : directFormat === undefined ? baseFormat : directFormat;
     if (!flags.has('applyNumberFormat') && directFormat !== undefined && directFormat !== baseFormat) gap(state.gaps,'style_application','Some style groups omit apply flags while direct and base properties differ; observed properties are retained and exact Excel application is not certified.');
     if (number === null) gap(state.gaps,'number_format','Some built-in locale-specific number formats are not resolved.');
-    return { number, values };
-  });
+    // The cache key contains only small stable group/format hashes and six raw
+    // flag pairs. Equivalent referenced XFs never stringify/copy a shared huge font again.
+    const key = JSON.stringify([rawFlags,groups.map(group => group.ref),formatRef(number)]); let result = combined.get(key);
+    if (!result) {
+      if (combined.size >= WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Referenced semantic style count exceeds limit');
+      if (Object.keys(rawFlags).length + groups.reduce((sum,group) => sum + group.count,0) > 256) fail('WORKBOOK_LIMIT','Combined semantic style exceeds property limit');
+      const values = {...rawFlags}; for (const group of groups) Object.assign(values,group.values); result = {number,values}; combined.set(key,result);
+    }
+    resolved.set(index,result); return result;
+  }};
 }
 
 function calculationFlags(node: Element | undefined, allowed: readonly string[], state: State, prefix = '', result: Record<string,string> = {}): Record<string,string> {
@@ -320,19 +337,21 @@ async function extractXlsx(parts: Map<string,Uint8Array>, state: State): Promise
     const columnNodes = children(first(xml,'cols'),'col');
     if (columnNodes.length > WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Too many column metadata entries');
     const columns = columnNodes.map(col => ({ min: integer(attr(col,'min'),1,WORKBOOK_LIMITS.columns,'column range'), max: integer(attr(col,'max'),1,WORKBOOK_LIMITS.columns,'column range'), hidden: truth(attr(col,'hidden')), style: attr(col,'style') }));
+    if (columns.some(column => column.style !== undefined)) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles can cover absent cells; only materialized cell formatting is compared, and blank formatted rectangles are not expanded.',sheet.sheet_id);
     const effectiveColumns: ({hidden:boolean;style:string|undefined}|undefined)[] = new Array(WORKBOOK_LIMITS.columns + 1); let lastColumn = 0;
     for (const [index,col] of columns.entries()) { if (col.max < col.min || col.min <= lastColumn) fail('INVALID_WORKBOOK','Overlapping or unordered column spans'); lastColumn = col.max; sheet.column_metadata.push({ start: col.min, end: col.max, hidden: col.hidden, size: attr(columnNodes[index],'width') ?? null }); sheet.column_count = Math.max(sheet.column_count,col.max); for (let column = col.min; column <= col.max; column++) effectiveColumns[column] = col; }
     const addresses = new Set<string>(), formulaRanges: FormulaRange[] = [], savedCells = new WeakSet<WorkbookCellData>(), sharedWithRange = new Set<string>(), sharedWithoutRange = new Set<string>(); let wholeFormulaSheet = false, previousRow = 0;
     for (const rowNode of children(first(xml,'sheetData'),'row')) {
       if (sheet.row_metadata.length >= WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Too many row metadata entries');
       const row = integer(attr(rowNode,'r'),previousRow + 1,WORKBOOK_LIMITS.rows,'row index'); if (row <= previousRow) fail('INVALID_WORKBOOK','Duplicate or unordered worksheet rows'); previousRow = row; let previousColumn = 0;
+      if (attr(rowNode,'s') !== undefined || truth(attr(rowNode,'customFormat'))) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles can cover absent cells; only materialized cell formatting is compared, and blank formatted rectangles are not expanded.',sheet.sheet_id);
       const hidden = truth(attr(rowNode,'hidden')); if (hidden || attr(rowNode,'ht') !== undefined) { sheet.row_metadata.push({start: row, end: row, hidden, size: attr(rowNode,'ht') ?? null}); sheet.row_count = Math.max(sheet.row_count,row); }
       for (const node of children(rowNode,'c')) {
         await checkpoint(state); let column = previousColumn + 1; if (attr(node,'r')) { const [cellRow,cellColumn] = parseAddress(attr(node,'r')!); if (cellRow !== row) fail('INVALID_WORKBOOK','Cell address disagrees with row'); column = cellColumn; } if (column <= previousColumn || column > WORKBOOK_LIMITS.columns) fail('INVALID_WORKBOOK','Duplicate or unordered worksheet cells'); previousColumn = column;
         const cell = makeCell(sheet,row,column); if (addresses.has(cell.address)) fail('INVALID_WORKBOOK','Duplicate worksheet cell'); addresses.add(cell.address); cell.hidden_row = hidden; cell.hidden_column = effectiveColumns[column]?.hidden ?? false;
         const columnStyle = effectiveColumns[column]?.style, styleRaw = attr(node,'s') ?? (truth(attr(rowNode,'customFormat')) ? attr(rowNode,'s') : undefined) ?? columnStyle;
         if (state.cells >= WORKBOOK_LIMITS.cells) fail('WORKBOOK_LIMIT','Workbook materialized cell budget exceeded');
-        if (styleRaw !== undefined || styleList.length) { const index = integer(styleRaw,0,Math.max(0,styleList.length - 1),'cell style index',0); const style = styleList[index]; if (!style) fail('INVALID_WORKBOOK','Missing cell style'); cell.number_format = style.number; cell.style = style.values; }
+        if (styleRaw !== undefined || styleList.length) { const index = integer(styleRaw,0,Math.max(0,styleList.length - 1),'cell style index',0); const style = styleList.get(index); cell.number_format = style.number; cell.style = style.values; }
         if (['f','v','is'].some(name => children(node,name).length > 1)) fail('INVALID_WORKBOOK','Duplicate cell content');
         const f = first(node,'f'), valueNode = first(node,'v'), type = attr(node,'t') ?? 'n'; if (f) { cell.formula = f.text; cell.formula_dialect = 'xlsx_a1'; cell.formula_interpretation = 'explicit'; cell.cached_result = valueNode || first(node,'is') ? 'present' : 'missing'; if (attr(f,'t') && attr(f,'t') !== 'normal') { cell.formula_interpretation = 'unresolved'; const ref = attr(f,'ref'), sharedId = attr(f,'si'); if (ref) { addFormulaRange(formulaRanges,parseRange(ref)); if (attr(f,'t') === 'shared' && sharedId !== undefined) sharedWithRange.add(sharedId); } else if (attr(f,'t') === 'shared' && sharedId !== undefined) sharedWithoutRange.add(sharedId); else wholeFormulaSheet = true; gap(sheet.coverage_gaps,'shared_array_formulas','Shared/array/spill/data-table formulas are not expanded; source text and saved values are retained with unresolved interpretation.',sheet.sheet_id); } }
         if (type === 'inlineStr') { cell.value_type = 'string'; cell.value = xlsxPrimaryText(first(node,'is'),sheet.coverage_gaps,sheet.sheet_id); }
@@ -413,23 +432,57 @@ function odsStyles(roots: Element[], state: State): OdsStyles {
     }
     return result;
   };
-  const cell = (name?: string): Style => {
-    const cached = cellCache.get(name ?? ''); if (cached) return cached;
-    const values: Record<string,string> = {}; let number: string | null = null;
-    for (const node of [...(defaultCell ? [defaultCell] : []),...resolve(name,'table-cell')]) {
-      for (const child of node.children) if (['text-properties','paragraph-properties','table-cell-properties'].includes(child.name)) xmlStyle(child,child.name,values); else if (child.name === 'map') gap(state.gaps,'conditional_formatting','ODS conditional style maps are not evaluated.');
-      const data = attr(node,'style:data-style-name'); if (data) {
-        const scope = origin.get(node), format = scope?.formats.get(data) ?? common.formats.get(data); if (!format) fail('INVALID_WORKBOOK','Missing scoped ODS number format');
-        number = 'ods:' + canonicalStyle(format); if (number.length > 16384) fail('WORKBOOK_LIMIT','ODS number format exceeds 16384 characters');
-      }
-    }
-    const result = {number,values}; cellCache.set(name ?? '',result); return result;
+  type OdsGroup = {values:Record<string,string>;ref:string;count:number;text:number;number?:string};
+  type OdsPlan = {groups:OdsGroup[];number:string|null;ref:string};
+  const emptyGroup: OdsGroup = {values:{},ref:'empty',count:0,text:0}, emptyPlan: OdsPlan = {groups:[],number:null,ref:'empty'};
+  const nodeGroups = new WeakMap<Element,OdsGroup>(), nodePlans = new WeakMap<Element,OdsPlan>(), namedPlans = new Map<string,OdsPlan>(), composedPlans = new Map<string,OdsPlan>(), planStyles = new WeakMap<OdsPlan,Style>(), signatures = new WeakMap<Style,string>(), semanticStyles = new Map<string,Style>(), formatCache = new WeakMap<Element,string>(), formatRefs = new Map<string|null,string>();
+  let defaultPlan: OdsPlan | undefined, resolvedEntries = 0, resolvedText = 0;
+  const formatRef = (value: string | null) => { const cached = formatRefs.get(value); if (cached) return cached; const ref = workbookID('ods_format',value); formatRefs.set(value,ref); return ref; };
+  const describe = (node: Element): OdsGroup => {
+    const known = nodeGroups.get(node); if (known) return known;
+    const values: Record<string,string> = {};
+    for (const child of node.children) if (['text-properties','paragraph-properties','table-cell-properties'].includes(child.name)) xmlStyle(child,child.name,values); else if (child.name === 'map') gap(state.gaps,'conditional_formatting','ODS conditional style maps are not evaluated.');
+    let number: string | undefined; const data = attr(node,'style:data-style-name');
+    if (data) { const format = origin.get(node)?.formats.get(data) ?? common.formats.get(data); if (!format) fail('INVALID_WORKBOOK','Missing scoped ODS number format'); number = formatCache.get(format); if (number === undefined) { number = 'ods:' + canonicalStyle(format); if (number.length > 16384) fail('WORKBOOK_LIMIT','ODS number format exceeds 16384 characters'); formatCache.set(format,number); } }
+    const entries = Object.entries(values), result = entries.length || number !== undefined ? {values,ref:entries.length ? workbookID('ods_group',values) : 'empty',count:entries.length,text:entries.reduce((sum,[key,value]) => sum + key.length + value.length,0),...(number !== undefined ? {number} : {})} : emptyGroup;
+    nodeGroups.set(node,result); return result;
   };
-  const styleSignature = (style: Style) => JSON.stringify([style.number,Object.entries(style.values).sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0)]);
-  let baseline: string | undefined;
+  const lookup = (groups: OdsGroup[],key: string) => { for (let index = groups.length - 1; index >= 0; index--) if (Object.hasOwn(groups[index].values,key)) return groups[index].values[key]; return undefined; };
+  const compose = (parent: OdsPlan,source: OdsGroup): OdsPlan => {
+    if (!source.count && (source.number === undefined || source.number === parent.number)) return parent;
+    const inputKey = JSON.stringify([parent.ref,source.ref,source.number === undefined ? 'inherit' : formatRef(source.number)]), known = composedPlans.get(inputKey); if (known) return known;
+    // Test only this source node's overrides. Never clone or serialize its large
+    // inherited default just to discover that an alias adds no effective format.
+    let effective = source;
+    if (parent.groups.length && source.count) { const changed = Object.entries(source.values).filter(([key,value]) => lookup(parent.groups,key) !== value); if (!changed.length) effective = emptyGroup; else if (changed.length !== source.count) { const values = Object.fromEntries(changed); effective = {values,ref:workbookID('ods_group',values),count:changed.length,text:changed.reduce((sum,[key,value]) => sum + key.length + value.length,0)}; } }
+    const number = source.number ?? parent.number;
+    if (!effective.count && number === parent.number) { composedPlans.set(inputKey,parent); return parent; }
+    if (composedPlans.size >= WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Resolved ODS style plans exceed metadata budget');
+    const plan = {groups:effective.count ? [...parent.groups,effective] : parent.groups,number,ref:workbookID('ods_plan',[parent.ref,effective.ref,formatRef(number)])}; composedPlans.set(inputKey,plan); return plan;
+  };
+  const planFor = (name?: string): OdsPlan => {
+    if (defaultPlan === undefined) defaultPlan = defaultCell ? compose(emptyPlan,describe(defaultCell)) : emptyPlan;
+    if (name === undefined) return defaultPlan; const known = namedPlans.get(name); if (known) return known;
+    let plan = defaultPlan;
+    for (const node of resolve(name,'table-cell')) { const cached = nodePlans.get(node); if (cached) plan = cached; else { plan = compose(plan,describe(node)); nodePlans.set(node,plan); } }
+    namedPlans.set(name,plan); return plan;
+  };
+  const materialize = (plan: OdsPlan): Style => {
+    const known = planStyles.get(plan); if (known) return known;
+    const final = new Map<string,string>(); for (let index = plan.groups.length - 1; index >= 0; index--) for (const [key,value] of Object.entries(plan.groups[index].values)) if (!final.has(key)) { final.set(key,value); if (final.size > 256) fail('WORKBOOK_LIMIT','Combined ODS semantic style exceeds property limit'); }
+    const text = [...final].reduce((sum,[key,value]) => sum + key.length + value.length,plan.number?.length ?? 0);
+    // Column/default checks can resolve styles before a cell exists. Bound that
+    // derivation separately, before allocating merged maps or canonical hashes.
+    if (resolvedEntries + final.size > WORKBOOK_LIMITS.styleEntries || resolvedText + text > WORKBOOK_LIMITS.text) fail('WORKBOOK_LIMIT','ODS style resolution exceeds property/text budget');
+    resolvedEntries += final.size; resolvedText += text;
+    const values = Object.fromEntries(final), signature = workbookID('ods_semantic',{number:plan.number,values}); let result = semanticStyles.get(signature);
+    if (!result) { if (semanticStyles.size >= WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Distinct resolved ODS styles exceed metadata budget'); result = {number:plan.number,values}; semanticStyles.set(signature,result); signatures.set(result,signature); }
+    planStyles.set(plan,result); return result;
+  };
+  const cell = (name?: string): Style => { const known = cellCache.get(name ?? ''); if (known) return known; const result = materialize(planFor(name)); cellCache.set(name ?? '',result); return result; };
   return {
     cell,
-    effective(name) { if (name === undefined) return false; const known = effectiveCache.get(name); if (known !== undefined) return known; baseline ??= styleSignature(cell()); const effective = styleSignature(cell(name)) !== baseline; effectiveCache.set(name,effective); return effective; },
+    effective(name) { if (name === undefined) return false; const known = effectiveCache.get(name); if (known !== undefined) return known; const plan = planFor(name), baseline = planFor(); const effective = plan === baseline ? false : signatures.get(materialize(plan)) !== signatures.get(materialize(baseline)); effectiveCache.set(name,effective); return effective; },
     hidden(name) { let hidden = false; for (const node of resolve(name,'table')) { const value = attr(first(node,'table-properties'),'table:display'); if (value !== undefined) hidden = value === 'false' || value === '0'; } return hidden; },
     size(name,kind) { let size: string | null = null; for (const node of resolve(name,`table-${kind}`)) { const properties = first(node,`table-${kind}-properties`); size = attr(properties,kind === 'row' ? 'style:row-height' : 'style:column-width') ?? size; } return size; },
   };
