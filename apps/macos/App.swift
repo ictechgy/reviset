@@ -126,11 +126,12 @@ import Combine
                     if observedLoading && selectionReady() {break}
                 }
                 guard observedLoading && selectionReady() else {
-                    try JSON(["requested_change_id":id,"selected_change_id":model.selectedChangeID ?? "","loading_cycle_observed":observedLoading,"loading_changes":model.loadingChanges,"tab":model.tab,"expected_from_occurrence":before,"actual_from_occurrence":model.revision(model.from)["revision_occurrence_id"].string,"expected_to_occurrence":after,"actual_to_occurrence":model.revision(model.to)["revision_occurrence_id"].string,"left_page_id":model.leftPageID,"right_page_id":model.rightPageID,"changes_failure":model.changesFailure]).data().write(to:output.appendingPathComponent("history-selection-failure.json"))
+                    try? JSON(["requested_change_id":id,"selected_change_id":model.selectedChangeID ?? "","loading_cycle_observed":observedLoading,"loading_changes":model.loadingChanges,"tab":model.tab,"expected_from_occurrence":before,"actual_from_occurrence":model.revision(model.from)["revision_occurrence_id"].string,"expected_to_occurrence":after,"actual_to_occurrence":model.revision(model.to)["revision_occurrence_id"].string,"left_page_id":model.leftPageID,"right_page_id":model.rightPageID,"changes_failure":model.changesFailure]).data().write(to:output.appendingPathComponent("history-selection-failure.json"))
                     throw BridgeError(code:"HISTORY_CHANGE_SELECTION",message:"실제 이력 선택과 비교 구간·원문 근거가 다릅니다.")
                 }
                 historyChangeCheck=["selected_change_id":id,"from_occurrence":before,"to_occurrence":after,"source_pages_verified":true,"loading_cycle_observed":observedLoading,"selection_wait_seconds":Date().timeIntervalSince(selectionStarted)]
-                try capture(output.appendingPathComponent("native-history-change.png"));model.tab="history";try await model.updateChanges()
+                historyChangeCheck["capture_readiness"]=try await captureSelectedPages(model,output,selectionReady:selectionReady)
+                model.tab="history";try await model.updateChanges()
             }
             // Navigate both the first and final history columns and let pending range calls settle.
             for index in [0,model.revisions.count-1]{
@@ -152,6 +153,59 @@ import Combine
             complete["sidecar_checks"]=sidecarChecks
             try JSON(complete).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
         }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Reviset native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
+    }
+    static func captureSelectedPages(_ model:AppModel,_ output:URL,selectionReady:()->Bool) async throws->[String:Any] {
+        let report=model.report["report_id"].string,mode=model.pageMode,left=model.leftPageID,right=model.rightPageID,started=Date()
+        let pageIDs=mode=="before" ? [left]:mode=="after" ? [right]:[left,right]
+        var expected:[[String:Any]]=[]
+        for id in pageIDs {
+            let payload=try await model.page(id)
+            expected.append(["page_id":id,"kind":payload["source"]["kind"].string,"path":payload["source"]["path"].string,"page_index":(payload["display_page_number"].isNull ? payload["page"]["page"].int:payload["display_page_number"].int)-1])
+        }
+        func stillSelected()->Bool {selectionReady() && model.report["report_id"].string==report && model.pageMode==mode && model.leftPageID==left && model.rightPageID==right}
+        func visiblePages(_ root:NSView,_ window:NSWindow)->[(NSView,[String:Any])] {
+            var pages:[(NSView,[String:Any])]=[]
+            if root.window===window && !root.isHiddenOrHasHiddenAncestor && root.bounds.width>0 && root.bounds.height>0 && root.visibleRect.width>0 && root.visibleRect.height>0 {
+                if let pdf=root as? PDFView,let document=pdf.document,let page=pdf.currentPage {
+                    pages.append((pdf,["kind":"pdf","path":document.documentURL?.resolvingSymlinksInPath().standardizedFileURL.path ?? "","page_index":document.index(for:page)]))
+                } else if let canvas=root as? StructureCanvas.Canvas {
+                    pages.append((canvas,["kind":"structure","page_id":canvas.page["page_id"].string]))
+                }
+            }
+            for child in root.subviews {pages.append(contentsOf:visiblePages(child,window))}
+            return pages
+        }
+        var actual:[[String:Any]]=[],consecutive=0,polls=0
+        for _ in 0..<200 {
+            // PageColumn reads its payload after the model's range read. Yield to
+            // that task and require the selected source to be mounted for capture.
+            try await Task.sleep(nanoseconds:20_000_000);polls+=1
+            guard stillSelected() else{break}
+            guard let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}),let view=window.contentView else{consecutive=0;continue}
+            view.layoutSubtreeIfNeeded();view.displayIfNeeded()
+            let candidates=visiblePages(view,window);actual=candidates.map{$0.1}
+            var used=Set<ObjectIdentifier>()
+            let matched=expected.allSatisfy { target in
+                guard let match=candidates.first(where:{ candidate in
+                    guard !used.contains(ObjectIdentifier(candidate.0)) else{return false}
+                    if target["kind"] as? String == "pdf" {
+                        let path=URL(fileURLWithPath:target["path"] as? String ?? "").resolvingSymlinksInPath().standardizedFileURL.path
+                        return candidate.1["kind"] as? String == "pdf" && candidate.1["path"] as? String == path && candidate.1["page_index"] as? Int == target["page_index"] as? Int
+                    }
+                    return candidate.1["kind"] as? String == "structure" && candidate.1["page_id"] as? String == target["page_id"] as? String
+                }) else{return false}
+                used.insert(ObjectIdentifier(match.0));return true
+            }
+            consecutive=matched ? consecutive+1:0
+            if consecutive>=2 && stillSelected() {
+                view.layoutSubtreeIfNeeded();view.displayIfNeeded()
+                guard stillSelected() else{break}
+                try captureView(window,output.appendingPathComponent("native-history-change.png"))
+                return ["mounted_selected_pages_verified":true,"distinct_visible_views":used.count,"expected":expected,"actual":actual,"polls":polls,"wait_seconds":Date().timeIntervalSince(started)]
+            }
+        }
+        try? JSON(["report_id":report,"page_mode":mode,"expected":expected,"actual":actual,"polls":polls,"selection_ready":stillSelected(),"selected_change_id":model.selectedChangeID ?? "","loading_changes":model.loadingChanges,"tab":model.tab,"left_page_id":model.leftPageID,"right_page_id":model.rightPageID]).data().write(to:output.appendingPathComponent("history-capture-failure.json"))
+        throw BridgeError(code:"HISTORY_CAPTURE_READINESS",message:"선택한 원문 페이지의 실제 화면 표시를 확인하지 못했습니다.")
     }
     static func exerciseSidecar(_ model:AppModel,_ output:URL,_ requestedPage:Int) async throws->[String:Any] {
         guard model.sidecarConfigured else{throw BridgeError(code:"SIDECAR_NOT_CONFIGURED",message:"참고 렌더러가 준비되지 않았습니다.")}
