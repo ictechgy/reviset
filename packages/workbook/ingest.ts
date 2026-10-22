@@ -12,7 +12,6 @@ type Element = { name: string; namespace: string; attrs: Record<string,string>; 
 type State = { signal?: AbortSignal; cells: number; nodes: number; text: number; ticks: number; styleEntries: number; styleDefinitions: Record<string,Record<string,string>>; styleRefs: WeakMap<Record<string,string>,string>; stylesByCanonical: Map<string,string>; gaps: WorkbookGapData[] };
 function fail(code: string, message: string): never { throw new DocverError(code, message); }
 const array = <T>(value: T | T[] | undefined): T[] => value === undefined ? [] : Array.isArray(value) ? value : [value];
-const local = (name: string) => name.includes(':') ? name.slice(name.indexOf(':') + 1) : name;
 const children = (node: Element | undefined, name: string) => node?.children.filter(child => child.name === name) ?? [];
 const first = (node: Element | undefined, name: string) => children(node, name)[0];
 const attr = (node: Element | undefined, name: string) => node?.attrs[name];
@@ -130,6 +129,7 @@ async function readPackage(bytes: Uint8Array, state: State): Promise<Map<string,
   return result;
 }
 const ODF_NS = 'urn:oasis:names:tc:opendocument:xmlns:';
+const ODS_NUMBER_STYLES = new Set(['number-style','currency-style','percentage-style','date-style','time-style','boolean-style','text-style']);
 const MAIN_NS = new Set(['http://schemas.openxmlformats.org/spreadsheetml/2006/main','http://purl.oclc.org/ooxml/spreadsheetml/main']);
 const REL_NS = new Set(['http://schemas.openxmlformats.org/officeDocument/2006/relationships','http://purl.oclc.org/ooxml/officeDocument/relationships']);
 const NS_PREFIX = new Map<string,string>([...['office','table','text','style','number','manifest','draw','chart','presentation','form','config','meta'].map(prefix => [ODF_NS + (prefix === 'number' ? 'datastyle' : prefix) + ':1.0',prefix] as [string,string]),[ODF_NS + 'svg-compatible:1.0','svg'],[ODF_NS + 'xsl-fo-compatible:1.0','fo'],['http://www.w3.org/1999/xlink','xlink'],['http://www.w3.org/XML/1998/namespace','xml'],...Array.from(REL_NS,uri => [uri,'r'] as [string,string]),['urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0','calcext']]);
@@ -140,13 +140,15 @@ for (const [parent,names] of [
   ['workbook',['sheets','workbookPr','calcPr','definedNames']],['sheets',['sheet']],
   ['worksheet',['dimension','sheetData','cols','mergeCells','conditionalFormatting','dataValidations','tableParts','autoFilter','sheetProtection','extLst','drawing']],['sheetData',['row']],['row',['c']],['c',['f','v','is']],
   ['sst',['si']],['si',['t','r','rPh','phoneticPr']],['is',['t','r','rPh','phoneticPr']],['r',['t','rPr']],
-  ['styleSheet',['fonts','fills','borders','cellXfs','cellStyleXfs','numFmts','dxfs','colors','extLst']],['cellXfs',['xf']],['cellStyleXfs',['xf']],['xf',['alignment','protection']],['numFmts',['numFmt']],['cols',['col']],['mergeCells',['mergeCell']],
+  ['styleSheet',['fonts','fills','borders','cellXfs','cellStyleXfs','numFmts','dxfs','colors','extLst']],['fonts',['font']],['fills',['fill']],['borders',['border']],['cellXfs',['xf']],['cellStyleXfs',['xf']],['xf',['alignment','protection']],['numFmts',['numFmt']],['cols',['col']],['mergeCells',['mergeCell']],
 ] as const) xmlChildren('xlsx',parent,[...names],'xlsx');
 for (const [parent,names,prefix] of [
-  ['document-content',['body','automatic-styles'],'office'],['document-styles',['styles','automatic-styles'],'office'],['body',['spreadsheet'],'office'],['spreadsheet',['table'],'table'],
+  ['document-content',['body','automatic-styles'],'office'],['document-styles',['styles','automatic-styles'],'office'],['body',['spreadsheet'],'office'],['spreadsheet',['table','calculation-settings'],'table'],['calculation-settings',['null-date','iteration'],'table'],
   ...['table','table-row-group','table-column-group','table-header-rows','table-rows','table-header-columns','table-columns'].map(parent => [parent,['table-row','table-column','table-row-group','table-column-group','table-header-rows','table-rows','table-header-columns','table-columns'],'table'] as const),
   ['table-row',['table-cell','covered-table-cell'],'table'],['table-cell',['p'],'text'],['covered-table-cell',['p'],'text'],
   ['styles',['style','default-style'],'style'],['automatic-styles',['style','default-style'],'style'],
+  ...['style','default-style'].map(parent => [parent,['text-properties','paragraph-properties','table-cell-properties','table-properties','table-row-properties','table-column-properties'],'style'] as const),
+  ...['styles','automatic-styles'].map(parent => [parent,[...ODS_NUMBER_STYLES],'datastyle'] as const),
 ] as const) xmlChildren('ods',parent,[...names],ODF_NS + prefix + ':1.0');
 xmlChildren('manifest','manifest',['file-entry'],ODF_NS + 'manifest:1.0'); xmlChildren('manifest','file-entry',['encryption-data'],ODF_NS + 'manifest:1.0');
 xmlChildren('rels','Relationships',['Relationship'],'http://schemas.openxmlformats.org/package/2006/relationships');
@@ -239,7 +241,29 @@ function relationships(parts: Map<string,Uint8Array>, path: string, state: State
 function xlsxString(value: string) { return value.replace(/_x([0-9a-fA-F]{4})_/g,(_match,hex: string) => String.fromCharCode(parseInt(hex,16))); }
 const BUILTIN_FORMATS: Record<number,string> = { 0:'General',1:'0',2:'0.00',3:'#,##0',4:'#,##0.00',9:'0%',10:'0.00%',11:'0.00E+00',12:'# ?/?',13:'# ??/??',14:'mm-dd-yy',15:'d-mmm-yy',16:'d-mmm',17:'mmm-yy',18:'h:mm AM/PM',19:'h:mm:ss AM/PM',20:'h:mm',21:'h:mm:ss',22:'m/d/yy h:mm',37:'#,##0 ;(#,##0)',38:'#,##0 ;[Red](#,##0)',39:'#,##0.00;(#,##0.00)',40:'#,##0.00;[Red](#,##0.00)',45:'mm:ss',46:'[h]:mm:ss',47:'mmss.0',48:'##0.0E+0',49:'@' };
 type Style = { number: string | null; values: Record<string,string> };
-function xmlStyle(node: Element | undefined, prefix: string, result: Record<string,string>) { if (!node) return; if (prefix.length > 255) fail('WORKBOOK_LIMIT','Style property nesting exceeds supported length'); for (const [key,value] of Object.entries(node.attrs)) { if (key.length > 255 || value.length > 4096 || Object.keys(result).length > 256) fail('WORKBOOK_LIMIT','Semantic style exceeds bounded properties'); result[`${prefix}.${local(key)}`] = value; } for (const child of node.children) { const name = `${prefix}.${child.name}`; if (Object.keys(child.attrs).length === 0 && child.children.length === 0) { if (name.length > 255 || child.text.length > 4096 || Object.keys(result).length >= 256) fail('WORKBOOK_LIMIT','Semantic style exceeds bounded properties'); result[name] = child.text || 'true'; } else xmlStyle(child,name,result); } }
+function styleElementName(node: Element): string { return `${NS_PREFIX.get(node.namespace) ?? '{' + node.namespace + '}'}:${node.name}`; }
+function requireOdsProperty(node: Element | undefined): Element | undefined { if (node && node.namespace !== ODF_NS + 'style:1.0') fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary ODS style properties'); return node; }
+function xmlStyle(node: Element | undefined, prefix: string, result: Record<string,string>, domain: 'xlsx' | 'ods', state: State, root = true) {
+  if (!node) return;
+  if (domain === 'xlsx' && !MAIN_NS.has(node.namespace)) fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary XLSX style properties');
+  if (domain === 'ods' && root) requireOdsProperty(node);
+  if (prefix.length > 255) fail('WORKBOOK_LIMIT','Style property nesting exceeds supported length');
+  for (const [key,value] of Object.entries(node.attrs)) {
+    if (prefix.length + 1 + key.length > 255 || value.length > 4096 || Object.keys(result).length >= 256) fail('WORKBOOK_LIMIT','Semantic style exceeds bounded properties');
+    // Canonical expanded attribute keys are source evidence. A qualified fo:val
+    // can never impersonate XLSX val, nor style:font-weight impersonate fo:font-weight.
+    result[`${prefix}.${key}`] = value;
+    if ((domain === 'xlsx' && key.includes(':')) || key.startsWith('{')) gap(state.gaps,'advanced_styles','Namespaced/extension style properties are retained with namespace identity; exact rendering is not evaluated.');
+  }
+  for (const child of node.children) {
+    if (domain === 'xlsx' && child.name === 'extLst') { gap(state.gaps,'advanced_styles','Style extension metadata is excluded from primary semantic properties.'); continue; }
+    if (domain === 'xlsx' && !MAIN_NS.has(child.namespace)) fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary XLSX style properties');
+    if (domain === 'ods' && ![ODF_NS + 'style:1.0',ODF_NS + 'text:1.0',ODF_NS + 'office:1.0',ODF_NS + 'datastyle:1.0'].includes(child.namespace)) gap(state.gaps,'advanced_styles','Foreign style descendants retain namespace identity; exact rendering is not evaluated.');
+    const name = `${prefix}.${domain === 'xlsx' ? child.name : styleElementName(child)}`;
+    if (Object.keys(child.attrs).length === 0 && child.children.length === 0) { if (name.length > 255 || child.text.length > 4096 || Object.keys(result).length >= 256) fail('WORKBOOK_LIMIT','Semantic style exceeds bounded properties'); result[name] = child.text || 'true'; }
+    else xmlStyle(child,name,result,domain,state,false);
+  }
+}
 type XlsxStyleResolver = {length:number;get(index:number):Style};
 function xlsxStyles(parts: Map<string,Uint8Array>, path: string | undefined, state: State): XlsxStyleResolver {
   if (!path) return {length:0,get:() => fail('INVALID_WORKBOOK','Missing cell style')};
@@ -260,7 +284,7 @@ function xlsxStyles(parts: Map<string,Uint8Array>, path: string | undefined, sta
   const emptyGroup: StyleGroup = {values:{},ref:'empty',count:0}, nodeGroups = new WeakMap<Element,StyleGroup>(), formatRefs = new Map<string|null,string>(), combined = new Map<string,Style>(), resolved = new Map<number,Style>();
   const properties = (node: Element | undefined,prefix: string): StyleGroup => {
     if (!node) return emptyGroup; const known = nodeGroups.get(node); if (known) return known;
-    const values: Record<string,string> = {}; xmlStyle(node,prefix,values); const count = Object.keys(values).length, result = count ? {values,ref:workbookID('wgroup',values),count} : emptyGroup; nodeGroups.set(node,result); return result;
+    const values: Record<string,string> = {}; xmlStyle(node,prefix,values,'xlsx',state); const count = Object.keys(values).length, result = count ? {values,ref:workbookID('wgroup',values),count} : emptyGroup; nodeGroups.set(node,result); return result;
   };
   const formatRef = (number: string | null) => { const known = formatRefs.get(number); if (known) return known; const ref = workbookID('wformat',number); formatRefs.set(number,ref); return ref; };
   return {length:cellXfs.length,get(index) {
@@ -299,11 +323,12 @@ function xlsxStyles(parts: Map<string,Uint8Array>, path: string | undefined, sta
   }};
 }
 
-function calculationFlags(node: Element | undefined, allowed: readonly string[], state: State, prefix = '', result: Record<string,string> = {}): Record<string,string> {
+function calculationFlags(node: Element | undefined, allowed: readonly string[], state: State, domain: 'xlsx' | 'ods', prefix = '', result: Record<string,string> = {}): Record<string,string> {
   if (!node) return result;
+  if (domain === 'xlsx' ? !MAIN_NS.has(node.namespace) : node.namespace !== ODF_NS + 'table:1.0') fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary calculation settings');
   for (const [raw,value] of Object.entries(node.attrs)) {
-    const key = local(raw); if (raw.startsWith('xmlns')) continue;
-    if (!allowed.includes(key)) { gap(state.gaps,'calculation_metadata','Unmodelled calculation settings are omitted; saved-result freshness remains unknown.'); continue; }
+    const key = domain === 'xlsx' ? raw.includes(':') ? null : raw : raw.startsWith('table:') ? raw.slice(6) : null;
+    if (key === null || !allowed.includes(key)) { gap(state.gaps,'calculation_metadata','Unmodelled calculation settings are omitted; saved-result freshness remains unknown.'); continue; }
     if (value.length > 128 || Object.keys(result).length >= 32) fail('WORKBOOK_LIMIT','Calculation metadata exceeds bounded fields');
     result[prefix + key] = value;
   }
@@ -385,7 +410,7 @@ async function extractXlsx(parts: Map<string,Uint8Array>, state: State): Promise
   gap(state.gaps,'stored_formula_results','Only saved cell results are observed; their freshness is unknown and no calculation or external data refresh occurs.');
   gap(state.gaps,'display_layout','Exact Excel rendering, row heights, column widths, locale/theme resolution and page layout are outside this cell model.');
   if (truth(attr(first(root,'workbookPr'),'date1904'))) gap(state.gaps,'date_epoch','Workbook uses the 1904 date system. Numeric date serials and number formats are retained without conversion.');
-  return { format: 'xlsx', sheets, coverage_gaps: state.gaps, calculation: 'stored_values_only_no_recalculation', date_system: truth(attr(first(root,'workbookPr'),'date1904')) ? '1904' : '1900', calc_flags: calculationFlags(first(root,'calcPr'),['calcId','calcMode','fullCalcOnLoad','refMode','iterate','iterateCount','iterateDelta','fullPrecision','calcCompleted','calcOnSave','concurrentCalc','concurrentManualCount','forceFullCalc'],state) };
+  return { format: 'xlsx', sheets, coverage_gaps: state.gaps, calculation: 'stored_values_only_no_recalculation', date_system: truth(attr(first(root,'workbookPr'),'date1904')) ? '1904' : '1900', calc_flags: calculationFlags(first(root,'calcPr'),['calcId','calcMode','fullCalcOnLoad','refMode','iterate','iterateCount','iterateDelta','fullPrecision','calcCompleted','calcOnSave','concurrentCalc','concurrentManualCount','forceFullCalc'],state,'xlsx') };
 }
 function descendants(node: Element, name: string): Element[] { const found: Element[] = []; const visit = (current: Element) => { if (current.name === name) found.push(current); for (const child of current.children) visit(child); }; visit(node); return found; }
 function odsPrimaryText(paragraphs: Element[],gaps: WorkbookGapData[],sheet_id?: string): string {
@@ -404,7 +429,11 @@ function odsPrimaryText(paragraphs: Element[],gaps: WorkbookGapData[],sheet_id?:
   for (const [index,paragraph] of paragraphs.entries()) { if (index) write('\n'); visit(paragraph); }
   return result;
 }
-function canonicalStyle(node: Element): string { const attrs = Object.fromEntries(Object.entries(node.attrs).filter(([name]) => !['name','display-name'].includes(local(name)) && !name.startsWith('xmlns')).map(([name,value]) => [local(name),value]).sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0)); return JSON.stringify({name:node.name,attrs,content:node.content.map(item => typeof item === 'string' ? item : canonicalStyle(item))}); }
+function canonicalStyle(node: Element,state: State): string {
+  if (![ODF_NS + 'datastyle:1.0',ODF_NS + 'style:1.0',ODF_NS + 'text:1.0'].includes(node.namespace)) gap(state.gaps,'advanced_styles','Foreign number-style descendants retain namespace identity; exact rendering is not evaluated.');
+  const attrs = Object.fromEntries(Object.entries(node.attrs).filter(([name]) => !['style:name','style:display-name'].includes(name)).sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0));
+  return JSON.stringify({namespace:node.namespace,name:node.name,attrs,content:node.content.map(item => typeof item === 'string' ? item : canonicalStyle(item,state))});
+}
 type OdsStyles = { cell(name?: string): Style; effective(name?: string): boolean; hidden(name?: string): boolean; size(name: string | undefined, kind: 'row' | 'column'): string | null };
 type OdsStyleScope = { styles: Map<string,Element>; formats: Map<string,Element> };
 function odsStyles(roots: Element[], state: State): OdsStyles {
@@ -419,7 +448,8 @@ function odsStyles(roots: Element[], state: State): OdsStyles {
       else if (item.name === 'style') {
         const key = family + ':' + name; if (!name || !family || scope.styles.has(key)) fail('INVALID_WORKBOOK','Duplicate or unnamed ODS style within one scope'); scope.styles.set(key,item); origin.set(item,scope);
         if (!supported.has(family)) gap(state.gaps,'ods_style_family','Some non-cell/row/column/table style families are outside the compared model.');
-      } else if (name && /-style$/.test(item.name)) { if (scope.formats.has(name)) fail('INVALID_WORKBOOK','Duplicate ODS data style within one scope'); scope.formats.set(name,item); }
+      } else if (name && ODS_NUMBER_STYLES.has(item.name)) { if (item.namespace !== ODF_NS + 'datastyle:1.0') fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary ODS number styles'); if (scope.formats.has(name)) fail('INVALID_WORKBOOK','Duplicate ODS data style within one scope'); scope.formats.set(name,item); }
+      else if (name && /-style$/.test(item.name)) gap(state.gaps,'ods_style_family','Unmodelled named style families are outside the compared model.');
     }
   };
   // Automatic style names are local to their package part. styles.xml page and
@@ -447,9 +477,9 @@ function odsStyles(roots: Element[], state: State): OdsStyles {
   const describe = (node: Element): OdsGroup => {
     const known = nodeGroups.get(node); if (known) return known;
     const values: Record<string,string> = {};
-    for (const child of node.children) if (['text-properties','paragraph-properties','table-cell-properties'].includes(child.name)) xmlStyle(child,child.name,values); else if (child.name === 'map') gap(state.gaps,'conditional_formatting','ODS conditional style maps are not evaluated.');
+    for (const child of node.children) if (['text-properties','paragraph-properties','table-cell-properties'].includes(child.name)) xmlStyle(child,child.name,values,'ods',state); else if (child.name === 'map') gap(state.gaps,'conditional_formatting','ODS conditional style maps are not evaluated.');
     let number: string | undefined; const data = attr(node,'style:data-style-name');
-    if (data) { const format = origin.get(node)?.formats.get(data) ?? common.formats.get(data); if (!format) fail('INVALID_WORKBOOK','Missing scoped ODS number format'); number = formatCache.get(format); if (number === undefined) { number = 'ods:' + canonicalStyle(format); if (number.length > 16384) fail('WORKBOOK_LIMIT','ODS number format exceeds 16384 characters'); formatCache.set(format,number); } }
+    if (data) { const format = origin.get(node)?.formats.get(data) ?? common.formats.get(data); if (!format) fail('INVALID_WORKBOOK','Missing scoped ODS number format'); number = formatCache.get(format); if (number === undefined) { number = 'ods:' + canonicalStyle(format,state); if (number.length > 16384) fail('WORKBOOK_LIMIT','ODS number format exceeds 16384 characters'); formatCache.set(format,number); } }
     const entries = Object.entries(values), result = entries.length || number !== undefined ? {values,ref:entries.length ? workbookID('ods_group',values) : 'empty',count:entries.length,text:entries.reduce((sum,[key,value]) => sum + key.length + value.length,0),...(number !== undefined ? {number} : {})} : emptyGroup;
     nodeGroups.set(node,result); return result;
   };
@@ -489,8 +519,8 @@ function odsStyles(roots: Element[], state: State): OdsStyles {
   return {
     cell,
     effective(name) { if (name === undefined) return false; const known = effectiveCache.get(name); if (known !== undefined) return known; const plan = planFor(name), baseline = planFor(); const effective = plan === baseline ? false : signatures.get(materialize(plan)) !== signatures.get(materialize(baseline)); effectiveCache.set(name,effective); return effective; },
-    hidden(name) { let hidden = false; for (const node of resolve(name,'table')) { const value = attr(first(node,'table-properties'),'table:display'); if (value !== undefined) hidden = value === 'false' || value === '0'; } return hidden; },
-    size(name,kind) { let size: string | null = null; for (const node of resolve(name,`table-${kind}`)) { const properties = first(node,`table-${kind}-properties`); size = attr(properties,kind === 'row' ? 'style:row-height' : 'style:column-width') ?? size; } return size; },
+    hidden(name) { let hidden = false; for (const node of resolve(name,'table')) { const value = attr(requireOdsProperty(first(node,'table-properties')),'table:display'); if (value !== undefined) hidden = value === 'false' || value === '0'; } return hidden; },
+    size(name,kind) { let size: string | null = null; for (const node of resolve(name,`table-${kind}`)) { const properties = requireOdsProperty(first(node,`table-${kind}-properties`)); size = attr(properties,kind === 'row' ? 'style:row-height' : 'style:column-width') ?? size; } return size; },
   };
 }
 function odsVisibility(node: Element): 'visible' | 'collapse' | 'filter' {
@@ -602,7 +632,7 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
   }
   gap(state.gaps,'stored_formula_results','Only saved cell results are observed; freshness is unknown, formulas and external data are never evaluated.');
   gap(state.gaps,'display_layout','Exact Calc rendering, locale, rich-text styling, conditional formatting and page layout are outside this cell model.');
-  return {format:'ods',sheets,coverage_gaps:state.gaps,calculation:'stored_values_only_no_recalculation',date_system:'iso8601',calc_flags:(() => { const settings = first(spreadsheet,'calculation-settings'), result = calculationFlags(settings,['case-sensitive','precision-as-shown','search-criteria-must-apply-to-whole-cell','automatic-find-labels','use-regular-expressions','use-wildcards','null-year'],state); calculationFlags(first(settings,'null-date'),['date-value'],state,'null-date.',result); calculationFlags(first(settings,'iteration'),['status','steps','maximum-difference'],state,'iteration.',result); return result; })()};
+  return {format:'ods',sheets,coverage_gaps:state.gaps,calculation:'stored_values_only_no_recalculation',date_system:'iso8601',calc_flags:(() => { const settings = first(spreadsheet,'calculation-settings'), result = calculationFlags(settings,['case-sensitive','precision-as-shown','search-criteria-must-apply-to-whole-cell','automatic-find-labels','use-regular-expressions','use-wildcards','null-year'],state,'ods'); calculationFlags(first(settings,'null-date'),['date-value'],state,'ods','null-date.',result); calculationFlags(first(settings,'iteration'),['status','steps','maximum-difference'],state,'ods','iteration.',result); return result; })()};
 }
 async function extractCsv(bytes: Uint8Array, state: State): Promise<WorkbookObservationData> {
   let source: string; try { source = new TextDecoder('utf-8',{fatal:true}).decode(bytes); } catch { fail('UNSUPPORTED_WORKBOOK','CSV must use valid UTF-8 encoding'); }

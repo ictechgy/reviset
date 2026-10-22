@@ -389,7 +389,7 @@ struct ImportFileIdentity: Equatable {
     static func capture(_ url:URL)throws->ImportFileIdentity {
         // Reject special files atomically; opening a FIFO for reading otherwise
         // waits for a writer before the import sheet can report any error.
-        let descriptor=Darwin.open(url.path,O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        let descriptor=Darwin.open(url.path,O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         guard descriptor>=0 else{throw BridgeError(code:"FILE_INPUT",message:"일반 원본 파일을 열지 못했습니다.")}
         let handle=FileHandle(fileDescriptor:descriptor,closeOnDealloc:true);defer{try? handle.close()}
         var metadata=stat()
