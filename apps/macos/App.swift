@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import PDFKit
 import CryptoKit
+import Combine
 
 @main struct RevisetApp: App {
     @StateObject private var model=AppModel()
@@ -108,17 +109,27 @@ import CryptoKit
             var historyChangeCheck:[String:Any]=[:]
             if let change=model.changes.last(where:{$0["kind"].string=="text_modified"}) {
                 let id=change["change_id"].string,before=change["from_occurrence"].string,after=change["to_occurrence"].string
+                let evidence=change["evidence"].array,selectionStarted=Date()
+                var observedLoading=false
+                let loadingObservation=model.$loadingChanges.dropFirst().sink { if $0 { observedLoading=true } }
+                defer { loadingObservation.cancel() }
+                func selectionReady()->Bool {
+                    !model.loadingChanges && model.tab=="compare" && model.selectedChangeID==id && model.revision(model.from)["revision_occurrence_id"].string==before && model.revision(model.to)["revision_occurrence_id"].string==after &&
+                    evidence.contains(where:{$0["revision_occurrence_id"].string==before && model.displayPageID($0["page_id"].string,in:model.revision(model.from))==model.leftPageID}) &&
+                    evidence.contains(where:{$0["revision_occurrence_id"].string==after && model.displayPageID($0["page_id"].string,in:model.revision(model.to))==model.rightPageID})
+                }
                 model.chooseChange(id)
                 for _ in 0..<200 {
-                    if !model.loadingChanges && model.selectedChangeID==id && model.tab=="compare" {break}
+                    // chooseChange schedules its range read; the old selected ID can
+                    // still match before that task begins, so require a real load cycle.
                     try await Task.sleep(nanoseconds:20_000_000)
+                    if observedLoading && selectionReady() {break}
                 }
-                try await Task.sleep(nanoseconds:300_000_000)
-                let evidence=change["evidence"].array
-                guard model.tab=="compare",model.selectedChangeID==id,model.revision(model.from)["revision_occurrence_id"].string==before,model.revision(model.to)["revision_occurrence_id"].string==after,
-                      evidence.contains(where:{$0["revision_occurrence_id"].string==before && model.displayPageID($0["page_id"].string,in:model.revision(model.from))==model.leftPageID}),
-                      evidence.contains(where:{$0["revision_occurrence_id"].string==after && model.displayPageID($0["page_id"].string,in:model.revision(model.to))==model.rightPageID}) else {throw BridgeError(code:"HISTORY_CHANGE_SELECTION",message:"실제 이력 선택과 비교 구간·원문 근거가 다릅니다.")}
-                historyChangeCheck=["selected_change_id":id,"from_occurrence":before,"to_occurrence":after,"source_pages_verified":true]
+                guard observedLoading && selectionReady() else {
+                    try JSON(["requested_change_id":id,"selected_change_id":model.selectedChangeID ?? "","loading_cycle_observed":observedLoading,"loading_changes":model.loadingChanges,"tab":model.tab,"expected_from_occurrence":before,"actual_from_occurrence":model.revision(model.from)["revision_occurrence_id"].string,"expected_to_occurrence":after,"actual_to_occurrence":model.revision(model.to)["revision_occurrence_id"].string,"left_page_id":model.leftPageID,"right_page_id":model.rightPageID,"changes_failure":model.changesFailure]).data().write(to:output.appendingPathComponent("history-selection-failure.json"))
+                    throw BridgeError(code:"HISTORY_CHANGE_SELECTION",message:"실제 이력 선택과 비교 구간·원문 근거가 다릅니다.")
+                }
+                historyChangeCheck=["selected_change_id":id,"from_occurrence":before,"to_occurrence":after,"source_pages_verified":true,"loading_cycle_observed":observedLoading,"selection_wait_seconds":Date().timeIntervalSince(selectionStarted)]
                 try capture(output.appendingPathComponent("native-history-change.png"));model.tab="history";try await model.updateChanges()
             }
             // Navigate both the first and final history columns and let pending range calls settle.

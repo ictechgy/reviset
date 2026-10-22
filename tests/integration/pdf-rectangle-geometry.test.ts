@@ -43,8 +43,8 @@ test('rectangle recognition rejects nonrectangular, backtracking, multiple and u
     [path([[0,0],[10,0],[10,10],[0,10]],false)],
     [rectangle,rectangle],
     [[...rectangle.slice(0,-1),...path([[2,2],[8,2],[8,8],[2,8]])]],
-    [[0,0,0,2,0,10,10,10,10,0,4]],
-    [[0,0,0,3,10,0,10,10,4]],
+    [[0,0,0,2,0,10,10,10,10,0,1,0,0,4]], // cubic: 14 scalars, reaches command parsing
+    [[0,0,0,3,5,10,10,0,1,10,10,1,0,10,4]], // quadratic: 15 scalars, reaches command parsing
     [[...rectangle,4]],[[...rectangle,1,0,0]],
     [rectangle.map((v,i)=>i===1?NaN:v)],
     [rectangle.map((v,i)=>i===1?Infinity:v)],
