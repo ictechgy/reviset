@@ -116,6 +116,10 @@ private extension JSON {
     var rangeScope: String { [scope,beforeID,afterID,beforeSheetID,afterSheetID,String(beforeRowStart),String(beforeColumnStart),String(afterRowStart),String(afterColumnStart)].joined(separator:"|") }
     var comparisonScope: String { [scope,changesFromID,changesToID,changesMode].joined(separator:"|") }
     var independentPaneCoordinates: Bool { beforeRowStart != afterRowStart || beforeColumnStart != afterColumnStart || beforeAddress != afterAddress }
+    var navigationRangePrefix: String {
+        let differentRanges = beforeRowStart != afterRowStart || beforeColumnStart != afterColumnStart
+        return differentRanges && paneCoordinate(before:false) != nil && rowStart == afterRowStart && columnStart == afterColumnStart ? "이후 " : ""
+    }
     var ready: Bool { active && !reportID.isEmpty && report["report_id"].string == reportID && !loadingReport && !busy && !loadingDemo }
     var project: JSON { projects.first { $0["project_id"].string == projectID } ?? JSON() }
     var selectedChange: JSON { changes.first { $0["change_id"].string == selectedChangeID } ?? JSON() }
@@ -717,10 +721,10 @@ struct WorkbookWorkspace: View {
                 Button("이동") { Task { await model.goToAddress() } }
                 Spacer()
                 Button { Task { await model.moveWindow(columns:-model.columnLimit) } } label: { Image(systemName:"chevron.left") }.disabled(model.columnStart == 1).accessibilityLabel("이전 12열")
-                Text("\(model.independentPaneCoordinates ? "이후 " : "")\(WorkbookGrid.columnLabel(model.columnStart))–\(WorkbookGrid.columnLabel(model.columnStart+model.columnLimit-1))열").font(.caption.monospacedDigit())
+                Text("\(model.navigationRangePrefix)\(WorkbookGrid.columnLabel(model.columnStart))–\(WorkbookGrid.columnLabel(model.columnStart+model.columnLimit-1))열").font(.caption.monospacedDigit())
                 Button { Task { await model.moveWindow(columns:model.columnLimit) } } label: { Image(systemName:"chevron.right") }.disabled(model.columnStart+model.columnLimit>16384).accessibilityLabel("다음 12열")
                 Button { Task { await model.moveWindow(rows:-model.rowLimit) } } label: { Image(systemName:"chevron.up") }.disabled(model.rowStart == 1).accessibilityLabel("이전 100행")
-                Text("\(model.independentPaneCoordinates ? "이후 " : "")\(model.rowStart)–\(model.rowStart+model.rowLimit-1)행").font(.caption.monospacedDigit())
+                Text("\(model.navigationRangePrefix)\(model.rowStart)–\(model.rowStart+model.rowLimit-1)행").font(.caption.monospacedDigit())
                 Button { Task { await model.moveWindow(rows:model.rowLimit) } } label: { Image(systemName:"chevron.down") }.disabled(model.rowStart+model.rowLimit>1048576).accessibilityLabel("다음 100행")
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready)
             if !model.addressFailure.isEmpty { Text(verbatim:model.addressFailure).font(.caption).foregroundStyle(.red).padding(8) }

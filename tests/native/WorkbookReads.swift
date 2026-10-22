@@ -34,6 +34,12 @@ import AppKit
         model.report=JSON(["report_id":"report","revisions":[["revision_occurrence_id":"old"],["revision_occurrence_id":"new"]]])
         model.beforeID="old";model.afterID="new";model.beforeSheetID="sheet-old";model.afterSheetID="sheet-new"
         try require(model.ready,"ModelNotReady")
+        model.beforeAddress="B2";model.afterAddress="";model.rowStart=2;model.columnStart=2
+        try require(model.navigationRangePrefix.isEmpty,"BeforeOnlyRangeLabelledAfterEvidence")
+        model.beforeAddress="B2";model.afterAddress="B3";model.rowStart=3;model.beforeRowStart=2
+        try require(model.navigationRangePrefix=="이후 ","MovedRangeLostAfterLabel")
+        model.rowStart=2
+        try require(model.navigationRangePrefix.isEmpty,"SharedRangeLabelledAfterOnly")
 
         try control("cell-fail");await model.selectCell(2,1)
         try require(!model.cellFailure.isEmpty && !model.loadingCell && model.beforeCell.isNull && model.afterCell.isNull,"FirstReadFailureKeptSourceOrSpinner")
