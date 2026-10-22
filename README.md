@@ -1,98 +1,124 @@
-# Document Version Tracker · Docver
+# Docver
 
-PPTX·PDF의 페이지와 XLSX·ODS·CSV의 셀 버전을 원문 근거와 함께 추적합니다. 숫자·수식·저장값·기본 서식·중간 변경과 이동을 비교합니다. **SwiftUI·AppKit·PDFKit으로 만든 네이티브 macOS 앱**과 공통 TypeScript 분석 엔진, 읽기 전용 MCP를 제공합니다. 계정·API 키·업로드 없이 로컬에서 동작합니다.
+**문서의 변경 이력을 원문 근거와 함께 읽는 네이티브 macOS 앱.**
 
-## Mac에서 사용
+Docver는 여러 버전의 PPTX·PDF와 XLSX·ODS·CSV를 비교합니다. 사람은 원문을 나란히 보고, AI는 같은 고정 보고서를 읽기 전용 MCP로 조회합니다. 문서를 가져오고 분석하는 데 계정·API 키·클라우드 업로드가 필요하지 않습니다.
 
-현재 Mac에서 검증한 앱은 [Docver-Sheets.app](release/Docver-Sheets.app), 압축 파일은 [arm64 ZIP](release/Docver-0.5.0-workbook6-arm64.zip)입니다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 여세요. 스프레드시트는 **⌘⇧O** 또는 파일 메뉴의 **스프레드시트 버전 비교…**로 엽니다. **XLSX·ODS·CSV 가져오기** 또는 **3버전 엑셀 데모**를 선택하고 파일 순서를 버전 순서로 사용합니다. 기존 문서는 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**로 엽니다. PPTX 또는 PDF 하나만으로도 유효하며 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
+예를 들어 `초안.pptx → 검토.pdf → 최종.pptx`에서 매출이 `100억 → 120억 → 110억`으로 바뀐 과정과 각 버전의 원문을 확인할 수 있습니다. 처음과 마지막의 차이뿐 아니라 중간에 추가됐다가 사라진 내용도 이력으로 남깁니다.
 
-- 스프레드시트의 특정 버전·시트·셀 원문, 수식과 저장 결과, 기본 서식·숨김·행 이동, 중간 이력과 두 끝점의 순변경을 조회합니다. 큰 네이티브 가상 그리드와 실제 양쪽 주소, 원문 범위·이어 읽기·셀 이력을 제공합니다.
-- Excel XLSX와 LibreOffice Calc ODS, UTF-8 쉼표 CSV를 지원합니다. 실제 LibreOffice의 XLSX→ODS→XLSX 저장과 한글·수식·저장값을 검증했습니다. 수식 재계산과 고급 Excel 개체·완전한 화면 동일성은 지원하지 않으며 관측 한계를 함께 표시합니다.
-- 고정 보고서 내보내기와 로컬 배포 라벨·이유, AI가 버전 내용과 변경 전후를 읽는 **읽기 전용 MCP12개 도구**를 추가했습니다. [스프레드시트 계약](docs/SPREADSHEETS.md), [AI 조회 가이드](docs/MCP.md), [Office 시장 조사](docs/OFFICE-MARKET-2026-10-22.md)를 참고하세요.
+> **개발·검증 중인 프로젝트입니다.** 현재 GitHub에서는 소스에서 빌드하는 경로를 제공합니다. 검증한 로컬 설치본은 Apple Silicon Mac용이며 공개 설치본 배포·공증·다른 Mac 설치 검증은 남아 있습니다. 프로젝트 라이선스도 아직 확정하지 않았습니다.
 
-실행 소스는 `ba8eae815950f92511b7ebb81335bc1f02c6e79f`입니다. 이 소스의88개 집중 검사, TypeScript·엄격 Swift 검사, 실제 앱과 이동ZIP20검사가 통과했습니다. 조회 재시도·셀 응답 검증·긴 원문 안내·이력 구간 표시를 보완했습니다. 전체341개 회귀는 이전600fac9의 결과로 구분합니다. Claude·Grok 리뷰의 범위와 기록은 [후속 개선·검증](docs/WORKBOOK-RECOVERY-2026-10-22.md), [기능 도입 기록](docs/WORKBOOK-2026-10-22.md), [ZIP 검증](release/validation-workbook6.json)에 있습니다.
+## 실제 화면
 
-현재 Mac의 비공개 검증본입니다. 이전 Docver·MCP·Render·Review 앱과 ZIP은 보존했고, Review의 선택적 OnlyOffice 참고 창은 [이전 검증 범위](docs/REVIEW-2026-10-21.md)입니다. Sheets 빌드에는 선택적 sidecar를 포함하지 않았습니다. 모든 문서의 완벽한 판독은 아직 달성하지 못했습니다.
+### PPTX·PDF 비교
 
-- 인접 버전의 1:1 연결·해제·1:N 분할·N:1 병합을 수정합니다. 한 관계에서 최대32페이지를 고르고 이유를 남기며, 모든 분기를 전체 이력과 원문에서 따로 열 수 있습니다.
-- 같은 버전의 PPTX 슬라이드와 제공 PDF 페이지를 별도 창에서 연결·해제·재연결하고 이유·대체된 연결을 보존합니다. 과거 보고서에서는 연결 이력을 조회합니다. 사용자 연결은 참고용이며 PowerPoint 화면 충실도를 보증하지 않습니다.
-- A안의 밝은 macOS 디자인. 비교·전체 이력·근거·대응 수정·고정 보고서 선택·JSON/Markdown 내보내기·MCP 설정 복사.
-- `⌘⌥F` 문서 집중 모드, `⌘⌥I` 근거 패널, `⌘O` 가져오기. 문서 한쪽 크게 보기와 변경 목록 접기, 100~200% 확대, 페이지 번호 이동.
-- 수백 페이지의 원본은 선택한 페이지만 표시합니다. PDF는 복사해 둔 동일 hash 원본을 PDFKit으로 렌더합니다.
-- PPTX 원문은 텍스트 조각·저장된 필드 값·줄바꿈과 도형·표의 순서를 보존합니다. 발표자 노트의 문단과 빈 줄도 유지합니다. XML 원문은 UTF-8과 BOM이 있는 UTF-16을 읽고, 손상된 인코딩과 허용하지 않는 문자는 명시 오류로 표시합니다.
-- PPTX는 앱에 포함된 LibreOffice로 실제 PDF를 렌더해 표시합니다. 내용 대응이 확인된 같은 버전의 원본 PDF를 함께 가져오면 그 PDF를 우선 표시합니다. 별도 변환 화면이 없으면 구조 보기를 명시합니다. 숨김 슬라이드도 포함해 원본 슬라이드 번호와 렌더 페이지를 검증합니다.
-- 스캔·복합 PDF에는 macOS Vision의 로컬 한글/영어 OCR을 사용합니다. 300 DPI 목표, 최대 4096px, 겹치는 타일과 숫자 영역 재인식으로 부호·소수점·금액을 검증합니다. 인식 점수는 확률이 아니며 OCR 변경은 추정과 원문 확인 표식을 붙입니다.
-- 파일당 512 MiB, PDF 1,000쪽, 프로젝트 100버전 상한입니다. 분석은 페이지를 최대 16쪽씩 native helper로 처리하고, 같은 화면의 OCR은 버전 간 재사용합니다. 페이지 이동은 SQLite의 개별 페이지 인덱스를 사용합니다. 새 대응은1000×1000페이지 범위를 검사한 계산 한도를 사용하며 더 큰/비대칭 비교는 명시 중단될 수 있습니다. 과거 보고서는 당시 계산 정책을 유지합니다. 상한이 모든 문서의 속도·정확도 보장은 아닙니다.
+![PPTX와 PDF를 나란히 보고 숫자 변경의 전후 원문과 근거를 확인하는 Docver 화면](docs/images/document-comparison.png)
 
-보관소는 `~/Library/Application Support/Docver/library/`입니다. 가져온 원본을 앱 전용 위치에 복사하며 원본을 덮어쓰지 않습니다. 분석은 별도 프로세스에서 수행하고 취소된 결과는 고정 보고서로 저장하지 않습니다. 과거 보고서와 새 분석 실행은 별개로 보존합니다.
+같은 내용이 다른 페이지로 이동해도 원문과 변경 근거를 함께 확인합니다. PPTX 변환 화면과 원본 PDF의 출처를 구분해 표시합니다.
 
-현재 패키지는 **Apple Silicon arm64, macOS 14 이상을 대상으로 한 로컬 ad-hoc 서명 앱**입니다. 실행 검증 환경은 현재 macOS 27.0.1입니다. 다른 Mac 설치·Developer ID 공증·공개 배포·프로젝트 라이선스 확정은 아직 완료하지 않았습니다.
+### 스프레드시트 비교
 
-소스에서 빌드하려면 Node.js 24 이상과 Xcode Command Line Tools/Swift SDK가 필요합니다. 설치본에는 Node 실행 파일과 운영 의존성이 포함되므로 앱 실행에 별도 Node 설치는 필요하지 않습니다.
+![이전 A2와 이후 A3의 셀을 나란히 표시하고 저장값과 행 이동 근거를 확인하는 Docver 화면](docs/images/workbook-comparison.png)
+
+큰 가상 그리드에서 실제 셀 주소·수식 원문·저장된 결과를 읽습니다. 행 이동의 대응은 추정으로 표시합니다. 두 화면 모두 합성 데모를 실제 앱에서 캡처한 것입니다.
+
+## 주요 기능
+
+| 대상 | 지원하는 작업 | 해석할 때의 한계 |
+| --- | --- | --- |
+| PPTX·PDF | 버전별 원문, 숫자·텍스트 변경, 페이지 이동, 중간 이력, 화면 차이 | 형식 간 정보 부재와 추출 실패를 실제 삭제와 구분합니다. |
+| 스캔·복합 PDF | macOS Vision 로컬 OCR, 가림·취소선의 표시 상태, 표 구조 추정 | OCR·가림·표 대응은 불확실성을 함께 보존하며 작성자의 삭제 의도를 확정하지 않습니다. |
+| XLSX·ODS·UTF-8 CSV | 시트·셀·수식·저장값·기본 서식·숨김·행 이동 비교 | 수식을 재계산하지 않습니다. CSV는 문자열로 읽고 고급 Excel/Calc 개체는 별도 한계로 표시합니다. |
+| 사람의 검토 | 페이지 연결·해제·분할·병합, 같은 버전 PPTX와 제공 PDF의 대응 수정 | 사용자 연결은 참고용이며 렌더 충실도를 보증하지 않습니다. |
+| AI·내보내기 | 고정 보고서 JSON·JSONL·Markdown, 특정 버전 조회, 변경 근거·이력의 읽기 전용 MCP | AI는 원문을 지시가 아닌 데이터로 취급하고 고정 보고서 ID를 인용해야 합니다. |
+
+UI는 **SwiftUI·AppKit·PDFKit**, 공통 엔진은 TypeScript와 SQLite를 사용합니다. PDF는 PDFKit으로 표시하고 PPTX 미리보기는 동봉 LibreOffice 변환 또는 사용자가 함께 제공한 PDF를 사용합니다.
+
+## 소스에서 시작하기
+
+### 준비
+
+- Apple Silicon Mac. 앱의 빌드 대상은 macOS 14 이상이며 현재 실행 검증 환경은 macOS 27.0.1입니다.
+- Node.js 24 이상과 npm.
+- Xcode 또는 Command Line Tools의 Swift·C 컴파일러와 macOS SDK. 현재 검증에는 macOS 27.0 SDK를 사용했습니다.
+- 의존성과 첫 빌드의 LibreOffice 다운로드를 위한 인터넷 연결.
 
 ```sh
+git clone https://github.com/ictechgy/docver.git
+cd docver
 npm ci
-npm run check
 DOCVER_APP_NAME=Docver-Local.app npm run mac:build
 open release/Docver-Local.app
 ```
 
-## PDF 표시 상태와 표
+빌드는 고정한 LibreOffice를 내려받아 SHA-256·TDF 서명을 확인한 뒤 앱에 포함합니다. 앱에는 Node 실행 파일과 운영 의존성도 포함하므로 **빌드한 앱 실행에는 별도의 Node 설치가 필요하지 않습니다**. 분석은 로컬에서 수행합니다.
 
-추출 원문과 표시 상태를 따로 보존합니다. PDF 그림 명령의 순서·글자별 좌표·색상·불투명도를 살펴 나중에 덮인 사각형과 이전 배경을 구분합니다. 취소선 주석은 관측 사실, 납작해진 선·박스 가림·이미지에 합쳐진 수평 취소선은 추정으로 기록합니다. 가림을 작성자의 삭제 의도로 단정하지 않습니다.
+패키징에 쓰는 Node는 시스템 dylib에만 연결된 실행 파일이어야 합니다. 빌드가 `Node links a non-system dylib`로 중단되면 `otool -L "$(command -v node)"`로 연결을 확인하고 이 조건을 만족하는 Node 실행 파일을 사용하세요. Vision API를 컴파일하지 못하면 Xcode/SDK 선택과 버전을 확인하세요. [의존성·패키징 기록](docs/dependencies.md)에 세부 조건이 있습니다.
 
-PDFKit의 실제 렌더 지문도 비교합니다. 화면이 같으면 원문층이나 OCR만 달라졌다는 이유로 숫자 수정을 만들지 않습니다. 이미지·차트·배치처럼 글자가 같아도 화면이 바뀌면 `visual_region_changed`로 기록합니다. 형식 간 렌더 차이는 렌더러·폰트 대체가 원인일 수 있어 추정으로 구분합니다.
+### 앱 사용
 
-원문 가시성의 불확실성은 보존하며 별도의 화면 OCR을 추정 비교에 사용할 수 있습니다. 낮은 점수·숫자 대안 충돌·짝이 없는 OCR 영역에서는 정확한 텍스트 변경을 보류합니다. OCR 누락을 삭제로 만들지 않습니다. 페이지 일부가 불확실해도 유일하게 대응하고 읽을 수 있는 숫자 영역은 `text_scope=region`으로 비교하며 다른 영역의 공백을 유지합니다.
+1. 문서는 **문서 버전 가져오기**(`⌘O`), 스프레드시트는 **스프레드시트 버전 비교…**(`⌘⇧O`)로 엽니다. 파일 순서를 버전 순서로 지정합니다.
+2. PPTX 또는 PDF 하나만으로 문서 버전이 성립합니다. 같은 버전의 PPTX와 PDF를 함께 묶는 것은 선택 사항입니다.
+3. 이전·이후 버전과 페이지 또는 시트를 고르고, **전체 이력**과 **두 버전 순변경**을 구분해 확인합니다.
+4. 변경을 선택해 전후 원문과 근거를 읽습니다. 스프레드시트의 긴 원문은 이어 읽기로 확인하고 조회 실패 시 다시 읽을 수 있습니다.
+5. **AI·내보내기**에서 고정 보고서를 내보내거나 해당 프로젝트의 MCP 설정을 복사합니다.
 
-PPTX 표는 OOXML 셀 구조를 관측합니다. PDF의 닫힌 격자는 `pdf_grid_inferred`, macOS 26 이상에서 인식한 화면 표는 `vision_table_inferred`입니다. 화면 OCR 표는 행·열·병합 범위와 좌표를 보존하지만 원래 PPTX 셀 식별자를 복구한 것은 아닙니다. macOS 14/15에서는 표 구조 API의 미지원 상태와 일반 OCR 결과를 제공합니다.
+앱의 **5버전 합성 데모**와 **3버전 엑셀 데모**로 직접 확인할 수 있습니다. 문서 집중 모드는 `⌘⌥F`, 근거 패널은 `⌘⌥I`입니다.
 
-PowerPoint 독립 참조의 픽셀 비교와 남은 정확도 기준은 [품질 검증](docs/QUALITY.md)에 기록합니다. LibreOffice 변환을 모든 PowerPoint 환경의 픽셀 동일성으로 부르지 않습니다. 누락 글꼴과 변환 텍스트 불일치는 페이지별 경고로 남깁니다.
+가져온 원본은 `~/Library/Application Support/Docver/library/`에 복사하며 사용자가 선택한 원본을 덮어쓰지 않습니다. 분석을 다시 해도 과거 고정 보고서는 별도로 보존합니다.
 
-## CLI와 AI 연결
+## CLI와 MCP
 
 ```sh
+# 합성 문서 생성 → 분석 → 변경 조회 → 내보내기
 npm run fixtures
 npm run cli -- analyze --manifest tests/fixtures/generated/forward/manifest.json
 npm run cli -- query --project prj_forward --tool list_changes --args '{"kind":"text_modified","max_output_tokens":8000}'
 npm run cli -- export --project prj_forward --out artifacts/forward
 ```
 
-CLI 기본 저장소는 `.docver/`이며 `--store PATH`로 지정할 수 있습니다. manifest 배열의 순서가 버전 순서입니다.
+CLI 저장소 기본값은 `.docver/`이고 `--store PATH`로 바꿀 수 있습니다. 문서 manifest의 `revisions` 배열 순서가 버전 순서입니다. 스프레드시트 CLI는 `workbook-analyze`, `workbook-query`, `workbook-export`를 제공합니다. [스프레드시트 계약](docs/SPREADSHEETS.md)을 참고하세요.
 
-```json
-{"project_id":"prj_example","title":"검토 자료","revisions":[{"label":"초안","files":["v1.pptx"]},{"label":"검토","files":["v2.pdf"]},{"label":"수정","files":["v3.pptx","v3.pdf"]}],"mapping_decisions":[]}
-```
+MCP는 분석·수정·셸 실행을 제공하지 않는 프로젝트 범위의 읽기 전용 서버입니다. 문서와 스프레드시트의 특정 버전 내용, 중간 변경, 전후값과 근거를 조회합니다. 앱이 만든 설정은 동봉 Node·서버를 가리키므로 앱을 이동하면 설정을 다시 복사하세요.
 
-앱의 **AI·내보내기**에서 현재 앱 위치와 프로젝트에 맞는 MCP 설정을 복사합니다. 패키지 안의 Node·MCP를 쓰므로 앱을 이동하면 설정을 다시 복사합니다. MCP는 report를 읽기 전용으로 조회하며 분석·파일 경로 조회·셸 실행 기능은 노출하지 않습니다. `latest`는 응답에서 고정 report ID로 해석하며, 인용에는 고정 ID를 사용하세요. 문서 내용은 실행 지시가 아닌 인용 데이터로 취급해야 합니다.
+AI에게는 다음처럼 요청할 수 있습니다.
 
-버전별 내용 검색, 원문·노트·가림/OCR 층의 분할 읽기, 변경 전후값·근거·판독 한계 조회는 [AI용 MCP 조회 가이드](docs/MCP.md)를 참고하세요. `inspect_version`·`compare_versions` prompt도 같은 조회 순서를 안내합니다.
+> 이 프로젝트의 매출 전망 변경 이력을 찾아줘. 각 변경의 버전과 페이지 또는 셀 주소, 고정 보고서 ID를 근거로 제시하고 OCR·대응 추정의 한계도 알려줘.
 
-내보내기는 전체 `report.json`, `manifest.json`, `changes.jsonl`, `bundle-decisions.jsonl`, `pages.jsonl`, `elements.jsonl`, `revisions.json`, `lineages.json`, `page-relations.jsonl`, `mapping-relations.json`, `history.md`, 페이지별 Markdown을 포함합니다. schema·범위·출력 예산은 [스키마 문서](docs/schemas/README.md)를 참조하세요.
+`latest` 조회는 응답에서 고정 보고서 ID로 해석합니다. 후속 조회와 인용에는 그 ID를 사용하고, 원문은 `next_cursor`와 텍스트 continuation을 끝까지 읽어야 합니다. 연결 방법과 조회 예시는 [MCP 가이드](docs/MCP.md)에 있습니다.
 
-## 검증과 설계 기록
+## 지원 범위와 한계
+
+- `.pptx`, `.pdf`, `.xlsx`, `.ods`, UTF-8 쉼표 CSV를 지원합니다. 구형 `.ppt`·`.xls`, 암호화 파일은 지원 범위 밖입니다.
+- PDF의 취소선 주석은 관측 사실로, 납작해진 선·박스 가림·화면 OCR의 대응은 추정으로 구분합니다. 가림·OCR 누락을 의미상 삭제로 단정하지 않습니다.
+- PDF 표는 원래 PPTX 셀 식별자를 복구한 것이 아닙니다. Vision 문서 표 구조는 macOS 26 이상에서 사용하며 이전 지원 OS에서는 일반 OCR과 미지원 상태를 제공합니다.
+- 수식·매크로·외부 링크를 실행하거나 재계산하지 않습니다. 저장된 계산 결과는 누락되거나 오래된 값일 수 있습니다.
+- 모든 문서의 완벽한 OCR, PowerPoint와 픽셀 단위로 같은 렌더링, 차트·피벗·고급 서식의 완전한 재현은 달성하지 못했습니다. 글꼴 대체·관측 공백·불확실성을 함께 표시합니다.
+- 문서는 파일당512MiB·PDF1000쪽·프로젝트100버전, 스프레드시트는 파일당64MiB·보고서 합계50만 관측 셀/10만 변경/256MiB 등의 한도가 함께 적용됩니다. 상한은 처리 시간·메모리·정확도 보장이 아닙니다.
+
+## 개발과 검증
 
 ```sh
-npm run check
-npm run mac:build
-node scripts/native-backend-smoke.mjs
-node scripts/native-smoke.mjs
-npx tsx scripts/native-relations-smoke.ts
-npx tsx scripts/generate-scale-fixture.ts 300
-node scripts/native-smoke.mjs --scale
-npx tsx scripts/prepare-scan-scale.ts 300
-node scripts/native-smoke.mjs --scan-scale
-npx tsx scripts/verify-office-reference.ts
+npm run build   # TypeScript 검사
+npm test        # 전체 통합 검사; 네이티브 검사는 macOS 도구 체인 필요
 ```
 
-네이티브 smoke는 실제 `.app`을 실행하되 화면 조작은 앱 내부 모델로 수행합니다. OS 마우스/키보드 자동화나 전체 접근성 인증을 대신하지 않습니다. 결과와 화면은 `output/native-*`에 저장됩니다.
+테스트 준비 단계는 PDF.js worker의 고정 패치를 적용하고 지원 Mac에서는 Vision helper를 빌드합니다. 전체 검사는 OCR·Office·네이티브 검사를 포함해 시간이 걸릴 수 있습니다.
 
-[구현·검증 상태](PROGRESS.md), [UI 기준](DESIGN.md), [네이티브 아키텍처](docs/adr/003-native-macos.md), [의존성](docs/dependencies.md). 원래 [PLAN.md](PLAN.md)와 [HANDOFF.md](HANDOFF.md)는 보존하며 이후 사용자의 네이티브 앱 요구가 초기 Electron 가정을 대체합니다.
+현재 검증 기록은 실행 소스별로 구분합니다. `ba8eae8`에서는 집중88개 검사와 실제 앱·MCP·이동 ZIP20항목을 확인했고, 전체341개 회귀 결과는 이전 `600fac9`의 기록입니다. 이는 보편 OCR 정확도나 다른 Mac 설치 인증을 뜻하지 않습니다. 이번 README·이미지 변경은 앱 실행 소스를 바꾸지 않습니다.
 
-변환기는 매크로/OLE, 지원하지 않는 임베디드 개체, 외부 리소스 및 SVG 외부 참조가 있는 PPTX를 구조 보기로 보류합니다. 512MiB는 입력 상한이며 그 크기의 모든 문서에 대한 메모리·시간 보증이 아닙니다.
+| 문서 | 내용 |
+| --- | --- |
+| [품질 현황](docs/QUALITY.md) | 검증 결과, 남은 정확도·배포 기준 |
+| [최근 개선·검증](docs/WORKBOOK-RECOVERY-2026-10-22.md) | 조회 복구·셀 근거·UI 개선의 고정 소스와 리뷰 범위 |
+| [MCP 가이드](docs/MCP.md) | AI 연결, 조회 순서와 출력 예산 |
+| [스프레드시트 계약](docs/SPREADSHEETS.md) | 지원 형식, 수식·셀 의미, 처리 한도 |
+| [스키마](docs/schemas/README.md) | 고정 보고서와 조회 응답 |
+| [네이티브 아키텍처](docs/adr/003-native-macos.md) | 앱·공통 엔진 구조 |
+| [의존성](docs/dependencies.md) | 패키징·제3자 구성요소 |
 
-### Same-version reference history (schema0.4 / engine53 source)
+자세한 원시 실행 기록에는 로컬 검증 경로가 포함될 수 있습니다. `.omx/`, `release/`, `output/`, 생성 fixture와 원본 보관소는 GitHub 소스에 포함하지 않습니다. 설계·구현 이력은 [DESIGN.md](DESIGN.md), [PROGRESS.md](PROGRESS.md)에 남깁니다.
 
-`list_bundle_decisions` is read-only and snapshot-scoped. Filter by `revision_id` (occurrence or unambiguous revision alias), `source_page_id` or `decision_id`; traverse `cursor` and `reason_offset`/`reason_length` to recover verbatim Unicode reasons within the output budget. Full exports include `bundle-decisions.jsonl`. Stored0.1/0.2/0.3 reports remain readable and retain historical0.3 query envelopes; current0.4 reports use0.4 envelopes.
+## 라이선스
 
-Desktop drafts/staging use versioned tables/folders. Reports, runs and assets are still shared, so serialize older/newer standalone backend writers against one library; native app instances use the existing exclusive library lock. Old binaries can read supported explicit old snapshots, and reject future-schema snapshots. Immutable report bodies are never downgraded.
+프로젝트 자체 라이선스는 아직 확정하지 않았으며 `package.json`은 `UNLICENSED`입니다. 라이선스가 확정되기 전에는 오픈소스 라이선스가 부여된 것으로 간주하지 마세요. 제3자 구성요소의 라이선스·고지는 각각 별도로 적용되며 [의존성 기록](docs/dependencies.md)에 정리되어 있습니다.
