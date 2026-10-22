@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp,readFile,lstat,rm,symlink,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
+import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
 import {canonical,hash,id,byteHash,Report,ENGINE_VERSION,SCHEMA_VERSION,SCHEMA_HASH} from '../../packages/schema/index.js';
 import {canonicalJson,canonicalJsonDigest,writeCanonicalJson} from '../../packages/runtime/canonical-json.js';
 
@@ -38,4 +40,22 @@ test('report staging writes exclusive private canonical bytes with their exact d
     const controller=new AbortController();controller.abort();const cancelled=join(folder,'cancelled');
     assert.throws(()=>writeCanonicalJson(cancelled,value,controller.signal),{name:'AbortError'});await assert.rejects(lstat(cancelled),{code:'ENOENT'});
   }finally{await rm(folder,{recursive:true,force:true});}
+});
+
+test('partial staging failures remove only their exclusive file and preserve the original cause',async(t)=>{
+  const folder=await mkdtemp(join(tmpdir(),'reviset-stage-failure-')),value=Array.from({length:4000},(_,i)=>({i,text:'x'.repeat(80)}));
+  try{
+    // The first batch reaches disk; an actual writer failure then leaves no
+    // orphan. Existing destinations remain protected by the exclusive open.
+    const original=fs.writeSync,ioError=Object.assign(new Error('injected EIO after first batch'),{code:'EIO'});let writes=0;
+    t.mock.method(fs,'writeSync',(...args:any[])=>{if(++writes===2)throw ioError;return (original as any)(...args);});syncBuiltinESMExports();
+    const failed=join(folder,'io.json');assert.throws(()=>writeCanonicalJson(failed,value),error=>error===ioError);assert.ok(writes>=2);await assert.rejects(lstat(failed),{code:'ENOENT'});
+    t.mock.restoreAll();syncBuiltinESMExports();
+    const cycle:any={};cycle.self=cycle;const malformed=join(folder,'malformed.json');assert.throws(()=>writeCanonicalJson(malformed,[...value,cycle]),TypeError);await assert.rejects(lstat(malformed),{code:'ENOENT'});
+    const controller=new AbortController(),cancelled=join(folder,'abort.json');
+    t.mock.method(fs,'writeSync',(...args:any[])=>{const n=(original as any)(...args);controller.abort();return n;});syncBuiltinESMExports();
+    assert.throws(()=>writeCanonicalJson(cancelled,value,controller.signal),{name:'AbortError'});await assert.rejects(lstat(cancelled),{code:'ENOENT'});
+    t.mock.restoreAll();syncBuiltinESMExports();
+    const repaired=join(folder,'retry.json');assert.equal(writeCanonicalJson(repaired,value),byteHash(await readFile(repaired)));
+  }finally{t.mock.restoreAll();syncBuiltinESMExports();await rm(folder,{recursive:true,force:true});}
 });

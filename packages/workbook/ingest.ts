@@ -628,7 +628,12 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
       for (const node of rowNode.children.filter(child => child.name === 'table-cell' || child.name === 'covered-table-cell')) {
         const repeat = integer(attr(node,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS cell repetition'); if (column + repeat - 1 > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS cell repetition exceeds worksheet bounds');
         const directStyle = attr(node,'table:style-name'), style = directStyle ?? rowDefaultStyle;
-        const sourceContent = node.name === 'covered-table-cell' || node.children.length > 0 || Object.keys(node.attrs).some(key => !['table:style-name','table:number-columns-repeated'].includes(key));
+        // These known non-value annotations do not justify expanding empty
+        // repetitions. Their unsupported semantics remain explicit sheet gaps.
+        // Unknown attributes, values, formulas, spans and children stay material.
+        if (attr(node,'table:content-validation-name') !== undefined) gap(sheet.coverage_gaps,'data_validation','Cell validation rules are not evaluated.',sheet.sheet_id);
+        if (attr(node,'table:protect') !== undefined || attr(node,'table:protected') !== undefined) gap(sheet.coverage_gaps,'cell_protection','Cell protection annotations are not evaluated or compared; original source attributes remain in the retained file.',sheet.sheet_id);
+        const sourceContent = node.name === 'covered-table-cell' || node.children.length > 0 || Object.keys(node.attrs).some(key => !['table:style-name','table:number-columns-repeated','table:content-validation-name','table:protect','table:protected'].includes(key));
         if (node.name === 'covered-table-cell' && (attr(node,'office:value-type') || attr(node,'table:formula') || node.children.length)) { wholeFormulaSheet = true; gap(sheet.coverage_gaps,'covered_cell_content','Covered source cells contain independent saved content; the sheet is conservatively unresolved.',sheet.sheet_id); }
         if (sourceContent || directStyle !== undefined && styles.effective(directStyle)) rowCells.push({node,column,repeat,style,material:sourceContent,sparse:!sourceContent && repeat * rowRepeat > 64});
         column += repeat;
@@ -674,7 +679,6 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
         const columnSpan = integer(attr(node,'table:number-columns-spanned'),1,WORKBOOK_LIMITS.columns,'ODS merge column span'), rowSpan = integer(attr(node,'table:number-rows-spanned'),1,WORKBOOK_LIMITS.rows,'ODS merge row span');
         if (columnSpan > 1 || rowSpan > 1) { if (rr + rowSpan - 1 > WORKBOOK_LIMITS.rows || cc + columnSpan - 1 > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS merged range exceeds worksheet bounds'); if (sheet.merges.length >= WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Too many merged ranges'); sheet.merges.push(`${cell.address}:${cellAddress(rr + rowSpan - 1,cc + columnSpan - 1)}`); sheet.row_count = Math.max(sheet.row_count,rr + rowSpan - 1); sheet.column_count = Math.max(sheet.column_count,cc + columnSpan - 1); }
         if (first(node,'annotation')) gap(sheet.coverage_gaps,'comments','Cell comments are not part of compared cell content.',sheet.sheet_id);
-        if (attr(node,'table:content-validation-name')) gap(sheet.coverage_gaps,'data_validation','Cell validation rules are not evaluated.',sheet.sheet_id);
         if (cell.formula && /(?:file|https?|ftp):\/\//i.test(cell.formula)) gap(sheet.coverage_gaps,'external_links','Formula source refers to external content; it is never opened or refreshed.',sheet.sheet_id);
         if (truth(attr(node,'table:matrix-covered')) || attr(node,'table:number-matrix-columns-spanned') || attr(node,'table:number-matrix-rows-spanned')) {
           cell.formula_interpretation = 'unresolved'; cell.cache_freshness = 'unknown'; cell.cached_result = cell.value === null ? 'missing' : 'present';

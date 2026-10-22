@@ -91,7 +91,16 @@ export class DesktopService {
     return identity.report_id;
   }
   private mutate<T>(operation:()=>T):T {
-    this.store.db.exec('BEGIN IMMEDIATE');try{const value=operation();this.store.db.exec('COMMIT');return value;}catch(e){this.store.db.exec('ROLLBACK');throw e;}
+    this.store.db.exec('BEGIN IMMEDIATE');
+    try{const value=operation();this.store.db.exec('COMMIT');return value;}
+    catch(error){
+      // SQLite may have ended the transaction itself; retain that failure.
+      if(this.store.db.isTransaction){
+        try{this.store.db.exec('ROLLBACK');}
+        catch(rollbackError){throw new AggregateError([error,rollbackError],'Draft operation failed and rollback also failed',{cause:error});}
+      }
+      throw error;
+    }
   }
   reorder(projectId:string,order:number[],discardHumanDecisions=false,expectedDraftHash?:string) {
     return this.mutate(()=>{

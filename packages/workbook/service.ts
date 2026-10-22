@@ -213,7 +213,14 @@ export class WorkbookService {
       }
       this.store.db.prepare("UPDATE workbook_runs_v1 SET report_id=?,status='success',finished_at=? WHERE id=?").run(report.report_id, new Date().toISOString(), data.analysis_run_id);
       this.store.db.exec('COMMIT');
-    } catch (error) { this.store.db.exec('ROLLBACK'); throw error; }
+    } catch (error) {
+      // SQLite may already have rolled back on a storage or trigger failure.
+      if (this.store.db.isTransaction) {
+        try { this.store.db.exec('ROLLBACK'); }
+        catch (rollbackError) { throw new AggregateError([error,rollbackError], 'Workbook commit failed and rollback also failed', {cause:error}); }
+      }
+      throw error;
+    }
     // COMMIT is the outcome boundary. A leftover private stage does not undo
     // the durable report and must not turn a completed analysis into a failure.
     let cleanupPending=false;try{await rm(path,{force:true});}catch{cleanupPending=true;}

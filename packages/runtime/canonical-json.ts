@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {openSync,writeSync,closeSync} from 'node:fs';
+import {openSync,writeSync,closeSync,unlinkSync} from 'node:fs';
 
 // Report trees contain JSON values, plain objects and optional undefined
 // properties after schema validation. Serialize that domain without retaining
@@ -40,14 +40,25 @@ export function canonicalJson(value:unknown):string {const chunks:string[]=[];se
 export function canonicalJsonDigest(value:unknown):string {const digest=createHash('sha256');serialize(value,chunk=>digest.update(chunk));return digest.digest('hex');}
 // Staging requires an exclusive private file and a digest of exactly its bytes.
 // Synchronous bounded batches avoid queuing an entire report in a write stream.
+// They observe an already-aborted signal between batches; event-loop signals
+// cannot interrupt this synchronous staging window.
 export function writeCanonicalJson(path:string,value:unknown,signal?:AbortSignal):string {
   signal?.throwIfAborted();const fd=openSync(path,'wx',0o600),digest=createHash('sha256');
+  const failures:unknown[]=[];
   try{
     serialize(value,chunk=>{
       signal?.throwIfAborted();const bytes=Buffer.from(chunk);let offset=0;
       while(offset<bytes.length){const written=writeSync(fd,bytes,offset,bytes.length-offset);if(!written)throw new Error('Report staging write made no progress');offset+=written;}
       digest.update(bytes);
     });
-    return digest.digest('hex');
-  }finally{closeSync(fd);}
+  }catch(error){failures.push(error);}
+  try{closeSync(fd);}catch(error){failures.push(error);}
+  if(failures.length){
+    // Only remove a file opened by this call. An EEXIST/symlink failure above
+    // must never unlink another report or a pre-existing destination.
+    try{unlinkSync(path);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')failures.push(error);}
+    if(failures.length>1)throw new AggregateError(failures,'Report staging failed and cleanup also failed',{cause:failures[0]});
+    throw failures[0];
+  }
+  return digest.digest('hex');
 }
