@@ -90,14 +90,16 @@ export class QueryService {
     // exceeds the snapshot cache. Resolve latest every time; caller-provided
     // mutable loaders deliberately bypass both derivative cache reads/writes.
     let rowsKey:string|undefined;
+    let fixedReportId:string|undefined=args.report_id;
     if(args.report_id&&!this.loadSnapshot){
       const fixed=args.report_id==='latest'?this.store.resolveReportId(args.project_id,args.report_id):args.report_id;
+      fixedReportId=fixed;
       const {cursor,limit,max_output_tokens,...filters}=args;
       rowsKey=hash([name,{...filters,report_id:fixed}]);
       const cached=this.queryRows.get(rowsKey);
       if(cached)return this.paginate(name,args,cached.context,cached.rows,measure);
     }
-    const report:ReportData|undefined=args.report_id?this.snapshot(args.project_id,args.report_id):undefined;
+    const report:ReportData|undefined=fixedReportId?this.snapshot(args.project_id,fixedReportId):undefined;
     let rows:Record<string,unknown>[]=[];
     if(name==='list_projects') rows=this.store.projects().filter(p=>this.allowedProjects.has(p.project_id));
     else if(name==='list_reports') rows=this.store.reports(args.project_id);

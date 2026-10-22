@@ -47,7 +47,8 @@ function boundedJsonBytes(value:unknown,limit:number):number|null {
     if(omitted(item))return null;
     if(typeof item!=='object')throw new TypeError('Cache data contains a non-JSON value');
     if(active.has(item))throw new TypeError('Cache data contains a cycle');
-    const array=Array.isArray(item),prototype=Object.getPrototypeOf(item);
+    const array=Array.isArray(item),prototype=Object.getPrototypeOf(item),serializer=Object.getOwnPropertyDescriptor(item,'toJSON');
+    if(serializer&&(!('value' in serializer)||typeof serializer.value==='function'))throw new TypeError('Cache data contains a custom serializer');
     if(!array&&prototype!==Object.prototype&&prototype!==null)throw new TypeError('Cache data contains a non-plain object');
     // Every array element needs at least one byte and every pair a comma.
     if(array&&item.length>0&&item.length*2+1>limit-bytes)return null;
@@ -68,7 +69,11 @@ export class BoundedCache<T> {
     this.entries.delete(key);this.entries.set(key,entry);return entry.value;
   }
   set(key:string,value:T,serializedBytes?:number){
-    const bytes=serializedBytes??boundedJsonBytes(value,this.maxBytes);if(bytes===null||!Number.isSafeInteger(bytes)||bytes<0||bytes>this.maxBytes)return;
+    // Admission is optional: unsupported derivatives must not break their query.
+    // Inspect descriptors only; never invoke getters or toJSON while measuring.
+    let bytes:number|null;
+    try{bytes=serializedBytes??boundedJsonBytes(value,this.maxBytes);}catch(error){if(error instanceof TypeError)return;throw error;}
+    if(bytes===null||!Number.isSafeInteger(bytes)||bytes<0||bytes>this.maxBytes)return;
     const prior=this.entries.get(key);if(prior){this.bytes-=prior.bytes;this.entries.delete(key);}
     while(this.entries.size>=this.maxEntries||this.bytes+bytes>this.maxBytes){const oldest=this.entries.keys().next().value;if(oldest===undefined)break;this.bytes-=this.entries.get(oldest)!.bytes;this.entries.delete(oldest);}
     this.entries.set(key,{value,bytes});this.bytes+=bytes;

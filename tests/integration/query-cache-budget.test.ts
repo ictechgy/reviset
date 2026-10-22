@@ -70,3 +70,24 @@ test('a small query result with oversized report coverage is not retained as a r
   assert.deepEqual(q.query('get_report',args),q.query('get_report',args));
   assert.equal(reads,2,'coverage is charged even when the projected rows are small');
 });
+
+
+test('latest is resolved once so advancing publication cannot cache B under A',()=>{
+  const make=(report_id:string):ReportData=>({schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION,schema_hash:SCHEMA_HASH,report_id,project_id:'project_latest',timeline_revision_id:'timeline',mapping_revision_id:'mapping',observation_environment:{fixture:'latest-race'},revisions:[],matches:[],candidates:[],mapping_decisions:[],lineages:[],changes:[],coverage_gaps:[]});
+  const reports={report_A:make('report_A'),report_B:make('report_B')};let current:keyof typeof reports='report_A',resolutions=0;const reads:string[]=[];
+  const store={resolveReportId(project:string,selector:string){assert.equal(project,'project_latest');assert.equal(selector,'latest');resolutions++;const resolved=current;current='report_B';return resolved;},reportWithSize(project:string,reportId:keyof typeof reports){assert.equal(project,'project_latest');reads.push(reportId);return {report:reports[reportId],serializedBytes:65*1024*1024};}} as unknown as Store;
+  const q=new QueryService(store,new Set(['project_latest'])),request=(report_id:string)=>q.query('get_report',{project_id:'project_latest',report_id});
+  const first=request('latest');assert.equal(first.report_id,'report_A');assert.equal(first.items[0]!.report_id,'report_A');assert.equal(resolutions,1);assert.deepEqual(reads,['report_A']);
+  const explicitA=request('report_A');assert.deepEqual(explicitA,first);assert.deepEqual(reads,['report_A'],'fixed A uses only its own derivative');
+  const next=request('latest');assert.equal(next.report_id,'report_B');assert.equal(next.items[0]!.report_id,'report_B');assert.equal(resolutions,2);assert.deepEqual(reads,['report_A','report_B']);
+  assert.deepEqual(request('report_A'),first);assert.deepEqual(request('report_B'),next);assert.deepEqual(reads,['report_A','report_B']);
+  const other=new QueryService(store,new Set());assert.throws(()=>other.query('get_report',{project_id:'project_latest',report_id:'latest'}),/scope/);assert.equal(resolutions,2,'scope check precedes resolution');
+});
+
+test('unsupported cache admission skips retention without executing accessors or custom serializers',()=>{
+  let calls=0;const accessor={get value(){calls++;throw Error('getter must not run');}},custom={toJSON(){calls++;throw Error('serializer must not run');}};
+  const cycle:Record<string,unknown>={};cycle.self=cycle;
+  const cache=new BoundedCache<unknown>(2,1024);cache.set('entry',{retained:true});
+  for(const value of [new Date(0),1n,cycle,accessor,custom,Object.assign(Object.create({}),{value:1})]){assert.doesNotThrow(()=>cache.set('entry',value));assert.deepEqual(cache.get('entry'),{retained:true});}
+  assert.equal(calls,0);
+});
