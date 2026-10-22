@@ -59,6 +59,12 @@ import AppKit
         try require(model.rangeFailure.isEmpty && model.beforeCells.first?["address"].string=="A2" && model.afterCells.first?["value"].string=="fresh","RangeRetryFailed")
         model.addressInput="ZZZZ1";await model.goToAddress()
         try require(!model.addressFailure.isEmpty && model.rangeFailure.isEmpty && model.beforeCells.first?["address"].string=="A2","InvalidAddressPretendedReadFailure")
+        await model.selectCell(2,1)
+        try require(model.addressFailure.isEmpty && model.cellFailure.isEmpty,"GridSelectionKeptInvalidAddressError")
+        model.addressInput="ZZZZ1";await model.goToAddress()
+        model.changes=[JSON(["change_id":"good","from_revision_occurrence_id":"old","to_revision_occurrence_id":"new","from_sheet_id":"sheet-old","to_sheet_id":"sheet-new","before_address":"A2","after_address":"A2"])]
+        await model.chooseChange("good")
+        try require(model.addressFailure.isEmpty && model.cellFailure.isEmpty && model.beforeAddress=="A2" && model.afterAddress=="A2","ChangeSelectionKeptInvalidAddressError")
         model.addressInput="A2";await model.goToAddress()
         try require(model.addressFailure.isEmpty && model.cellFailure.isEmpty,"ValidAddressDidNotClearValidation")
         model.changes=[JSON(["change_id":"bad","from_revision_occurrence_id":"foreign","to_revision_occurrence_id":"new"])]

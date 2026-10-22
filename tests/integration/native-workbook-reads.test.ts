@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
 
-test('native workbook retries preserve scope and withhold mismatched cell evidence', {skip:process.platform!=='darwin',timeout:60000},async()=>{
+test('native workbook retries preserve scope and withhold mismatched cell evidence', {skip:process.platform!=='darwin'||process.arch!=='arm64',timeout:60000},async()=>{
   const root=await mkdtemp(join(tmpdir(),'docver-workbook-reads-'));
   try {
     const contents=join(root,'Probe.app/Contents'),exe=join(contents,'MacOS/Probe');

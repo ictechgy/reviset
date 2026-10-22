@@ -353,6 +353,7 @@ private extension JSON {
     }
     func selectCell(_ row: Int, _ column: Int) async {
         guard ready else { return }
+        addressFailure = ""
         revealGeneration += 1
         let previousRange = rangeScope
         if beforeRowStart != afterRowStart || row < beforeRowStart || row >= beforeRowStart+rowLimit {
@@ -409,6 +410,7 @@ private extension JSON {
     }
     func chooseChange(_ id: String) async {
         guard ready, let change = changes.first(where:{$0["change_id"].string == id}) else { return }
+        addressFailure = ""
         revealGeneration += 1
         invalidate("cell"); resetCellHistory(); beforeCell = JSON(); afterCell = JSON(); cellFailure = ""; loadingCell = true
         let a = change["from_revision_occurrence_id"].string, b = change["to_revision_occurrence_id"].string
