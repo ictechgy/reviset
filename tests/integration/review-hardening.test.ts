@@ -66,6 +66,26 @@ test('MCP immutable report cache resolves latest afresh and enforces scope befor
   const second=readingReport('report_second');store.finishRun(store.beginRun(second.project_id,'second'),second);assert.equal(q.snapshot(first.project_id,'latest').report_id,second.report_id);assert.equal(q.snapshot(first.project_id,first.report_id).report_id,first.report_id);assert.equal(reads,2);
  }finally{store.close();await rm(root,{recursive:true,force:true});}
 });
+test('large-report pagination reuses bounded rows with identical cursors, budgets and scope checks',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'reviset-query-rows-')),store=new Store(root);try{
+  const first=readingReport('report_large_first');first.revisions[0].pages=Array.from({length:3},(_,i)=>({...sourcePage('large_page_'+i),page:i+1}));first.matches=[];first.lineages=[];
+  store.finishRun(store.beginRun(first.project_id,'Large pagination'),first);
+  let reads=0;const read=store.reportWithSize.bind(store);store.reportWithSize=(p,r)=>{reads++;return {...read(p,r),serializedBytes:65*1024*1024};};
+  const scope=new Set([first.project_id]),q=new QueryService(store,scope),reference=new QueryService(store,scope,()=>first);
+  const args={project_id:first.project_id,report_id:first.report_id,revision_id:'occ_a',limit:1,max_output_tokens:8000};
+  const initial=q.query('list_pages',args);assert.deepEqual(initial,reference.query('list_pages',args));assert.ok(initial.next_cursor);assert.equal(reads,1);
+  const cursor=initial.next_cursor;initial.items[0].page_id='caller mutation';
+  const next={...args,cursor,limit:2};assert.deepEqual(q.query('list_pages',next),reference.query('list_pages',next));assert.equal(reads,1);
+  assert.deepEqual(q.query('list_pages',{...args,max_output_tokens:4000}),reference.query('list_pages',{...args,max_output_tokens:4000}));assert.equal(reads,1);
+  scope.clear();assert.throws(()=>q.query('list_pages',next),{code:'PROJECT_SCOPE'});scope.add(first.project_id);
+  const second={...first,report_id:'report_large_second'};store.finishRun(store.beginRun(second.project_id,'New latest'),second);
+  assert.equal(q.query('list_pages',{...args,report_id:'latest'}).report_id,second.report_id);assert.equal(reads,2);
+  assert.throws(()=>q.query('list_pages',{...next,report_id:'latest'}),{code:'CURSOR_REPORT_MISMATCH'});assert.equal(reads,2);
+  assert.deepEqual(q.query('list_pages',next),reference.query('list_pages',next));assert.equal(reads,2);
+  const mutable=new QueryService(store,scope,()=>first);mutable.query('list_pages',args);first.revisions[0].pages[0].text='changed loader data';
+  assert.equal(mutable.query('list_pages',args).items[0].text_excerpt,'changed loader data');
+ }finally{store.close();await rm(root,{recursive:true,force:true});}
+});
 test('one malformed or identity-mismatched draft cannot hide healthy projects or rewrite existing evidence',async()=>{
  const root=await mkdtemp(join(tmpdir(),'docver-corrupt-row-')),service=new DesktopService(root);try{
   const file=join(root,'synthetic.pdf');await writeFile(file,'synthetic');const healthy=await service.create('Healthy',[{label:'v1',files:[file]}]);

@@ -66,9 +66,11 @@ const resource=(r:ReportData,kind:string,key?:string)=>`docver://projects/${r.pr
 export const reportMetadata=(r:ReportData)=>({schema_version:r.schema_version,report_id:r.report_id,project_id:r.project_id,engine_version:r.engine_version,schema_hash:r.schema_hash,timeline_revision_id:r.timeline_revision_id,mapping_revision_id:r.mapping_revision_id,
   observation_environment:r.observation_environment,revision_count:r.revisions.length,change_count:r.changes.length,relation_count:r.mapping_relations?.length??0,bundle_decision_count:r.bundle_decisions?.length??0,relation_edge_count:r.matches.length,unresolved_candidates:r.candidates.filter(c=>c.status==='needs_review').length,resource_uri:resource(r,'manifest')});
 import {BoundedCache} from './bounded-cache.js';
+type PaginationContext=Pick<ReportData,'report_id'|'schema_version'|'coverage_gaps'>;
 export class QueryService {
   private readonly snapshots=new BoundedCache<ReportData>(2,64*1024*1024);
   private readonly ranges=new BoundedCache<ChangeData[]>(8,16*1024*1024);
+  private readonly queryRows=new BoundedCache<{context:PaginationContext;rows:Record<string,unknown>[]}>(8,16*1024*1024);
   constructor(readonly store:Store,readonly allowedProjects:Set<string>,private readonly loadSnapshot?:(projectId:string,reportId:string)=>ReportData) {}
   snapshot(projectId:string,reportId:string):ReportData {
     if(!this.allowedProjects.has(projectId))throw new DocverError('PROJECT_SCOPE','Project is outside the configured scope');
@@ -84,11 +86,23 @@ export class QueryService {
   query(name:QueryName,raw:unknown,measure?:(result:QueryResult)=>number):QueryResult {
     const args:any=querySchemas[name].parse(raw);
     if(args.project_id&&!this.allowedProjects.has(args.project_id)) throw new DocverError('PROJECT_SCOPE','Project is outside the configured scope');
+    // Keep bounded derivatives for pagination when the immutable report itself
+    // exceeds the snapshot cache. Resolve latest every time; caller-provided
+    // mutable loaders deliberately bypass both derivative cache reads/writes.
+    let rowsKey:string|undefined;
+    if(args.report_id&&!this.loadSnapshot){
+      const fixed=args.report_id==='latest'?this.store.resolveReportId(args.project_id,args.report_id):args.report_id;
+      const {cursor,limit,max_output_tokens,...filters}=args;
+      rowsKey=hash([name,{...filters,report_id:fixed}]);
+      const cached=this.queryRows.get(rowsKey);
+      if(cached)return this.paginate(name,args,cached.context,cached.rows,measure);
+    }
     const report:ReportData|undefined=args.report_id?this.snapshot(args.project_id,args.report_id):undefined;
     let rows:Record<string,unknown>[]=[];
     if(name==='list_projects') rows=this.store.projects().filter(p=>this.allowedProjects.has(p.project_id));
     else if(name==='list_reports') rows=this.store.reports(args.project_id);
     else if(report) rows=this.rows(name,args,report);
+    if(rowsKey&&report)this.queryRows.set(rowsKey,{context:{report_id:report.report_id,schema_version:report.schema_version,coverage_gaps:report.coverage_gaps},rows});
     return this.paginate(name,args,report,rows,measure);
   }
   private rows(name:QueryName,args:any,r:ReportData):Record<string,unknown>[] {
@@ -240,7 +254,7 @@ export class QueryService {
     const recovered=events.find((event,i)=>{const original={...event,report_id:'',change_id:'',evidence_uri:''};return aliases(left).some(a=>aliases(right).some(b=>id('net',[r.report_id,a,b,i,original])===args.change_id));});
     return recovered?{...recovered,change_id:args.change_id}:undefined;
   }
-  private paginate(name:string,args:any,r:ReportData|undefined,rows:Record<string,unknown>[],measure?:(result:QueryResult)=>number):QueryResult {
+  private paginate(name:string,args:any,r:PaginationContext|undefined,rows:Record<string,unknown>[],measure?:(result:QueryResult)=>number):QueryResult {
     const reportId=r?.report_id??null;
     const {cursor,limit,max_output_tokens,...filters}=args;
     const queryHash=hash([name,{...filters,...(reportId?{report_id:reportId}:{})},reportId]);let offset=0;
