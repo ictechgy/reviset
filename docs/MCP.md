@@ -96,7 +96,7 @@ Claude도 모델 계정 변경 없이 읽기 전용 MCP만 사용해 합성5버�
 
 ## 2026-10-21 재리뷰 실행본
 
-현재 앱은 `release/Docver-Review.app`이며 runtime source `1872f61fb78867f31ca70a14732b7c0c7bfadd39`다. 과거 F빌드의 Claude 직접37호출과 현재 패키지 검증을 구별한다. 새5버전/300쪽/과거900쪽 보고서 재열기를 포함 MCP로 조회했고, 손상 draft 복사본에서도 실제 앱과 MCP가 기존 고정 보고서·원문·노트·변경 양쪽·근거·검색·관측 한계를 읽고 SQLite/draft 원문을 보존했다. 계산한 range_net 뒤 source와 report metadata를 다시 읽어 캐시 오염이 없음을 확인했다. [실행 결합·범위](REVIEW-2026-10-21.md).
+2026-10-21 문서 검증 앱은 `release/Docver-Review.app`이며 runtime source `1872f61fb78867f31ca70a14732b7c0c7bfadd39`다. 과거 F빌드의 Claude 직접37호출과 현재 패키지 검증을 구별한다. 새5버전/300쪽/과거900쪽 보고서 재열기를 포함 MCP로 조회했고, 손상 draft 복사본에서도 실제 앱과 MCP가 기존 고정 보고서·원문·노트·변경 양쪽·근거·검색·관측 한계를 읽고 SQLite/draft 원문을 보존했다. 계산한 range_net 뒤 source와 report metadata를 다시 읽어 캐시 오염이 없음을 확인했다. [실행 결합·범위](REVIEW-2026-10-21.md).
 
 앱의 설정 복사는 현재 프로젝트/시도의 준비 완료 값만 허용한다. 실패는 준비 중과 구별하며 **설정 다시 불러오기**로 복구한다. MCP 실패·재시도는 별도 글로벌 오류를 덮거나 남기지 않는다. `latest`는 매번 최신 run의 고정 ID로 해석하고 scope 검사를 캐시 조회 전에 한다. report2개/64MiB·range8개/16MiB는 직렬화 데이터 한도이며 heap 보장이 아니다. custom snapshot loader는 양 캐시를 우회한다.
 
@@ -116,3 +116,8 @@ XLSX·ODS·UTF-8 CSV 프로젝트는 문서와 별도 ID(`wprj_…`)를 사용�
 서식의 XML 속성은 `font.color.@rgb`, 자식 요소는 `font.color.rgb`처럼 구분합니다. ODS 속성의 네임스페이스도 `text-properties.@fo:font-weight`처럼 보존하며, 경로 이름 안의 `%`와 `.`는 각각 `%25`와 `%2E`로 이스케이프합니다. 이 키는 원문 구조의 관측이며 전체 Office 렌더링 의미를 보증하지 않습니다. 이전 실험 빌드의 보고서에는 과거 키 표현이 남을 수 있으므로 보고서 간 키를 임의로 합치지 마세요.
 
 수식은 실행하거나 재계산하지 않습니다. 저장된 결과의 최신 여부는 알 수 없고, 공유·배열·행렬 수식의 셀별 의미가 미해결이면 `formula_interpretation=unresolved`입니다. CSV의 수식처럼 보이는 문자열은 입력 텍스트입니다. XLSX↔ODS의 수식 방언·서식 표현과 CSV의 유형/수식/숨김 기능 부재를 삭제로 해석하지 않습니다. `comparison_coverage=supported_cells_only`는 지원하는 셀 관측만을 뜻합니다. 차트·피벗·매크로·외부 연결 등의 완전한 의미나 실제 편집자·편집 시각을 인증하지 않습니다. 로컬 배포본의 작성자 입력과 기록 시각도 실제 문서 편집 이력의 증거가 아닙니다.
+
+
+### 2026-10-22 native workbook package
+
+현재 스프레드시트 포함 앱은 `release/Docver-Sheets.app`, runtime source `076306a0fab6a941627063f3bcf53cc36cab60a5`다. 앱의 AI·내보내기에서 현재 위치·프로젝트에 맞는 설정을 복사한다. 최종 동봉 MCP의12개 workbook도구를15호출(변경 summary/before/after와 범위 밖 거절 포함)로 검사했고 DB 불변을 확인했다. 공백 경로로 이동한 ZIP에서도 생성 설정의 Node와 서버가 이동한 앱 내부를 가리키는지 확인한 뒤 같은 도구를 실행했다. 원문은 UTF-16 offset/length와 continuation을 끝까지 읽고 고정 보고서·occurrence·sheet·셀 주소를 인용한다. [구현·검증 범위](WORKBOOK-2026-10-22.md).

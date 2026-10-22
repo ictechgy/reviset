@@ -66,7 +66,7 @@ ODS number-format serialization is bounded to 16,384 UTF-16 code units during tr
 
 Sheet source locators are limited to 480 UTF-16 code units. Longer in-package worksheet paths fail input validation; this is independent of the host file path. XLSX style descendants outside SpreadsheetML are rejected except excluded `extLst` metadata, which produces a coverage gap. Ignorable markup outside that exclusion is not a complete Markup Compatibility implementation.
 
-This workbook feature is undergoing its first release qualification. Earlier provisional builds also used `workbook.1.0` while parser semantics were being corrected; those experimental reports are not qualified by the new tests. Stored report bytes remain unchanged. Analyze the originals again for current extraction semantics.
+The current same-Mac private package qualification is recorded in [WORKBOOK-2026-10-22.md](WORKBOOK-2026-10-22.md). Earlier provisional builds also used `workbook.1.0` while parser semantics were being corrected; those experimental reports are not qualified by the new tests. Stored report bytes remain unchanged. Analyze the originals again for current extraction semantics.
 
 Imports require a regular source file selected directly. Native selection and workbook reads atomically reject a final-component symlink and nonregular files, including writerless FIFOs, before reading; a rejected special file cannot stall waiting for a writer. This is not a guarantee against every network or stalled regular-file I/O condition.
 

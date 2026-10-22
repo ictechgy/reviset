@@ -1,14 +1,18 @@
 # Document Version Tracker · Docver
 
-PPTX·PDF 버전의 페이지 대응, 숫자 수정, 중간 삽입·삭제와 이동을 원문 근거와 함께 추적합니다. **SwiftUI·AppKit·PDFKit으로 만든 네이티브 macOS 앱**과 공통 TypeScript 분석 엔진, 읽기 전용 MCP를 제공합니다. 계정·API 키·업로드 없이 로컬에서 동작합니다.
+PPTX·PDF의 페이지와 XLSX·ODS·CSV의 셀 버전을 원문 근거와 함께 추적합니다. 숫자·수식·저장값·기본 서식·중간 변경과 이동을 비교합니다. **SwiftUI·AppKit·PDFKit으로 만든 네이티브 macOS 앱**과 공통 TypeScript 분석 엔진, 읽기 전용 MCP를 제공합니다. 계정·API 키·업로드 없이 로컬에서 동작합니다.
 
 ## Mac에서 사용
 
-현재 Mac에서 검증한 앱은 `release/Docver-Review.app`입니다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 실행하세요. 더블클릭해서 실행하고 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**를 선택합니다. 파일 순서를 버전 순서로 사용하며, PPTX 또는 PDF 하나만으로도 유효합니다. 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
+현재 Mac에서 검증한 앱은 [Docver-Sheets.app](release/Docver-Sheets.app), 압축 파일은 [arm64 ZIP](release/Docver-0.5.0-workbook3-arm64.zip)입니다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 여세요. 스프레드시트는 **⌘⇧O** 또는 파일 메뉴의 **스프레드시트 버전 비교…**로 엽니다. **XLSX·ODS·CSV 가져오기** 또는 **3버전 엑셀 데모**를 선택하고 파일 순서를 버전 순서로 사용합니다. 기존 문서는 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**로 엽니다. PPTX 또는 PDF 하나만으로도 유효하며 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
 
-최근 검증본은 [Docver-Review.app](release/Docver-Review.app)과 [arm64 ZIP](release/Docver-0.4.0-review1-arm64.zip)입니다. 실행 원본은 `1872f61fb78867f31ca70a14732b7c0c7bfadd39`입니다. R5 전체267개 회귀와 최종7파일의 집중21개 검사, 새 앱/MCP16작업 및 이동 ZIP16검사를 결합했습니다. Claude·Grok 지적 수정과 독립 코드·구조 리뷰, Claude의 새 실제 화면 검토를 마쳤습니다. 정확한 소스 결합과 남은 범위는 [재리뷰 기록](docs/REVIEW-2026-10-21.md), [ZIP 검증](release/validation-review1.json), [품질 현황](docs/QUALITY.md)을 참고하세요.
+- 스프레드시트의 특정 버전·시트·셀 원문, 수식과 저장 결과, 기본 서식·숨김·행 이동, 중간 이력과 두 끝점의 순변경을 조회합니다. 큰 네이티브 가상 그리드와 실제 양쪽 주소, 원문 범위·이어 읽기·셀 이력을 제공합니다.
+- Excel XLSX와 LibreOffice Calc ODS, UTF-8 쉼표 CSV를 지원합니다. 실제 LibreOffice의 XLSX→ODS→XLSX 저장과 한글·수식·저장값을 검증했습니다. 수식 재계산과 고급 Excel 개체·완전한 화면 동일성은 지원하지 않으며 관측 한계를 함께 표시합니다.
+- 고정 보고서 내보내기와 로컬 배포 라벨·이유, AI가 버전 내용과 변경 전후를 읽는 **읽기 전용 MCP12개 도구**를 추가했습니다. [스프레드시트 계약](docs/SPREADSHEETS.md), [AI 조회 가이드](docs/MCP.md), [Office 시장 조사](docs/OFFICE-MARKET-2026-10-22.md)를 참고하세요.
 
-선택적 OnlyOffice 참고 창은 이 Mac의 외부 설치본과 글꼴 metadata에 연결됩니다. 원본 대응을 확인한 문서의 PDF를 큰 PDFKit 화면으로 열며 저장된 분석·diff·MCP를 대체하지 않습니다. 같은 Mac의 비공개 검증본이며 다른 Mac 배포·공증은 완료하지 않았습니다. 이전 Docver-MCP/Docver-Render 앱·ZIP도 보존했습니다. Claude의 직접 MCP37호출은 이전 F빌드의 독립 증거이고 새 실행본의 포함 MCP는 별도로 검증했습니다. 버전별 내용과 변경 조회 방법은 [AI 조회 가이드](docs/MCP.md)를 참고하세요. 모든 문서의 완벽한 판독은 아직 달성하지 못했습니다.
+실행 소스는 `076306a0fab6a941627063f3bcf53cc36cab60a5`입니다. 이 소스의87개 집중 검사, TypeScript·엄격 Swift 검사, 실제 앱8작업과 이동ZIP20검사가 통과했습니다. 이전600fac9의 전체341개 회귀와 이후의 좁은 수정 검증을 결합하며 최종 전체 테스트를 새로 실행했다고 표시하지 않습니다. Claude·Grok의 후속 코드 검토와 Claude의 최종 실제 화면 검토를 반영했습니다. 정확한 범위와 기록은 [스프레드시트 구현·검증](docs/WORKBOOK-2026-10-22.md), [ZIP 검증](release/validation-workbook3.json), [품질 현황](docs/QUALITY.md)에 있습니다.
+
+현재 Mac의 비공개 검증본입니다. 이전 Docver·MCP·Render·Review 앱과 ZIP은 보존했고, Review의 선택적 OnlyOffice 참고 창은 [이전 검증 범위](docs/REVIEW-2026-10-21.md)입니다. Sheets 빌드에는 선택적 sidecar를 포함하지 않았습니다. 모든 문서의 완벽한 판독은 아직 달성하지 못했습니다.
 
 - 인접 버전의 1:1 연결·해제·1:N 분할·N:1 병합을 수정합니다. 한 관계에서 최대32페이지를 고르고 이유를 남기며, 모든 분기를 전체 이력과 원문에서 따로 열 수 있습니다.
 - 같은 버전의 PPTX 슬라이드와 제공 PDF 페이지를 별도 창에서 연결·해제·재연결하고 이유·대체된 연결을 보존합니다. 과거 보고서에서는 연결 이력을 조회합니다. 사용자 연결은 참고용이며 PowerPoint 화면 충실도를 보증하지 않습니다.

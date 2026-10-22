@@ -1065,3 +1065,12 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 - Claude E completeCOMMENT와E2 limit-only closureAPPROVE, Grok E completeREQUEST_CHANGES와E2 limit-only closureAPPROVE는각scope별원문을보존한다. E2 narrowapproval은monitor지적을닫지않는다. 480 OCR218정확/22오독/240빈,PowerPointstrict0/26은OPEN이다.
 
 - E3 집중17/17PASS3444.312667ms(wrapper3.470154초), 실제native감독검사2408.273ms. parent-side그룹변경은EACCES/원래G그룹유지, Mach taskport거절, ptrace는부모SIGSEGV와전체ownedPID종료로failclosed를확인했다. 초기E3검사에서실제SIGSEGV를에러에표시하지못한진단회귀가드러나signal을TOOL_FAILED에도보존하고재검사했다. 서명된runtimeguard SHA b995ae2ed0fc0e482ccd6c1a27872a84bdf384e41cedd995f1c7d19e3b7d9ffa; 최종앱/이동ZIP복사본의같은서명flags와entitlement는별도확인한다.
+
+
+### 2026-10-22 네이티브 스프레드시트 버전 비교 · 최종 비공개 패키지
+
+- 실행 소스 `076306a0fab6a941627063f3bcf53cc36cab60a5`. `release/Docver-Sheets.app` + `release/Docver-0.5.0-workbook3-arm64.zip` (391912847B, SHA256 `9f1c10f32f9741b390d726149b564f044c53c71a28f5b3cac76f784b609d96b5`). 원래 네 앱·네ZIP/HANDOFF/PLAN42hash 보존.
+- XLSX/ODS/CSV 별도 workbook.1/workbook.1.0, 원본 SHA·고정 보고서·셀/수식/저장값/서식/숨김·추정 행 대응, 전체 이력/순변경, 특정 버전/시트/셀/검색, 네이티브 가상그리드와 원문 이어 읽기, 로컬 배포 기록·내보내기·읽기 전용MCP12개를 구현했다. 기존 문서 schema0.4/engine53 보고서는 보존한다.
+- 최종076 집중87PASS 14.343초, TypeScript PASS, 엄격 Swift15 경고0, mac-build13 clean. 실제 앱8작업/이동ZIP20검사 PASS. 전체341검사는600fac9의 결과로 구분한다. 실제 Calc26.8.1.1 XLSX→ODS→XLSX, 정상40만 셀578실측11.548초/peakRSS3.15GB, 최종앱 재열기·MCP wire budget·SHA불변 확인.
+- 실제a6의 반복 서식50만 셀 JSON 시간초과를 재현한 뒤 escaped UTF8를 사전 계산해 최종 동봉분석기가2.783초에 WORKBOOK_REPORT_LIMIT로 중단한다. 이전a6 분리control03 ETIMEDOUT/현재통과를 보존했다. namespace/style-axis/서식별 text budget·숫자 결과부재·FIFO/symlink·staged run/cancel/recovery 등 리뷰 지적을 수정했다.
+- Claude/Grok 마지막 코드 delta13/14 각각APPROVE, Claude 실제화면06APPROVE. visual04 원문 범위/이어 읽기/한국어 설명과13차의 실패 복구 버튼을 반영했다. LSP 부재의 공식 내부COMMENT 상한/구조WATCH, 범위별 판정·미해결 큰 품질 기준을 구분한다. [최종 기록](docs/WORKBOOK-2026-10-22.md), [시장 조사](docs/OFFICE-MARKET-2026-10-22.md).

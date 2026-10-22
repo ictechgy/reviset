@@ -1,3 +1,13 @@
+# 현재 검증 · 2026-10-22 스프레드시트
+
+현재 앱은 `release/Docver-Sheets.app`, ZIP은 `release/Docver-0.5.0-workbook3-arm64.zip`, clean runtime source는 `076306a0fab6a941627063f3bcf53cc36cab60a5`다. [기능·검토·한계](WORKBOOK-2026-10-22.md), [이동 ZIP 검증](../release/validation-workbook3.json), [실행 결합 JSON](../.omx/artifacts/workbook-20261022/composite-qualification.json)을 기준으로 한다. 이후 문서 커밋과 앱의 실행 소스를 구분한다.
+
+최종 소스87/87 집중 검사·TypeScript·경고0 엄격 Swift, 실제 새 앱8작업, 이동ZIP20검사가 통과한 **same-Mac PRIVATE_PACKAGE_READY**다. 전체341개 회귀는600fac9의 결과이며 이후 수정은 각각의 집중·실제 실행으로 결합했다. Claude·Grok은 마지막 두 코드 delta를 각각 APPROVE, Claude는 최종076 실제 캡처3장을 APPROVE했다. 정적 캡처·소스·OS 입력·제품 전체 승인은 별개다.
+
+최종 동봉 분석기는50만 셀의 과대 반복 서식을2.783초에 명시 거절하고 실패 실행 기록만 남겼다. 정상40만 셀의 새 분석은578에서11.548초/peakRSS3,149,283,328B였고 최종 앱에서 재열었다. 수식은 재계산하지 않는다. 고급 Excel/Calc 개체·완전한 렌더 동일성·다른 Mac·공증/공개 배포·OS입력/VoiceOver 합격을 의미하지 않는다. 기존 보편 OCR·PowerPoint strict 참조 미해결은 계속 OPEN이다. 이전 네 앱·네ZIP 및 HANDOFF/PLAN의42개 보존 hash가 일치한다.
+
+아래2026-10-21과 E3·AL·F 기록은 각 당시 고정 소스의 역사다.
+
 # 현재 추가 검증 · 2026-10-21 재리뷰
 
 현재 실행본은 `release/Docver-Review.app`, runtime source `1872f61fb78867f31ca70a14732b7c0c7bfadd39`이며 [재리뷰·한계·증거](REVIEW-2026-10-21.md)와 [이동 ZIP 검증](../release/validation-review1.json)을 기준으로 한다. 아래 E3·AL·F 등 과거 검증은 각 고정 소스에만 해당한다.
