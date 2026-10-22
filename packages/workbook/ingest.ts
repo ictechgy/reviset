@@ -265,7 +265,7 @@ function xmlStyle(node: Element | undefined, prefix: string, result: Record<stri
     if (domain === 'xlsx' && child.name === 'extLst') { gap(state.gaps,'advanced_styles','Style extension metadata is excluded from primary semantic properties.'); continue; }
     if (domain === 'xlsx' && !MAIN_NS.has(child.namespace)) fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary XLSX style properties');
     if (domain === 'ods' && ![ODF_NS + 'style:1.0',ODF_NS + 'text:1.0',ODF_NS + 'office:1.0',ODF_NS + 'datastyle:1.0'].includes(child.namespace)) gap(state.gaps,'advanced_styles','Foreign style descendants retain namespace identity; exact rendering is not evaluated.');
-    if (child.text.trim()) gap(state.gaps,'advanced_styles','Style element text is outside the complete semantic property projection; exact rendering is not evaluated.');
+    if (child.text.trim()) gap(state.gaps,'advanced_styles','Style element text is retained only for attribute-free leaf elements; exact rendering is not evaluated.');
     const name = `${prefix}.${styleSegment(domain === 'xlsx' ? child.name : styleElementName(child))}`;
     if (Object.keys(child.attrs).length === 0 && child.children.length === 0) { if (name.length > 255 || child.text.length > 4096 || Object.keys(result).length >= 256) fail('WORKBOOK_LIMIT','Semantic style exceeds bounded properties'); result[name] = child.text || 'true'; }
     else xmlStyle(child,name,result,domain,state,false);

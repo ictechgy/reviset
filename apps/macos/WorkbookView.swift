@@ -1503,7 +1503,7 @@ struct WorkbookGrid: NSViewRepresentable {
         } while true
         guard String(decoding:units,as:UTF16.self) == expected else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_TRUTH",message:"선택한 A1의 전체 원문이 독립 합성 원본과 다릅니다.") }
         await model.loadSelectedCells()
-        return ["selected_address":"A1","viewport_cells_per_side":1200,"preview_truncated":true,"raw_utf16_length":units.count,"raw_pages":pages,"full_raw_matches_independent_fixture":true,"inspector_displays_first_explicit_raw_page":true]
+        return ["selected_address":"A1","viewport_cells_per_side":1200,"preview_truncated":true,"raw_utf16_length":units.count,"raw_pages":pages,"full_raw_matches_independent_fixture":true,"first_raw_model_page_prepared_for_static_capture_review":true]
     }
     private static func exerciseSameAddressReveal(_ model: WorkbookModel,request: JSON,window: NSWindow,folder: URL) async throws -> [String:Any] {
         let address = request["same_address_reveal_address"].string.isEmpty ? "B2" : request["same_address_reveal_address"].string

@@ -291,7 +291,7 @@ test('cumulative revision text rejects an oversized report before parsing later 
   }finally{store.close();await rm(root,{recursive:true,force:true});}
 });
 
-test('reused XLSX and ODS number formats hit the report budget within a 256 MiB child heap without partial results',async()=>{
+test('reused number formats reject oversized reports before full-revision allocation, including the 500k-cell cap',async()=>{
   const {spawnSync}=await import('node:child_process'),root=await mkdtemp(join(tmpdir(),'docver-workbook-format-budget-'));
   const child=`
     import assert from 'node:assert/strict';
@@ -311,10 +311,13 @@ test('reused XLSX and ODS number formats hit the report budget within a 256 MiB 
   try{
     const xlsx=xlsxFixture('<sheetData>'+Array.from({length:600},(_,i)=>`<row r="${i+1}"><c r="A${i+1}" s="1"><v>1</v></c></row>`).join('')+'</sheetData>',{styles:workbookStyles.replace('formatCode="0.000"','formatCode="'+'0'.repeat(1_000_000)+'"')});
     const ods=odsFixture('<table:table-row table:number-rows-repeated="20000"><table:table-cell table:style-name="cell" office:value-type="float" office:value="1"/></table:table-row>',{automatic:'<number:number-style style:name="big"><number:text>'+'0'.repeat(16_000)+'</number:text></number:number-style><style:style style:name="cell" style:family="table-cell" style:data-style-name="big"/>'});
-    for(const [format,bytes]of [['xlsx',xlsx],['ods',ods]]as const){
-      const path=join(root,'source.'+format);await writeFile(path,bytes);
-      const result=spawnSync(process.execPath,['--max-old-space-size=256','--import','tsx','--input-type=module','--eval',child,path,join(root,format+'-library')],{cwd:process.cwd(),encoding:'utf8',timeout:20_000});
-      assert.ifError(result.error);assert.equal(result.status,0,format+': '+result.stderr);assert.equal(result.signal,null);
+    const columns=Array.from({length:50},(_,n)=>n<26?String.fromCharCode(65+n):'A'+String.fromCharCode(65+n-26));
+    const rows=Array.from({length:10_000},(_,i)=>`<row r="${i+1}">`+columns.map(c=>`<c r="${c}${i+1}" s="1"><v>1</v></c>`).join('')+'</row>');
+    const maximal=xlsxFixture('<sheetData>'+rows.join('')+'</sheetData>',{styles:workbookStyles.replace('formatCode="0.000"','formatCode="'+'0'.repeat(1_000_000)+'"')});
+    for(const [name,format,bytes,heap]of [['xlsx-small','xlsx',xlsx,256],['ods','ods',ods,256],['xlsx-max','xlsx',maximal,2048]]as const){
+      const path=join(root,name+'.'+format);await writeFile(path,bytes);
+      const result=spawnSync(process.execPath,['--max-old-space-size='+heap,'--import','tsx','--input-type=module','--eval',child,path,join(root,name+'-library')],{cwd:process.cwd(),encoding:'utf8',timeout:20_000});
+      assert.ifError(result.error);assert.equal(result.status,0,name+': '+result.stderr);assert.equal(result.signal,null);
     }
   }finally{await rm(root,{recursive:true,force:true});}
 });
