@@ -77,6 +77,7 @@ private extension JSON {
     private var recoveryWarningRuns: [String:String] = [:]
     var recoveryWarning: String { recoveryWarnings[projectID] ?? "" }
     @Published var rangeFailure = ""
+    @Published var addressFailure = ""
     @Published var changesFailure = ""
     @Published var comparisonNotice = ""
     @Published var cellFailure = ""
@@ -161,7 +162,7 @@ private extension JSON {
         invalidate("range"); invalidate("cell"); invalidate("history")
         beforeCells = []; afterCells = []; beforeCell = JSON(); afterCell = JSON(); resetCellHistory()
         selectedRow = 0; selectedColumn = 0; selectedChangeID = ""; beforeAddress = ""; afterAddress = ""; cellTextOffset = 0; cellTextNext = nil
-        rangeFailure = ""; cellFailure = ""; loadingRange = false; loadingCell = false
+        rangeFailure = ""; addressFailure = ""; cellFailure = ""; loadingRange = false; loadingCell = false
     }
     func clearSelection() {
         clearCells(); changes = []; coverage = []; releases = []; resetChangePaging(); changeTotal = 0
@@ -345,7 +346,7 @@ private extension JSON {
     }
     func goToAddress() async {
         guard ready else { return }
-        guard let (row,column) = WorkbookGrid.parseAddress(addressInput) else { rangeFailure = "A1–XFD1048576 형식의 물리 셀 주소를 입력하세요."; return }
+        guard let (row,column) = WorkbookGrid.parseAddress(addressInput) else { addressFailure = "A1–XFD1048576 형식의 물리 셀 주소를 입력하세요."; return }
         rowStart = max(1,min(row,1_048_576-rowLimit+1)); columnStart = max(1,min(column,16_384-columnLimit+1))
         clearCells(); addressInput = WorkbookGrid.address(row,column); let identity = rangeScope
         await loadRange(); guard ready, rangeScope == identity else { return }; await selectCell(row,column)
@@ -380,12 +381,12 @@ private extension JSON {
             if !beforeSheetID.isEmpty,let (row,column) = WorkbookGrid.parseAddress(oldAddress) {
                 let value = try await query("get_workbook_cell",["revision_occurrence_id":beforeID,"sheet_id":beforeSheetID,"row":row,"column":column,"text_offset":offset,"text_length":1024,"max_output_tokens":8000],ticket:ticket)
                 guard current(ticket), rangeScope == identity, beforeAddress == oldAddress, afterAddress == newAddress else { return }
-                a = Self.cellResult(value)
+                a = try scopedCellResult(value,occurrence:beforeID,sheet:beforeSheetID,address:oldAddress)
             }
             if !afterSheetID.isEmpty,let (row,column) = WorkbookGrid.parseAddress(newAddress) {
                 let value = try await query("get_workbook_cell",["revision_occurrence_id":afterID,"sheet_id":afterSheetID,"row":row,"column":column,"text_offset":offset,"text_length":1024,"max_output_tokens":8000],ticket:ticket)
                 guard current(ticket), rangeScope == identity, beforeAddress == oldAddress, afterAddress == newAddress else { return }
-                b = Self.cellResult(value)
+                b = try scopedCellResult(value,occurrence:afterID,sheet:afterSheetID,address:newAddress)
             }
             guard current(ticket), rangeScope == identity, beforeAddress == oldAddress, afterAddress == newAddress else { return }
             beforeCell = a; afterCell = b; loadingCell = false
@@ -395,17 +396,26 @@ private extension JSON {
             beforeCell = JSON(); afterCell = JSON(); loadingCell = false; cellFailure = error.localizedDescription
         }
     }
-    static func cellResult(_ value: JSON) -> JSON {
-        if !value["cell"].isNull { return value["cell"] }
-        let item = value["items"].array.first ?? value
-        return item["cell"].isNull ? (item["address"].string.isEmpty ? JSON() : item) : item["cell"]
+    private func scopedCellResult(_ value: JSON,occurrence: String,sheet: String,address: String) throws -> JSON {
+        let items = value["items"].array
+        guard value["project_id"].string == projectID,value["report_id"].string == reportID,value["revision_occurrence_id"].string == occurrence,value["sheet_id"].string == sheet,value["items"].raw is [Any] else {
+            throw BridgeError(code:"WORKBOOK_CELL_SCOPE",message:"셀 원문 응답의 버전·시트·주소를 확인하지 못했습니다.")
+        }
+        if value["availability"].string == "not_materialized",items.isEmpty { return JSON() }
+        guard value["availability"].string == "available",items.count == 1,let (row,column) = WorkbookGrid.parseAddress(address),items[0]["address"].string == address,items[0]["row"].number == Double(row),items[0]["column"].number == Double(column) else {
+            throw BridgeError(code:"WORKBOOK_CELL_SCOPE",message:"셀 원문 응답의 버전·시트·주소를 확인하지 못했습니다.")
+        }
+        return items[0]
     }
     func chooseChange(_ id: String) async {
         guard ready, let change = changes.first(where:{$0["change_id"].string == id}) else { return }
         revealGeneration += 1
         invalidate("cell"); resetCellHistory(); beforeCell = JSON(); afterCell = JSON(); cellFailure = ""; loadingCell = true
         let a = change["from_revision_occurrence_id"].string, b = change["to_revision_occurrence_id"].string
-        guard revisions.contains(where:{$0["revision_occurrence_id"].string == a}), revisions.contains(where:{$0["revision_occurrence_id"].string == b}) else { loadingCell = false; cellFailure = "변경의 버전 근거를 찾지 못했습니다."; return }
+        guard revisions.contains(where:{$0["revision_occurrence_id"].string == a}), revisions.contains(where:{$0["revision_occurrence_id"].string == b}) else {
+            beforeAddress = ""; afterAddress = ""; selectedChangeID = ""; selectedRow = 0; selectedColumn = 0; cellTextOffset = 0; cellTextNext = nil
+            loadingCell = false; cellFailure = "변경의 버전 근거를 찾지 못했습니다."; return
+        }
         beforeID = a; afterID = b
         beforeSheetID = change["from_sheet_id"].string; afterSheetID = change["to_sheet_id"].string
         let address = change["after_address"].string.isEmpty ? change["before_address"].string : change["after_address"].string
@@ -705,13 +715,19 @@ struct WorkbookWorkspace: View {
                 Button("이동") { Task { await model.goToAddress() } }
                 Spacer()
                 Button { Task { await model.moveWindow(columns:-model.columnLimit) } } label: { Image(systemName:"chevron.left") }.disabled(model.columnStart == 1).accessibilityLabel("이전 12열")
-                Text("\(WorkbookGrid.columnLabel(model.columnStart))–\(WorkbookGrid.columnLabel(model.columnStart+model.columnLimit-1))열").font(.caption.monospacedDigit())
+                Text("\(model.independentPaneCoordinates ? "이후 " : "")\(WorkbookGrid.columnLabel(model.columnStart))–\(WorkbookGrid.columnLabel(model.columnStart+model.columnLimit-1))열").font(.caption.monospacedDigit())
                 Button { Task { await model.moveWindow(columns:model.columnLimit) } } label: { Image(systemName:"chevron.right") }.disabled(model.columnStart+model.columnLimit>16384).accessibilityLabel("다음 12열")
                 Button { Task { await model.moveWindow(rows:-model.rowLimit) } } label: { Image(systemName:"chevron.up") }.disabled(model.rowStart == 1).accessibilityLabel("이전 100행")
-                Text("\(model.rowStart)–\(model.rowStart+model.rowLimit-1)행").font(.caption.monospacedDigit())
+                Text("\(model.independentPaneCoordinates ? "이후 " : "")\(model.rowStart)–\(model.rowStart+model.rowLimit-1)행").font(.caption.monospacedDigit())
                 Button { Task { await model.moveWindow(rows:model.rowLimit) } } label: { Image(systemName:"chevron.down") }.disabled(model.rowStart+model.rowLimit>1048576).accessibilityLabel("다음 100행")
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready)
-            if !model.rangeFailure.isEmpty { Text(verbatim:model.rangeFailure).font(.caption).foregroundStyle(.red).padding(8) }
+            if !model.addressFailure.isEmpty { Text(verbatim:model.addressFailure).font(.caption).foregroundStyle(.red).padding(8) }
+            if !model.rangeFailure.isEmpty {
+                HStack {
+                    Text(verbatim:model.rangeFailure).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    Button("셀 범위 다시 읽기") { Task { await model.loadRange() } }.disabled(!model.ready || model.loadingRange)
+                }.padding(8)
+            }
             HSplitView {
                 gridPane(before:true)
                 gridPane(before:false)
@@ -844,7 +860,7 @@ private struct WorkbookInspector: View {
                 if model.loadingCell { ProgressView("셀을 읽는 중…") }
                 else if !model.cellFailure.isEmpty {
                     Text(verbatim:model.cellFailure).font(.caption).foregroundStyle(.red)
-                    if model.cellTextOffset > 0 { Button("원문 처음부터 다시 읽기") { Task { await model.loadSelectedCells() } }.disabled(!model.ready) }
+                    if model.cellHistoryAnchor != nil { Button(model.cellTextOffset > 0 ? "원문 처음부터 다시 읽기" : "셀 원문 다시 읽기") { Task { await model.loadSelectedCells() } }.disabled(!model.ready) }
                 }
                 else if model.selectedRow == 0, model.selectedChangeID.isEmpty { Text("셀 또는 변경 항목을 선택하면 수식 원문·저장된 값·유형을 확인할 수 있습니다.").foregroundStyle(.secondary) }
                 else { cellSection("이전 · " + model.versionLabel(model.beforeID),cell:model.beforeCell); Divider(); cellSection("이후 · " + model.versionLabel(model.afterID),cell:model.afterCell) }
@@ -927,20 +943,25 @@ private struct WorkbookCellDetail: View {
     }
     private func rawDetail(_ label: String,field: String) -> some View {
         VStack(alignment:.leading,spacing:4) {
-            detail(sourceLabel(label,field:field),sourceText(field))
-            if cell["text_continuations"][field]["state"].string == "truncated" {
+            Text(verbatim:sourceLabel(label,field:field)).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            if let status = sourceStatus(field) {
+                Text(verbatim:status).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text(verbatim:cell[field].string).font(.system(.caption,design:.monospaced)).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
+            }
+            if cell["text_continuations"][field]["state"].string == "truncated",!cell[field].string.isEmpty {
                 Text(cell["text_continuations"][field]["next_offset"].isNull ? "— 원문 마지막 조각 끝 · 앞부분은 처음부터 확인할 수 있습니다." : "… 현재 조각 끝 · 뒤에 원문이 더 있습니다.").font(.caption2.weight(.medium)).foregroundStyle(.orange)
             }
         }
     }
-    private func sourceText(_ field: String) -> String {
+    private func sourceStatus(_ field: String) -> String? {
         let raw = cell[field],continuation = cell["text_continuations"][field]
         if raw.isNull { return "값 관측 없음 · 빈 문자열/0과 다름" }
         if raw.string.isEmpty {
             if continuation["total_length"].int > 0 { return "앞부분에서 읽은 값 · 현재 조각 없음" }
             return "빈 문자열"
         }
-        return raw.string
+        return nil
     }
     private func detail(_ label: String, _ value: String) -> some View { VStack(alignment:.leading,spacing:3) { Text(verbatim:label).font(.caption.weight(.medium)).foregroundStyle(.secondary); Text(verbatim:value).font(.system(.caption,design:.monospaced)).textSelection(.enabled).fixedSize(horizontal:false,vertical:true) } }
 }
