@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {mkdir,readFile,writeFile,rename,rm,lstat,readlink} from 'node:fs/promises';
+import {mkdir,mkdtemp,readFile,writeFile,rename,rm,lstat,readlink,realpath} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
+import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import PDFDocument from 'pdfkit';
 import {createCanvas,loadImage} from '@napi-rs/canvas';
@@ -18,6 +19,7 @@ import {validateCorpusPages} from './public-corpus-validation.js';
 import {fileSha256} from '../packages/runtime/file-hash.js';
 import {preparePdfjs} from './prepare-pdfjs.js';
 import {pdfWorkerEnvironment} from '../packages/runtime/pdfjs-environment.js';
+import {nativeHelperLaunch,NATIVE_ISOLATION_POLICY} from '../packages/runtime/native-isolation.js';
 
 await preparePdfjs();
 
@@ -36,7 +38,12 @@ for(const path of execFileSync('git',['ls-files','--others','--exclude-standard'
   untracked.push({path,kind:stat.isSymbolicLink()?'symlink':'file',sha256:stat.isSymbolicLink()?byteHash(Buffer.from(await readlink(path))):await fileSha256(path)});
 }
 const sourceClean=!patch.length&&!untracked.length,patchSha=patch.length?byteHash(patch):null,dirtySha=sourceClean?null:byteHash(Buffer.from(JSON.stringify({patchSha,untracked})));
-const run=join(folder,'runs',head.slice(0,8)+(dirtySha?'-dirty-'+dirtySha.slice(0,8):''));await mkdir(run,{recursive:true});
+async function createRunDirectory(folder:string,snapshot:string){
+  const runs=join(folder,'runs');await mkdir(runs,{recursive:true});
+  const run=join(runs,snapshot+'-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+randomUUID());
+  await mkdir(run,{mode:0o700});return run;
+}
+const run=await createRunDirectory(folder,head.slice(0,8)+(dirtySha?'-dirty-'+dirtySha.slice(0,8):''));
 const compact=(s:string)=>normalize(s).normalize('NFKC').toLowerCase().replace(/\s/gu,'').replace(/⁄/g,'/');
 function intersects(a:Box,b:Box){return Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));}
 function regionResult(native:NativePageResult,regions:Region[],occluded?:Box){return regions.map(region=>{
@@ -60,6 +67,20 @@ async function bytesFor(source:Source){
   assert.equal(bytes.length,source.bytes);assert.equal(byteHash(bytes),source.sha256);assert.ok(source.format==='pdf'?bytes.subarray(0,5).toString()==='%PDF-':bytes.subarray(0,2).toString()==='PK');return {path,bytes};
 }
 async function pdfImage(image:Buffer,width:number,height:number){const d=new PDFDocument({size:[width,height],margin:0}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(r=>d.on('end',()=>r(Buffer.concat(chunks))));d.image(image,0,0,{width,height});d.end();return done;}
+async function renderSourcePreview(bytes:Buffer,expectedSha256:string,destination:string){
+  assert.equal(byteHash(bytes),expectedSha256,'Preview source must match the pinned fixture');
+  const executable=visionExecutable();assert.ok(executable,'Native PDF renderer is unavailable');
+  const job=await realpath(await mkdtemp(join(tmpdir(),'reviset-public-preview-')));
+  try{
+    // Give the helper only the verified bytes and a private output directory.
+    const source=join(job,'source.pdf'),renderPath=join(job,'page-1.png');await writeFile(source,bytes,{flag:'wx',mode:0o600});
+    const launch=await nativeHelperLaunch(executable,job,source);assert.equal(launch.policy,NATIVE_ISOLATION_POLICY,'Public corpus previews require native isolation');
+    await runTool(launch.executable,launch.args,{input:JSON.stringify({path:source,page:1,render_only:true,render_path:renderPath}),cwd:job,timeout:60_000,maxBytes:1024*1024,inheritEnv:false,env:launch.env});
+    const stat=await lstat(renderPath);assert.ok(stat.isFile()&&stat.size>8&&stat.size<=72*1024*1024,'Native preview must be a bounded regular PNG');
+    const png=await readFile(renderPath);assert.deepEqual(png.subarray(0,8),Buffer.from([137,80,78,71,13,10,26,10]),'Native preview must be PNG');
+    await writeFile(destination,png,{flag:'wx',mode:0o600});return {isolation_policy:launch.policy,source_sha256:expectedSha256,png_sha256:byteHash(png),png_bytes:png.length};
+  }finally{await rm(job,{recursive:true,force:true});}
+}
 async function storedImport(path:string,expectedPages:number,label:string){
   const library=join(run,'import-libraries',label);let service=new DesktopService(library);
   try{
@@ -77,8 +98,8 @@ for(const source of manifest.sources){
   if(source.format==='pdf'){
     const numbers=Array.from({length:source.pages!},(_,i)=>i+1),native=await captureNativePages(bytes,numbers,numbers,{sourceFile:path,cacheRoot:cache,reuseRasterOcr:false});assert.equal(native.size,numbers.length,'Every source page must return a native observation');assert.ok([...native.values()].every(n=>n.ocr_performed&&n.lines.length),'No silent failed/empty native OCR');
     const pages=validateCorpusPages(await extractPdf(bytes,'sha256:'+source.sha256,{ocr:'all',sourceFile:path,cacheRoot:cache,reuseRasterOcr:false}),source.id);assert.equal(pages.length,source.pages);
-    await writeFile(join(out,'native.json'),JSON.stringify([...native],null,2));await writeFile(join(out,'pages.json'),JSON.stringify(pages,null,2));await runTool(visionExecutable()!,[],{input:JSON.stringify({path,page:1,render_only:true,render_path:join(out,'page-1.png')})});
-    const first=native.get(1)!;results.push({id:source.id,source_sha256:source.sha256,pages:pages.length,ocr_lines:pages.map(p=>native.get(p.page)!.lines.length),native_tables:pages.map(p=>native.get(p.page)!.tables?.length??0),raster_grid_tables:pages.map(p=>native.get(p.page)!.grid_tables?.length??0),uncertain_ocr_lines:pages.map(p=>p.elements.filter(e=>e.method==='vision_ocr'&&e.visibility!=='visible').length),regions:regionResult(first,truth.regions[source.id]??[]),selected_comparison_regions:selectedRegionResult(pages[0],truth.regions[source.id]??[]),seconds:(Date.now()-start)/1000});
+    await writeFile(join(out,'native.json'),JSON.stringify([...native],null,2));await writeFile(join(out,'pages.json'),JSON.stringify(pages,null,2));const source_preview=await renderSourcePreview(bytes,source.sha256,join(out,'page-1.png'));
+    const first=native.get(1)!;results.push({id:source.id,source_sha256:source.sha256,source_preview,pages:pages.length,ocr_lines:pages.map(p=>native.get(p.page)!.lines.length),native_tables:pages.map(p=>native.get(p.page)!.tables?.length??0),raster_grid_tables:pages.map(p=>native.get(p.page)!.grid_tables?.length??0),uncertain_ocr_lines:pages.map(p=>p.elements.filter(e=>e.method==='vision_ocr'&&e.visibility!=='visible').length),regions:regionResult(first,truth.regions[source.id]??[]),selected_comparison_regions:selectedRegionResult(pages[0],truth.regions[source.id]??[]),seconds:(Date.now()-start)/1000});
     if(source.id==='azure-layout'){const grids=first.grid_tables??[];assert.ok(grids.some(t=>t.cells.length===9&&t.cells.some(c=>c.row===2&&c.column===1&&c.text==='Microsoft')&&t.cells.filter(c=>!c.text.trim()).length===2),'Downloaded Microsoft3x3 table and two unobserved values must retain structure');}
     if(truth.regions[source.id]){
       const image=await loadImage(join(out,'page-1.png')),page=pages[0];
