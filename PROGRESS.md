@@ -1074,3 +1074,10 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 - 최종076 집중87PASS 14.343초, TypeScript PASS, 엄격 Swift15 경고0, mac-build13 clean. 실제 앱8작업/이동ZIP20검사 PASS. 전체341검사는600fac9의 결과로 구분한다. 실제 Calc26.8.1.1 XLSX→ODS→XLSX, 정상40만 셀578실측11.548초/peakRSS3.15GB, 최종앱 재열기·MCP wire budget·SHA불변 확인.
 - 실제a6의 반복 서식50만 셀 JSON 시간초과를 재현한 뒤 escaped UTF8를 사전 계산해 최종 동봉분석기가2.783초에 WORKBOOK_REPORT_LIMIT로 중단한다. 이전a6 분리control03 ETIMEDOUT/현재통과를 보존했다. namespace/style-axis/서식별 text budget·숫자 결과부재·FIFO/symlink·staged run/cancel/recovery 등 리뷰 지적을 수정했다.
 - Claude/Grok 마지막 코드 delta13/14 각각APPROVE, Claude 실제화면06APPROVE. visual04 원문 범위/이어 읽기/한국어 설명과13차의 실패 복구 버튼을 반영했다. LSP 부재의 공식 내부COMMENT 상한/구조WATCH, 범위별 판정·미해결 큰 품질 기준을 구분한다. [최종 기록](docs/WORKBOOK-2026-10-22.md), [시장 조사](docs/OFFICE-MARKET-2026-10-22.md).
+
+## 2026-10-22 workbook 읽기 복구·근거 검증 후속
+
+- Runtime `ba8eae815950f92511b7ebb81335bc1f02c6e79f`; Docver-Sheets와ZIP6 391921164B/SHA256 `285802b0f37bb7179b1bc655e9c4bb931b077a531080b710a906edb74d371b5f`. 첫·이어 읽기·범위 재시도,14개 응답 범위/형태 차단, 잘못된 변경 anchor 제거, 주소 오류 해제, 이전 전용/이동 라벨, 원문/안내 구분, 넓은 조회구간/선택 근거와 페이지 안내 보완.
+- 최종88/88 PASS19.918초, strictSwift3.900초/tsc0.330초/macbuild31.440초.219개 입력 파일 해시를 clean runtime에 결합. 실제 데모·1803UTF16 원문2조각/양쪽 독립 일치·복귀, ZIP공백 이동20검사/12MCP도구15호출/DB불변/기존PPTX·PDF·LibreOffice PASS.
+- 독립 두 역할의 최종 전체5파일 diff는 코드COMMENT(도구 미노출)/구조CLEAR/SOURCE_READY, actionable0. Claude5d전체/ba8delta/최종실제2이미지APPROVE. Grok최종 범위와 판정은 [후속 검증](docs/WORKBOOK-RECOVERY-2026-10-22.md)에 결합한다.
+- 원래42+직전ZIP3/validation3 총44보존 경로 일치, 중간4·5ZIP보존. 공통7backend/helper바이트는076과 동일. 전체341회귀/40만셀분석은 과거고정소스 실측으로 유지한다. 보편OCR·PowerPoint strict/수식재계산/고급Excel/다른Mac·공증/OS입력·VoiceOver는 미해결·범위밖이다.

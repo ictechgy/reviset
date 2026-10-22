@@ -4,13 +4,13 @@ PPTX·PDF의 페이지와 XLSX·ODS·CSV의 셀 버전을 원문 근거와 함�
 
 ## Mac에서 사용
 
-현재 Mac에서 검증한 앱은 [Docver-Sheets.app](release/Docver-Sheets.app), 압축 파일은 [arm64 ZIP](release/Docver-0.5.0-workbook3-arm64.zip)입니다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 여세요. 스프레드시트는 **⌘⇧O** 또는 파일 메뉴의 **스프레드시트 버전 비교…**로 엽니다. **XLSX·ODS·CSV 가져오기** 또는 **3버전 엑셀 데모**를 선택하고 파일 순서를 버전 순서로 사용합니다. 기존 문서는 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**로 엽니다. PPTX 또는 PDF 하나만으로도 유효하며 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
+현재 Mac에서 검증한 앱은 [Docver-Sheets.app](release/Docver-Sheets.app), 압축 파일은 [arm64 ZIP](release/Docver-0.5.0-workbook6-arm64.zip)입니다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 여세요. 스프레드시트는 **⌘⇧O** 또는 파일 메뉴의 **스프레드시트 버전 비교…**로 엽니다. **XLSX·ODS·CSV 가져오기** 또는 **3버전 엑셀 데모**를 선택하고 파일 순서를 버전 순서로 사용합니다. 기존 문서는 **문서 버전 가져오기** 또는 **5버전 합성 데모 열기**로 엽니다. PPTX 또는 PDF 하나만으로도 유효하며 같은 버전의 PPTX+PDF는 선택적으로 묶을 수 있습니다.
 
 - 스프레드시트의 특정 버전·시트·셀 원문, 수식과 저장 결과, 기본 서식·숨김·행 이동, 중간 이력과 두 끝점의 순변경을 조회합니다. 큰 네이티브 가상 그리드와 실제 양쪽 주소, 원문 범위·이어 읽기·셀 이력을 제공합니다.
 - Excel XLSX와 LibreOffice Calc ODS, UTF-8 쉼표 CSV를 지원합니다. 실제 LibreOffice의 XLSX→ODS→XLSX 저장과 한글·수식·저장값을 검증했습니다. 수식 재계산과 고급 Excel 개체·완전한 화면 동일성은 지원하지 않으며 관측 한계를 함께 표시합니다.
 - 고정 보고서 내보내기와 로컬 배포 라벨·이유, AI가 버전 내용과 변경 전후를 읽는 **읽기 전용 MCP12개 도구**를 추가했습니다. [스프레드시트 계약](docs/SPREADSHEETS.md), [AI 조회 가이드](docs/MCP.md), [Office 시장 조사](docs/OFFICE-MARKET-2026-10-22.md)를 참고하세요.
 
-실행 소스는 `076306a0fab6a941627063f3bcf53cc36cab60a5`입니다. 이 소스의87개 집중 검사, TypeScript·엄격 Swift 검사, 실제 앱8작업과 이동ZIP20검사가 통과했습니다. 이전600fac9의 전체341개 회귀와 이후의 좁은 수정 검증을 결합하며 최종 전체 테스트를 새로 실행했다고 표시하지 않습니다. Claude·Grok의 후속 코드 검토와 Claude의 최종 실제 화면 검토를 반영했습니다. 정확한 범위와 기록은 [스프레드시트 구현·검증](docs/WORKBOOK-2026-10-22.md), [ZIP 검증](release/validation-workbook3.json), [품질 현황](docs/QUALITY.md)에 있습니다.
+실행 소스는 `ba8eae815950f92511b7ebb81335bc1f02c6e79f`입니다. 이 소스의88개 집중 검사, TypeScript·엄격 Swift 검사, 실제 앱과 이동ZIP20검사가 통과했습니다. 조회 재시도·셀 응답 검증·긴 원문 안내·이력 구간 표시를 보완했습니다. 전체341개 회귀는 이전600fac9의 결과로 구분합니다. Claude·Grok 리뷰의 범위와 기록은 [후속 개선·검증](docs/WORKBOOK-RECOVERY-2026-10-22.md), [기능 도입 기록](docs/WORKBOOK-2026-10-22.md), [ZIP 검증](release/validation-workbook6.json)에 있습니다.
 
 현재 Mac의 비공개 검증본입니다. 이전 Docver·MCP·Render·Review 앱과 ZIP은 보존했고, Review의 선택적 OnlyOffice 참고 창은 [이전 검증 범위](docs/REVIEW-2026-10-21.md)입니다. Sheets 빌드에는 선택적 sidecar를 포함하지 않았습니다. 모든 문서의 완벽한 판독은 아직 달성하지 못했습니다.
 

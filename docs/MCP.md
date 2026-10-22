@@ -120,4 +120,4 @@ XLSX·ODS·UTF-8 CSV 프로젝트는 문서와 별도 ID(`wprj_…`)를 사용�
 
 ### 2026-10-22 native workbook package
 
-현재 스프레드시트 포함 앱은 `release/Docver-Sheets.app`, runtime source `076306a0fab6a941627063f3bcf53cc36cab60a5`다. 앱의 AI·내보내기에서 현재 위치·프로젝트에 맞는 설정을 복사한다. 최종 동봉 MCP의12개 workbook도구를15호출(변경 summary/before/after와 범위 밖 거절 포함)로 검사했고 DB 불변을 확인했다. 공백 경로로 이동한 ZIP에서도 생성 설정의 Node와 서버가 이동한 앱 내부를 가리키는지 확인한 뒤 같은 도구를 실행했다. 원문은 UTF-16 offset/length와 continuation을 끝까지 읽고 고정 보고서·occurrence·sheet·셀 주소를 인용한다. [구현·검증 범위](WORKBOOK-2026-10-22.md).
+현재 스프레드시트 포함 앱은 `release/Docver-Sheets.app`, runtime source `ba8eae815950f92511b7ebb81335bc1f02c6e79f`다. 앱의 AI·내보내기에서 현재 위치·프로젝트에 맞는 설정을 복사한다. 최종 동봉 MCP의12개 workbook도구를15호출(변경 summary/before/after와 범위 밖 거절 포함)로 검사했고 DB 불변을 확인했다. 공백 경로로 이동한 ZIP에서도 생성 설정의 Node와 서버가 이동한 앱 내부를 가리키는지 확인한 뒤 같은 도구를 실행했다. 원문은 UTF-16 offset/length와 continuation을 끝까지 읽고 고정 보고서·occurrence·sheet·셀 주소를 인용한다. [기능 도입 범위](WORKBOOK-2026-10-22.md), [후속 앱·이동 검증](WORKBOOK-RECOVERY-2026-10-22.md).
