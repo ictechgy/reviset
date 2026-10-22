@@ -115,23 +115,25 @@ npm test        # Integration suite; native checks need the macOS toolchain
 
 Test preparation applies the pinned PDF.js worker patch and builds the Vision helper on supported Macs. The integration suite includes OCR, Office, and native checks and can take time.
 
-Results are tied to their execution source:
+The latest [LibreOffice compatibility check](docs/LIBREOFFICE-2026-10-22.md) used real Calc and Impress saves and fixed an exported-PDF rectangle recognition issue. Results remain tied to their execution source:
 
 | Validation | Source snapshot | Result |
 | --- | --- | --- |
-| Full regression suite | `568fc97` | 370 passed |
-| Focused native regressions | `36de1b5` | 13 passed; native source bytes are unchanged at `c09c683` |
-| Affected document and CLI regressions | `c09c683` | 52 passed |
-| Packaged `release/Reviset-Review.app` | Clean `c09c68388671372e0065016d479af97ec557e7d1` | Four native launches and four bundled MCP sessions passed; legacy fixed-report/source bytes and original source files were preserved |
+| Earlier full regression suite | `568fc97` | 370 passed |
+| Actual Calc ODS/XLSX saves | `635a795` | 154 assertions passed |
+| Affected PDF/OCR/history regressions | `f911f11` | 104 passed |
+| Rectangle regressions and TypeScript checking | `f3a66bc`; TypeScript source bytes unchanged at `8364e3d` | Five passed; type checking passed |
+| Packaged `release/Reviset-LibreOffice-3.app` | Clean `8364e3d9d67f2ed4ed5ffa3d58ce50e1313ab93e` | Six native launches and five MCP sessions passed; 20 captures inspected; original and legacy-report bytes preserved |
 
-The packaged checks cover legacy document/workbook reopening and fresh document/workbook demo analyses. The full suite was not rerun at `c09c683`. Universal OCR accuracy and strict PowerPoint fidelity remain **OPEN**; OS gestures, VoiceOver, notarization, public distribution, and installation on other Macs remain outside this qualification.
+The final package also passed strict signature verification, and its exact Swift source bytes passed compilation with warnings treated as errors. Native checks covered fresh analyses and saved-report reopening for Calc, mixed PPTX/PDF history and PDF cover/strike evidence. The full suite was not rerun at the final head. Universal OCR accuracy and strict PowerPoint fidelity remain **OPEN**; OS gestures, VoiceOver, notarization, public distribution, and installation on other Macs remain outside this qualification. Direct ODP import is unsupported; save as PPTX or export PDF in Impress first.
 
 Most detailed documents below are in Korean.
 
 | Document | Contents |
 | --- | --- |
 | [Quality status](docs/QUALITY.md) | Validation results and remaining accuracy/distribution gates |
-| [Current repair review and validation](docs/REVIEW-2026-10-22.md) | Input/archive boundaries, commit recovery, native fixes, and snapshot-bound review/package evidence |
+| [LibreOffice compatibility and repair](docs/LIBREOFFICE-2026-10-22.md) | Actual Calc/Impress saves, PDF covers, final app and historical-report verification |
+| [Earlier overall repair review](docs/REVIEW-2026-10-22.md) | Input/archive boundaries, commit recovery, native fixes, and snapshot-bound review/package evidence |
 | [Earlier workbook improvements and validation](docs/WORKBOOK-RECOVERY-2026-10-22.md) | Read recovery, cell provenance, UI changes, and scoped review evidence |
 | [MCP guide](docs/MCP.md) | AI setup, query order, and output budgets |
 | [Spreadsheet contract](docs/SPREADSHEETS.md) | Formats, formula/cell semantics, and processing limits |

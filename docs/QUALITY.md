@@ -1,4 +1,14 @@
-# 현재 검증 · 2026-10-22 전체 리뷰·수정
+# 현재 검증 · 2026-10-22 LibreOffice 호환성
+
+현재 검증 앱은 `release/Reviset-LibreOffice-3.app`, clean runtime source는 `8364e3d9d67f2ed4ed5ffa3d58ce50e1313ab93e`다. [실제 저장·변환·수정·검증 범위](LIBREOFFICE-2026-10-22.md)에 LibreOffice 26.8.1.1의 Calc ODS/XLSX 154개 검증, Impress 두 PPTX 필터의 4개 검증, 혼합 PPTX/PDF 이력과 PDF 가림·취소선 근거를 정리했다.
+
+실제 LibreOffice 사각형의 중간점 시작·중복 닫힘을 허용하면서 단일 유한 M/L/Z 직사각형만 증명하도록 수정했다. 새 `pdf_rectangle_path_policy`가 보고서 ID에 반영되며 engine53/schema0.4와 과거 보고서는 유지한다. 앱 smoke의 이력 조회 대기와 실제 원문 뷰 캡처 검증도 보강했다. 자동 검사는 표시된 원문 식별자를 확인하며 픽셀·오버레이 완료를 보편적으로 보장하지 않으므로 최종 20장 직접 검사를 별도로 수행했다.
+
+104개 영향 회귀는 `f911f11`, 마지막 TypeScript·사각형 5개 검사는 `f3a66bc`에서 실행했고 해당 3개 파일은 최종 소스와 바이트가 동일하다. 최종 Swift 10개 파일과 일치하는 소스의 경고 오류 컴파일, clean 앱 빌드·엄격 서명, 실제 앱 실행 6회·MCP 5세션·화면 20장 검사가 통과했다. 이전 370개 전체 검사를 최종 실행으로 합산하지 않는다. 원본·고정 보고서·과거 보관소·기존 앱을 보존했고, old53 수동 연결 보고서의 MCP 응답 17페이지가 동일한 것도 확인했다. 후자는 명시된 기존 실행과 최종 backend 5개 파일의 동일한 바이트로 연결한다.
+
+전체 4개 파일 독립 리뷰는 코드 **APPROVE**, 구조 **CLEAR**다. 판정은 기록된 범위의 **SOURCE_READY / same-Mac PRIVATE_PACKAGE_READY**다. 실패 캡처 두 장과 중간 앱을 포함한 원시 증거는 `.omx/artifacts/libreoffice-compat-20261022/`에 보존했다. 보편 OCR·PowerPoint 충실도, 새 최대 규모, OS 입력·VoiceOver, 다른 Mac, 공증·공개 설치본은 계속 OPEN 또는 이번 범위 밖이다.
+
+# 이전 검증 · 2026-10-22 전체 리뷰·수정
 
 현재 검증 앱은 `release/Reviset-Review.app`, clean runtime source는 `c09c68388671372e0065016d479af97ec557e7d1`이다. [전체 리뷰·수정·검증 범위](REVIEW-2026-10-22.md)에 보안 입력 경계, 원본 hash 보존, 저장 결과 복구, 네이티브 선택·PDF 확대 위치·워크북 읽기 복구와 성능 변경을 정리했다. 기준 `d53f43e`부터 최종 실행 소스까지34경로를 독립 코드/구조 역할이 모두 재검토했고 APPROVE/CLEAR, 남은 actionable0건이다.
 

@@ -1096,3 +1096,12 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 - Clean `c09c68388671372e0065016d479af97ec557e7d1`의 `release/Reviset-Review.app`에서 기존 문서·통합 문서 재열기와 각각의 새 데모 분석, 총 **실제 앱 실행 4회·동봉 MCP 세션 4회**를 통과했다. 두 새 분석은 success, 문서 실행 상태는 정확한 저장 보고서와 일치하고 cleanup_pending=false다. 엄격 서명·독립 동봉 helper·host-bound sidecar 부재, 기존 보고서/보관 원본/입력 바이트 보존, MCP 전후 보관소 바이트 불변을 확인했다. 캡처 12장을 직접 확인했으며 이전 앱·보존 기준·HANDOFF/PLAN은 유지했다.
 - 최종 전체 34경로 내부 리뷰는 코드 **APPROVE**, 구조 **CLEAR**다. 외부 Claude03/Grok03은 `568fc97..36de1b5`의 13경로, Claude04/Grok04는 `36de1b5..c09c683`의 3경로에 각각 terminal **APPROVE**다. 외부 판정을 전체 저장소나 실제 앱 전수 승인으로 확대하지 않는다. [최종 리뷰·검증 기록](docs/REVIEW-2026-10-22.md).
 - 보편 OCR·PowerPoint strict 충실도는 **OPEN**이다. 이번 검증은 OS 입력·VoiceOver·다른 Mac/최소 OS·공증·공개 배포, 새 보편 OCR 평가나 이동 ZIP 검증을 포함하지 않는다. 이전 실패·범위별 리뷰·패키지 기록은 당시 소스에 귀속해 보존한다.
+
+
+## 2026-10-22 LibreOffice 실제 호환성 확인·수정
+
+- LibreOffice 26.8.1.1의 실제 Calc 저장 6회(FODS→ODS→XLSX→ODS, 두 버전), 154개 검증과 Impress 두 PPTX 필터의 4개 검증을 통과했다. 한글·표·노트·숨김 슬라이드·100→120→140 혼합 이력, ODP 직접 미지원과 저장 형식별 날짜·수식 차이를 확인했다.
+- 실제 PDF의 중간점 시작·중복 닫힘 사각형을 안전하게 인식하도록 수정하고 `pdf_rectangle_path_policy`를 보고서 ID에 결합했다. 가림 원문 보존, visible/comparison 제외, inferred occlusion/strike 이벤트와 MCP 근거를 확인했다. engine53/schema0.4와 기존 고정 보고서는 유지한다.
+- 영향 104개 검사는 f911, 마지막 TypeScript 5개 검사는 f3이며 해당 TypeScript 바이트는 836과 같다. 최종 Swift 10개 파일은 경고 오류 컴파일을 통과했다. 검사 코드의 비동기 선택 조기 종료와 PDF 로딩 중 캡처를 실제 실패→수정→재검증했고 실패 이미지·중간 앱은 보존했다.
+- Clean runtime `8364e3d9d67f2ed4ed5ffa3d58ce50e1313ab93e`의 `release/Reviset-LibreOffice-3.app`: native 6회·MCP 5세션·화면 20장 직접 검사 PASS. 원본·과거 보관소·보고서·기존 앱 hash를 보존했다. Old53 수동 연결 2건의 실제 old/new MCP 각 17페이지 동일성과 최종 backend 동일 바이트 결합도 통과했다.
+- Complete635→836의 4개 파일 독립 리뷰는 코드 APPROVE·구조 CLEAR다. Claude/Grok 외부 검토와 실제 실패 근거를 구분해 기록했다. 상세 [호환성 결과](docs/LIBREOFFICE-2026-10-22.md). 보편 OCR·PowerPoint 엄격 충실도, 다른 Mac·공증·OS 입력·VoiceOver는 이번 검증 합격으로 확대하지 않는다.
