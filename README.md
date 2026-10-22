@@ -6,7 +6,7 @@ English (canonical) · [한국어](README.ko.md)
 
 Docver compares versions of PPTX/PDF documents and XLSX/ODS/CSV workbooks. People inspect the originals side by side; AI clients query the same fixed reports through a read-only MCP server. Import and analysis run locally without an account, API key, or cloud upload.
 
-For example, follow `draft.pptx → review.pdf → final.pptx` as a revenue estimate changes from `100 → 120 → 110`. Inspect the source in each version. Beyond the first-to-last difference, the history also keeps content that was added and later removed in intermediate versions.
+For example, follow `draft.pptx → review.pdf → final.pptx` as revenue changes from `100억 → 120억 → 110억` (억 denotes 100 million). Inspect the source in each version. Beyond the first-to-last difference, the history also keeps content that was added and later removed in intermediate versions.
 
 > **Under development and validation.** This repository provides source build instructions. The validated local app targets Apple Silicon Macs; public installer distribution, notarization, and installation on other Macs remain outstanding. A project license has not been selected. The app UI and most detailed project notes are currently in Korean.
 
@@ -14,7 +14,7 @@ For example, follow `draft.pptx → review.pdf → final.pptx` as a revenue esti
 
 ### PPTX and PDF comparison
 
-![Docver showing a numeric change from 100 to 120 with before-and-after source evidence](docs/images/document-comparison.png)
+![Docver showing a numeric change from 100억 to 120억 with before-and-after source evidence](docs/images/document-comparison.png)
 
 A five-version synthetic demo showing the numeric change displayed as `100억 → 120억` and its source evidence. The left pane shows a LibreOffice conversion of a PPTX; the right pane shows the original PDF.
 
@@ -61,7 +61,7 @@ The Node executable used for packaging must link only system dylibs. If the buil
 
 1. Import documents with **문서 버전 가져오기** (`⌘O`), or open **스프레드시트 버전 비교…** (`⌘⇧O`) for spreadsheets. Arrange files in version order.
 2. A document version can contain just one PPTX or PDF. Bundling a PPTX with a PDF from the same version is optional.
-3. Select before/after versions and pages or sheets. Distinguish **전체 이력** (full history), or **구간 전체 이력** in the workbook, from **두 버전 순변경** (net change between two versions).
+3. Select before/after versions and pages or sheets. For documents, switch between the **비교** (comparison) and **전체 이력** (full history) tabs. In the workbook view, choose **두 버전 순변경** (net change between two versions) or **구간 전체 이력** (full history across the range).
 4. Select a change to inspect source evidence and before/after contents. Continue through long cell text; retry a failed read when needed.
 5. Open **AI·내보내기** to export a fixed report or copy the project's MCP configuration.
 
