@@ -795,8 +795,10 @@ struct WorkbookWorkspace: View {
                 if !model.changePreviousCursors.isEmpty { Button("이전 페이지") { Task { await model.loadChanges(previous:true) } } }
                 if !model.changeCursor.isEmpty { Button("다음 페이지") { Task { await model.loadChanges(next:true) } } }
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready || model.loadingChanges)
-            Text(verbatim:model.versionLabel(model.changesFromID) + " → " + model.versionLabel(model.changesToID)).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
-            if !model.changeCursor.isEmpty || !model.changePreviousCursors.isEmpty { Text("응답 크기에 맞춰 나눠 표시합니다.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            Text(verbatim:"조회 구간 · " + model.versionLabel(model.changesFromID) + " → " + model.versionLabel(model.changesToID)).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
+            if !model.selectedChangeID.isEmpty,(model.changesFromID != model.beforeID || model.changesToID != model.afterID) { Text("목록은 조회 구간을 유지합니다. 위 비교는 선택한 변경이 발생한 두 버전입니다.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            if !model.changeCursor.isEmpty { Text("응답 크기로 나누어 표시합니다. ‘다음 페이지’에서 변경을 계속 확인하세요.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            else if !model.changePreviousCursors.isEmpty { Text("마지막 페이지입니다. 앞선 변경은 ‘이전 페이지’에서 확인하세요.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.comparisonNotice.isEmpty { Text(verbatim:model.comparisonNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
             if model.changePageNumber > model.changePreviousCursors.count+1 { Text("최근 128개 페이지까지 되돌아갈 수 있습니다. 구간을 다시 선택하면 처음부터 조회합니다.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12) }
             if model.loadingChanges { ProgressView("변경을 읽는 중…").frame(maxWidth:.infinity,maxHeight:.infinity) }
