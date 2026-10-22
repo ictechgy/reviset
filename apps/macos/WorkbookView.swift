@@ -1097,6 +1097,33 @@ private enum WorkbookLabels {
 // AppKit creates reusable cells only for visible rows. The data source is a
 // bounded 100×12 physical window backed by sparse observations, never a dense
 // workbook. Formula text remains plain text and is never evaluated by AppKit.
+@MainActor final class WorkbookTableScrollView: NSScrollView {
+    private var synchronizingHeader = false
+    override func reflectScrolledClipView(_ clipView: NSClipView) {
+        super.reflectScrolledClipView(clipView)
+        if clipView === contentView { synchronizeHeader() }
+    }
+    override func tile() { super.tile(); synchronizeHeader() }
+    override func layout() { super.layout(); synchronizeHeader() }
+    func synchronizeHeader() {
+        guard !synchronizingHeader,let table = documentView as? NSTableView,table.numberOfColumns > 0,let header = table.headerView else { return }
+        var ancestor = header.superview,headerClip: NSClipView?
+        while let view = ancestor,view !== self {
+            if let clip = view as? NSClipView { headerClip = clip; break }
+            ancestor = view.superview
+        }
+        guard let headerClip,headerClip !== contentView else { return }
+        // The header has its own clip view. Restoring the document clip alone
+        // can leave it at the preceding horizontal position. Align the actual
+        // first-column edges, accounting for public view-coordinate transforms.
+        let body = table.convert(table.rect(ofColumn:0),to:self),title = header.convert(header.headerRect(ofColumn:0),to:self)
+        let offset = title.minX-body.minX
+        guard offset.isFinite,abs(offset) > 0.25 else { return }
+        synchronizingHeader = true; defer { synchronizingHeader = false }
+        headerClip.scroll(to:NSPoint(x:headerClip.bounds.origin.x+offset,y:headerClip.bounds.origin.y))
+    }
+}
+
 struct WorkbookGrid: NSViewRepresentable {
     let pane: String
     let revealIntent: String
@@ -1110,8 +1137,8 @@ struct WorkbookGrid: NSViewRepresentable {
     let onSelect: (Int,Int) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = false
-        let table = NSTableView(); table.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.grid." + pane); table.usesAlternatingRowBackgroundColors = true; table.gridStyleMask = [.solidHorizontalGridLineMask,.solidVerticalGridLineMask]; table.rowHeight = 27; table.headerView = NSTableHeaderView(); table.allowsMultipleSelection = false; table.columnAutoresizingStyle = .noColumnAutoresizing
+        let scroll = WorkbookTableScrollView(); scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = false
+        let table = NSTableView(); table.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.grid." + pane); table.usesAlternatingRowBackgroundColors = true; table.gridStyleMask = [.solidHorizontalGridLineMask,.solidVerticalGridLineMask]; table.rowHeight = 27; table.headerView = NSTableHeaderView(); table.allowsMultipleSelection = false; table.allowsColumnReordering = false; table.columnAutoresizingStyle = .noColumnAutoresizing
         table.dataSource = context.coordinator; table.delegate = context.coordinator; table.target = context.coordinator; table.action = #selector(Coordinator.clicked(_:)); table.setAccessibilityLabel((pane == "before" ? "이전" : "이후") + " 통합 문서 셀 그리드 · 물리 주소")
         scroll.documentView = table; context.coordinator.table = table; context.coordinator.update(self)
         return scroll
@@ -1166,6 +1193,7 @@ struct WorkbookGrid: NSViewRepresentable {
                     lastRevealed = reveal
                 }
             } else { table.deselectAll(nil); lastRevealed = "" }
+            (table.enclosingScrollView as? WorkbookTableScrollView)?.synchronizeHeader()
         }
         func numberOfRows(in tableView: NSTableView) -> Int { parent.rowCount }
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -1177,9 +1205,10 @@ struct WorkbookGrid: NSViewRepresentable {
             let text: NSTextField
             if let existing = cell.textField { text = existing } else { text = NSTextField(labelWithString:""); text.translatesAutoresizingMaskIntoConstraints = false; text.lineBreakMode = .byTruncatingTail; cell.addSubview(text); cell.textField = text; NSLayoutConstraint.activate([text.leadingAnchor.constraint(equalTo:cell.leadingAnchor,constant:6),text.trailingAnchor.constraint(equalTo:cell.trailingAnchor,constant:-5),text.centerYAnchor.constraint(equalTo:cell.centerYAnchor)]) }
             let physicalRow = parent.rowStart+row
-            if tableColumn.identifier.rawValue == "row" { text.stringValue = String(physicalRow); text.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular); text.textColor = .secondaryLabelColor; cell.toolTip = nil }
+            if tableColumn.identifier.rawValue == "row" { text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.row.\(physicalRow)"); text.stringValue = String(physicalRow); text.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular); text.textColor = .secondaryLabelColor; cell.toolTip = nil }
             else {
                 let column = Int(tableColumn.identifier.rawValue) ?? 1
+                text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.cell." + WorkbookGrid.address(physicalRow,column))
                 let value = sparse[String(physicalRow)+":"+String(column)] ?? JSON()
                 if physicalRow == parent.selectedRow,column == parent.selectedColumn { cell.layer?.borderWidth = 1; cell.layer?.borderColor = NSColor.controlAccentColor.cgColor; cell.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor }
                 let raw = value["value"].isNull ? "" : value["value"].string
@@ -1298,10 +1327,13 @@ struct WorkbookGrid: NSViewRepresentable {
                 checks["cell_history_items"] = model.cellHistory.count
             }
             model.tab = "compare"
+            if request["require_dense_raw_proof"].bool { checks["dense_raw_value"] = try await exerciseDenseRawValue(model) }
             try await Task.sleep(nanoseconds:400_000_000)
             guard let window = NSApp.windows.first(where:{$0.isVisible && containsGrid($0.contentView)}) else { throw BridgeError(code:"WORKBOOK_SMOKE_WINDOW",message:"실제 네이티브 통합 문서 그리드 창이 없습니다.") }
             checks["pane_evidence"] = try assertPanes(model,window:window)
+            checks["header_scroll_geometry"] = try await exerciseHeaderScrollGeometry(model,window:window)
             try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-compare.png"))
+            if request["require_dense_raw_proof"].bool { try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-dense-raw.png")) }
             checks["actual_native_grid_capture"] = true
 
             // Independent fixtures can require distant forward/backward moves.
@@ -1335,6 +1367,8 @@ struct WorkbookGrid: NSViewRepresentable {
             if request["require_before_only_history"].bool { checks["before_only_history"] = try await exerciseBeforeOnlyHistory(model,request:request,window:window,folder:folder) }
             if request["exercise_same_address_reveal"].bool || request["require_same_address_reveal"].bool { checks["same_address_reveal"] = try await exerciseSameAddressReveal(model,request:request,window:window,folder:folder) }
             checks["paging"] = try await exercisePaging(model,request:request)
+            try await Task.sleep(nanoseconds:150_000_000)
+            checks["paging_header_geometry"] = try assertPanes(model,window:window)
 
             // The old request is cancelled while its owned Bridge process is
             // pending. It cannot restore the previous selected-cell authority.
@@ -1426,6 +1460,50 @@ struct WorkbookGrid: NSViewRepresentable {
             checks["history_single_page"] = true
         }
         return checks
+    }
+    private static func exerciseHeaderScrollGeometry(_ model: WorkbookModel,window: NSWindow) async throws -> [String:Any] {
+        var original: [String:NSPoint] = [:],manual: [String:NSPoint] = [:],scrolled: [String:Any] = [:]
+        for pane in ["before","after"] {
+            guard let table = grid(window.contentView,pane:pane),let scroll = table.enclosingScrollView else { continue }
+            let clip = scroll.contentView; original[pane] = clip.bounds.origin
+            let x = min(max(0,clip.documentRect.width-clip.bounds.width),clip.bounds.origin.x+200)
+            clip.scroll(to:NSPoint(x:x,y:clip.bounds.origin.y)); scroll.reflectScrolledClipView(clip); manual[pane] = clip.bounds.origin
+        }
+        try await Task.sleep(nanoseconds:100_000_000)
+        for pane in ["before","after"] {
+            guard let table = grid(window.contentView,pane:pane),let coordinator = table.dataSource as? WorkbookGrid.Coordinator else { continue }
+            scrolled[pane] = try assertHeaderGeometry(table,state:coordinator.parent,pane:pane)
+        }
+        await model.loadRange(); try await Task.sleep(nanoseconds:100_000_000)
+        for pane in ["before","after"] {
+            guard let table = grid(window.contentView,pane:pane),let coordinator = table.dataSource as? WorkbookGrid.Coordinator,let position = manual[pane] else { continue }
+            guard abs(table.visibleRect.minX-position.x) <= 0.75 else { throw BridgeError(code:"WORKBOOK_SMOKE_HEADER_PASSIVE_SCROLL",message:"범위 다시 읽기가 사용자의 가로 스크롤을 바꿨습니다: " + pane) }
+            _ = try assertHeaderGeometry(table,state:coordinator.parent,pane:pane)
+        }
+        for (pane,position) in original {
+            guard let table = grid(window.contentView,pane:pane),let scroll = table.enclosingScrollView else { continue }
+            scroll.contentView.scroll(to:position); scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        try await Task.sleep(nanoseconds:100_000_000)
+        return ["manual_scroll_header_geometry":scrolled,"passive_refresh_preserves_horizontal_scroll":true,"restored_header_geometry":try assertPanes(model,window:window)]
+    }
+    private static func exerciseDenseRawValue(_ model: WorkbookModel) async throws -> [String:Any] {
+        model.addressInput = "A1"; await model.goToAddress()
+        guard model.beforeCells.count == 1200,model.afterCells.count == 1200,model.afterCells.first(where:{$0["address"].string == "A1"})?["text_truncated"].bool == true else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_VIEWPORT",message:"독립 원본의 1,200셀 미리보기·생략 상태를 확인하지 못했습니다.") }
+        let expected = String(repeating:"한글😀 데이터 원문 \"따옴표\" ",count:100) + "1:1"
+        let identity = model.rangeScope; var units: [UInt16] = [],pages = 0
+        repeat {
+            guard model.cellFailure.isEmpty,model.rangeScope == identity,model.afterAddress == "A1",model.afterCell["address"].string == "A1" else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_CELL",message:model.cellFailure.isEmpty ? "선택한 A1 원문 범위가 다릅니다." : model.cellFailure) }
+            let cell = model.afterCell,continuation = cell["text_continuations"]["value"],offset = continuation["offset"].int,chunk = Array(cell["value"].string.utf16)
+            guard continuation["total_length"].int == expected.utf16.count,offset <= units.count,offset+chunk.count >= units.count else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_CONTINUATION",message:"A1 원문 조각의 길이·이어 읽기 위치가 다릅니다.") }
+            units += chunk.dropFirst(units.count-offset); pages += 1
+            if continuation["next_offset"].isNull { break }
+            guard pages < 64 else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_PAGES",message:"독립 A1 원문 검증의 페이지 한도를 넘었습니다.") }
+            await model.loadSelectedCells(offset:continuation["next_offset"].int)
+        } while true
+        guard String(decoding:units,as:UTF16.self) == expected else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_TRUTH",message:"선택한 A1의 전체 원문이 독립 합성 원본과 다릅니다.") }
+        await model.loadSelectedCells()
+        return ["selected_address":"A1","viewport_cells_per_side":1200,"preview_truncated":true,"raw_utf16_length":units.count,"raw_pages":pages,"full_raw_matches_independent_fixture":true,"inspector_displays_first_explicit_raw_page":true]
     }
     private static func exerciseSameAddressReveal(_ model: WorkbookModel,request: JSON,window: NSWindow,folder: URL) async throws -> [String:Any] {
         let address = request["same_address_reveal_address"].string.isEmpty ? "B2" : request["same_address_reveal_address"].string
@@ -1549,6 +1627,28 @@ struct WorkbookGrid: NSViewRepresentable {
         for child in view.subviews { if let table = grid(child,pane:pane) { return table } }
         return nil
     }
+    private static func assertHeaderGeometry(_ table: NSTableView,state: WorkbookGrid,pane: String) throws -> [[String:Any]] {
+        guard let header = table.headerView,header.tableView === table,!table.allowsColumnReordering,table.tableColumns.count == state.columnCount+1 else { throw BridgeError(code:"WORKBOOK_SMOKE_HEADER_STRUCTURE",message:"셀 원본 열 순서와 실제 헤더 구조가 다릅니다: " + pane) }
+        let visible = table.convert(table.visibleRect,to:nil),rows = table.rows(in:table.visibleRect)
+        var result: [[String:Any]] = []
+        for index in table.tableColumns.indices {
+            let body = table.convert(table.rect(ofColumn:index),to:nil)
+            if index != 0,body.maxX <= visible.minX || body.minX >= visible.maxX { continue }
+            let title = header.convert(header.headerRect(ofColumn:index),to:nil)
+            let physicalColumn = state.columnStart+index-1,expectedID = index == 0 ? "row" : String(physicalColumn),expectedTitle = index == 0 ? "행" : WorkbookGrid.columnLabel(physicalColumn)
+            guard table.tableColumns[index].identifier.rawValue == expectedID,table.tableColumns[index].headerCell.stringValue == expectedTitle else { throw BridgeError(code:"WORKBOOK_SMOKE_HEADER_IDENTITY",message:"물리 열의 헤더·식별자가 다릅니다: " + pane + " · " + expectedTitle) }
+            guard abs(title.minX-body.minX) <= 0.75,abs(title.maxX-body.maxX) <= 0.75 else { throw BridgeError(code:"WORKBOOK_SMOKE_HEADER_ALIGNMENT",message:"실제 헤더와 셀 열의 화면 좌표가 다릅니다: \(pane) \(expectedTitle), header=\(title.minX)…\(title.maxX), body=\(body.minX)…\(body.maxX)") }
+            var item: [String:Any] = ["column_id":expectedID,"title":expectedTitle,"header_min_x":title.minX,"header_max_x":title.maxX,"body_min_x":body.minX,"body_max_x":body.maxX,"aligned":true]
+            if rows.length > 0,rows.location < state.rowCount,body.maxX > visible.minX,body.minX < visible.maxX {
+                let row = rows.location,physicalRow = state.rowStart+row
+                let expectedCell = index == 0 ? "Docver.workbook.row.\(physicalRow)" : "Docver.workbook.cell." + WorkbookGrid.address(physicalRow,physicalColumn)
+                guard let cell = table.view(atColumn:index,row:row,makeIfNecessary:false) as? NSTableCellView,cell.textField?.identifier?.rawValue == expectedCell else { throw BridgeError(code:"WORKBOOK_SMOKE_HEADER_CELL_IDENTITY",message:"표시된 헤더 아래 셀의 물리 주소가 다릅니다: " + pane + " · " + expectedCell) }
+                item["rendered_cell_id"] = expectedCell
+            }
+            result.append(item)
+        }
+        return result
+    }
     private static func assertPanes(_ model: WorkbookModel,window: NSWindow) throws -> [[String:Any]] {
         var result: [[String:Any]] = []
         window.contentView?.layoutSubtreeIfNeeded()
@@ -1561,9 +1661,10 @@ struct WorkbookGrid: NSViewRepresentable {
             guard let table = grid(window.contentView,pane:name),let coordinator = table.dataSource as? WorkbookGrid.Coordinator else { throw BridgeError(code:"WORKBOOK_SMOKE_PANE",message:"실제 통합 문서 그리드 데이터 원본이 없습니다.") }
             let state = coordinator.parent,row = before ? model.beforeRowStart : model.afterRowStart,column = before ? model.beforeColumnStart : model.afterColumnStart
             guard state.rowStart == row,state.columnStart == column else { throw BridgeError(code:"WORKBOOK_SMOKE_PANE_ORIGIN",message:"이전·이후 범위 시작 주소가 실제 그리드와 다릅니다.") }
+            let headerGeometry = try assertHeaderGeometry(table,state:state,pane:name)
             guard let coordinate = model.paneCoordinate(before:before) else {
                 guard state.selectedRow == 0,state.selectedColumn == 0,table.selectedRow < 0 else { throw BridgeError(code:"WORKBOOK_SMOKE_EMPTY_ENDPOINT",message:"셀 근거가 없는 끝점에 임의 셀 강조가 남았습니다.") }
-                result.append(["pane":name,"availability":"no_cell_evidence","highlight":NSNull(),"row_start":row,"column_start":column]); continue
+                result.append(["pane":name,"availability":"no_cell_evidence","highlight":NSNull(),"row_start":row,"column_start":column,"header_geometry":headerGeometry]); continue
             }
             let localRow = coordinate.row-row,localColumn = coordinate.column-column+1
             guard state.selectedRow == coordinate.row,state.selectedColumn == coordinate.column,localRow >= 0,localRow < state.rowCount,localColumn > 0,localColumn <= state.columnCount,table.selectedRow == localRow,table.visibleRect.intersects(table.frameOfCell(atColumn:localColumn,row:localRow)) else { throw BridgeError(code:"WORKBOOK_SMOKE_PANE_EVIDENCE",message:"이전·이후의 실제 셀 근거가 올바르게 강조되어 화면에 표시되지 않았습니다: " + name) }
@@ -1574,7 +1675,7 @@ struct WorkbookGrid: NSViewRepresentable {
             }
             let cell = before ? model.beforeCell : model.afterCell,cells = before ? model.beforeCells : model.afterCells
             guard cell.isNull || cells.contains(where:{$0["row"].int == coordinate.row && $0["column"].int == coordinate.column}) else { throw BridgeError(code:"WORKBOOK_SMOKE_PANE_SOURCE",message:"셀 원문은 있지만 표시 범위에 해당 원본 관측이 없습니다.") }
-            result.append(["pane":name,"highlight":WorkbookGrid.address(coordinate.row,coordinate.column),"row_start":row,"column_start":column,"selected_local_row":table.selectedRow,"visible":true,"cell_border_visible":true,"row_gutter_visible":gutterVisible])
+            result.append(["pane":name,"highlight":WorkbookGrid.address(coordinate.row,coordinate.column),"row_start":row,"column_start":column,"selected_local_row":table.selectedRow,"visible":true,"cell_border_visible":true,"row_gutter_visible":gutterVisible,"header_geometry":headerGeometry])
         }
         return result
     }

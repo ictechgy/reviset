@@ -113,4 +113,6 @@ XLSX·ODS·UTF-8 CSV 프로젝트는 문서와 별도 ID(`wprj_…`)를 사용�
 5. `get_workbook_cell_history`로 선택 셀의 추정 계보를, `search_workbook_cells`로 저장값/수식의 리터럴 검색을 합니다. 대응이 모호하면 계보를 중단하며 같은 주소의 다음 점유자를 같은 항목으로 단정하지 않습니다.
 6. `list_workbook_coverage_gaps`와 `list_workbook_sheets`의 메타데이터 페이지를 끝까지 읽습니다. 출력 크기와 커서 제한 때문에 한 응답이 전체 시트를 뜻하지 않습니다.
 
+서식의 XML 속성은 `font.color.@rgb`, 자식 요소는 `font.color.rgb`처럼 구분합니다. ODS 속성의 네임스페이스도 `text-properties.@fo:font-weight`처럼 보존하며, 경로 이름 안의 `%`와 `.`는 각각 `%25`와 `%2E`로 이스케이프합니다. 이 키는 원문 구조의 관측이며 전체 Office 렌더링 의미를 보증하지 않습니다. 이전 실험 빌드의 보고서에는 과거 키 표현이 남을 수 있으므로 보고서 간 키를 임의로 합치지 마세요.
+
 수식은 실행하거나 재계산하지 않습니다. 저장된 결과의 최신 여부는 알 수 없고, 공유·배열·행렬 수식의 셀별 의미가 미해결이면 `formula_interpretation=unresolved`입니다. CSV의 수식처럼 보이는 문자열은 입력 텍스트입니다. XLSX↔ODS의 수식 방언·서식 표현과 CSV의 유형/수식/숨김 기능 부재를 삭제로 해석하지 않습니다. `comparison_coverage=supported_cells_only`는 지원하는 셀 관측만을 뜻합니다. 차트·피벗·매크로·외부 연결 등의 완전한 의미나 실제 편집자·편집 시각을 인증하지 않습니다. 로컬 배포본의 작성자 입력과 기록 시각도 실제 문서 편집 이력의 증거가 아닙니다.

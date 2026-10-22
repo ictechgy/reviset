@@ -9,7 +9,7 @@ import { cellAddress, workbookID, type WorkbookCellData, type WorkbookFormatData
 // These are rejection limits, never truncation targets. No workbook code is evaluated.
 export const WORKBOOK_LIMITS = Object.freeze({ input: 64 * 1024 * 1024, expanded: 128 * 1024 * 1024, part: 32 * 1024 * 1024, entries: 4096, sheets: 100, cells: 500_000, rows: 1_048_576, columns: 16_384, cellText: 1024 * 1024, xmlNodes: 2_000_000, metadata: 100_000, styleEntries: 2_000_000, text: 64 * 1024 * 1024 });
 type Element = { name: string; namespace: string; attrs: Record<string,string>; children: Element[]; text: string; content: (string | Element)[] };
-type State = { signal?: AbortSignal; cells: number; nodes: number; text: number; ticks: number; styleEntries: number; styleDefinitions: Record<string,Record<string,string>>; styleRefs: WeakMap<Record<string,string>,string>; stylesByCanonical: Map<string,string>; gaps: WorkbookGapData[] };
+type State = { signal?: AbortSignal; cells: number; nodes: number; text: number; ticks: number; styleEntries: number; styleDefinitions: Record<string,Record<string,string>>; styleRefs: WeakMap<Record<string,string>,string>; stylesByCanonical: Map<string,string>; numberFormats: Set<string>; gaps: WorkbookGapData[] };
 function fail(code: string, message: string): never { throw new DocverError(code, message); }
 const array = <T>(value: T | T[] | undefined): T[] => value === undefined ? [] : Array.isArray(value) ? value : [value];
 const children = (node: Element | undefined, name: string) => node?.children.filter(child => child.name === name) ?? [];
@@ -50,7 +50,11 @@ function addCell(state: State, sheet: WorkbookSheetData, cell: WorkbookCellData)
     }
   }
   if (styleRef) { cell.style_ref = styleRef; cell.style = {}; }
-  state.text += cell.number_format?.length ?? 0; if (state.text > WORKBOOK_LIMITS.text) fail('WORKBOOK_LIMIT','Workbook values and distinct styles exceed text limit');
+  if (cell.number_format !== null && !state.numberFormats.has(cell.number_format)) {
+    if (state.numberFormats.size >= WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Distinct number formats exceed metadata limit');
+    state.numberFormats.add(cell.number_format); state.text += cell.number_format.length;
+  }
+  if (state.text > WORKBOOK_LIMITS.text) fail('WORKBOOK_LIMIT','Workbook values and distinct styles exceed text limit');
   sheet.cells.push(cell); sheet.row_count = Math.max(sheet.row_count, cell.row); sheet.column_count = Math.max(sheet.column_count, cell.column);
 }
 function makeCell(sheet: WorkbookSheetData, row: number, column: number): WorkbookCellData { const address = cellAddress(row,column); return { address, row, column, value_type: 'blank', value: null, formula: null, number_format: null, style: {}, cached_result: 'not_applicable', cache_freshness: 'not_applicable', formula_dialect: null, formula_interpretation: 'not_formula', hidden_row: false, hidden_column: false, source_ref: `${sheet.source_ref}!${address}` }; }
@@ -241,6 +245,7 @@ function relationships(parts: Map<string,Uint8Array>, path: string, state: State
 function xlsxString(value: string) { return value.replace(/_x([0-9a-fA-F]{4})_/g,(_match,hex: string) => String.fromCharCode(parseInt(hex,16))); }
 const BUILTIN_FORMATS: Record<number,string> = { 0:'General',1:'0',2:'0.00',3:'#,##0',4:'#,##0.00',9:'0%',10:'0.00%',11:'0.00E+00',12:'# ?/?',13:'# ??/??',14:'mm-dd-yy',15:'d-mmm-yy',16:'d-mmm',17:'mmm-yy',18:'h:mm AM/PM',19:'h:mm:ss AM/PM',20:'h:mm',21:'h:mm:ss',22:'m/d/yy h:mm',37:'#,##0 ;(#,##0)',38:'#,##0 ;[Red](#,##0)',39:'#,##0.00;(#,##0.00)',40:'#,##0.00;[Red](#,##0.00)',45:'mm:ss',46:'[h]:mm:ss',47:'mmss.0',48:'##0.0E+0',49:'@' };
 type Style = { number: string | null; values: Record<string,string> };
+function styleSegment(name: string): string { return name.replaceAll('%','%25').replaceAll('.','%2E'); }
 function styleElementName(node: Element): string { return `${NS_PREFIX.get(node.namespace) ?? '{' + node.namespace + '}'}:${node.name}`; }
 function requireOdsProperty(node: Element | undefined): Element | undefined { if (node && node.namespace !== ODF_NS + 'style:1.0') fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary ODS style properties'); return node; }
 function xmlStyle(node: Element | undefined, prefix: string, result: Record<string,string>, domain: 'xlsx' | 'ods', state: State, root = true) {
@@ -249,17 +254,19 @@ function xmlStyle(node: Element | undefined, prefix: string, result: Record<stri
   if (domain === 'ods' && root) requireOdsProperty(node);
   if (prefix.length > 255) fail('WORKBOOK_LIMIT','Style property nesting exceeds supported length');
   for (const [key,value] of Object.entries(node.attrs)) {
-    if (prefix.length + 1 + key.length > 255 || value.length > 4096 || Object.keys(result).length >= 256) fail('WORKBOOK_LIMIT','Semantic style exceeds bounded properties');
-    // Canonical expanded attribute keys are source evidence. A qualified fo:val
-    // can never impersonate XLSX val, nor style:font-weight impersonate fo:font-weight.
-    result[`${prefix}.${key}`] = value;
-    if ((domain === 'xlsx' && key.includes(':')) || key.startsWith('{')) gap(state.gaps,'advanced_styles','Namespaced/extension style properties are retained with namespace identity; exact rendering is not evaluated.');
+    const name = `${prefix}.@${styleSegment(key)}`;
+    if (name.length > 255 || value.length > 4096 || Object.keys(result).length >= 256) fail('WORKBOOK_LIMIT','Semantic style exceeds bounded properties');
+    // The attribute axis is disjoint from child elements. Each source name is
+    // escaped independently so dots/percent escapes inside names cannot add paths.
+    result[name] = value;
+    if ((domain === 'xlsx' && key.includes(':')) || (domain === 'ods' && !['fo:','style:','table:'].some(prefix => key.startsWith(prefix))) || key.startsWith('{')) gap(state.gaps,'advanced_styles','Namespaced/extension style properties are retained with namespace identity; exact rendering is not evaluated.');
   }
   for (const child of node.children) {
     if (domain === 'xlsx' && child.name === 'extLst') { gap(state.gaps,'advanced_styles','Style extension metadata is excluded from primary semantic properties.'); continue; }
     if (domain === 'xlsx' && !MAIN_NS.has(child.namespace)) fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary XLSX style properties');
     if (domain === 'ods' && ![ODF_NS + 'style:1.0',ODF_NS + 'text:1.0',ODF_NS + 'office:1.0',ODF_NS + 'datastyle:1.0'].includes(child.namespace)) gap(state.gaps,'advanced_styles','Foreign style descendants retain namespace identity; exact rendering is not evaluated.');
-    const name = `${prefix}.${domain === 'xlsx' ? child.name : styleElementName(child)}`;
+    if (child.text.trim()) gap(state.gaps,'advanced_styles','Style element text is retained as source evidence; exact rendering is not evaluated.');
+    const name = `${prefix}.${styleSegment(domain === 'xlsx' ? child.name : styleElementName(child))}`;
     if (Object.keys(child.attrs).length === 0 && child.children.length === 0) { if (name.length > 255 || child.text.length > 4096 || Object.keys(result).length >= 256) fail('WORKBOOK_LIMIT','Semantic style exceeds bounded properties'); result[name] = child.text || 'true'; }
     else xmlStyle(child,name,result,domain,state,false);
   }
@@ -277,7 +284,7 @@ function xlsxStyles(parts: Map<string,Uint8Array>, path: string | undefined, sta
   for (const nodes of [baseXfs,cellXfs]) for (const node of nodes) for (const name of applyNames) { const raw = attr(node,name); if (raw !== undefined && !['0','1','false','true'].includes(raw)) fail('INVALID_WORKBOOK','Invalid XLSX style application boolean'); }
   const readApply = (node: Element | undefined,values: Record<string,string>,prefix = 'xf') => {
     const flags = new Map<string,boolean>();
-    for (const name of applyNames) { const raw = attr(node,name); if (raw === undefined) continue; if (!['0','1','false','true'].includes(raw)) fail('INVALID_WORKBOOK','Invalid XLSX style application boolean'); flags.set(name,truth(raw)); values[`${prefix}.${name}`] = raw; }
+    for (const name of applyNames) { const raw = attr(node,name); if (raw === undefined) continue; if (!['0','1','false','true'].includes(raw)) fail('INVALID_WORKBOOK','Invalid XLSX style application boolean'); flags.set(name,truth(raw)); values[`${prefix}.@${styleSegment(name)}`] = raw; }
     return flags;
   };
   type StyleGroup = {values:Record<string,string>;ref:string;count:number};
@@ -429,10 +436,39 @@ function odsPrimaryText(paragraphs: Element[],gaps: WorkbookGapData[],sheet_id?:
   for (const [index,paragraph] of paragraphs.entries()) { if (index) write('\n'); visit(paragraph); }
   return result;
 }
-function canonicalStyle(node: Element,state: State): string {
-  if (![ODF_NS + 'datastyle:1.0',ODF_NS + 'style:1.0',ODF_NS + 'text:1.0'].includes(node.namespace)) gap(state.gaps,'advanced_styles','Foreign number-style descendants retain namespace identity; exact rendering is not evaluated.');
-  const attrs = Object.fromEntries(Object.entries(node.attrs).filter(([name]) => !['style:name','style:display-name'].includes(name)).sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0));
-  return JSON.stringify({namespace:node.namespace,name:node.name,attrs,content:node.content.map(item => typeof item === 'string' ? item : canonicalStyle(item,state))});
+function canonicalStyle(root: Element,state: State): string {
+  // Serialize one nested JSON structure. Re-stringifying child JSON strings at
+  // every ancestor would escape them repeatedly and amplify with nesting depth.
+  const limit = 16384 - 'ods:'.length, tokens: string[] = []; let length = 0;
+  const write = (token: string) => { if (token.length > limit - length) fail('WORKBOOK_LIMIT','ODS number format exceeds 16384 characters'); length += token.length; tokens.push(token); };
+  const quote = (value: string) => {
+    const available = limit - length; let encoded = 2;
+    // Every raw UTF-16 code unit contributes at least one JSON code unit. Reject
+    // large fields before JSON.stringify can allocate their escaped equivalent.
+    if (value.length > available - 2) fail('WORKBOOK_LIMIT','ODS number format exceeds 16384 characters');
+    for (let index = 0; index < value.length; index++) {
+      const code = value.charCodeAt(index);
+      if (code === 34 || code === 92 || code === 8 || code === 9 || code === 10 || code === 12 || code === 13) encoded += 2;
+      else if (code < 32) encoded += 6;
+      else if (code >= 0xd800 && code <= 0xdbff) { const next = value.charCodeAt(index + 1); if (next >= 0xdc00 && next <= 0xdfff) { encoded += 2; index++; } else encoded += 6; }
+      else encoded += code >= 0xdc00 && code <= 0xdfff ? 6 : 1;
+      if (encoded > available) fail('WORKBOOK_LIMIT','ODS number format exceeds 16384 characters');
+    }
+    write(JSON.stringify(value));
+  };
+  const visit = (node: Element) => {
+    if (![ODF_NS + 'datastyle:1.0',ODF_NS + 'style:1.0',ODF_NS + 'text:1.0'].includes(node.namespace)) gap(state.gaps,'advanced_styles','Foreign number-style descendants retain namespace identity; exact rendering is not evaluated.');
+    write('{"namespace":'); quote(NS_PREFIX.get(node.namespace) ?? '{' + node.namespace + '}'); write(',"name":'); quote(node.name); write(',"attrs":{');
+    let attribute = 0;
+    for (const key of Object.keys(node.attrs).filter(name => !['style:name','style:display-name'].includes(name)).sort()) {
+      if (!['number:','style:','fo:','text:'].some(prefix => key.startsWith(prefix))) gap(state.gaps,'advanced_styles','Unqualified/foreign number-style attributes retain namespace identity; exact rendering is not evaluated.');
+      if (attribute++) write(','); quote(key); write(':'); quote(node.attrs[key]);
+    }
+    write('},"content":[');
+    for (const [index,item] of node.content.entries()) { if (index) write(','); if (typeof item === 'string') quote(item); else visit(item); }
+    write(']}');
+  };
+  visit(root); return tokens.join('');
 }
 type OdsStyles = { cell(name?: string): Style; effective(name?: string): boolean; hidden(name?: string): boolean; size(name: string | undefined, kind: 'row' | 'column'): string | null };
 type OdsStyleScope = { styles: Map<string,Element>; formats: Map<string,Element> };
@@ -655,7 +691,7 @@ async function extractCsv(bytes: Uint8Array, state: State): Promise<WorkbookObse
   return {format:'csv',sheets:[sheet],coverage_gaps:state.gaps,calculation:'stored_values_only_no_recalculation',date_system:'unknown',calc_flags:{}};
 }
 export async function extractWorkbook(bytes: Uint8Array, format: WorkbookFormatData, options: {signal?: AbortSignal} = {}): Promise<WorkbookObservationData> {
-  const state: State = {signal:options.signal,cells:0,nodes:0,text:0,ticks:0,styleEntries:0,styleDefinitions:Object.create(null) as Record<string,Record<string,string>>,styleRefs:new WeakMap(),stylesByCanonical:new Map(),gaps:[]}; abort(state);
+  const state: State = {signal:options.signal,cells:0,nodes:0,text:0,ticks:0,styleEntries:0,styleDefinitions:Object.create(null) as Record<string,Record<string,string>>,styleRefs:new WeakMap(),stylesByCanonical:new Map(),numberFormats:new Set(),gaps:[]}; abort(state);
   if (bytes.byteLength > WORKBOOK_LIMITS.input) fail('WORKBOOK_LIMIT','Workbook input exceeds 64 MiB');
   if (bytes.length >= 8 && Buffer.from(bytes.subarray(0,8)).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]))) fail('UNSUPPORTED_WORKBOOK','Legacy binary or encrypted Office workbooks are unsupported');
   await checkpoint(state,true);
