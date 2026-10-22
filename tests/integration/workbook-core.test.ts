@@ -12,7 +12,7 @@ import { diffWorkbooks, type WorkbookRevisionData } from '../../packages/workboo
 import { extractWorkbook } from '../../packages/workbook/ingest.js';
 import { cellAddress,workbookID, type WorkbookCellData, type WorkbookSheetData } from '../../packages/workbook/types.js';
 import { handleWorkbookAction } from '../../apps/bridge/workbook.js';
-import { xlsxFixture,xmlEscape,workbookStyles } from '../workbook-fixtures.js';
+import { xlsxFixture,odsFixture,xmlEscape,workbookStyles } from '../workbook-fixtures.js';
 
 function cell(row: number, column: number, value: string | null, extra: Partial<WorkbookCellData> = {}): WorkbookCellData {
   return { row, column, address: cellAddress(row,column), value_type: 'string', value, formula: null, number_format: null, style: {}, hidden_row: false, hidden_column: false, cached_result: 'not_applicable', cache_freshness: 'not_applicable', formula_dialect: null, source_ref: 'independent-source!' + cellAddress(row,column), ...extra };
@@ -289,6 +289,34 @@ test('cumulative revision text rejects an oversized report before parsing later 
     const run=store.db.prepare('SELECT id,status,error,report_id,staged_sha,finished_at FROM workbook_runs_v1 WHERE project_id=?').get(draft.project_id)!;assert.equal(run.status,'failed');assert.equal(run.error,'WORKBOOK_REPORT_LIMIT');assert.equal(run.report_id,null);assert.equal(run.staged_sha,null);assert.ok(run.finished_at);assert.equal(service.runStatus(draft.project_id,String(run.id)).status,'failed');
     const stages=await readdir(join(store.root,'workbook-staging-v1')).catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return [];throw error;});assert.deepEqual(stages,[]);assert.equal(store.db.prepare('SELECT count(*) AS n FROM workbook_reports_v1').get()!.n,0);assert.equal(store.db.prepare('SELECT count(*) AS n FROM workbook_cells_v1').get()!.n,0);
   }finally{store.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('reused XLSX and ODS number formats hit the report budget within a 256 MiB child heap without partial results',async()=>{
+  const {spawnSync}=await import('node:child_process'),root=await mkdtemp(join(tmpdir(),'docver-workbook-format-budget-'));
+  const child=`
+    import assert from 'node:assert/strict';
+    import {readdir} from 'node:fs/promises';
+    import {join} from 'node:path';
+    import {Store} from './packages/storage/index.ts';
+    import {WorkbookService} from './packages/workbook/service.ts';
+    const store=new Store(process.argv[2]),service=new WorkbookService(store);
+    try{
+      const draft=await service.create('Format amplification',[{label:'source',path:process.argv[1]}]);
+      await assert.rejects(service.run(draft.project_id),{code:'WORKBOOK_REPORT_LIMIT'});
+      assert.deepEqual({...store.db.prepare('SELECT status,error FROM workbook_runs_v1 WHERE project_id=?').get(draft.project_id)},{status:'failed',error:'WORKBOOK_REPORT_LIMIT'});
+      for(const table of ['workbook_reports_v1','workbook_cells_v1','workbook_changes_v1'])assert.equal(store.db.prepare('SELECT count(*) AS n FROM '+table).get().n,0);
+      assert.deepEqual(await readdir(join(store.root,'workbook-staging-v1')).catch(error=>{if(error.code==='ENOENT')return[];throw error;}),[]);
+    }finally{store.close();}
+  `;
+  try{
+    const xlsx=xlsxFixture('<sheetData>'+Array.from({length:600},(_,i)=>`<row r="${i+1}"><c r="A${i+1}" s="1"><v>1</v></c></row>`).join('')+'</sheetData>',{styles:workbookStyles.replace('formatCode="0.000"','formatCode="'+'0'.repeat(1_000_000)+'"')});
+    const ods=odsFixture('<table:table-row table:number-rows-repeated="20000"><table:table-cell table:style-name="cell" office:value-type="float" office:value="1"/></table:table-row>',{automatic:'<number:number-style style:name="big"><number:text>'+'0'.repeat(16_000)+'</number:text></number:number-style><style:style style:name="cell" style:family="table-cell" style:data-style-name="big"/>'});
+    for(const [format,bytes]of [['xlsx',xlsx],['ods',ods]]as const){
+      const path=join(root,'source.'+format);await writeFile(path,bytes);
+      const result=spawnSync(process.execPath,['--max-old-space-size=256','--import','tsx','--input-type=module','--eval',child,path,join(root,format+'-library')],{cwd:process.cwd(),encoding:'utf8',timeout:20_000});
+      assert.ifError(result.error);assert.equal(result.status,0,format+': '+result.stderr);assert.equal(result.signal,null);
+    }
+  }finally{await rm(root,{recursive:true,force:true});}
 });
 
 test('cancelled, interrupted, stale-input, tampered-stage and corrupt-original analyses never commit partial reports; corrupted drafts retain fixed read access',async()=>{

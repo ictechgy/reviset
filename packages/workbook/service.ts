@@ -130,10 +130,32 @@ export class WorkbookService {
     const folder = join(this.store.root, 'workbook-staging-v1'), stagedName = runId + '.json', path = join(folder, stagedName);
     try {
       const revisions: WorkbookRevisionData[] = []; let materialized = 0, serializedLowerBound = 0;
-      // Every retained revision/change is present once in the final JSON. Charging
-      // their serialized bytes omits only container/header/duplicated gap overhead,
-      // so rejection can happen before accumulating all revisions or canonicalizing them.
-      const charge=(value:WorkbookRevisionData|WorkbookReportData['changes'][number])=>{serializedLowerBound+=reportSerialization(()=>Buffer.byteLength(JSON.stringify(value)));if(serializedLowerBound>MAX_WORKBOOK_REPORT_BYTES)throw reportLimit();};
+      // Count JSON bytes without first allocating an entire revision string: a
+      // short source format can be shared by hundreds of thousands of cells.
+      // Values are plain schema-validated JSON. Omitted outer report fields make
+      // this cumulative count a lower bound; the final encoded report is checked too.
+      const addBytes=(bytes:number)=>{serializedLowerBound+=bytes;if(serializedLowerBound>MAX_WORKBOOK_REPORT_BYTES)throw reportLimit();};
+      const chargeString=(text:string)=>{
+        addBytes(Buffer.byteLength(text)+2);
+        const escapes=/["\\\u0000-\u001f\ud800-\udfff]/g;let match:RegExpExecArray|null;
+        while((match=escapes.exec(text))!==null){
+          const code=text.charCodeAt(match.index);
+          if(code>=0xd800&&code<=0xdbff){const next=text.charCodeAt(match.index+1);if(next>=0xdc00&&next<=0xdfff){escapes.lastIndex++;continue;}}
+          // UTF-8 replaces a lone surrogate with three bytes; JSON escapes it
+          // using six ASCII bytes. A valid pair already contributes four bytes.
+          addBytes(code>=0xd800&&code<=0xdfff?3:code===34||code===92||[8,9,10,12,13].includes(code)?1:5);
+        }
+      };
+      const charge=(value:unknown):void=>{
+        if(typeof value==='string'){chargeString(value);return;}
+        if(Array.isArray(value)){addBytes(2+Math.max(0,value.length-1));for(const item of value)charge(item===undefined?null:item);return;}
+        if(value!==null&&typeof value==='object'){
+          addBytes(2);let count=0;
+          for(const [name,item]of Object.entries(value)){if(item===undefined)continue;if(count++)addBytes(1);chargeString(name);addBytes(1);charge(item);}
+          return;
+        }
+        addBytes(JSON.stringify(value).length);
+      };
       for (const [index, source] of draft.revisions.entries()) {
         signal?.throwIfAborted(); const bytes = await regularFile(join(this.store.root, 'assets', source.asset_id.slice(7)), source.asset_id.slice(7)); signal?.throwIfAborted();
         const observation = WorkbookObservation.parse(await extractWorkbook(bytes, source.format, { signal })); signal?.throwIfAborted();
