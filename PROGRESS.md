@@ -1088,3 +1088,11 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 - 저장 경로/DB/번들 식별자/설정 키/도움 실행 파일/`docver://` 인용과 schema·engine·고정 보고서 바이트는 유지한다. 같은 보관소 잠금도 유지한다. [호환성 계약](docs/RENAMING.md).
 - Clean runtime `1b2f98b4f727972b8261516ec82064908600455d`: TypeScript·집중43검사·실제 네이티브 빌드·엄격 서명 PASS. 보존한 Docver-Sheets가 만든 합성5버전 문서/3버전 통합 문서 고정 보고서를 새 앱으로 열고 ID/본문 hash/원본 byte를 보존했다. 새 동봉 MCP 이름·설정·범위 거절·기존 인용·DB byte 불변 확인. HANDOFF/PLAN 및 보존한 두 기존 앱 실행 파일 hash 일치.
 - 실제 새 앱의 문서/시트 캡처2장과 provenance를 갱신했다. 새 OCR 성능·전체 회귀·ZIP 이동·공증/다른 Mac·VoiceOver 자격을 주장하지 않는다. 로컬 증거 `.omx/artifacts/rename-reviset-20261022/`는 GitHub 소스에서 제외한다.
+
+## 2026-10-22 Reviset 입력·저장·네이티브 재리뷰 완료
+
+- 문서 가져오기·CLI 미리보기의 일반 파일/크기 경계, ZIP 헤더·확장 크기·CRC 검증, 재분석 시 원본 SHA 보존을 수정했다. 저장 확정과 임시 정리를 분리하고 응답 유실 시 정확한 실행·보고서로 복구하며, 불확실한 결과는 경고로 남긴다. PDF 쪽·확대 화면 위치, 통합 문서 행 머리글 선택·실패한 가져오기 뒤 조회 복구, 이력 화면의 반복 전체 페이지 탐색도 보완했다.
+- 전체 회귀 **370개는 `568fc97`**, 네이티브 집중 **13개는 `36de1b5`**, 최종 문서·CLI 영향 범위 **52개는 `c09c683`**에서 통과했다. 네이티브 소스는 최종 `c09c683`에서도 바이트가 동일하다. `c09c683` 전체 회귀 실행으로 합쳐 표기하지 않는다.
+- Clean `c09c68388671372e0065016d479af97ec557e7d1`의 `release/Reviset-Review.app`에서 기존 문서·통합 문서 재열기와 각각의 새 데모 분석, 총 **실제 앱 실행 4회·동봉 MCP 세션 4회**를 통과했다. 두 새 분석은 success, 문서 실행 상태는 정확한 저장 보고서와 일치하고 cleanup_pending=false다. 엄격 서명·독립 동봉 helper·host-bound sidecar 부재, 기존 보고서/보관 원본/입력 바이트 보존, MCP 전후 보관소 바이트 불변을 확인했다. 캡처 12장을 직접 확인했으며 이전 앱·보존 기준·HANDOFF/PLAN은 유지했다.
+- 최종 전체 34경로 내부 리뷰는 코드 **APPROVE**, 구조 **CLEAR**다. 외부 Claude03/Grok03은 `568fc97..36de1b5`의 13경로, Claude04/Grok04는 `36de1b5..c09c683`의 3경로에 각각 terminal **APPROVE**다. 외부 판정을 전체 저장소나 실제 앱 전수 승인으로 확대하지 않는다. [최종 리뷰·검증 기록](docs/REVIEW-2026-10-22.md).
+- 보편 OCR·PowerPoint strict 충실도는 **OPEN**이다. 이번 검증은 OS 입력·VoiceOver·다른 Mac/최소 OS·공증·공개 배포, 새 보편 OCR 평가나 이동 ZIP 검증을 포함하지 않는다. 이전 실패·범위별 리뷰·패키지 기록은 당시 소스에 귀속해 보존한다.

@@ -115,14 +115,24 @@ npm test        # Integration suite; native checks need the macOS toolchain
 
 Test preparation applies the pinned PDF.js worker patch and builds the Vision helper on supported Macs. The integration suite includes OCR, Office, and native checks and can take time.
 
-Results are tied to their execution source. At `ba8eae8`, 88 focused checks and 20 app/MCP/relocated-ZIP package checks passed. The 341-test full regression result belongs to the earlier `600fac9` snapshot. These results do not certify universal OCR accuracy or installation on other Macs.
+Results are tied to their execution source:
+
+| Validation | Source snapshot | Result |
+| --- | --- | --- |
+| Full regression suite | `568fc97` | 370 passed |
+| Focused native regressions | `36de1b5` | 13 passed; native source bytes are unchanged at `c09c683` |
+| Affected document and CLI regressions | `c09c683` | 52 passed |
+| Packaged `release/Reviset-Review.app` | Clean `c09c68388671372e0065016d479af97ec557e7d1` | Four native launches and four bundled MCP sessions passed; legacy fixed-report/source bytes and original source files were preserved |
+
+The packaged checks cover legacy document/workbook reopening and fresh document/workbook demo analyses. The full suite was not rerun at `c09c683`. Universal OCR accuracy and strict PowerPoint fidelity remain **OPEN**; OS gestures, VoiceOver, notarization, public distribution, and installation on other Macs remain outside this qualification.
 
 Most detailed documents below are in Korean.
 
 | Document | Contents |
 | --- | --- |
 | [Quality status](docs/QUALITY.md) | Validation results and remaining accuracy/distribution gates |
-| [Recent improvements and validation](docs/WORKBOOK-RECOVERY-2026-10-22.md) | Read recovery, cell provenance, UI changes, and scoped review evidence |
+| [Current repair review and validation](docs/REVIEW-2026-10-22.md) | Input/archive boundaries, commit recovery, native fixes, and snapshot-bound review/package evidence |
+| [Earlier workbook improvements and validation](docs/WORKBOOK-RECOVERY-2026-10-22.md) | Read recovery, cell provenance, UI changes, and scoped review evidence |
 | [MCP guide](docs/MCP.md) | AI setup, query order, and output budgets |
 | [Spreadsheet contract](docs/SPREADSHEETS.md) | Formats, formula/cell semantics, and processing limits |
 | [Schemas](docs/schemas/README.md) | Fixed reports and query responses |

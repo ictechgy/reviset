@@ -1,4 +1,14 @@
-# 현재 검증 · 2026-10-22 Reviset 리네이밍
+# 현재 검증 · 2026-10-22 전체 리뷰·수정
+
+현재 검증 앱은 `release/Reviset-Review.app`, clean runtime source는 `c09c68388671372e0065016d479af97ec557e7d1`이다. [전체 리뷰·수정·검증 범위](REVIEW-2026-10-22.md)에 보안 입력 경계, 원본 hash 보존, 저장 결과 복구, 네이티브 선택·PDF 확대 위치·워크북 읽기 복구와 성능 변경을 정리했다. 기준 `d53f43e`부터 최종 실행 소스까지34경로를 독립 코드/구조 역할이 모두 재검토했고 APPROVE/CLEAR, 남은 actionable0건이다.
+
+전체370/370회귀는 `568fc97`, 후속 네이티브13/13과 경고0엄격Swift는 `36de1b5`의 기록이다. 해당 native 바이트는 최종 소스와 동일하다. 최종 `c09c683`에서 문서·CLI 관련52/52검사와 실제 앱 빌드·엄격서명 검사가 통과했다. 이 수를 합쳐 최종 전체 회귀 결과로 표기하지 않는다. Claude/Grok은13경로 native 후속과3경로 CLI 후속을 각각 APPROVE했으며 전체 범위 독립 검토와 구분한다.
+
+최종 앱의 기존 문서/워크북 보고서 재열기·새 문서/워크북 분석, 총4회 실행과 동봉 MCP4세션이 통과했다. 고정 보고서 ID·본문·원본·이전 저장 자료를 보존했고 MCP 프로젝트 범위·읽기 전용·DB byte 불변을 확인했다. 실제 화면12장을 검사했다. 판정은 기록된 범위의 **SOURCE_READY / same-Mac PRIVATE_PACKAGE_READY**다. 이전 앱은 보존했다.
+
+보편 OCR·PowerPoint strict 참조 미해결은 계속 OPEN이다. 새 최대규모 성능·이동ZIP·다른Mac·공증/공개설치본·OS입력/VoiceOver 합격으로 확대하지 않는다. 원시 실행 기록은 `.omx/artifacts/full-review-20261022/`에 있으며 GitHub 소스에서 제외한다.
+
+## 이전 검증 · 2026-10-22 Reviset 리네이밍
 
 현재 소스 빌드 앱은 `release/Reviset.app`, clean runtime source는 `1b2f98b4f727972b8261516ec82064908600455d`다. 표시명·실행 파일·CLI·MCP 이름을 Reviset으로 바꿨으며 [호환성 식별자](RENAMING.md)는 유지한다. TypeScript와 관련43개 검사, 네이티브 빌드·엄격 서명 검사가 통과했다.
 
