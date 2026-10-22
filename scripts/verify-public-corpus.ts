@@ -20,6 +20,7 @@ import {fileSha256} from '../packages/runtime/file-hash.js';
 import {preparePdfjs} from './prepare-pdfjs.js';
 import {pdfWorkerEnvironment} from '../packages/runtime/pdfjs-environment.js';
 import {nativeHelperLaunch,NATIVE_ISOLATION_POLICY} from '../packages/runtime/native-isolation.js';
+import {readRegularFile} from '../packages/runtime/regular-file.js';
 
 await preparePdfjs();
 
@@ -67,19 +68,38 @@ async function bytesFor(source:Source){
   assert.equal(bytes.length,source.bytes);assert.equal(byteHash(bytes),source.sha256);assert.ok(source.format==='pdf'?bytes.subarray(0,5).toString()==='%PDF-':bytes.subarray(0,2).toString()==='PK');return {path,bytes};
 }
 async function pdfImage(image:Buffer,width:number,height:number){const d=new PDFDocument({size:[width,height],margin:0}),chunks:Buffer[]=[];d.on('data',b=>chunks.push(b));const done=new Promise<Buffer>(r=>d.on('end',()=>r(Buffer.concat(chunks))));d.image(image,0,0,{width,height});d.end();return done;}
+async function verifiedNativePreview(path:string,output:string){
+  const metadata=JSON.parse(output) as Record<string,unknown>;
+  assert.ok(metadata&&typeof metadata==='object'&&!Array.isArray(metadata),'Invalid native preview metadata');
+  assert.equal(metadata.ocr_performed,false,'Native preview must use render-only mode');
+  for(const size of [metadata.width,metadata.height])assert.ok(Number.isInteger(size)&&Number(size)>0&&Number(size)<=4096,'Invalid native preview dimensions');
+  assert.ok(typeof metadata.render_sha256==='string'&&/^[a-f0-9]{64}$/.test(metadata.render_sha256),'Invalid native render digest');
+  // The helper has exited and its policy forbids forks; the private job has no remaining writer.
+  const stat=await lstat(path);assert.ok(stat.isFile()&&stat.nlink===1,'Native preview must be a regular file with one link');
+  const png=await readRegularFile(path,{maxBytes:72*1024*1024});assert.ok(png.length>=45,'Truncated native PNG');
+  assert.deepEqual(png.subarray(0,8),Buffer.from([137,80,78,71,13,10,26,10]),'Native preview must be PNG');
+  assert.equal(png.readUInt32BE(8),13,'Invalid native PNG header');assert.equal(png.subarray(12,16).toString('ascii'),'IHDR','Invalid native PNG header');
+  assert.equal(png.readUInt32BE(16),metadata.width,'Native PNG width mismatch');assert.equal(png.readUInt32BE(20),metadata.height,'Native PNG height mismatch');
+  assert.deepEqual(png.subarray(-12),Buffer.from([0,0,0,0,73,69,78,68,174,66,96,130]),'Truncated native PNG');
+  const png_sha256=byteHash(png);assert.equal(png_sha256,metadata.render_sha256,'Native PNG does not match the helper render digest');
+  return {png,png_sha256,render_sha256:metadata.render_sha256};
+}
 async function renderSourcePreview(bytes:Buffer,expectedSha256:string,destination:string){
   assert.equal(byteHash(bytes),expectedSha256,'Preview source must match the pinned fixture');
   const executable=visionExecutable();assert.ok(executable,'Native PDF renderer is unavailable');
   const job=await realpath(await mkdtemp(join(tmpdir(),'reviset-public-preview-')));
+  let sourceFolder:string|undefined;
   try{
-    // Give the helper only the verified bytes and a private output directory.
-    const source=join(job,'source.pdf'),renderPath=join(job,'page-1.png');await writeFile(source,bytes,{flag:'wx',mode:0o600});
+    // The source gets one read-only sandbox literal outside the writable output job.
+    sourceFolder=await realpath(await mkdtemp(join(tmpdir(),'reviset-public-source-')));
+    const source=join(sourceFolder,'source.pdf'),renderPath=join(job,'page-1.png');await writeFile(source,bytes,{flag:'wx',mode:0o600});
     const launch=await nativeHelperLaunch(executable,job,source);assert.equal(launch.policy,NATIVE_ISOLATION_POLICY,'Public corpus previews require native isolation');
-    await runTool(launch.executable,launch.args,{input:JSON.stringify({path:source,page:1,render_only:true,render_path:renderPath}),cwd:job,timeout:60_000,maxBytes:1024*1024,inheritEnv:false,env:launch.env});
-    const stat=await lstat(renderPath);assert.ok(stat.isFile()&&stat.size>8&&stat.size<=72*1024*1024,'Native preview must be a bounded regular PNG');
-    const png=await readFile(renderPath);assert.deepEqual(png.subarray(0,8),Buffer.from([137,80,78,71,13,10,26,10]),'Native preview must be PNG');
-    await writeFile(destination,png,{flag:'wx',mode:0o600});return {isolation_policy:launch.policy,source_sha256:expectedSha256,png_sha256:byteHash(png),png_bytes:png.length};
-  }finally{await rm(job,{recursive:true,force:true});}
+    const output=await runTool(launch.executable,launch.args,{input:JSON.stringify({path:source,page:1,render_only:true,render_path:renderPath}),cwd:job,timeout:60_000,maxBytes:1024*1024,inheritEnv:false,env:launch.env});
+    assert.equal(byteHash(await readRegularFile(source,{maxBytes:bytes.length})),expectedSha256,'Preview source changed during rendering');
+    const {png,png_sha256,render_sha256}=await verifiedNativePreview(renderPath,output);
+    // A failed publish aborts before result/latest; retain unreferenced evidence rather than unlink another writer's file.
+    await writeFile(destination,png,{flag:'wx',mode:0o600});return {isolation_policy:launch.policy,source_sha256:expectedSha256,png_sha256,render_sha256,png_bytes:png.length};
+  }finally{await Promise.all([rm(job,{recursive:true,force:true}),...(sourceFolder?[rm(sourceFolder,{recursive:true,force:true})]:[])]);}
 }
 async function storedImport(path:string,expectedPages:number,label:string){
   const library=join(run,'import-libraries',label);let service=new DesktopService(library);

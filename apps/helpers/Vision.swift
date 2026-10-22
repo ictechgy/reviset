@@ -135,7 +135,7 @@ struct DocverVision {
         guard let png = bitmap.representation(using:.png,properties:[:]) else { throw NSError(domain:"DocverVision",code:4) }
         // The caller publishes the PNG after the isolated job exits. Foundation
         // atomic writes can stage outside that job and are denied by its sandbox.
-        if let output = input["render_path"] as? String { try png.write(to:URL(fileURLWithPath:output)) }
+        if let output = input["render_path"] as? String { try png.write(to:URL(fileURLWithPath:output),options:.withoutOverwriting) }
         let metadata:[String:Any]=["version":version,"revision":3,"languages":["ko-KR","en-US"],"language_correction":false,"renderer":"PDFKit.thumbnail.cropBox","width":cg.width,"height":cg.height,"viewport_width":bounds.width,"viewport_height":bounds.height,"rotation":page.rotation,"render_sha256":digest(png)]
         if input["render_only"] as? Bool == true {return metadata.merging(["ocr_performed":false,"verification":"not_requested","lines":[],"structure_status":"not_requested"]){_,new in new}}
         let numeric=try numericExpression()
