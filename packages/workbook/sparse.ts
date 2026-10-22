@@ -42,13 +42,13 @@ export function compareBlankRanges(before: WorkbookSheetData, after: WorkbookShe
   const events=sides.flatMap((ranges,side)=>ranges.flatMap((range,index)=>[{row:range.row_start,side,index,delta:1},{row:range.row_end+1,side,index,delta:-1}])).sort((a,b)=>a.row-b.row||a.delta-b.delta);
   const active=[new Map<number,WorkbookBlankStyleRangeData>(),new Map<number,WorkbookBlankStyleRangeData>()],signatures=[new Map<WorkbookBlankStyleRangeData,string>(),new Map<WorkbookBlankStyleRangeData,string>()];
   const signature=(range:WorkbookBlankStyleRangeData,side:0|1)=>{let value=signatures[side].get(range);if(value===undefined){value=identity(range,side);signatures[side].set(range,value);}return value;};
-  const output:{before:WorkbookBlankStyleRangeData|null;after:WorkbookBlankStyleRangeData|null}[]=[];let at=0,work=0;
+  const output:{before:WorkbookBlankStyleRangeData|null;after:WorkbookBlankStyleRangeData|null;before_source:WorkbookBlankStyleRangeData|null;after_source:WorkbookBlankStyleRangeData|null}[]=[];let at=0,work=0;
   while(at<events.length){signal?.throwIfAborted();const row=events[at].row;while(at<events.length&&events[at].row===row){const event=events[at++];if(event.delta<0)active[event.side].delete(event.index);else active[event.side].set(event.index,sides[event.side][event.index]);}if(at===events.length)break;const endRow=events[at].row-1;
     const sorted=active.map(map=>[...map.values()].sort((a,b)=>a.column_start-b.column_start));work+=sorted[0].length+sorted[1].length;if(work>2_000_000)throw new DocverError('WORKBOOK_DIFF_LIMIT','Blank formatting comparison exceeds 2000000 active interval observations');
     const boundaries=[...new Set(sorted.flatMap(ranges=>ranges.flatMap(r=>[r.column_start,r.column_end+1])))].sort((a,b)=>a-b),indices=[0,0];
     for(let i=0;i+1<boundaries.length;i++){const column=boundaries[i],endColumn=boundaries[i+1]-1;const found=sorted.map((ranges,side)=>{while(indices[side]<ranges.length&&ranges[indices[side]].column_end<column)indices[side]++;const range=ranges[indices[side]];return range&&range.column_start<=column?range:null;});if((found[0]?signature(found[0],0):null)===(found[1]?signature(found[1],1):null))continue;
       if(output.length>=100_000)throw new DocverError('WORKBOOK_DIFF_LIMIT','Blank formatting comparison exceeds 100000 range observations');
-      const clip=(range:WorkbookBlankStyleRangeData|null)=>range?{...range,row_start:row,row_end:endRow,column_start:column,column_end:endColumn}:null;output.push({before:clip(found[0]),after:clip(found[1])});
+      const clip=(range:WorkbookBlankStyleRangeData|null)=>range?{...range,row_start:row,row_end:endRow,column_start:column,column_end:endColumn}:null;output.push({before:clip(found[0]),after:clip(found[1]),before_source:found[0],after_source:found[1]});
     }
   }
   return output;

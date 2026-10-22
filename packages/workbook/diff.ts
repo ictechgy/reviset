@@ -17,11 +17,31 @@ export const WorkbookChange = z.object({
   association: z.enum(['exact', 'inferred', 'needs_review']), alignment_method: z.string(), description: z.string(),
 });
 export type WorkbookChangeData = z.infer<typeof WorkbookChange>;
+// Legacy reports have no sparse-blank markers. Keep both their stored schema
+// and the marker-free historical diff path distinct from engine 1.1 semantics.
+export function workbookVersionFieldViolation(report: {engine_version:string;revisions:WorkbookRevisionData[];changes:WorkbookChangeData[]}): (string|number)[] | null {
+  if(report.engine_version!=='workbook.1.0')return null;
+  const cellField=(cell:WorkbookCellData|null)=>cell&&(['blank_style_only','source_range','difference_range'] as const).find(key=>cell[key]!==undefined);
+  for(const [ri,revision]of report.revisions.entries())for(const [si,sheet]of revision.sheets.entries()){
+    const path=['revisions',ri,'sheets',si];
+    if(sheet.blank_style_ranges!==undefined)return [...path,'blank_style_ranges'];
+    for(const [ci,cell]of sheet.cells.entries()){const field=cellField(cell);if(field)return [...path,'cells',ci,field];}
+  }
+  for(const [index,change]of report.changes.entries()){
+    if(change.kind==='formatting_range')return ['changes',index,'kind'];
+    for(const key of ['before_blank_style_range','after_blank_style_range'] as const)if(change[key]!==undefined)return ['changes',index,key];
+    for(const side of ['before','after'] as const){const field=cellField(change[side]);if(field)return ['changes',index,side,field];}
+  }
+  return null;
+}
 export const WorkbookReport = z.object({
   schema_version: z.literal(WORKBOOK_SCHEMA_VERSION), engine_version: z.enum(['workbook.1.0', WORKBOOK_ENGINE_VERSION]),
   project_id: z.string().regex(/^wprj_[a-zA-Z0-9_-]+$/), report_id: z.string(), title: z.string().max(200),
   status: z.literal('complete'), comparison_coverage: z.literal('supported_cells_only'), calculation: z.literal('stored_values_only_no_recalculation'),
   revisions: z.array(WorkbookRevision).min(1).max(100), changes: z.array(WorkbookChange), coverage_gaps: z.array(WorkbookGap.extend({ revision_occurrence_id: z.string().optional() })),
+}).superRefine((report,ctx)=>{
+  const path=workbookVersionFieldViolation(report);
+  if(path)ctx.addIssue({code:'custom',path,message:'Sparse blank formatting fields require workbook engine 1.1'});
 });
 export type WorkbookReportData = z.infer<typeof WorkbookReport>;
 
@@ -121,10 +141,10 @@ export function diffWorkbooks(before: WorkbookRevisionData, after: WorkbookRevis
     if (sheetStructureComparable&&a.hidden !== b.hidden) add(pair, 'sheet_visibility', `Sheet hidden: ${a.hidden} → ${b.hidden}`);
     if (before.format===after.format&&(canonical(a.row_metadata) !== canonical(b.row_metadata) || canonical(a.column_metadata) !== canonical(b.column_metadata))) add(pair, 'sheet_dimensions', 'Supported row/column dimensions or hidden ranges changed, including unmaterialized blank cells');
     if (sheetStructureComparable&&canonical([...a.merges].sort()) !== canonical([...b.merges].sort())) add(pair, 'merges', 'Merged range observations changed');
-    const sparseFormatting=before.format===after.format&&!!((a.blank_style_ranges?.length??0)+(b.blank_style_ranges?.length??0));
+    const sparseFormatting=before.format===after.format&&((a.blank_style_ranges?.length??0)>0||(b.blank_style_ranges?.length??0)>0||a.cells.some(c=>c.blank_style_only)||b.cells.some(c=>c.blank_style_only));
     if(sparseFormatting)for(const difference of compareBlankRanges(a,b,(range,side)=>canonical([styleIdentity(range,side===0?before:after),range.number_format,range.hidden_row,range.hidden_column,range.formula_interpretation??'not_formula']),signal)){
       const old=difference.before,next=difference.after,range=old??next!;
-      const data={kind:'formatting_range' as const,from_revision_occurrence_id:before.revision_occurrence_id,to_revision_occurrence_id:after.revision_occurrence_id,from_sheet_id:a.sheet_id,to_sheet_id:b.sheet_id,before_address:old?cellAddress(old.row_start,old.column_start):null,after_address:next?cellAddress(next.row_start,next.column_start):null,before:old?blankRangeCell(a,old,old.row_start,old.column_start):null,after:next?blankRangeCell(b,next,next.row_start,next.column_start):null,before_blank_style_range:old,after_blank_style_range:next,association:'needs_review' as const,alignment_method:'physical_blank_formatting_range',description:`Explicit blank formatting observations differ at ${rangeAddress(range)}. Coordinates are physical; this does not assert row lineage or a semantic content insertion/deletion.`};
+      const data={kind:'formatting_range' as const,from_revision_occurrence_id:before.revision_occurrence_id,to_revision_occurrence_id:after.revision_occurrence_id,from_sheet_id:a.sheet_id,to_sheet_id:b.sheet_id,before_address:old?cellAddress(old.row_start,old.column_start):null,after_address:next?cellAddress(next.row_start,next.column_start):null,before:old?{...blankRangeCell(a,difference.before_source!,old.row_start,old.column_start),difference_range:rangeAddress(old)}:null,after:next?{...blankRangeCell(b,difference.after_source!,next.row_start,next.column_start),difference_range:rangeAddress(next)}:null,before_blank_style_range:old,after_blank_style_range:next,association:'needs_review' as const,alignment_method:'physical_blank_formatting_range',description:`Explicit blank formatting observations differ at ${rangeAddress(range)}. Coordinates are physical; this does not assert row lineage or a semantic content insertion/deletion.`};
       if(result.length>=100_000)throw new DocverError('WORKBOOK_DIFF_LIMIT','Workbook exceeds 100000 change observations');result.push({change_id:workbookID('wchg',data),...data});
     }
     for (const row of rowPairs(rows(a,sparseFormatting), rows(b,sparseFormatting),before,after,styleIdentity)) {

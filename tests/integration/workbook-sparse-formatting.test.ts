@@ -70,3 +70,42 @@ test('1.1 sparse formats survive report reopen, bounded grid/cell/history/MCP qu
     const raw=store.db.prepare('SELECT body FROM workbook_reports_v1 WHERE id=?').get(report.report_id)?.body;store.close();store=new Store(join(root,'library'),true);const reopened=new WorkbookService(store);assert.deepEqual(reopened.report(project.project_id,report.report_id),report);assert.equal(store.db.prepare('SELECT body FROM workbook_reports_v1 WHERE id=?').get(report.report_id)?.body,raw);
   }finally{store.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('clipped formatting changes distinguish original source rectangle from the physical difference band',async()=>{
+  const before=await revision(repeated(100,100),'before');
+  const after=await revision(odsFixture('<table:table-row table:number-rows-repeated="80"><table:table-cell table:style-name="paint" table:number-columns-repeated="100"/></table:table-row><table:table-row table:number-rows-repeated="20"><table:table-cell table:style-name="changed" table:number-columns-repeated="100"/></table:table-row>',{automatic:styles()+styles('#ff0000').replace('style:name="paint"','style:name="changed"')}),'after');
+  const events=diffWorkbooks(before,after);assert.equal(events.length,1);const event=events[0];assert.equal(event.kind,'formatting_range');assert.equal(event.before_blank_style_range?.row_start,81);assert.equal(event.before_blank_style_range?.source_ref,'content.xml#table/0!A1:CV100');
+  assert.equal(event.before?.source_range,'A1:CV100');assert.equal(event.after?.source_range,'A81:CV100');assert.equal(event.before?.difference_range,'A81:CV100');assert.equal(event.after?.difference_range,'A81:CV100');
+  const viewport=blankCellsInViewport(before.sheets[0],81,82,1,2)[0];assert.equal(viewport.source_range,'A1:CV100');assert.equal(viewport.difference_range,undefined);
+});
+
+test('new style-only observations always use physical formatting events across the compression threshold; legacy events stay exact',async()=>{
+  for(const columns of [1,4,64,65]){
+    const before=await revision(repeated(1,columns),'before'),after=await revision(repeated(1,columns,'#ff0000'),'after'),events=diffWorkbooks(before,after);
+    assert.ok(events.length>0);assert.ok(events.every(e=>e.kind==='formatting_range'&&e.association==='needs_review'&&e.alignment_method==='physical_blank_formatting_range'),`threshold case ${columns}`);
+    const unlike=structuredClone(after);unlike.format='csv';assert.ok(diffWorkbooks(before,unlike).every(e=>e.kind!=='formatting_range'));
+  }
+  const before=await revision(repeated(1,1),'before'),after=await revision(repeated(1,1,'#ff0000'),'after');for(const r of [before,after])for(const c of r.sheets[0].cells)delete c.blank_style_only;
+  const legacy=diffWorkbooks(before,after);assert.equal(legacy.length,1);assert.equal(legacy[0].kind,'style');assert.equal(legacy[0].alignment_method,'physical_row_fallback');
+  // Derived with the unchanged published 376dfef workbook diff kernel.
+  assert.equal(legacy[0].change_id,'wchg_5bf9142eadc01e664b7e74bd47db85347f968442180a3036c957659519c1b1e5');
+});
+
+test('workbook1.0 rejects every1.1-only source/change field while retaining exact legacy report identity',async()=>{
+  const before=await revision(repeated(1,1),'before'),after=await revision(repeated(1,1,'#ff0000'),'after');for(const r of [before,after]){r.sheets[0].sheet_id='sheet_'+r.revision_occurrence_id;r.style_definitions={...r.style_definitions};for(const c of r.sheets[0].cells)delete c.blank_style_only;}
+  const body={schema_version:'workbook.1' as const,engine_version:'workbook.1.0' as const,project_id:'wprj_version_gate',title:'legacy',status:'complete' as const,comparison_coverage:'supported_cells_only' as const,calculation:'stored_values_only_no_recalculation' as const,revisions:[before,after],changes:diffWorkbooks(before,after),coverage_gaps:[]};
+  const legacy={...body,report_id:workbookID('wreport',body)};assert.deepEqual(WorkbookReport.parse(legacy),legacy);validateIdentity(legacy);
+  const variants:((r:typeof legacy)=>void)[]=[
+    r=>{r.revisions[0].sheets[0].blank_style_ranges=[];},
+    r=>{r.revisions[0].sheets[0].cells[0].blank_style_only=true;},
+    r=>{r.revisions[0].sheets[0].cells[0].source_range='A1:A1';},
+    r=>{r.revisions[0].sheets[0].cells[0].difference_range='A1:A1';},
+    r=>{r.changes[0].kind='formatting_range';},
+    r=>{r.changes[0].before_blank_style_range=null;},
+    r=>{r.changes[0].after_blank_style_range=null;},
+    r=>{r.changes[0].before!.blank_style_only=true;},
+    r=>{r.changes[0].before!.source_range='A1:A1';},
+    r=>{r.changes[0].after!.difference_range='A1:A1';},
+  ];
+  for(const mutate of variants){const mixed=structuredClone(legacy);mutate(mixed);const {report_id:_old,...mixedBody}=mixed;mixed.report_id=workbookID('wreport',mixedBody);assert.equal(WorkbookReport.safeParse(mixed).success,false,'engine1.0 cannot adopt1.1-only observations');assert.throws(()=>validateIdentity(mixed),{code:'WORKBOOK_ENGINE_SEMANTICS'});}
+});

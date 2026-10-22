@@ -9,7 +9,7 @@ import { publishContent } from '../runtime/atomic-content.js';
 import { WorkbookFormat, WorkbookObservation, WorkbookCell, workbookID, WORKBOOK_SCHEMA_VERSION, WORKBOOK_ENGINE_VERSION } from './types.js';
 import { blankCellsInViewport, validateBlankRangeLayout } from './sparse.js';
 import { extractWorkbook } from './ingest.js';
-import { diffWorkbooks, WorkbookReport, WorkbookChange, type WorkbookReportData, type WorkbookRevisionData } from './diff.js';
+import { diffWorkbooks, WorkbookReport, WorkbookChange, workbookVersionFieldViolation, type WorkbookReportData, type WorkbookRevisionData } from './diff.js';
 
 const key = z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/);
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
@@ -265,6 +265,7 @@ export class WorkbookService {
 }
 
 export function validateIdentity(report: WorkbookReportData) {
+  if(workbookVersionFieldViolation(report))throw new DocverError('WORKBOOK_ENGINE_SEMANTICS','Legacy workbook engine 1.0 cannot contain sparse blank formatting fields or events');
   const { report_id, ...body } = report; if (workbookID('wreport', body) !== report_id) throw new DocverError('WORKBOOK_IDENTITY', 'Workbook report identity does not match its complete content');
   const revisions = new Set<string>(), sheets = new Set<string>(); let rangeCount=0;
   for (const r of report.revisions) { if (revisions.has(r.revision_occurrence_id)) throw new Error('Duplicate occurrence'); revisions.add(r.revision_occurrence_id);for(const [key,style]of Object.entries(r.style_definitions??{}))if(workbookID('wstyle',style)!==key)throw new DocverError('WORKBOOK_STYLE_SCOPE','Workbook style definition key does not match its content'); for (const s of r.sheets) { if (sheets.has(s.sheet_id)) throw new Error('Duplicate sheet'); sheets.add(s.sheet_id); validateBlankRangeLayout(s); rangeCount+=s.blank_style_ranges?.length??0;if(rangeCount>100_000)throw new DocverError('WORKBOOK_REPORT_LIMIT','Report blank formatting-range count exceeds limit');for(const range of s.blank_style_ranges??[])if(range.style_ref&&!r.style_definitions?.[range.style_ref])throw new DocverError('WORKBOOK_STYLE_SCOPE','Blank formatting range style reference is outside its source occurrence'); const cells = new Set<string>(); for (const c of s.cells) { if (cells.has(c.address)) throw new Error('Duplicate address'); cells.add(c.address);if(c.style_ref&&!r.style_definitions?.[c.style_ref])throw new DocverError('WORKBOOK_STYLE_SCOPE','Cell style reference is outside its source occurrence'); } } }

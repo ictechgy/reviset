@@ -13,6 +13,7 @@ import { readRegularFile } from '../runtime/regular-file.js';
 import {createBundleDecision} from '../bundle/index.js';
 import {rewriteMappings} from '../matching/relations.js';
 const FileRef=z.object({blob:z.string().regex(/^[a-f0-9]{64}\.(pptx|pdf)$/),name:z.string(),bytes:z.number().int().nonnegative()});
+const CommitIdentity=z.object({project_id:z.string(),report_id:z.string(),revisions:z.array(z.object({status:z.enum(['success','partial','failed'])}))});
 export const DESKTOP_PROJECTS_TABLE='desktop_projects_v4';
 const Draft=z.object({project_id:z.string(),title:z.string().min(1).max(200),revisions:z.array(z.object({label:z.string().min(1).max(200),files:z.array(FileRef).min(1).max(2)})).min(1).max(100),mapping_decisions:z.array(StoredDecision),mapping_relations:z.array(MappingRelation).default([]),bundle_decisions:z.array(BundleDecision).max(10000).default([]),last_report_id:z.string().nullable(),dirty:z.boolean()});
 export type DesktopDraft=z.infer<typeof Draft>;
@@ -79,15 +80,15 @@ export class DesktopService {
   commit(projectId:string,result:{report:ReportData;analysis_run_id:string;draft_hash:string}) {
     // Store.finishRun validates and normalizes the complete mutable input at
     // the write boundary. Avoid retaining another full report clone here.
-    const report=result.report;
+    const report=result.report,identity=CommitIdentity.parse(report);
     const run=this.store.db.prepare('SELECT status FROM runs WHERE id=? AND project_id=?').get(result.analysis_run_id,projectId);
-    if(report.project_id!==projectId||run?.status!=='running')throw new DocverError('INVALID_RUN','분석 실행을 저장할 수 없습니다.');
-    this.store.finishRun(result.analysis_run_id,report,report.revisions.some(r=>r.status!=='success')?'partial':'success',()=>{
+    if(identity.project_id!==projectId||run?.status!=='running')throw new DocverError('INVALID_RUN','분석 실행을 저장할 수 없습니다.');
+    this.store.finishRun(result.analysis_run_id,report,identity.revisions.some(r=>r.status!=='success')?'partial':'success',()=>{
       // This check and the latest-pointer update share finishRun's write transaction.
       if(result.draft_hash!==hash(this.manifest(projectId)))throw new DocverError('STALE_RUN','입력이 바뀐 분석 결과는 저장하지 않습니다.');
-      const p=this.project(projectId);this.save({...p,last_report_id:report.report_id,dirty:false});
+      const p=this.project(projectId);this.save({...p,last_report_id:identity.report_id,dirty:false});
     });
-    return report.report_id;
+    return identity.report_id;
   }
   private mutate<T>(operation:()=>T):T {
     this.store.db.exec('BEGIN IMMEDIATE');try{const value=operation();this.store.db.exec('COMMIT');return value;}catch(e){this.store.db.exec('ROLLBACK');throw e;}

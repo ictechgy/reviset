@@ -165,9 +165,10 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
         if((old.provenance==='inferred'||current.provenance==='inferred')&&!supportedNumericPair&&!lexicalRasterPair)continue;
         const sourceReviews=rasterPair?[{revision:from,page:a,ocr:old,review:reviewEstimatedSource(old,left)},{revision:to,page:b,ocr:current,review:reviewEstimatedSource(current,right)}]:[];
         const disagreement=sourceReviews.some(s=>s.review.disagrees||s.review.numericConflict),budgetExceeded=sourceReviews.some(s=>s.review.budgetExceeded);
+        let sourceReviewGap:ChangeData|undefined;
         if(disagreement||budgetExceeded){
           add('coverage_gap',a,b,m,budgetExceeded?'unlocalized_source_text_review_budget_exceeded':'ocr_disagrees_with_unlocalized_source_text');
-          const gap=changes.at(-1)!;gap.before=old.text;gap.after=current.text;
+          const gap=sourceReviewGap=changes.at(-1)!;gap.before=old.text;gap.after=current.text;
           gap.evidence=sourceReviews.flatMap(s=>[...s.review.runs.slice(0,16).map(e=>evidence(s.revision,s.page,false,e)),evidence(s.revision,s.page,false,s.ocr)]);
         }
         if(budgetExceeded||sourceReviews.some(s=>s.review.numericConflict)||lexicalRasterPair&&disagreement)continue;
@@ -177,8 +178,10 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
         // readable source text; preserve both observations as an explicit gap.
         const anchoredPdfRegion=supportedNumericPair&&/\p{L}/u.test(numericPattern(old.text))||oneAnchoredWordChange(old.text,current.text);
         if(sourcePdfAppearance&&(m.status==='needs_review'||!anchoredPdfRegion)){
-          add('coverage_gap',a,b,m,m.status==='needs_review'?'pdf_region_page_correspondence_requires_review':'pdf_region_correspondence_without_text_anchor');
-          const gap=changes.at(-1)!;gap.before=old.text;gap.after=current.text;gap.evidence=[evidence(from,a,false,old),evidence(to,b,false,current)];continue;
+          const reason=m.status==='needs_review'?'pdf_region_page_correspondence_requires_review':'pdf_region_correspondence_without_text_anchor';
+          if(sourceReviewGap)sourceReviewGap.coverage_gaps.push({feature:'comparison',reason});
+          else{add('coverage_gap',a,b,m,reason);const gap=changes.at(-1)!;gap.before=old.text;gap.after=current.text;gap.evidence=[evidence(from,a,false,old),evidence(to,b,false,current)];}
+          continue;
         }
         add('text_modified',a,b,m,'other_page_regions_unresolved');const change=changes.at(-1)!;change.before=old.text;change.after=current.text;change.text_scope='region';change.region_pairing_assessment='inferred';change.text_assessment=old.provenance==='inferred'||current.provenance==='inferred'?'inferred':'observed';
         change.evidence=[evidence(from,a,false,old),evidence(to,b,false,current)];

@@ -57,7 +57,10 @@ export class Store {
     } catch(e) {
       // SQLite can already have rolled back after a full disk or an I/O error.
       // Preserve that original failure instead of hiding it with ROLLBACK.
-      try{this.db.exec('ROLLBACK');}catch{/* transaction already ended */}
+      if(this.db.isTransaction){
+        try{this.db.exec('ROLLBACK');}
+        catch(rollbackError){throw new AggregateError([e,rollbackError],'Storage operation failed and rollback also failed',{cause:e});}
+      }
       throw e;
     }
   }

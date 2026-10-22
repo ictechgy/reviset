@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {openSync,writeSync,closeSync} from 'node:fs';
 
 // Report trees contain JSON values, plain objects and optional undefined
 // properties after schema validation. Serialize that domain without retaining
@@ -37,3 +38,16 @@ function serialize(value:unknown,consume:(chunk:string)=>void):void {
 }
 export function canonicalJson(value:unknown):string {const chunks:string[]=[];serialize(value,chunk=>chunks.push(chunk));return chunks.join('');}
 export function canonicalJsonDigest(value:unknown):string {const digest=createHash('sha256');serialize(value,chunk=>digest.update(chunk));return digest.digest('hex');}
+// Staging requires an exclusive private file and a digest of exactly its bytes.
+// Synchronous bounded batches avoid queuing an entire report in a write stream.
+export function writeCanonicalJson(path:string,value:unknown,signal?:AbortSignal):string {
+  signal?.throwIfAborted();const fd=openSync(path,'wx',0o600),digest=createHash('sha256');
+  try{
+    serialize(value,chunk=>{
+      signal?.throwIfAborted();const bytes=Buffer.from(chunk);let offset=0;
+      while(offset<bytes.length){const written=writeSync(fd,bytes,offset,bytes.length-offset);if(!written)throw new Error('Report staging write made no progress');offset+=written;}
+      digest.update(bytes);
+    });
+    return digest.digest('hex');
+  }finally{closeSync(fd);}
+}

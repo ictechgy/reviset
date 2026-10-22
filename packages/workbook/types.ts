@@ -20,6 +20,7 @@ export const WorkbookCell = z.object({
   source_ref: z.string(),
   blank_style_only: z.literal(true).optional(),
   source_range: z.string().optional(),
+  difference_range: z.string().optional(),
 });
 // Optional in workbook.1 so immutable 1.0 reports retain their original identity.
 // New reports use engine 1.1; these source rectangles never expand during ingestion.

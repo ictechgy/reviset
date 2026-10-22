@@ -40,6 +40,16 @@ test('reflowed multi-number claims stay unresolved instead of forcing a numerica
   const result=changes(a,b);assert.ok(!result.some(c=>c.kind==='text_modified'));assert.ok(result.some(c=>c.coverage_gaps.some(g=>g.reason==='pdf_visibility_unresolved_text_comparison_withheld')));
 });
 
+test('one region gap retains both unlocalized source disagreement and correspondence reasons',()=>{
+  for(const status of ['inferred','needs_review'] as const){
+    const a=page('a','160',true),b=page('b','100',true);
+    for(const p of [a,b])p.elements.push({...p.elements[1],observation_id:p.page_id+'_estimated',method:'pdf_text',provenance:'observed',text:'Units '+p.elements[1].text,normalized_text:'Units '+p.elements[1].text,visibility:'unverified',comparison_role:'unresolved',visibility_evidence:[{method:'pdf_text_geometry_estimated_or_unavailable',bbox:p.elements[1].bbox,assessment:'inferred',coverage:0}]});
+    const result=changes(a,b,status),regional=result.filter(c=>c.kind==='coverage_gap'&&c.before==='160'&&c.after==='100');assert.equal(regional.length,1);
+    assert.deepEqual(regional[0].coverage_gaps.map(g=>g.reason),['ocr_disagrees_with_unlocalized_source_text',status==='needs_review'?'pdf_region_page_correspondence_requires_review':'pdf_region_correspondence_without_text_anchor']);
+    assert.deepEqual(regional[0].evidence.map(e=>[e.observation_id,e.quote]),[['a_estimated','Units 160'],['a_body','160'],['b_estimated','Units 100'],['b_body','100']]);assert.ok(!result.some(c=>c.kind==='text_modified'));
+  }
+});
+
 test('engine53 range events retain exact archived payload, canonical endpoint IDs and evidence lookup',()=>{
   const a=page('a','160',true),b=page('b','100',true),revisions=[revision(a,'a'),revision(b,'b')];
   const r:ReportData={schema_version:SCHEMA_VERSION,engine_version:'0.4.0-native.bundle.53',schema_hash:SCHEMA_HASH,report_id:'report53',project_id:'project',timeline_revision_id:'timeline',mapping_revision_id:'mapping',observation_environment:{},revisions,matches:[match(a,b,'needs_review')],candidates:[],mapping_decisions:[],mapping_relations:[],bundle_decisions:[],lineages:[{entity_id:'family',page_ids:['a','b'],status:'needs_review'}],changes:[],coverage_gaps:[]};

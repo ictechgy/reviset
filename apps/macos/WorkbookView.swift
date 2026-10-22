@@ -946,7 +946,8 @@ private struct WorkbookCellDetail: View {
             if cell.isNull { Text("저장된 셀 관측 없음 · 삭제를 확정하지 않음").font(.caption).foregroundStyle(.secondary) }
             else {
                 Text(verbatim:cell["address"].string + " · " + cell["value_type"].string).font(.system(.caption,design:.monospaced))
-                if !cell["source_range"].string.isEmpty { Text(verbatim:"빈 셀 서식 범위: " + cell["source_range"].string).font(.caption).textSelection(.enabled) }
+                if !cell["source_range"].string.isEmpty { Text(verbatim:"원본 빈 셀 서식 범위: " + cell["source_range"].string).font(.caption).textSelection(.enabled) }
+                if !cell["difference_range"].string.isEmpty { Text(verbatim:"차이가 관측된 구간: " + cell["difference_range"].string).font(.caption).textSelection(.enabled) }
                 if cell["formula_interpretation"].string == "unresolved" { Text("공유·배열 수식의 셀별 의미 확인 필요").font(.caption.weight(.medium)).foregroundStyle(.orange) }
                 if !cell["formula"].isNull { rawDetail("수식 원문",field:"formula"); Text("수식은 실행하지 않았습니다.").font(.caption2).foregroundStyle(.secondary) }
                 rawDetail(cell["formula_interpretation"].string == "unresolved" ? "저장된 관측값 · 입력/계산 결과 미확정" : cell["formula"].isNull ? "저장된 입력값" : "저장된 계산 결과",field:"value")

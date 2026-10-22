@@ -79,6 +79,7 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
     for(let i=0;i<pages.length;i++){options.signal?.throwIfAborted();const result=Page.safeParse(pages[i]);if(!result.success)throw new DocverError('INVALID_PAGE_OBSERVATION','PDF page '+pages[i].page+' failed canonical validation at '+result.error.issues[0]?.path.join('.'));pages[i]=result.data;}
     return pages;
   } catch(e) {
+    if(options.signal?.aborted)throw new DocverError('CANCELLED','PDF extraction cancelled');
     if(e instanceof DocverError) throw e;
     throw new DocverError((e as Error).name==='PasswordException'?'ENCRYPTED_PDF':'INVALID_PDF','PDF extraction failed: '+(e as Error).name);
   } finally { if(!destroyed)await task.destroy(); }

@@ -31,6 +31,14 @@ import AppKit
         expect(box(78,48,30,96),"ambiguous_glyph_stroke","Rotated glyph crossbars stay unresolved without an independent stroke")
         clear();six(80,70)
         expect(box(78,68,20,40),"too_small","Existing minimum raster bounds stay conservative")
+        // A box may touch or extend past the bitmap edge. The scan endpoints
+        // and connected-stroke walk must remain inside the clamped bitmap.
+        clear();six(375,204)
+        precondition(DocverVision.strikeObservation(image,box(373,202,27,38)).status != "detected","A bottom-right edge glyph is not a strike");checks+=1
+        clear();six(0,0)
+        precondition(DocverVision.strikeObservation(image,box(-2,-2,29,40)).status != "detected","A clipped top-left glyph is not a strike");checks+=1
+        clear()
+        precondition(DocverVision.strikeObservation(image,box(-5,-5,410,250)).status != "detected","Clipping an oversized box keeps blank image reads safe");checks+=1
         // A colored strike is not excluded by a dark-ink-only assumption.
         let rgb=NSBitmapImageRep(bitmapDataPlanes:nil,pixelsWide:400,pixelsHigh:240,bitsPerSample:8,samplesPerPixel:3,hasAlpha:false,isPlanar:false,colorSpaceName:.deviceRGB,bytesPerRow:0,bitsPerPixel:0)!
         let data=rgb.bitmapData!

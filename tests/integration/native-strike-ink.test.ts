@@ -10,6 +10,6 @@ test('native raster strikes require ink independent of a glyph crossbar', {skip:
   try {
     const binary=join(folder,'checks');
     execFileSync('/usr/bin/swiftc',['-warnings-as-errors','-swift-version','5','-O','-parse-as-library','-D','DOCVER_TEST','apps/helpers/Vision.swift','apps/helpers/Reconsideration.swift','tests/native/StrikeChecks.swift','-o',binary],{timeout:120_000});
-    assert.match(execFileSync(binary,[],{encoding:'utf8',timeout:10_000}),/PASS 10 native strike ink separation controls/);
+    assert.match(execFileSync(binary,[],{encoding:'utf8',timeout:10_000}),/PASS 13 native strike ink separation controls/);
   } finally { await rm(folder,{recursive:true,force:true}); }
 });

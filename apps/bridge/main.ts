@@ -1,6 +1,6 @@
 import { readFileSync,createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { mkdir,writeFile,readFile,rm,readdir,lstat } from 'node:fs/promises';
+import { mkdir,readFile,rm,readdir,lstat } from 'node:fs/promises';
 import { dirname,join,resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
@@ -10,6 +10,7 @@ import { querySchemas } from '../../packages/query/index.js';
 import {SidecarScope,createOnlyOfficeSidecar,closeOnlyOfficeSidecar,recoverOnlyOfficeSidecars,onlyOfficeSidecarConfigured} from '../../packages/render/onlyoffice-sidecar.js';
 import {cancelActiveTools} from '../../packages/runtime/tools.js';
 import {handleWorkbookAction} from './workbook.js';
+import {writeCanonicalJson} from '../../packages/runtime/canonical-json.js';
 const key=z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/),scope=z.object({project_id:key,report_id:key});
 const request=JSON.parse(readFileSync(0,'utf8')) as {action:string;args:any};
 const rootArg=process.argv.indexOf('--root');if(rootArg<0)throw new Error('Explicit app library required');
@@ -18,6 +19,11 @@ function projectResponse(project:DesktopDraft){const {bundle_decisions,...rest}=
 function readableDraftHash(projectId:string){try{return hash(service.manifest(projectId));}catch(error){if(error instanceof DocverError&&error.code==='DRAFT_UNREADABLE')return null;throw error;}}
 function fixedLatestReport(projectId:string){try{return service.store.resolveReportId(projectId,'latest');}catch(error){if(error instanceof DocverError&&error.code==='REPORT_NOT_FOUND')return null;throw error;}}
 async function stageCleanupPending(runId:string):Promise<boolean>{try{await lstat(join(root,'staging-v4',runId+'.json'));return true;}catch(error){return (error as NodeJS.ErrnoException).code!=='ENOENT';}}
+async function verifiedStagedReport(path:string,sha256:string){
+  const data=await readFile(path);
+  if(byteHash(data)!==sha256)throw new DocverError('STAGED_HASH','분석 결과 hash 검증에 실패했습니다.');
+  return JSON.parse(data.toString('utf8'));
+}
 async function verifiedSource(assetId:string):Promise<string>{
   if(!/^sha256:[a-f0-9]{64}$/.test(assetId))throw new DocverError('ASSET_ID','잘못된 원본 ID입니다.');
   const path=join(root,'assets',assetId.slice(7)),digest=createHash('sha256');for await(const chunk of createReadStream(path,{highWaterMark:1024*1024}))digest.update(chunk);
@@ -50,16 +56,14 @@ try{
       const parentWatch=setInterval(()=>{if(parent<=1||process.ppid!==parent){clearInterval(parentWatch);cancel();}},100);parentWatch.unref();
       try {
         const result=await service.run(project_id,controller.signal,p=>process.stderr.write(JSON.stringify({event:'progress',progress:p})+'\n'),false);controller.signal.throwIfAborted();
-        const data=Buffer.from(JSON.stringify(result.report)),folder=join(root,'staging-v4');await mkdir(folder,{recursive:true,mode:0o700});controller.signal.throwIfAborted();const name=result.analysis_run_id+'.json';await writeFile(join(folder,name),data,{flag:'wx',mode:0o600});value={analysis_run_id:result.analysis_run_id,report_id:result.report.report_id,staged_name:name,sha256:byteHash(data),draft_hash:result.draft_hash,project_id,schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION};
+        const folder=join(root,'staging-v4');await mkdir(folder,{recursive:true,mode:0o700});controller.signal.throwIfAborted();const name=result.analysis_run_id+'.json',sha256=writeCanonicalJson(join(folder,name),result.report,controller.signal);value={analysis_run_id:result.analysis_run_id,report_id:result.report.report_id,staged_name:name,sha256,draft_hash:result.draft_hash,project_id,schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION};
       }finally{clearInterval(parentWatch);process.removeListener('SIGTERM',cancel);process.removeListener('SIGINT',cancel);}break;
     }
     case 'commit':{
       const {project_id}=z.object({project_id:key}).parse(args);
       const d=z.object({analysis_run_id:z.string().regex(/^run_[a-f0-9-]+$/),report_id:key,staged_name:z.string().regex(/^run_[a-f0-9-]+\.json$/),sha256:z.string().regex(/^[a-f0-9]{64}$/),draft_hash:z.string(),project_id:key,schema_version:z.literal(SCHEMA_VERSION),engine_version:z.literal(ENGINE_VERSION)}).parse(args.result);
       if(d.project_id!==project_id||d.staged_name!==d.analysis_run_id+'.json'||d.draft_hash!==hash(service.manifest(project_id)))throw new DocverError('STALE_RUN','입력이 바뀐 분석 결과는 저장하지 않습니다.');
-      const path=join(root,'staging-v4',d.staged_name),data=await readFile(path);
-      if(byteHash(data)!==d.sha256)throw new DocverError('STAGED_HASH','분석 결과 hash 검증에 실패했습니다.');
-      const report=JSON.parse(data.toString('utf8'));
+      const path=join(root,'staging-v4',d.staged_name),report=await verifiedStagedReport(path,d.sha256);
       if(report.report_id!==d.report_id)throw new DocverError('STAGED_ID','분석 보고서 ID가 일치하지 않습니다.');
       const reportId=service.commit(project_id,{report,analysis_run_id:d.analysis_run_id,draft_hash:d.draft_hash});
       let cleanupPending=false;try{await rm(path,{force:true});}catch{cleanupPending=true;}
