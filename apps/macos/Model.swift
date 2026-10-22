@@ -103,7 +103,7 @@ struct ReorderConfirmation:Identifiable {
         try? FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
         bridge = Bridge(resources: resources, library: library)
         libraryLock = Darwin.open(library.appendingPathComponent(".app-lock").path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
-        if libraryLock < 0 || flock(libraryLock, LOCK_EX | LOCK_NB) != 0 { libraryAvailable = false; error = "이 보관소를 사용하는 Docver 앱이 이미 실행 중입니다." }
+        if libraryLock < 0 || flock(libraryLock, LOCK_EX | LOCK_NB) != 0 { libraryAvailable = false; error = "이 보관소를 사용하는 Reviset 또는 Docver 앱이 이미 실행 중입니다." }
     }
     var project: JSON { projects.first { $0["project_id"].string == projectID } ?? JSON() }
     var revisions: [JSON] { report["revisions"].array }
@@ -361,7 +361,7 @@ struct ReorderConfirmation:Identifiable {
     func exportReport() async {
         let panel = NSOpenPanel(); panel.title = "보고서를 저장할 폴더"; panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let target = url.appendingPathComponent("Docver-" + report["report_id"].string.dropFirst(4).prefix(12))
+        let target = url.appendingPathComponent("Reviset-" + report["report_id"].string.dropFirst(4).prefix(12))
         do { _ = try await bridge.call("export", ["project_id": projectID, "report_id": report["report_id"].string, "folder": target.path]); NSWorkspace.shared.open(target); status = "JSON·JSONL·Markdown 보고서를 저장했습니다" } catch { fail(error) }
     }
     func loadMCP() async {

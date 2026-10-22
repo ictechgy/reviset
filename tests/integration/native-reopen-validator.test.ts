@@ -13,7 +13,7 @@ test('native reopen validator rejects a fresh zero-exit failure and stale result
     const db=new DatabaseSync(join(original,'library','docver.sqlite'));db.exec('CREATE TABLE reports(id TEXT PRIMARY KEY,body TEXT NOT NULL)');db.prepare('INSERT INTO reports VALUES (?,?)').run('rpt_control','{}');db.close();
     const fixture={project_id:'proj_control',report_id:'rpt_control',pages:[300,300],numeric_changes:[{}]};
     await writeFile(join(source,'result.json'),JSON.stringify(fixture));await writeFile(join(source,'process.json'),JSON.stringify({userData:original}));
-    const app=join(root,'release/Docver.app/Contents/MacOS/Docver');await mkdir(join(root,'release/Docver.app/Contents/MacOS'),{recursive:true});
+    const app=join(root,'release/Reviset.app/Contents/MacOS/Reviset');await mkdir(join(root,'release/Reviset.app/Contents/MacOS'),{recursive:true});
     await writeFile(app,`#!${process.execPath}
 const fs=require('node:fs'),path=require('node:path');const req=JSON.parse(fs.readFileSync(process.env.DOCVER_SMOKE_REQUEST,'utf8'));
 if(process.env.DOCVER_VALIDATOR_MOCK==='failure'){fs.writeFileSync(process.env.DOCVER_SMOKE_OUTPUT,JSON.stringify({error:'CONTROLLED_NEW_RENDER_FAILURE'}));process.exit(0)}

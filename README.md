@@ -1,10 +1,12 @@
-# Docver
+# Reviset
 
 English (canonical) · [한국어](README.ko.md)
 
+Formerly **Docver**. [Rename and compatibility notes](docs/RENAMING.md).
+
 **A native macOS app for reading document version history with source evidence.**
 
-Docver compares versions of PPTX/PDF documents and XLSX/ODS/CSV workbooks. People inspect the originals side by side; AI clients query the same fixed reports through a read-only MCP server. Import and analysis run locally without an account, API key, or cloud upload.
+Reviset compares versions of PPTX/PDF documents and XLSX/ODS/CSV workbooks. People inspect the originals side by side; AI clients query the same fixed reports through a read-only MCP server. Import and analysis run locally without an account, API key, or cloud upload.
 
 For example, follow `draft.pptx → review.pdf → final.pptx` as revenue changes from `100억 → 120억 → 110억` (억 denotes 100 million). Inspect the source in each version. Beyond the first-to-last difference, the history also keeps content that was added and later removed in intermediate versions.
 
@@ -14,13 +16,13 @@ For example, follow `draft.pptx → review.pdf → final.pptx` as revenue change
 
 ### PPTX and PDF comparison
 
-![Docver showing a numeric change from 100억 to 120억 with before-and-after source evidence](docs/images/document-comparison.png)
+![Reviset showing a numeric change from 100억 to 120억 with before-and-after source evidence](docs/images/document-comparison.png)
 
 A five-version synthetic demo showing the numeric change displayed as `100억 → 120억` and its source evidence. The left pane shows a LibreOffice conversion of a PPTX; the right pane shows the original PDF.
 
 ### Spreadsheet comparison
 
-![Docver showing inferred row movement from A2 to A3, physical cell addresses, and stored input values](docs/images/workbook-comparison.png)
+![Reviset showing inferred row movement from A2 to A3, physical cell addresses, and stored input values](docs/images/workbook-comparison.png)
 
 Inspect the actual before/after addresses, stored input values, and inferred `A2 → A3` row movement. Both screenshots were captured from the running app using synthetic demos.
 
@@ -46,11 +48,11 @@ The UI uses **SwiftUI, AppKit, and PDFKit**. A shared TypeScript engine and SQLi
 - Internet access for npm dependencies during builds and the first LibreOffice download.
 
 ```sh
-git clone https://github.com/ictechgy/docver.git
-cd docver
+git clone https://github.com/ictechgy/reviset.git
+cd reviset
 npm ci
-DOCVER_APP_NAME=Docver-Local.app npm run mac:build
-open release/Docver-Local.app
+REVISET_APP_NAME=Reviset-Local.app npm run mac:build
+open release/Reviset-Local.app
 ```
 
 The build downloads a pinned LibreOffice version, verifies its SHA-256 and The Document Foundation (TDF) signature, and bundles it with the app. Node and production dependencies are bundled too, so **running the built app does not require a separate Node installation**. Analysis runs locally.
@@ -67,7 +69,7 @@ The Node executable used for packaging must link only system dylibs. If the buil
 
 Try the built-in **5버전 합성 데모** (five-version document demo) and **3버전 엑셀 데모** (three-version workbook demo). Document focus mode is `⌘⌥F`; the evidence panel is `⌘⌥I`.
 
-Imported originals are copied into `~/Library/Application Support/Docver/library/`. The selected source files are not overwritten. Reanalysis preserves earlier fixed reports separately.
+The existing storage location is retained across the rename. Imported originals are copied into `~/Library/Application Support/Docver/library/`. The selected source files are not overwritten. Reanalysis preserves earlier fixed reports separately.
 
 ## CLI and MCP
 

@@ -6,7 +6,7 @@ import { ZodError } from 'zod';
 import { MCP_API_VERSION, mcpInstructions, registerReadingPrompts, toolDescriptions } from './guidance.js';
 import { registerWorkbookTools,workbookInstructions } from './workbook.js';
 export function createMcpServer(service:QueryService,workbookScope:ReadonlySet<string>=service.allowedProjects):McpServer {
-  const server=new McpServer({name:'document-version-tracker',version:MCP_API_VERSION},{instructions:mcpInstructions+'\n\n'+workbookInstructions});
+  const server=new McpServer({name:'reviset',version:MCP_API_VERSION},{instructions:mcpInstructions+'\n\n'+workbookInstructions});
   for(const [name,schema] of Object.entries(querySchemas)) server.registerTool(name,{
     description:toolDescriptions[name as QueryName],
     inputSchema:schema,outputSchema:Envelope,annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false}

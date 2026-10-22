@@ -127,11 +127,11 @@ struct MainView: View {
                     }
                 }.frame(maxWidth:.infinity,maxHeight:.infinity)
             }
-            Divider();HStack { Label("내 Mac에만 저장",systemImage:"internaldrive");Spacer();Text(!model.evidenceWarning.isEmpty ? model.evidenceWarning:model.status.isEmpty ? "근거 · 추정 · 관측 공백을 구분합니다" : model.status);Spacer();Text("Docver · Native macOS") }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,5)
+            Divider();HStack { Label("내 Mac에만 저장",systemImage:"internaldrive");Spacer();Text(!model.evidenceWarning.isEmpty ? model.evidenceWarning:model.status.isEmpty ? "근거 · 추정 · 관측 공백을 구분합니다" : model.status);Spacer();Text("Reviset · Native macOS") }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,5)
         }.disabled(!model.libraryAvailable || model.initializing).preferredColorScheme(.light).background(Color(nsColor:.windowBackgroundColor)).frame(minWidth:1100,minHeight:740)
         .toolbar {
             ToolbarItem(placement:.navigation){Button {model.focus.toggle()} label:{Image(systemName:model.focus ? "sidebar.left" : "arrow.up.left.and.arrow.down.right")}.help(model.focus ? "기본 화면" : "문서 크게 보기")}
-            ToolbarItem { Text(model.project["title"].string.isEmpty ? "Docver" : model.project["title"].string).font(.headline) }
+            ToolbarItem { Text(model.project["title"].string.isEmpty ? "Reviset" : model.project["title"].string).font(.headline) }
             ToolbarItemGroup(placement:.primaryAction) {
                 Button{openWindow(id:"workbooks")}label:{Label("스프레드시트",systemImage:"tablecells")}.help("XLSX·ODS·CSV 버전 비교").disabled(!model.libraryAvailable || model.initializing)
                 if !model.report.isNull {

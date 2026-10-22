@@ -20,6 +20,7 @@ test('real workbook MCP scopes a read-only library and reconstructs bounded untr
     const db=join(library,'docver.sqlite'),before=byteHash(await readFile(db));
     transport=new StdioClientTransport({command:process.execPath,args:['--import','tsx',resolve('apps/mcp/main.ts'),'--store',library,'--project',project.project_id],stderr:'pipe'});
     client=new Client({name:'workbook-contract-test',version:'1.0.0'});await client.connect(transport);
+    assert.equal(client.getServerVersion()?.name,'reviset');
     const tools=(await client.listTools()).tools;
     const workbookTools=tools.filter(t=>t.name.includes('workbook'));
     assert.equal(workbookTools.length,12);for(const tool of workbookTools){assert.equal(tool.annotations?.readOnlyHint,true);assert.equal(tool.annotations?.openWorldHint,false);assert.ok(tool.outputSchema);}

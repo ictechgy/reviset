@@ -14,7 +14,7 @@ const slide=(key:string,body:string)=>({key,title:key,body}),versions=[[slide('í
 const files=[];
 for(const [i,slides] of versions.entries()){const file=join(fixtures,`v${i+1}.pptx`);await writeFile(file,await makePptx(slides));files.push(file);}
 const request=join(output,'request.json');await writeFile(request,JSON.stringify({output,files,manual_relations:true,layout_checks:true}));
-const child=spawn(resolve('release/Docver.app/Contents/MacOS/Docver'),[],{cwd:'/',env:{...process.env,DOCVER_TEST_USER_DATA:userData,DOCVER_SMOKE_REQUEST:request,DOCVER_SMOKE_OUTPUT:join(output,'failure.json')},stdio:['ignore','pipe','pipe']});
+const child=spawn(resolve('release/Reviset.app/Contents/MacOS/Reviset'),[],{cwd:'/',env:{...process.env,DOCVER_TEST_USER_DATA:userData,DOCVER_SMOKE_REQUEST:request,DOCVER_SMOKE_OUTPUT:join(output,'failure.json')},stdio:['ignore','pipe','pipe']});
 let stdout='',stderr='';child.stdout.on('data',d=>stdout+=d);child.stderr.on('data',d=>stderr+=d);
 const code=await new Promise<number|null>((res,rej)=>{const timer=setTimeout(()=>{child.kill('SIGKILL');rej(Error('Native relations app timeout'));},300000);child.on('error',rej);child.on('exit',c=>{clearTimeout(timer);res(c);});});
 await writeFile(join(output,'process.json'),JSON.stringify({code,userData,stdout,stderr},null,2));assert.equal(code,0,stderr);

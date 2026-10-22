@@ -1,5 +1,5 @@
 {
-  "name": "document-version-tracker",
+  "name": "reviset",
   "version": "0.2.0-dev.0",
   "private": true,
   "engines": {
@@ -15,7 +15,7 @@
     "spike": "tsx scripts/render-spike.ts",
     "check": "npm run build && npm test",
     "mac:build": "tsx scripts/build-macos.ts",
-    "mac:run": "npm run mac:build && open release/Docver.app",
+    "mac:run": "npm run mac:build && open release/Reviset.app",
     "mac:smoke": "node scripts/native-smoke.mjs",
     "native:helpers": "tsx scripts/build-native-helpers.ts",
     "native:office": "tsx scripts/prepare-office.ts",

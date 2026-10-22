@@ -7,6 +7,7 @@
 - Evidence reviewed: PLAN.md §5~9, PROGRESS.md, packages/schema 및 query. 기존 UI/브랜드/컴포넌트/시각 기준은 없다.
 
 ## Brand
+- Product name: **Reviset / 리비셋** — 사용자가 2026-10-22 확정. 이전 이름 Docver. 표시 브랜드와 호환성 식별자의 경계는 [리네이밍 기록](docs/RENAMING.md)을 따른다.
 - Personality: 차분하고 정확한 문서 작업 도구. 한국어 우선.
 - Trust signals: 고정 보고서, 원문 페이지·인용, 추정/사용자 확정·관측 한계 구분.
 - Avoid: 마케팅형 hero, 과장된 정확도, 의미 없는 장식, 미지원 기능의 완료 표시.

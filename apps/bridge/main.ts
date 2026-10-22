@@ -27,7 +27,7 @@ try{
   if(request.action.startsWith('workbook')) {
     if(request.action==='workbookMcpConfig') {
       const {project_id}=z.object({project_id:key}).parse(args);await handleWorkbookAction(service.store,'workbookReports',{project_id});
-      value=JSON.stringify({mcpServers:{docver:{command:process.execPath,args:[join(dirname(fileURLToPath(import.meta.url)),'mcp.mjs'),'--store',root,'--project',project_id]}}},null,2);
+      value=JSON.stringify({mcpServers:{reviset:{command:process.execPath,args:[join(dirname(fileURLToPath(import.meta.url)),'mcp.mjs'),'--store',root,'--project',project_id]}}},null,2);
     }else value=await handleWorkbookAction(service.store,request.action,args);
   }else switch(request.action){
     case 'sidecarInfo':value={configured:await onlyOfficeSidecarConfigured(join(dirname(fileURLToPath(import.meta.url)),'../onlyoffice-sidecar'))};break;
@@ -85,7 +85,7 @@ try{
       }else value={page,display_page:page,source:{kind:asset.format,path:await verifiedSource(asset.asset_id),origin:'original'}};break;
     }
     case 'export':{const d=scope.extend({folder:z.string().min(1)}).parse(args);value=await service.export(d.project_id,d.report_id,resolve(d.folder));break;}
-    case 'mcpConfig':{const {project_id}=z.object({project_id:key}).parse(args);service.reports(project_id);value=JSON.stringify({mcpServers:{docver:{command:process.execPath,args:[join(dirname(fileURLToPath(import.meta.url)),'mcp.mjs'),'--store',root,'--project',project_id]}}},null,2);break;}
+    case 'mcpConfig':{const {project_id}=z.object({project_id:key}).parse(args);service.reports(project_id);value=JSON.stringify({mcpServers:{reviset:{command:process.execPath,args:[join(dirname(fileURLToPath(import.meta.url)),'mcp.mjs'),'--store',root,'--project',project_id]}}},null,2);break;}
     default:throw new DocverError('UNKNOWN_ACTION','지원하지 않는 작업입니다.');
   }
   process.stdout.write(JSON.stringify({protocol_version:'0.1.0',schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION,ok:true,value})+'\n');

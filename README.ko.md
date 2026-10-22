@@ -1,12 +1,14 @@
-# Docver
+# Reviset
 
 [English (기준 문서)](README.md) · 한국어
 
 이 문서는 한국어 번역입니다. 내용이 다를 경우 영어 README를 기준으로 합니다.
 
+이전 이름은 **Docver**입니다. [리네이밍과 호환성](docs/RENAMING.md)을 참고하세요.
+
 **문서의 변경 이력을 원문 근거와 함께 읽는 네이티브 macOS 앱.**
 
-Docver는 여러 버전의 PPTX·PDF와 XLSX·ODS·CSV를 비교합니다. 사람은 원문을 나란히 보고, AI는 같은 고정 보고서를 읽기 전용 MCP로 조회합니다. 문서를 가져오고 분석하는 데 계정·API 키·클라우드 업로드가 필요하지 않습니다.
+Reviset은 여러 버전의 PPTX·PDF와 XLSX·ODS·CSV를 비교합니다. 사람은 원문을 나란히 보고, AI는 같은 고정 보고서를 읽기 전용 MCP로 조회합니다. 문서를 가져오고 분석하는 데 계정·API 키·클라우드 업로드가 필요하지 않습니다.
 
 예를 들어 `초안.pptx → 검토.pdf → 최종.pptx`에서 매출이 `100억 → 120억 → 110억`으로 바뀐 과정과 각 버전의 원문을 확인할 수 있습니다. 처음과 마지막의 차이뿐 아니라 중간에 추가됐다가 사라진 내용도 이력으로 남깁니다.
 
@@ -16,13 +18,13 @@ Docver는 여러 버전의 PPTX·PDF와 XLSX·ODS·CSV를 비교합니다. 사�
 
 ### PPTX·PDF 비교
 
-![PPTX와 PDF를 나란히 보고 숫자 변경의 전후 원문과 근거를 확인하는 Docver 화면](docs/images/document-comparison.png)
+![PPTX와 PDF를 나란히 보고 숫자 변경의 전후 원문과 근거를 확인하는 Reviset 화면](docs/images/document-comparison.png)
 
 5버전 합성 데모에서 `100억 → 120억`의 숫자 변경과 해당 원문 근거를 확인하는 화면입니다. 왼쪽은 PPTX의 LibreOffice 변환, 오른쪽은 원본 PDF입니다.
 
 ### 스프레드시트 비교
 
-![이전 A2와 이후 A3의 셀을 나란히 표시하고 저장값과 행 이동 근거를 확인하는 Docver 화면](docs/images/workbook-comparison.png)
+![이전 A2와 이후 A3의 셀을 나란히 표시하고 저장값과 행 이동 근거를 확인하는 Reviset 화면](docs/images/workbook-comparison.png)
 
 이전 `A2`와 이후 `A3`의 실제 주소, 저장된 입력값과 추정 행 이동을 표시합니다. 두 화면 모두 합성 데모를 실제 앱에서 캡처한 것입니다.
 
@@ -48,11 +50,11 @@ UI는 **SwiftUI·AppKit·PDFKit**, 공통 엔진은 TypeScript와 SQLite를 사�
 - 빌드 시 npm 의존성 설치와 첫 빌드의 LibreOffice 다운로드를 위한 인터넷 연결.
 
 ```sh
-git clone https://github.com/ictechgy/docver.git
-cd docver
+git clone https://github.com/ictechgy/reviset.git
+cd reviset
 npm ci
-DOCVER_APP_NAME=Docver-Local.app npm run mac:build
-open release/Docver-Local.app
+REVISET_APP_NAME=Reviset-Local.app npm run mac:build
+open release/Reviset-Local.app
 ```
 
 빌드는 고정한 LibreOffice를 내려받아 SHA-256·TDF 서명을 확인한 뒤 앱에 포함합니다. 앱에는 Node 실행 파일과 운영 의존성도 포함하므로 **빌드한 앱 실행에는 별도의 Node 설치가 필요하지 않습니다**. 분석은 로컬에서 수행합니다.
@@ -69,7 +71,7 @@ open release/Docver-Local.app
 
 앱의 **5버전 합성 데모**와 **3버전 엑셀 데모**로 직접 확인할 수 있습니다. 문서 집중 모드는 `⌘⌥F`, 근거 패널은 `⌘⌥I`입니다.
 
-가져온 원본은 `~/Library/Application Support/Docver/library/`에 복사하며 사용자가 선택한 원본을 덮어쓰지 않습니다. 분석을 다시 해도 과거 고정 보고서는 별도로 보존합니다.
+리네이밍 후에도 기존 저장 위치를 유지합니다. 가져온 원본은 `~/Library/Application Support/Docver/library/`에 복사하며 사용자가 선택한 원본을 덮어쓰지 않습니다. 분석을 다시 해도 과거 고정 보고서는 별도로 보존합니다.
 
 ## CLI와 MCP
 

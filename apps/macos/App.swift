@@ -3,11 +3,11 @@ import AppKit
 import PDFKit
 import CryptoKit
 
-@main struct DocverApp: App {
+@main struct RevisetApp: App {
     @StateObject private var model=AppModel()
     @Environment(\.openWindow) private var openWindow
     var body: some Scene {
-        Window("Docver", id:"main") {MainView().environmentObject(model).task {
+        Window("Reviset", id:"main") {MainView().environmentObject(model).task {
             await Smoke.runIfRequested(model)
             if ProcessInfo.processInfo.environment["DOCVER_WORKBOOK_SMOKE_REQUEST"] != nil {
                 for _ in 0..<400 { if !model.initializing { break }; try? await Task.sleep(nanoseconds:50_000_000) }
@@ -23,10 +23,10 @@ import CryptoKit
             CommandGroup(after:.newItem){Button("문서 버전 가져오기…"){model.importSheet=true}.keyboardShortcut("o").disabled(model.busy || model.loading || !model.libraryAvailable || model.initializing);Button("스프레드시트 버전 비교…"){openWindow(id:"workbooks")}.keyboardShortcut("o",modifiers:[.command,.shift]).disabled(!model.libraryAvailable || model.initializing)}
             CommandGroup(after:.sidebar){Button("문서 크게 보기"){model.focus.toggle()}.keyboardShortcut("f",modifiers:[.command,.option]);Button("근거 패널"){model.inspector.toggle()}.keyboardShortcut("i",modifiers:[.command,.option])}
         }
-        Window("Docver · 스프레드시트",id:"workbooks") {
+        Window("Reviset · 스프레드시트",id:"workbooks") {
             Group {
             if !model.libraryAvailable {
-                VStack(spacing:12) { Image(systemName:"lock.fill").font(.largeTitle); Text("다른 Docver가 이 보관소를 사용하고 있습니다."); Text("해당 앱을 종료한 뒤 다시 여세요.").foregroundStyle(.secondary) }.frame(minWidth:640,minHeight:420)
+                VStack(spacing:12) { Image(systemName:"lock.fill").font(.largeTitle); Text("다른 Reviset 또는 Docver가 이 보관소를 사용하고 있습니다."); Text("해당 앱을 종료한 뒤 다시 여세요.").foregroundStyle(.secondary) }.frame(minWidth:640,minHeight:420)
             } else if model.initializing {
                 ProgressView("보관소를 준비하는 중…").frame(minWidth:640,minHeight:420)
             } else {
@@ -140,7 +140,7 @@ import CryptoKit
             complete["history_change_check"]=historyChangeCheck
             complete["sidecar_checks"]=sidecarChecks
             try JSON(complete).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
-        }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Docver native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
+        }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Reviset native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
     }
     static func exerciseSidecar(_ model:AppModel,_ output:URL,_ requestedPage:Int) async throws->[String:Any] {
         guard model.sidecarConfigured else{throw BridgeError(code:"SIDECAR_NOT_CONFIGURED",message:"참고 렌더러가 준비되지 않았습니다.")}

@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-const app=resolve('release/Docver.app/Contents'),node=join(app,'Helpers/node'),script=join(app,'Resources/backend/bridge.mjs');
+const app=resolve('release/Reviset.app/Contents'),node=join(app,'Helpers/node'),script=join(app,'Resources/backend/bridge.mjs');
 const root=await mkdtemp(join(tmpdir(),'docver-packaged-')),folder=resolve('output/native-backend');await mkdir(folder,{recursive:true});
 const env={PATH:'/usr/bin:/bin',HOME:process.env.HOME};
 function call(action,args={},expected){const p=spawnSync(node,[script,'--root',root],{cwd:'/',env,input:JSON.stringify({action,args}),encoding:'utf8',timeout:60000,maxBuffer:32*1024*1024});assert.ifError(p.error);const r=JSON.parse(p.stdout);assert.equal(r.protocol_version,'0.1.0');if(expected){assert.equal(r.error?.code,expected);return r;}assert.equal(r.ok,true,JSON.stringify(r.error));return r.value;}
@@ -22,7 +22,7 @@ try{
  const second=call('analyze',{project_id});call('recover',{run_id:second.analysis_run_id});await writeFile(join(root,'staging-v4',second.staged_name),original);call('commit',{project_id,result:second},'INVALID_RUN');checks.push('cancel/recovery cannot commit');
  const third=call('analyze',{project_id});call('reorder',{project_id,order:[4,3,2,1,0]});call('commit',{project_id,result:third},'STALE_RUN');call('recover',{run_id:third.analysis_run_id});assert.equal(call('reports',{project_id}).length,1);assert.equal(call('view',{project_id,report_id}).report_id,report_id);checks.push('stale draft rejection + immutable past report');
  const fourth=call('analyze',{project_id});call('commit',{project_id,result:fourth});assert.notEqual(fourth.report_id,report_id);assert.equal(call('reports',{project_id}).length,2);checks.push('reorder makes new snapshot');
- const config=JSON.parse(call('mcpConfig',{project_id})).mcpServers.docver;assert.equal(config.command,node);
+ const config=JSON.parse(call('mcpConfig',{project_id})).mcpServers.reviset;assert.equal(config.command,node);
  const db=join(root,'docver.sqlite'),digest=async()=>createHash('sha256').update(await readFile(db)).digest('hex');
  const before=await digest(),transport=new StdioClientTransport({...config,env,stderr:'pipe'}),client=new Client({name:'native-packaged-smoke',version:'1.0.0'});
  await client.connect(transport);try{const r=await client.callTool({name:'get_report',arguments:{project_id,report_id}});assert.equal(r.isError,undefined);const denied=await client.callTool({name:'get_report',arguments:{project_id:'prj_other',report_id}});assert.equal(denied.isError,true);}finally{await client.close();}
