@@ -37,7 +37,7 @@ import AppKit
         model.beforeAddress="B2";model.afterAddress="";model.rowStart=2;model.columnStart=2
         try require(model.navigationRangePrefix.isEmpty,"BeforeOnlyRangeLabelledAfterEvidence")
         model.beforeAddress="B2";model.afterAddress="B3";model.rowStart=3;model.beforeRowStart=2
-        try require(model.navigationRangePrefix=="이후 ","MovedRangeLostAfterLabel")
+        try require(model.navigationRangePrefix=="이후 버전 ","MovedRangeLostAfterLabel")
         model.rowStart=2
         try require(model.navigationRangePrefix.isEmpty,"SharedRangeLabelledAfterOnly")
 

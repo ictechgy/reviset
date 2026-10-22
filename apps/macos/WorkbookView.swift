@@ -118,7 +118,7 @@ private extension JSON {
     var independentPaneCoordinates: Bool { beforeRowStart != afterRowStart || beforeColumnStart != afterColumnStart || beforeAddress != afterAddress }
     var navigationRangePrefix: String {
         let differentRanges = beforeRowStart != afterRowStart || beforeColumnStart != afterColumnStart
-        return differentRanges && paneCoordinate(before:false) != nil && rowStart == afterRowStart && columnStart == afterColumnStart ? "이후 " : ""
+        return differentRanges && paneCoordinate(before:false) != nil && rowStart == afterRowStart && columnStart == afterColumnStart ? "이후 버전 " : ""
     }
     var ready: Bool { active && !reportID.isEmpty && report["report_id"].string == reportID && !loadingReport && !busy && !loadingDemo }
     var project: JSON { projects.first { $0["project_id"].string == projectID } ?? JSON() }
@@ -800,7 +800,7 @@ struct WorkbookWorkspace: View {
                 if !model.changeCursor.isEmpty { Button("다음 페이지") { Task { await model.loadChanges(next:true) } } }
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready || model.loadingChanges)
             Text(verbatim:"조회 구간 · " + model.versionLabel(model.changesFromID) + " → " + model.versionLabel(model.changesToID)).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
-            if !model.selectedChangeID.isEmpty,(model.changesFromID != model.beforeID || model.changesToID != model.afterID) { Text("목록은 조회 구간을 유지합니다. 위 비교는 선택한 변경이 발생한 두 버전입니다.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            if !model.changesFromID.isEmpty,!model.changesToID.isEmpty,(model.changesFromID != model.beforeID || model.changesToID != model.afterID) { Text("위 비교의 두 버전과 목록의 조회 구간은 다릅니다.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.changeCursor.isEmpty { Text("응답 크기로 나누어 표시합니다. ‘다음 페이지’에서 변경을 계속 확인하세요.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             else if !model.changePreviousCursors.isEmpty { Text("마지막 페이지입니다. 앞선 변경은 ‘이전 페이지’에서 확인하세요.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.comparisonNotice.isEmpty { Text(verbatim:model.comparisonNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
