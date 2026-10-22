@@ -19,6 +19,25 @@ export function blankCellsInViewport(sheet: WorkbookSheetData, rowStart: number,
   return cells;
 }
 
+// Locate explicit blanks only at existing opposite-side material cells. A row
+// sweep and fixed-column assignment tree avoid probing every rectangle for
+// every cell or expanding a blank rectangle's area. Map values retain original
+// source observations; callers synthesize only the endpoints they actually use.
+export function blankStylesAtCells(sheet:WorkbookSheetData,probes:WorkbookCellData[],signal?:AbortSignal){
+  const found=new Map<WorkbookCellData,WorkbookCellData|WorkbookBlankStyleRangeData>(),key=(cell:WorkbookCellData)=>(cell.row-1)*16_384+cell.column;
+  const explicit=new Map(sheet.cells.filter(c=>c.blank_style_only).map(c=>[key(c),c]));
+  if(!explicit.size&&!sheet.blank_style_ranges?.length)return found;
+  const points=probes.filter(c=>!c.blank_style_only).sort((a,b)=>a.row-b.row||a.column-b.column),ranges=sheet.blank_style_ranges??[];
+  const events=ranges.flatMap((range,index)=>[{row:range.row_start,index,delta:1},{row:range.row_end+1,index,delta:-1}]).sort((a,b)=>a.row-b.row||a.delta-b.delta);
+  // 0 means empty, -1 means children differ, and a positive tag is range index+1.
+  const tags=new Int32Array(65_536);
+  const update=(left:number,right:number,value:number,node=1,lo=1,hi=16_384):void=>{if(left<=lo&&hi<=right){tags[node]=value;return;}if(tags[node]!==-1){tags[node*2]=tags[node];tags[node*2+1]=tags[node];tags[node]=-1;}const mid=(lo+hi)>>1;if(left<=mid)update(left,right,value,node*2,lo,mid);if(right>mid)update(left,right,value,node*2+1,mid+1,hi);};
+  const point=(column:number,node=1,lo=1,hi=16_384):number=>{if(tags[node]!==-1)return tags[node];const mid=(lo+hi)>>1;return column<=mid?point(column,node*2,lo,mid):point(column,node*2+1,mid+1,hi);};
+  let at=0;
+  for(const cell of points){signal?.throwIfAborted();while(at<events.length&&events[at].row<=cell.row){const event=events[at++],range=ranges[event.index];update(range.column_start,range.column_end,event.delta>0?event.index+1:0);}const existing=explicit.get(key(cell)),index=point(cell.column);if(existing)found.set(cell,existing);else if(index>0)found.set(cell,ranges[index-1]);}
+  return found;
+}
+
 // A fixed 16,384-column segment tree bounds validation by O((ranges+cells)log C).
 // It rejects overlapping rectangles or overlapping source cells without area
 // expansion, including a hostile full-sheet repeated blank rectangle.
@@ -34,19 +53,21 @@ export function validateBlankRangeLayout(sheet: WorkbookSheetData) {
 }
 
 // Compare physical blank formatting without interpreting row identity or
-// allocating a cell per coordinate. Equivalent repeated/split encodings give
-// the same result; work and resulting observations have independent limits.
-export function compareBlankRanges(before: WorkbookSheetData, after: WorkbookSheetData, identity:(range:WorkbookBlankStyleRangeData,side:0|1)=>string, signal?:AbortSignal) {
+// allocating a cell per coordinate. Equivalent repeated/split encodings compare
+// equal; changed bands retain source boundaries. Existing content coordinates
+// may be masked because their observations are handled by the cell comparison.
+export function compareBlankRanges(before: WorkbookSheetData, after: WorkbookSheetData, identity:(range:WorkbookBlankStyleRangeData,side:0|1)=>string, signal?:AbortSignal,excludedCells:WorkbookCellData[]=[]) {
   const collect=(sheet:WorkbookSheetData):WorkbookBlankStyleRangeData[]=>[...(sheet.blank_style_ranges??[]),...sheet.cells.filter(c=>c.blank_style_only).map(c=>({row_start:c.row,row_end:c.row,column_start:c.column,column_end:c.column,style:c.style,...(c.style_ref?{style_ref:c.style_ref}:{}),number_format:c.number_format,hidden_row:c.hidden_row,hidden_column:c.hidden_column,...(c.formula_interpretation==='unresolved'?{formula_interpretation:'unresolved' as const}:{}),source_ref:c.source_ref}))];
-  const sides=[collect(before),collect(after)] as const;
+  const masks:WorkbookBlankStyleRangeData[]=excludedCells.map(c=>({row_start:c.row,row_end:c.row,column_start:c.column,column_end:c.column,style:{},number_format:null,hidden_row:false,hidden_column:false,source_ref:c.source_ref}));
+  const sides=[collect(before),collect(after),masks] as const;
   const events=sides.flatMap((ranges,side)=>ranges.flatMap((range,index)=>[{row:range.row_start,side,index,delta:1},{row:range.row_end+1,side,index,delta:-1}])).sort((a,b)=>a.row-b.row||a.delta-b.delta);
-  const active=[new Map<number,WorkbookBlankStyleRangeData>(),new Map<number,WorkbookBlankStyleRangeData>()],signatures=[new Map<WorkbookBlankStyleRangeData,string>(),new Map<WorkbookBlankStyleRangeData,string>()];
+  const active=[new Map<number,WorkbookBlankStyleRangeData>(),new Map<number,WorkbookBlankStyleRangeData>(),new Map<number,WorkbookBlankStyleRangeData>()],signatures=[new Map<WorkbookBlankStyleRangeData,string>(),new Map<WorkbookBlankStyleRangeData,string>()];
   const signature=(range:WorkbookBlankStyleRangeData,side:0|1)=>{let value=signatures[side].get(range);if(value===undefined){value=identity(range,side);signatures[side].set(range,value);}return value;};
   const output:{before:WorkbookBlankStyleRangeData|null;after:WorkbookBlankStyleRangeData|null;before_source:WorkbookBlankStyleRangeData|null;after_source:WorkbookBlankStyleRangeData|null}[]=[];let at=0,work=0;
   while(at<events.length){signal?.throwIfAborted();const row=events[at].row;while(at<events.length&&events[at].row===row){const event=events[at++];if(event.delta<0)active[event.side].delete(event.index);else active[event.side].set(event.index,sides[event.side][event.index]);}if(at===events.length)break;const endRow=events[at].row-1;
-    const sorted=active.map(map=>[...map.values()].sort((a,b)=>a.column_start-b.column_start));work+=sorted[0].length+sorted[1].length;if(work>2_000_000)throw new DocverError('WORKBOOK_DIFF_LIMIT','Blank formatting comparison exceeds 2000000 active interval observations');
-    const boundaries=[...new Set(sorted.flatMap(ranges=>ranges.flatMap(r=>[r.column_start,r.column_end+1])))].sort((a,b)=>a-b),indices=[0,0];
-    for(let i=0;i+1<boundaries.length;i++){const column=boundaries[i],endColumn=boundaries[i+1]-1;const found=sorted.map((ranges,side)=>{while(indices[side]<ranges.length&&ranges[indices[side]].column_end<column)indices[side]++;const range=ranges[indices[side]];return range&&range.column_start<=column?range:null;});if((found[0]?signature(found[0],0):null)===(found[1]?signature(found[1],1):null))continue;
+    const sorted=active.map(map=>[...map.values()].sort((a,b)=>a.column_start-b.column_start));work+=sorted.reduce((n,ranges)=>n+ranges.length,0);if(work>2_000_000)throw new DocverError('WORKBOOK_DIFF_LIMIT','Blank formatting comparison exceeds 2000000 active interval observations');
+    const boundaries=[...new Set(sorted.flatMap(ranges=>ranges.flatMap(r=>[r.column_start,r.column_end+1])))].sort((a,b)=>a-b),indices=[0,0,0];
+    for(let i=0;i+1<boundaries.length;i++){const column=boundaries[i],endColumn=boundaries[i+1]-1;const found=sorted.map((ranges,side)=>{while(indices[side]<ranges.length&&ranges[indices[side]].column_end<column)indices[side]++;const range=ranges[indices[side]];return range&&range.column_start<=column?range:null;});if(found[2]||(found[0]?signature(found[0],0):null)===(found[1]?signature(found[1],1):null))continue;
       if(output.length>=100_000)throw new DocverError('WORKBOOK_DIFF_LIMIT','Blank formatting comparison exceeds 100000 range observations');
       const clip=(range:WorkbookBlankStyleRangeData|null)=>range?{...range,row_start:row,row_end:endRow,column_start:column,column_end:endColumn}:null;output.push({before:clip(found[0]),after:clip(found[1]),before_source:found[0],after_source:found[1]});
     }
