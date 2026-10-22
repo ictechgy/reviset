@@ -6,9 +6,9 @@ English (canonical) · [한국어](README.ko.md)
 
 Docver compares versions of PPTX/PDF documents and XLSX/ODS/CSV workbooks. People inspect the originals side by side; AI clients query the same fixed reports through a read-only MCP server. Import and analysis run locally without an account, API key, or cloud upload.
 
-For example, follow `draft.pptx → review.pdf → final.pptx` as a revenue estimate changes from `100 → 120 → 110`. Inspect the source in each version, including content added and removed between the first and last versions.
+For example, follow `draft.pptx → review.pdf → final.pptx` as a revenue estimate changes from `100 → 120 → 110`. Inspect the source in each version. Beyond the first-to-last difference, the history also keeps content that was added and later removed in intermediate versions.
 
-> **Under development and validation.** This repository provides source build instructions. The validated local app targets Apple Silicon Macs; public installer distribution, notarization, and installation on other Macs remain unqualified. A project license has not been selected. The app UI and most detailed project notes are currently in Korean.
+> **Under development and validation.** This repository provides source build instructions. The validated local app targets Apple Silicon Macs; public installer distribution, notarization, and installation on other Macs remain outstanding. A project license has not been selected. The app UI and most detailed project notes are currently in Korean.
 
 ## Screenshots
 
@@ -61,7 +61,7 @@ The Node executable used for packaging must link only system dylibs. If the buil
 
 1. Import documents with **문서 버전 가져오기** (`⌘O`), or open **스프레드시트 버전 비교…** (`⌘⇧O`) for spreadsheets. Arrange files in version order.
 2. A document version can contain just one PPTX or PDF. Bundling a PPTX with a PDF from the same version is optional.
-3. Select before/after versions and pages or sheets. Distinguish the full intermediate history from the net difference between two versions.
+3. Select before/after versions and pages or sheets. Distinguish **전체 이력** (full history), or **구간 전체 이력** in the workbook, from **두 버전 순변경** (net change between two versions).
 4. Select a change to inspect source evidence and before/after contents. Continue through long cell text; retry a failed read when needed.
 5. Open **AI·내보내기** to export a fixed report or copy the project's MCP configuration.
 
@@ -85,7 +85,7 @@ The CLI store defaults to `.docver/`; override it with `--store PATH`. The order
 
 MCP exposes project-scoped, read-only queries, with no analysis, mutation, or shell execution tools. Read specific version contents, intermediate changes, before/after values, and evidence. The app-generated configuration points to the bundled Node/server; copy it again after moving the app.
 
-Source content retrieved through MCP is passed to the connected AI client and is subject to that client's data policies. A cloud model may send that content to an external service.
+Source content retrieved through MCP is passed to the connected AI client and is subject to that client's data policies. If the client uses a cloud model, retrieved content may be sent to an external service.
 
 For example, ask your AI client:
 
@@ -119,7 +119,7 @@ Most detailed documents below are in Korean.
 | Document | Contents |
 | --- | --- |
 | [Quality status](docs/QUALITY.md) | Validation results and remaining accuracy/distribution gates |
-| [Recent improvements](docs/WORKBOOK-RECOVERY-2026-10-22.md) | Read recovery, cell provenance, UI changes, and scoped review evidence |
+| [Recent improvements and validation](docs/WORKBOOK-RECOVERY-2026-10-22.md) | Read recovery, cell provenance, UI changes, and scoped review evidence |
 | [MCP guide](docs/MCP.md) | AI setup, query order, and output budgets |
 | [Spreadsheet contract](docs/SPREADSHEETS.md) | Formats, formula/cell semantics, and processing limits |
 | [Schemas](docs/schemas/README.md) | Fixed reports and query responses |
