@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { unzipSync, zipSync, strToU8 } from 'fflate';
 import { extractWorkbook, WORKBOOK_LIMITS } from '../../packages/workbook/ingest.js';
+import { diffWorkbooks } from '../../packages/workbook/diff.js';
 import { WorkbookObservation } from '../../packages/workbook/types.js';
 import { xlsxFixture, odsFixture, workbookStyles, defaultStyledXlsxFixture } from '../workbook-fixtures.js';
 
@@ -139,7 +140,7 @@ test('nested ODS row/column groups preserve inherited hidden state and source vi
   for (const address of ['A1','B1','C1','A2','B2','C2','A3']) { assert.equal(cell(hidden,address).hidden_row,true,address); assert.equal(cell(hidden,address).hidden_column,true,address); }
   assert.equal(cell(hidden,'D1').hidden_column,false); assert.equal(cell(hidden,'A5').hidden_row,false);
   assert.equal(cell(visible,'A1').hidden_row,false); assert.equal(cell(visible,'B2').hidden_row,false); assert.equal(cell(visible,'B2').hidden_column,false); assert.equal(cell(visible,'C2').hidden_column,true); assert.equal(cell(visible,'A3').hidden_row,true); assert.equal(cell(visible,'A4').hidden_row,true);
-  assert.equal(cell(hidden,'B2').value,cell(visible,'B2').value); assert.deepEqual(hidden.sheets[0].row_metadata.map(item => [item.start,item.end,item.hidden]),[[1,1,true],[2,2,true],[3,3,true],[4,4,true]]); assert.deepEqual(visible.sheets[0].row_metadata.map(item => [item.start,item.end,item.hidden]),[[3,3,true],[4,4,true]]);
+  assert.equal(cell(hidden,'B2').value,cell(visible,'B2').value); assert.deepEqual(hidden.sheets[0].row_metadata.map(item => [item.start,item.end,item.hidden]),[[1,4,true]]); assert.deepEqual(visible.sheets[0].row_metadata.map(item => [item.start,item.end,item.hidden]),[[3,4,true]]);
   assert.deepEqual(visible.sheets[0].column_metadata.map(item => [item.start,item.end,item.hidden]),[[3,3,true]]);
 });
 
@@ -256,4 +257,27 @@ test('ODS row/column visibility rejects unknown enumerations instead of silently
     await assert.rejects(extractWorkbook(odsFixture(`<table:table-column table:visibility="${invalid}"/><table:table-row><table:table-cell office:value-type="float" office:value="1"/></table:table-row>`),'ods'),code('INVALID_WORKBOOK'));
   }
   for (const value of ['visible','collapse','filter']) { const observed = await extractWorkbook(odsFixture(`<table:table-column table:visibility="${value}"/><table:table-row table:visibility="${value}"><table:table-cell office:value-type="float" office:value="1"/></table:table-row>`),'ods'); assert.equal(cell(observed,'A1').hidden_row,value !== 'visible'); assert.equal(cell(observed,'A1').hidden_column,value !== 'visible'); }
+});
+
+test('ODS repeated currency caches preserve shared style identity even with a large common default',async () => {
+  const properties = Array.from({length:230},(_,index) => ` fo:p${index}="${String(index).padStart(3,'0') + 'x'.repeat(4093)}"`).join('');
+  const observed = await extractWorkbook(odsFixture('<table:table-row table:number-rows-repeated="1000"><table:table-cell office:value-type="currency" office:currency="USD" office:value="12.00"/></table:table-row>',{styles:`<style:default-style style:family="table-cell"><style:text-properties${properties}/></style:default-style>`}),'ods'); assert.equal(observed.sheets[0].cells.length,1000); assert.equal(Object.keys(observed.style_definitions ?? {}).length,1); assert.equal(cell(observed,'A1').style_ref,cell(observed,'A1000').style_ref); assert.equal(style(observed,'A1').currency,'USD'); assert.equal(cell(observed,'A1000').value,'12.00');
+});
+
+test('equivalent adjacent axis metadata coalesces before limits and preserves size/visibility boundaries',async () => {
+  const rows = Array.from({length:100001},(_,index) => `<row r="${index + 1}" ht="15"/>`).join(''), observed = await extractWorkbook(xlsxFixture('<sheetData>' + rows + '</sheetData>'),'xlsx'); assert.equal(observed.sheets[0].cells.length,0); assert.deepEqual(observed.sheets[0].row_metadata,[{start:1,end:100001,hidden:false,size:'15'}]);
+  const changed = await extractWorkbook(xlsxFixture('<cols><col min="1" max="1" hidden="1" width="10"/><col min="2" max="2" hidden="1" width="10"/><col min="3" max="3" hidden="1" width="11"/></cols><sheetData><row r="1" ht="15"/><row r="2" ht="15"/><row r="3" ht="15" hidden="1"/><row r="4" ht="16" hidden="1"/></sheetData>'),'xlsx'); assert.deepEqual(changed.sheets[0].column_metadata,[{start:1,end:2,hidden:true,size:'10'},{start:3,end:3,hidden:true,size:'11'}]); assert.deepEqual(changed.sheets[0].row_metadata,[{start:1,end:2,hidden:false,size:'15'},{start:3,end:3,hidden:true,size:'15'},{start:4,end:4,hidden:true,size:'16'}]);
+  const ods = await extractWorkbook(odsFixture('<table:table-row table:visibility="collapse"/><table:table-row table:visibility="collapse" table:number-rows-repeated="1048575"/>'),'ods'); assert.deepEqual(ods.sheets[0].row_metadata,[{start:1,end:1048576,hidden:true,size:null}]);
+});
+
+test('actual Calc error-cache shape remains error data distinct from empty strings and missing formula caches',async () => {
+  // Source shape independently confirmed from sandboxed LibreOffice26.8.1.1 saves:
+  // office:string-value="" +calcext:value-type="error" +text:p carries the error.
+  const source = (error: string,formula: string) => odsFixture(`<table:table table:name="Errors" xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"><table:table-row><table:table-cell table:formula="${formula}" office:value-type="string" office:string-value="" calcext:value-type="error"><text:p>${error}</text:p></table:table-cell><table:table-cell table:formula="of:=&quot;&quot;" office:value-type="string" office:string-value=""><text:p/></table:table-cell><table:table-cell table:formula="of:=&quot;&quot;"><text:p/></table:table-cell></table:table-row></table:table>`);
+  const before = await extractWorkbook(source('#DIV/0!','of:=1/0'),'ods'), after = await extractWorkbook(source('#N/A','of:=NA()'),'ods'); assert.equal(cell(before,'A1').value_type,'error'); assert.equal(cell(before,'A1').value,'#DIV/0!'); assert.equal(cell(before,'A1').cached_result,'present'); assert.equal(cell(after,'A1').value,'#N/A'); assert.equal(cell(before,'B1').value_type,'string'); assert.equal(cell(before,'B1').value,''); assert.equal(cell(before,'B1').cached_result,'present'); assert.equal(cell(before,'C1').value,null); assert.equal(cell(before,'C1').cached_result,'missing');
+  const revision = (observation: typeof before,index: number) => ({...observation,revision_occurrence_id:`occ${index}`,label:`v${index}`,index,asset_id:'sha256:' + String(index + 1).repeat(64)});
+  const changed = diffWorkbooks(revision(before,0),revision(after,1)); assert.ok(changed.some(item => item.kind === 'stored_value' && item.before?.value === '#DIV/0!' && item.after?.value === '#N/A'));
+  const empty = await extractWorkbook(odsFixture('<table:table table:name="Errors"><table:table-row><table:table-cell table:formula="of:=&quot;&quot;" office:value-type="string" office:string-value=""/></table:table-row></table:table>'),'ods'); const errorToEmpty = diffWorkbooks(revision(before,0),revision(empty,1)); assert.ok(errorToEmpty.some(item => item.kind === 'value_type' && item.before?.value_type === 'error' && item.after?.value_type === 'string'));
+  const ordinary = await extractWorkbook(odsFixture('<table:table table:name="Ordinary" xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"><table:table-row><table:table-cell office:value-type="string" calcext:value-type="string"><text:p>ordinary</text:p></table:table-cell><table:table-cell office:value-type="float" calcext:value-type="float" office:value="7"/></table:table-row></table:table>'),'ods'); assert.equal(cell(ordinary,'A1').value,'ordinary'); assert.equal(cell(ordinary,'B1').value,'7'); assert.equal(cell(ordinary,'B1').value_type,'number');
+  const unknown = await extractWorkbook(odsFixture('<table:table table:name="Unknown" xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0"><table:table-row><table:table-cell table:formula="of:=1/0" office:value-type="string" office:string-value="" calcext:value-type="future-error"><text:p>#?</text:p></table:table-cell></table:table-row></table:table>'),'ods'); assert.equal(cell(unknown,'A1').value,null); assert.equal(cell(unknown,'A1').formula_interpretation,'unresolved'); assert.ok(unknown.sheets[0].coverage_gaps.some(item => item.feature === 'unknown_calc_value_type'));
 });

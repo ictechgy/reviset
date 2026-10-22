@@ -26,6 +26,10 @@ function parseAddress(source: string): [number,number] { const match = /^\$?([A-
 function parseRange(source: string): [number,number,number,number] { const pieces = source.split(':'); if (pieces.length > 2) fail('INVALID_WORKBOOK', 'Invalid cell range'); const [r,c] = parseAddress(pieces[0]), [rr,cc] = parseAddress(pieces[1] ?? pieces[0]); if (rr < r || cc < c) fail('INVALID_WORKBOOK', 'Reversed cell range'); return [r,c,rr,cc]; }
 function newSheet(format: WorkbookFormatData, name: string, source_ref: string, index: number): WorkbookSheetData { if (!name || name.length > 255 || source_ref.length > 480) fail('INVALID_WORKBOOK', 'Invalid sheet name'); return { sheet_id: workbookID('sheet', { format, source_ref, name }), name, source_ref, index, hidden: false, row_count: 0, column_count: 0, cells: [], merges: [], row_metadata: [], column_metadata: [], cell_extraction_complete: true, coverage_gaps: [] }; }
 function metadataBudget(sheet: WorkbookSheetData) { if (sheet.merges.length > WORKBOOK_LIMITS.metadata || sheet.row_metadata.length > WORKBOOK_LIMITS.metadata || sheet.column_metadata.length > WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Worksheet metadata exceeds 100000 entries'); }
+function addAxisMetadata(target: WorkbookSheetData['row_metadata'],item: WorkbookSheetData['row_metadata'][number]) {
+  const previous = target.at(-1); if (previous && previous.end + 1 === item.start && previous.hidden === item.hidden && previous.size === item.size) { previous.end = item.end; return; }
+  if (target.length >= WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Worksheet axis metadata exceeds limit'); target.push(item);
+}
 function addCell(state: State, sheet: WorkbookSheetData, cell: WorkbookCellData) {
   if (cell.formula !== null) cell.cache_freshness = 'unknown';
   if (++state.cells > WORKBOOK_LIMITS.cells) fail('WORKBOOK_LIMIT', 'Workbook exceeds 500000 materialized cells');
@@ -339,13 +343,12 @@ async function extractXlsx(parts: Map<string,Uint8Array>, state: State): Promise
     const columns = columnNodes.map(col => ({ min: integer(attr(col,'min'),1,WORKBOOK_LIMITS.columns,'column range'), max: integer(attr(col,'max'),1,WORKBOOK_LIMITS.columns,'column range'), hidden: truth(attr(col,'hidden')), style: attr(col,'style') }));
     if (columns.some(column => column.style !== undefined)) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles can cover absent cells; only materialized cell formatting is compared, and blank formatted rectangles are not expanded.',sheet.sheet_id);
     const effectiveColumns: ({hidden:boolean;style:string|undefined}|undefined)[] = new Array(WORKBOOK_LIMITS.columns + 1); let lastColumn = 0;
-    for (const [index,col] of columns.entries()) { if (col.max < col.min || col.min <= lastColumn) fail('INVALID_WORKBOOK','Overlapping or unordered column spans'); lastColumn = col.max; sheet.column_metadata.push({ start: col.min, end: col.max, hidden: col.hidden, size: attr(columnNodes[index],'width') ?? null }); sheet.column_count = Math.max(sheet.column_count,col.max); for (let column = col.min; column <= col.max; column++) effectiveColumns[column] = col; }
+    for (const [index,col] of columns.entries()) { if (col.max < col.min || col.min <= lastColumn) fail('INVALID_WORKBOOK','Overlapping or unordered column spans'); lastColumn = col.max; addAxisMetadata(sheet.column_metadata,{ start: col.min, end: col.max, hidden: col.hidden, size: attr(columnNodes[index],'width') ?? null }); sheet.column_count = Math.max(sheet.column_count,col.max); for (let column = col.min; column <= col.max; column++) effectiveColumns[column] = col; }
     const addresses = new Set<string>(), formulaRanges: FormulaRange[] = [], savedCells = new WeakSet<WorkbookCellData>(), sharedWithRange = new Set<string>(), sharedWithoutRange = new Set<string>(); let wholeFormulaSheet = false, previousRow = 0;
     for (const rowNode of children(first(xml,'sheetData'),'row')) {
-      if (sheet.row_metadata.length >= WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Too many row metadata entries');
       const row = integer(attr(rowNode,'r'),previousRow + 1,WORKBOOK_LIMITS.rows,'row index'); if (row <= previousRow) fail('INVALID_WORKBOOK','Duplicate or unordered worksheet rows'); previousRow = row; let previousColumn = 0;
       if (attr(rowNode,'s') !== undefined || truth(attr(rowNode,'customFormat'))) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles can cover absent cells; only materialized cell formatting is compared, and blank formatted rectangles are not expanded.',sheet.sheet_id);
-      const hidden = truth(attr(rowNode,'hidden')); if (hidden || attr(rowNode,'ht') !== undefined) { sheet.row_metadata.push({start: row, end: row, hidden, size: attr(rowNode,'ht') ?? null}); sheet.row_count = Math.max(sheet.row_count,row); }
+      const hidden = truth(attr(rowNode,'hidden')); if (hidden || attr(rowNode,'ht') !== undefined) { addAxisMetadata(sheet.row_metadata,{start: row, end: row, hidden, size: attr(rowNode,'ht') ?? null}); sheet.row_count = Math.max(sheet.row_count,row); }
       for (const node of children(rowNode,'c')) {
         await checkpoint(state); let column = previousColumn + 1; if (attr(node,'r')) { const [cellRow,cellColumn] = parseAddress(attr(node,'r')!); if (cellRow !== row) fail('INVALID_WORKBOOK','Cell address disagrees with row'); column = cellColumn; } if (column <= previousColumn || column > WORKBOOK_LIMITS.columns) fail('INVALID_WORKBOOK','Duplicate or unordered worksheet cells'); previousColumn = column;
         const cell = makeCell(sheet,row,column); if (addresses.has(cell.address)) fail('INVALID_WORKBOOK','Duplicate worksheet cell'); addresses.add(cell.address); cell.hidden_row = hidden; cell.hidden_column = effectiveColumns[column]?.hidden ?? false;
@@ -515,6 +518,12 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
   if ([...parts.keys()].some(name => /^(?:Basic|Scripts)\//i.test(name))) fail('UNSUPPORTED_WORKBOOK','ODS executable script packages are unsupported');
   const root = parseXml(requiredPart(parts,'content.xml'),state); if (root.name !== 'document-content') fail('INVALID_WORKBOOK','Invalid ODS content');
   const stylesRoot = parts.has('styles.xml') ? parseXml(requiredPart(parts,'styles.xml'),state) : undefined; const styles = odsStyles([...(stylesRoot ? [stylesRoot] : []),root],state);
+  const currencyStyles = new WeakMap<Record<string,string>,Map<string,Record<string,string>>>();
+  const withCurrency = (base: Record<string,string>,currency: string) => {
+    if (currency.length > 4096) fail('WORKBOOK_LIMIT','Currency style value exceeds limit'); let variants = currencyStyles.get(base); if (!variants) { variants = new Map(); currencyStyles.set(base,variants); }
+    const known = variants.get(currency); if (known) return known; const derived = {...base,currency}; if (Object.keys(derived).length > 256) fail('WORKBOOK_LIMIT','Currency style exceeds property limit'); variants.set(currency,derived); return derived;
+  };
+
   const spreadsheet = first(first(root,'body'),'spreadsheet'); if (!spreadsheet) fail('INVALID_WORKBOOK','Missing ODS spreadsheet body');
   const tables = children(spreadsheet,'table'); if (!tables.length || tables.length > WORKBOOK_LIMITS.sheets) fail('WORKBOOK_LIMIT','Workbook must have 1 to 100 sheets');
   if (descendants(root,'scripts').length || descendants(root,'event-listener').length) gap(state.gaps,'scripts_events','Scripts/event bindings are not executed or modelled.');
@@ -527,7 +536,7 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
     await checkpoint(state,true); const name = attr(table,'table:name') ?? ''; if (names.has(name.toLowerCase())) fail('INVALID_WORKBOOK','Duplicate ODS sheet name'); names.add(name.toLowerCase());
     const sheet = newSheet('ods',name,`content.xml#table/${sheets.length}`,sheets.length), formulaRanges: FormulaRange[] = []; let wholeFormulaSheet = false; sheet.hidden = attr(table,'table:display') === 'false' || styles.hidden(attr(table,'table:style-name'));
     const columns: {start: number; end: number; hidden: boolean; style: string | undefined}[] = []; let nextColumn = 1;
-    for (const {node:col,inheritedHidden} of flattenOdsColumns(table)) { const repeat = integer(attr(col,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS column repetition'), end = nextColumn + repeat - 1; if (end > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS column repetition exceeds worksheet bounds'); const visibility = odsVisibility(col), hidden = inheritedHidden || visibility === 'collapse' || visibility === 'filter'; const size = styles.size(attr(col,'table:style-name'),'column'); columns.push({start:nextColumn,end,hidden,style:attr(col,'table:default-cell-style-name')}); if (hidden || size !== null) { sheet.column_metadata.push({start:nextColumn,end,hidden,size}); sheet.column_count = Math.max(sheet.column_count,end); } nextColumn = end + 1; }
+    for (const {node:col,inheritedHidden} of flattenOdsColumns(table)) { const repeat = integer(attr(col,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS column repetition'), end = nextColumn + repeat - 1; if (end > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS column repetition exceeds worksheet bounds'); const visibility = odsVisibility(col), hidden = inheritedHidden || visibility === 'collapse' || visibility === 'filter'; const size = styles.size(attr(col,'table:style-name'),'column'); columns.push({start:nextColumn,end,hidden,style:attr(col,'table:default-cell-style-name')}); if (hidden || size !== null) { addAxisMetadata(sheet.column_metadata,{start:nextColumn,end,hidden,size}); sheet.column_count = Math.max(sheet.column_count,end); } nextColumn = end + 1; }
     const effectiveColumns: ({hidden:boolean;style:string|undefined}|undefined)[] = new Array(WORKBOOK_LIMITS.columns + 1); for (const column of columns) for (let cc = column.start; cc <= column.end; cc++) effectiveColumns[cc] = column;
     const styledColumnPrefix = new Uint32Array(WORKBOOK_LIMITS.columns + 1); for (let cc = 1; cc <= WORKBOOK_LIMITS.columns; cc++) styledColumnPrefix[cc] = styledColumnPrefix[cc - 1] + (styles.effective(effectiveColumns[cc]?.style) ? 1 : 0);
     const styleRuns: {start:number;end:number;effective:boolean}[] = [];
@@ -535,9 +544,8 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
     let row = 1;
     for (const {node:rowNode,inheritedHidden} of flattenOdsRows(table)) {
       await checkpoint(state);
-      if (sheet.row_metadata.length >= WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Too many row metadata entries');
       const rowRepeat = integer(attr(rowNode,'table:number-rows-repeated'),1,WORKBOOK_LIMITS.rows,'ODS row repetition'), lastRow = row + rowRepeat - 1; if (lastRow > WORKBOOK_LIMITS.rows) fail('WORKBOOK_LIMIT','ODS row repetition exceeds worksheet bounds');
-      const visibility = odsVisibility(rowNode), hiddenRow = inheritedHidden || visibility === 'collapse' || visibility === 'filter', rowSize = styles.size(attr(rowNode,'table:style-name'),'row'); if (hiddenRow || rowSize !== null) { sheet.row_metadata.push({start:row,end:lastRow,hidden:hiddenRow,size:rowSize}); sheet.row_count = Math.max(sheet.row_count,lastRow); }
+      const visibility = odsVisibility(rowNode), hiddenRow = inheritedHidden || visibility === 'collapse' || visibility === 'filter', rowSize = styles.size(attr(rowNode,'table:style-name'),'row'); if (hiddenRow || rowSize !== null) { addAxisMetadata(sheet.row_metadata,{start:row,end:lastRow,hidden:hiddenRow,size:rowSize}); sheet.row_count = Math.max(sheet.row_count,lastRow); }
       const rowCells: {node: Element; column: number; repeat: number; style: string | undefined; material: boolean}[] = []; let column = 1;
       for (const node of rowNode.children.filter(child => child.name === 'table-cell' || child.name === 'covered-table-cell')) {
         const repeat = integer(attr(node,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS cell repetition'); if (column + repeat - 1 > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS cell repetition exceeds worksheet bounds');
@@ -558,15 +566,24 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
       // important for Calc's million-row trailing empty representation.
       if (perRow > 0) for (let rr = row; rr <= lastRow; rr++) for (const item of rowCells) if (item.material) for (let cc = item.column; cc < item.column + item.repeat; cc++) {
         await checkpoint(state); const node = item.node, cell = makeCell(sheet,rr,cc), col = effectiveColumns[cc], semantic = styles.cell(item.style ?? col?.style); cell.style = semantic.values; cell.number_format = semantic.number; cell.hidden_row = hiddenRow; cell.hidden_column = col?.hidden ?? false; cell.formula = attr(node,'table:formula') ?? null; if (cell.formula !== null) { cell.formula_dialect = 'ods_openformula'; cell.formula_interpretation = 'explicit'; }
-        const type = attr(node,'office:value-type'), explicitString = attr(node,'office:string-value'), paragraphs = children(node,'p');
-        if (type === 'string' || explicitString !== undefined || (!type && paragraphs.length)) { cell.value_type = 'string'; cell.value = explicitString ?? odsPrimaryText(paragraphs,sheet.coverage_gaps,sheet.sheet_id); }
-        else if (type === 'float' || type === 'percentage' || type === 'currency') { const value = attr(node,'office:value'); cell.value_type = 'number'; cell.value = value === undefined ? null : numeric(value); if (type === 'currency' && attr(node,'office:currency')) cell.style = {...cell.style,currency:attr(node,'office:currency')!}; }
+        const type = attr(node,'office:value-type'), extensionType = attr(node,'calcext:value-type'), explicitString = attr(node,'office:string-value'), paragraphs = children(node,'p'), unknownExtension = extensionType !== undefined && extensionType !== 'error' && extensionType !== type;
+        if (extensionType === 'error') {
+          // Actual LibreOffice26.8 saves errors with an empty office string
+          // placeholder; the displayed paragraph contains the saved error code.
+          const savedError = paragraphs.length ? odsPrimaryText(paragraphs,sheet.coverage_gaps,sheet.sheet_id) : explicitString; cell.value_type = 'error'; cell.value = savedError === '' || savedError === undefined ? null : savedError;
+          if (cell.value === null) gap(sheet.coverage_gaps,'missing_error_cache','A Calc error type is present but its saved error text is unavailable.',sheet.sheet_id);
+        }
+        else if (unknownExtension) {
+          cell.value_type = 'blank'; cell.value = null; cell.formula_interpretation = 'unresolved'; cell.cached_result = 'missing'; cell.cache_freshness = 'unknown'; gap(sheet.coverage_gaps,'unknown_calc_value_type','Unmodelled Calc extension value type prevents a certified cache interpretation; this is not an empty-string result.',sheet.sheet_id);
+        }
+        else if (type === 'string' || explicitString !== undefined || (!type && paragraphs.length && cell.formula === null)) { cell.value_type = 'string'; cell.value = explicitString ?? odsPrimaryText(paragraphs,sheet.coverage_gaps,sheet.sheet_id); }
+        else if (type === 'float' || type === 'percentage' || type === 'currency') { const value = attr(node,'office:value'); cell.value_type = 'number'; cell.value = value === undefined ? null : numeric(value); const currency = attr(node,'office:currency'); if (type === 'currency' && currency !== undefined) cell.style = withCurrency(cell.style,currency); }
         else if (type === 'boolean') { const value = attr(node,'office:boolean-value'); cell.value_type = 'boolean'; cell.value = value === undefined ? null : validateBoolean(value); }
         else if (type === 'date') { cell.value_type = 'date'; cell.value = attr(node,'office:date-value') ?? null; }
         else if (type === 'time') { cell.value_type = 'time'; cell.value = attr(node,'office:time-value') ?? null; }
         else if (type === 'void' || type === undefined) { cell.value_type = 'blank'; cell.value = null; }
         else fail('UNSUPPORTED_WORKBOOK',`Unsupported ODS cell type: ${type}`);
-        if (cell.formula === null && cell.value === null && ['float','percentage','currency','boolean','date','time'].includes(type ?? '')) fail('INVALID_WORKBOOK','Typed ODS value has no source value');
+        if (!unknownExtension && extensionType !== 'error' && cell.formula === null && cell.value === null && ['float','percentage','currency','boolean','date','time'].includes(type ?? '')) fail('INVALID_WORKBOOK','Typed ODS value has no source value');
         if (cell.formula !== null) cell.cached_result = cell.value === null ? 'missing' : 'present';
         if (cell.formula !== null && cell.value === null) gap(sheet.coverage_gaps,'missing_formula_cache','Formula has no saved calculation result; formulas are never recalculated.',sheet.sheet_id);
         const columnSpan = integer(attr(node,'table:number-columns-spanned'),1,WORKBOOK_LIMITS.columns,'ODS merge column span'), rowSpan = integer(attr(node,'table:number-rows-spanned'),1,WORKBOOK_LIMITS.rows,'ODS merge row span');

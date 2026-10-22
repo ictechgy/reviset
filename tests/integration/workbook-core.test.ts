@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { Store } from '../../packages/storage/index.js';
 import { byteHash, canonical } from '../../packages/schema/index.js';
 import { WorkbookService,validateIdentity } from '../../packages/workbook/service.js';
-import { WorkbookQueryService } from '../../packages/workbook/query.js';
+import { WorkbookQueryService,boundedWorkbookNetCacheBytes } from '../../packages/workbook/query.js';
 import { diffWorkbooks, type WorkbookRevisionData } from '../../packages/workbook/diff.js';
 import { cellAddress,workbookID, type WorkbookCellData, type WorkbookSheetData } from '../../packages/workbook/types.js';
 import { handleWorkbookAction } from '../../apps/bridge/workbook.js';
@@ -96,6 +96,16 @@ test('a large style reused by 1000 cells stays interned during sheet/row matchin
   const changedStyle={...style,property_0:'y'.repeat(4096)},changedReference=workbookID('wstyle',changedStyle),changed=revision('after',cells.map((c,i)=>i===500?{...c,style_ref:changedReference}:c),{style_definitions:{[reference]:style,[changedReference]:changedStyle}}),changes=diffWorkbooks(before,changed);assert.equal(changes.filter(c=>c.kind==='style').length,1);assert.equal(changes.find(c=>c.kind==='style')?.before?.style_ref,reference);assert.equal(changes.find(c=>c.kind==='style')?.after?.style_ref,changedReference);
   const wrong=revision('after',cells,{style_definitions:{[reference]:changedStyle}});assert.throws(()=>diffWorkbooks(before,wrong),{code:'WORKBOOK_STYLE_SCOPE'});
   const inline=revision('before',Array.from({length:8},(_,i)=>cell(i+1,2,'inline-'+i,{style}))),inlineAfter=revision('after',inline.sheets[0].cells.map(c=>({...c})));inlineAfter.sheets[0].name='Inline renamed';assert.equal(diffWorkbooks(inline,inlineAfter).filter(c=>c.kind==='sheet_name').length,1);
+});
+
+test('net cache sizing stops after its byte budget without concatenating a huge projection and converts individual serialization exhaustion to a domain limit',()=>{
+  const value='x'.repeat(1024*1024-1),before:WorkbookCellData[]=[],after:WorkbookCellData[]=[];
+  for(let row=1;row<=8;row++){before.push(cell(row,1,'key-'+row),cell(row,2,value+'a'));after.push(cell(row,1,'key-'+row),cell(row,2,value+'b'));}
+  const changes=diffWorkbooks(revision('before',before),revision('after',after));assert.equal(changes.length,8);let visited=false;
+  const beyondBudget={...changes[0],toJSON(){visited=true;throw new Error('Sizing must stop once retention is impossible');}};
+  assert.equal(boundedWorkbookNetCacheBytes([...changes,beyondBudget]),null);assert.equal(visited,false);
+  const small=diffWorkbooks(revision('before',[cell(1,1,'k'),cell(1,2,'한😀')]),revision('after',[cell(1,1,'k'),cell(1,2,'quote"\\\n')]));assert.equal(boundedWorkbookNetCacheBytes(small),Buffer.byteLength(JSON.stringify(small)));
+  const exhausted={...small[0],toJSON(){throw new RangeError('Controlled individual serialization exhaustion');}};assert.throws(()=>boundedWorkbookNetCacheBytes([exhausted]),{code:'WORKBOOK_DIFF_LIMIT'});
 });
 
 test('shared formula expansion and array-result followers never assert formula deletion or direct-input semantics when interpretation is unresolved',()=>{

@@ -757,6 +757,7 @@ struct WorkbookWorkspace: View {
                 if !model.changeCursor.isEmpty { Button("다음 페이지") { Task { await model.loadChanges(next:true) } } }
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready || model.loadingChanges)
             Text(verbatim:model.versionLabel(model.changesFromID) + " → " + model.versionLabel(model.changesToID)).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
+            if !model.changeCursor.isEmpty || !model.changePreviousCursors.isEmpty { Text("응답 크기에 맞춰 나눠 표시합니다.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.comparisonNotice.isEmpty { Text(verbatim:model.comparisonNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
             if model.changePageNumber > model.changePreviousCursors.count+1 { Text("최근 128개 페이지까지 되돌아갈 수 있습니다. 구간을 다시 선택하면 처음부터 조회합니다.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12) }
             if model.loadingChanges { ProgressView("변경을 읽는 중…").frame(maxWidth:.infinity,maxHeight:.infinity) }
@@ -798,7 +799,7 @@ struct WorkbookWorkspace: View {
                     }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:6))
                 }
                 Divider()
-                WorkbookCoverageView(gaps:model.coverage,total:model.report["coverage_gap_count"].int,truncated:model.report["coverage_truncated"].bool)
+                WorkbookCoverageView(gaps:model.coverage,total:model.report["coverage_gap_count"].int,truncated:model.report["coverage_truncated"].bool,revisions:model.revisions)
             }.padding(24).frame(maxWidth:1000,alignment:.leading)
         }
     }
@@ -852,7 +853,7 @@ private struct WorkbookInspector: View {
                 Divider()
                 WorkbookSheetMetadata(title:"이전 시트 메타데이터",sheet:model.sheet(model.beforeID,model.beforeSheetID))
                 WorkbookSheetMetadata(title:"이후 시트 메타데이터",sheet:model.sheet(model.afterID,model.afterSheetID))
-                WorkbookCoverageView(gaps:model.coverage,total:model.report["coverage_gap_count"].int,truncated:model.report["coverage_truncated"].bool)
+                WorkbookCoverageView(gaps:model.coverage,total:model.report["coverage_gap_count"].int,truncated:model.report["coverage_truncated"].bool,revisions:model.revisions)
             }.padding(14).frame(maxWidth:.infinity,alignment:.leading)
         }.background(Color(nsColor:.controlBackgroundColor))
     }
@@ -914,14 +915,43 @@ private struct WorkbookCoverageView: View {
     let gaps: [JSON]
     let total: Int
     let truncated: Bool
+    let revisions: [JSON]
+    private struct Key: Hashable { let feature: String; let reason: String }
+    private struct Entry: Identifiable { let id: Int; let feature: String; let reason: String; var observations: [JSON] }
+    private var entries: [Entry] {
+        var result: [Entry] = [],positions: [Key:Int] = [:]
+        for gap in gaps.prefix(50) {
+            let key = Key(feature:gap["feature"].string,reason:gap["reason"].string)
+            if let index = positions[key] { result[index].observations.append(gap) }
+            else { positions[key] = result.count; result.append(Entry(id:result.count,feature:key.feature,reason:key.reason,observations:[gap])) }
+        }
+        return result
+    }
+    private func provenance(_ entry: Entry) -> String {
+        let occurrences = Set(entry.observations.map { $0["revision_occurrence_id"].string }.filter { !$0.isEmpty })
+        if revisions.count > 1,occurrences == Set(revisions.map { $0["revision_occurrence_id"].string }),entry.observations.allSatisfy({$0["sheet_id"].string.isEmpty && $0["address"].string.isEmpty}) { return "전체 \(revisions.count)개 버전에 공통 적용" }
+        var labels: [String] = [],seen = Set<String>()
+        for observation in entry.observations {
+            let occurrence = observation["revision_occurrence_id"].string,sheetID = observation["sheet_id"].string,address = observation["address"].string
+            let revision = revisions.first { $0["revision_occurrence_id"].string == occurrence }
+            var parts: [String] = []
+            if let revision { parts.append("v\(revision["index"].int+1)") }
+            else if !occurrence.isEmpty { parts.append("버전 " + String(occurrence.suffix(8))) }
+            if !sheetID.isEmpty { parts.append(revision?["sheets"].array.first(where:{$0["sheet_id"].string == sheetID})?["name"].string ?? "시트 " + String(sheetID.suffix(8))) }
+            if !address.isEmpty { parts.append(address) }
+            let label = parts.isEmpty ? "보고서 공통" : parts.joined(separator:" · ")
+            if seen.insert(label).inserted { labels.append(label) }
+        }
+        return "적용: " + labels.prefix(8).joined(separator:", ") + (labels.count > 8 ? " 외 \(labels.count-8)개 위치" : "")
+    }
     var body: some View {
         VStack(alignment:.leading,spacing:7) {
             Text("판독 범위와 한계").font(.headline)
             Text("Excel·Calc의 계산/화면을 완전히 재현하지 않습니다. 차트, 피벗, 매크로, 외부 데이터 등은 원본 기능별 제한을 확인하세요.").font(.caption).foregroundStyle(.secondary)
-            if truncated { Text("고정 보고서의 한계 \(total)개 중 일부를 표시합니다. 전체 항목은 MCP의 판독 한계 조회로 이어 읽을 수 있습니다.").font(.caption).foregroundStyle(.orange) }
+            if truncated || gaps.count > 50 { Text("판독 한계 기록 \(total)개 중 \(min(50,gaps.count))개를 표시합니다. 전체 항목은 MCP로 이어 읽을 수 있습니다.").font(.caption).foregroundStyle(.orange) }
             if gaps.isEmpty { Text("보고된 추가 판독 한계 없음 · 완전 호환을 의미하지 않음").font(.caption).foregroundStyle(.secondary) }
-            if gaps.count > 50 { Text("한계 \(gaps.count)개 중 50개를 표시합니다. 전체 항목은 고정 보고서/MCP에서 확인하세요.").font(.caption).foregroundStyle(.secondary) }
-            ForEach(Array(gaps.prefix(50).enumerated()),id:\.offset) { _, gap in VStack(alignment:.leading,spacing:3) { Text(verbatim:gap["feature"].string + (gap["address"].string.isEmpty ? "" : " · " + gap["address"].string)).font(.caption.weight(.medium)); Text(verbatim:gap["reason"].string).font(.caption).foregroundStyle(.secondary) } }
+            if !gaps.isEmpty { Text("같은 내용은 한 번 표시합니다 · \(min(50,gaps.count))개 기록을 \(entries.count)개 항목으로 묶음").font(.caption).foregroundStyle(.secondary) }
+            ForEach(entries) { entry in VStack(alignment:.leading,spacing:3) { Text(verbatim:entry.feature).font(.caption.weight(.medium)); Text(verbatim:entry.reason).font(.caption).foregroundStyle(.secondary); Text(verbatim:provenance(entry)).font(.caption2).foregroundStyle(.secondary) } }
         }
     }
 }
@@ -1076,6 +1106,7 @@ struct WorkbookGrid: NSViewRepresentable {
         var columnsKey = ""
         var updating = false
         var lastRequested = ""
+        var lastRevealed = ""
         init(_ parent: WorkbookGrid) { self.parent = parent }
         func update(_ value: WorkbookGrid) {
             updating = true; defer { updating = false }
@@ -1094,8 +1125,19 @@ struct WorkbookGrid: NSViewRepresentable {
             if value.selectedRow >= value.rowStart,value.selectedRow < value.rowStart+value.rowCount,value.selectedColumn >= value.columnStart,value.selectedColumn < value.columnStart+value.columnCount {
                 let row = value.selectedRow-value.rowStart,column = value.selectedColumn-value.columnStart+1
                 table.selectRowIndexes(IndexSet(integer:row),byExtendingSelection:false)
-                table.scrollRowToVisible(row); table.scrollColumnToVisible(column)
-            } else { table.deselectAll(nil) }
+                let reveal = "\(value.rowStart):\(value.columnStart):\(value.selectedRow):\(value.selectedColumn)"
+                if lastRevealed != reveal {
+                    table.scrollRowToVisible(row); table.scrollColumnToVisible(column)
+                    // AppKit aligns the selected data column to x=0 and can
+                    // scroll the row-number column away even for A. Reveal both
+                    // when they fit; later user scrolling remains untouched.
+                    if value.columnStart == 1,table.rect(ofColumn:column).maxX <= table.visibleRect.width,let scroll = table.enclosingScrollView {
+                        let clip = scroll.contentView
+                        clip.scroll(to:NSPoint(x:0,y:clip.bounds.origin.y)); scroll.reflectScrolledClipView(clip)
+                    }
+                    lastRevealed = reveal
+                }
+            } else { table.deselectAll(nil); lastRevealed = "" }
         }
         func numberOfRows(in tableView: NSTableView) -> Int { parent.rowCount }
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -1413,9 +1455,13 @@ struct WorkbookGrid: NSViewRepresentable {
             let localRow = coordinate.row-row,localColumn = coordinate.column-column+1
             guard state.selectedRow == coordinate.row,state.selectedColumn == coordinate.column,localRow >= 0,localRow < state.rowCount,localColumn > 0,localColumn <= state.columnCount,table.selectedRow == localRow,table.visibleRect.intersects(table.frameOfCell(atColumn:localColumn,row:localRow)) else { throw BridgeError(code:"WORKBOOK_SMOKE_PANE_EVIDENCE",message:"이전·이후의 실제 셀 근거가 올바르게 강조되어 화면에 표시되지 않았습니다: " + name) }
             guard let highlighted = table.view(atColumn:localColumn,row:localRow,makeIfNecessary:false),highlighted.layer?.borderWidth == 1 else { throw BridgeError(code:"WORKBOOK_SMOKE_PANE_HIGHLIGHT",message:"실제 셀 주소의 강조 테두리를 확인하지 못했습니다: " + name) }
+            let gutter = table.rect(ofColumn:0),gutterVisible = table.visibleRect.intersection(gutter).width >= gutter.width-0.5
+            if state.columnStart == 1,table.rect(ofColumn:localColumn).maxX <= table.visibleRect.width {
+                guard gutterVisible else { throw BridgeError(code:"WORKBOOK_SMOKE_ROW_GUTTER",message:"셀 근거와 함께 표시할 수 있는 행 번호가 가로 스크롤로 가려졌습니다: " + name) }
+            }
             let cell = before ? model.beforeCell : model.afterCell,cells = before ? model.beforeCells : model.afterCells
             guard cell.isNull || cells.contains(where:{$0["row"].int == coordinate.row && $0["column"].int == coordinate.column}) else { throw BridgeError(code:"WORKBOOK_SMOKE_PANE_SOURCE",message:"셀 원문은 있지만 표시 범위에 해당 원본 관측이 없습니다.") }
-            result.append(["pane":name,"highlight":WorkbookGrid.address(coordinate.row,coordinate.column),"row_start":row,"column_start":column,"selected_local_row":table.selectedRow,"visible":true,"cell_border_visible":true])
+            result.append(["pane":name,"highlight":WorkbookGrid.address(coordinate.row,coordinate.column),"row_start":row,"column_start":column,"selected_local_row":table.selectedRow,"visible":true,"cell_border_visible":true,"row_gutter_visible":gutterVisible])
         }
         return result
     }

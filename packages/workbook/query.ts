@@ -45,6 +45,16 @@ export function boundedWorkbookCell(cell: WorkbookCellData | null, offset: numbe
 const boundedCell = boundedWorkbookCell;
 function summary(sheet: WorkbookSheetData, offset: number, limit: number) { return { sheet_id: sheet.sheet_id, name: sheet.name, index: sheet.index, hidden: sheet.hidden, row_count: sheet.row_count, column_count: sheet.column_count, cell_count: (sheet as any).cell_count ?? sheet.cells.length, merges: sheet.merges.slice(offset, offset + limit), merge_count: sheet.merges.length, row_metadata: sheet.row_metadata.slice(offset, offset + limit), row_metadata_count: sheet.row_metadata.length, column_metadata: sheet.column_metadata.slice(offset, offset + limit), column_metadata_count: sheet.column_metadata.length, coverage_gap_count: sheet.coverage_gaps.length, metadata_offset: offset, next_metadata_offset: Math.max(sheet.merges.length, sheet.row_metadata.length, sheet.column_metadata.length) > offset + limit ? offset + limit : null }; }
 const pause = () => new Promise<void>(resolve => setImmediate(resolve));
+const NET_CACHE_BYTES=16*1024*1024;
+export function boundedWorkbookNetCacheBytes(changes:readonly WorkbookChangeData[]):number|null{
+  let bytes=2,count=0;
+  for(const change of changes){
+    try{const encoded=JSON.stringify(change);if(typeof encoded!=='string')throw new DocverError('WORKBOOK_DIFF_LIMIT','A net change cannot be serialized within the supported representation');bytes+=Buffer.byteLength(encoded)+(count++?1:0);}
+    catch(error){if(error instanceof RangeError)throw new DocverError('WORKBOOK_DIFF_LIMIT','A net change exceeds the supported serialized representation; read adjacent history instead');throw error;}
+    if(bytes>NET_CACHE_BYTES)return null;
+  }
+  return bytes;
+}
 
 export class WorkbookQueryService {
   private readonly netCache=new Map<string,{changes:WorkbookChangeData[];bytes:number}>();
@@ -128,8 +138,8 @@ export class WorkbookQueryService {
       const key=hash({project_id:report.project_id,report_id:report.report_id,from:args.from_revision_occurrence_id,to:args.to_revision_occurrence_id}),cached=this.netCache.get(key);
       if(cached){this.netCache.delete(key);this.netCache.set(key,cached);return cached.changes;}
       const endpoint=(index:number)=>{const revision=report.revisions[index];return {...revision,sheets:revision.sheets.map(sheet=>({...sheet,cells:this.service.indexedCells(report.project_id,report.report_id,revision.revision_occurrence_id,sheet.sheet_id,1,1_048_577,1,16_385,report,false)}))};};
-      const changes=diffWorkbooks(endpoint(from),endpoint(to)),bytes=Buffer.byteLength(JSON.stringify(changes));
-      if(bytes<=16*1024*1024){while(this.netCache.size>=2||this.netBytes+bytes>16*1024*1024){const oldest=this.netCache.keys().next().value;if(oldest===undefined)break;this.netBytes-=this.netCache.get(oldest)!.bytes;this.netCache.delete(oldest);}this.netCache.set(key,{changes,bytes});this.netBytes+=bytes;}
+      const changes=diffWorkbooks(endpoint(from),endpoint(to)),bytes=boundedWorkbookNetCacheBytes(changes);
+      if(bytes!==null){while(this.netCache.size>=2||this.netBytes+bytes>NET_CACHE_BYTES){const oldest=this.netCache.keys().next().value;if(oldest===undefined)break;this.netBytes-=this.netCache.get(oldest)!.bytes;this.netCache.delete(oldest);}this.netCache.set(key,{changes,bytes});this.netBytes+=bytes;}
       return changes;
     }
     const allowed = report.revisions.slice(from + 1, to + 1).map(r => r.revision_occurrence_id); return this.service.indexedChanges(report.project_id,report.report_id,allowed,args.change_id);
