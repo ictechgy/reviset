@@ -790,7 +790,7 @@ struct WorkbookWorkspace: View {
                         HStack(spacing:10) {
                             Text(verbatim:WorkbookLabels.kind(change["kind"].string)).font(.caption.weight(.semibold)).frame(width:110,alignment:.leading)
                             Text(verbatim:change["before_address"].string + " → " + change["after_address"].string).font(.system(.caption,design:.monospaced)).frame(width:125,alignment:.leading)
-                            Text(verbatim:change["description"].string).font(.caption).lineLimit(2)
+                            Text(verbatim:WorkbookLabels.description(change)).font(.caption).lineLimit(2)
                             Spacer()
                             Text(verbatim:WorkbookLabels.association(change["association"].string)).font(.caption).foregroundStyle(change["association"].string == "needs_review" ? .orange : .secondary)
                         }.tag(change["change_id"].string)
@@ -844,17 +844,13 @@ private struct WorkbookInspector: View {
                 if model.loadingCell { ProgressView("셀을 읽는 중…") }
                 else if !model.cellFailure.isEmpty { Text(verbatim:model.cellFailure).font(.caption).foregroundStyle(.red) }
                 else if model.selectedRow == 0, model.selectedChangeID.isEmpty { Text("셀 또는 변경 항목을 선택하면 수식 원문·저장된 값·유형을 확인할 수 있습니다.").foregroundStyle(.secondary) }
-                else { WorkbookCellDetail(title:"이전 · " + model.versionLabel(model.beforeID),cell:model.beforeCell); Divider(); WorkbookCellDetail(title:"이후 · " + model.versionLabel(model.afterID),cell:model.afterCell) }
-                if model.cellTextOffset > 0 || model.cellTextNext != nil {
-                    Text("긴 셀 원문 일부 · UTF-16 위치 \(model.cellTextOffset)부터 표시").font(.caption).foregroundStyle(.secondary)
-                    HStack { if model.cellTextOffset > 0 { Button("처음") { Task { await model.loadSelectedCells() } } }; if let next = model.cellTextNext { Button("원문 이어 읽기") { Task { await model.loadSelectedCells(offset:next) } } } }.disabled(model.loadingCell || !model.ready)
-                }
+                else { cellSection("이전 · " + model.versionLabel(model.beforeID),cell:model.beforeCell); Divider(); cellSection("이후 · " + model.versionLabel(model.afterID),cell:model.afterCell) }
                 if !model.selectedChange.isNull {
                     Divider(); Text("변경과 대응 방법").font(.headline)
                     Text(verbatim:WorkbookLabels.kind(model.selectedChange["kind"].string)).font(.callout)
                     Text(verbatim:WorkbookLabels.association(model.selectedChange["association"].string)).font(.caption.weight(.medium))
                     Text(verbatim:WorkbookLabels.method(model.selectedChange["alignment_method"].string)).font(.caption).textSelection(.enabled)
-                    Text(verbatim:model.selectedChange["description"].string).font(.caption)
+                    Text(verbatim:WorkbookLabels.description(model.selectedChange)).font(.caption)
                     Text("추정 대응은 같은 업무 레코드임을 확정하지 않습니다. 모호한 대응을 삭제로 해석하지 마세요.").font(.caption).foregroundStyle(.secondary)
                 }
                 if model.selectedRow > 0 {
@@ -883,10 +879,17 @@ private struct WorkbookInspector: View {
             }.padding(14).frame(maxWidth:.infinity,alignment:.leading)
         }.background(Color(nsColor:.controlBackgroundColor))
     }
+    private func cellSection(_ title: String,cell: JSON) -> some View {
+        WorkbookCellDetail(title:title,cell:cell,textOffset:model.cellTextOffset,nextTextOffset:model.cellTextNext,canPage:model.ready && !model.loadingCell,onTextPage:{ offset in Task { await model.loadSelectedCells(offset:offset) } })
+    }
 }
 private struct WorkbookCellDetail: View {
     let title: String
     let cell: JSON
+    let textOffset: Int
+    let nextTextOffset: Int?
+    let canPage: Bool
+    let onTextPage: (Int) -> Void
     var body: some View {
         VStack(alignment:.leading,spacing:7) {
             Text(verbatim:title).font(.headline).lineLimit(2)
@@ -894,9 +897,16 @@ private struct WorkbookCellDetail: View {
             else {
                 Text(verbatim:cell["address"].string + " · " + cell["value_type"].string).font(.system(.caption,design:.monospaced))
                 if cell["formula_interpretation"].string == "unresolved" { Text("공유·배열 수식의 셀별 의미 확인 필요").font(.caption.weight(.medium)).foregroundStyle(.orange) }
-                if !cell["formula"].isNull { detail(sourceLabel("수식 원문",field:"formula"),sourceText("formula")); Text("수식은 실행하지 않았습니다.").font(.caption2).foregroundStyle(.secondary) }
-                detail(sourceLabel(cell["formula_interpretation"].string == "unresolved" ? "저장된 관측값 · 입력/계산 결과 미확정" : cell["formula"].isNull ? "저장된 입력값" : "저장된 계산 결과",field:"value"),sourceText("value"))
-                if !cell["number_format"].isNull { detail(sourceLabel("원본 숫자 형식",field:"number_format"),sourceText("number_format")) }
+                if !cell["formula"].isNull { rawDetail("수식 원문",field:"formula"); Text("수식은 실행하지 않았습니다.").font(.caption2).foregroundStyle(.secondary) }
+                rawDetail(cell["formula_interpretation"].string == "unresolved" ? "저장된 관측값 · 입력/계산 결과 미확정" : cell["formula"].isNull ? "저장된 입력값" : "저장된 계산 결과",field:"value")
+                if textOffset > 0 || ["value","formula","number_format"].contains(where:{cell["text_continuations"][$0]["state"].string == "truncated"}) {
+                    HStack {
+                        if textOffset > 0 { Button("양쪽 처음부터") { onTextPage(0) } }
+                        if let nextTextOffset { Button("양쪽 원문 이어 읽기") { onTextPage(nextTextOffset) } }
+                    }.disabled(!canPage)
+                    Text("이전·이후 원문을 같은 UTF-16 위치로 함께 이동합니다.").font(.caption2).foregroundStyle(.secondary)
+                }
+                if !cell["number_format"].isNull { rawDetail("원본 숫자 형식",field:"number_format") }
                 if cell["hidden_row"].bool || cell["hidden_column"].bool { Label((cell["hidden_row"].bool ? "숨김 행 " : "") + (cell["hidden_column"].bool ? "숨김 열" : ""),systemImage:"eye.slash").font(.caption).foregroundStyle(.orange) }
                 if !cell["style"].dictionary.isEmpty { detail("원본 기본 스타일",cell["style"].dictionary.keys.sorted().map { $0 + ": " + cell["style"][$0].string }.joined(separator:"\n")) }
                 if cell["style_truncated"].bool { Text("기본 스타일의 일부만 표시합니다.").font(.caption).foregroundStyle(.orange) }
@@ -906,8 +916,19 @@ private struct WorkbookCellDetail: View {
     }
     private func sourceLabel(_ label: String,field: String) -> String {
         let continuation = cell["text_continuations"][field]
-        if continuation["state"].string == "truncated" { return label + " · 원문 일부 (UTF-16 \(continuation["offset"].int)/\(continuation["total_length"].int))" }
+        if continuation["state"].string == "truncated" {
+            let start = continuation["offset"].int,end = start+cell[field].string.utf16.count
+            return label + " · 원문 일부\nUTF-16 \(start)–\(end) / \(continuation["total_length"].int) · 0부터, 끝 제외"
+        }
         return label
+    }
+    private func rawDetail(_ label: String,field: String) -> some View {
+        VStack(alignment:.leading,spacing:4) {
+            detail(sourceLabel(label,field:field),sourceText(field))
+            if cell["text_continuations"][field]["state"].string == "truncated" {
+                Text(cell["text_continuations"][field]["next_offset"].isNull ? "— 원문 마지막 조각 끝 · 앞부분은 처음부터 확인할 수 있습니다." : "… 현재 조각 끝 · 뒤에 원문이 더 있습니다.").font(.caption2.weight(.medium)).foregroundStyle(.orange)
+            }
+        }
     }
     private func sourceText(_ field: String) -> String {
         let raw = cell[field],continuation = cell["text_continuations"][field]
@@ -1088,6 +1109,41 @@ private struct WorkbookPublishSheet: View {
 }
 
 private enum WorkbookLabels {
+    static func description(_ change: JSON) -> String {
+        let raw = change["description"].string
+        switch change["kind"].string {
+        case "row_position":
+            let before = change["before_address"].string.drop(while:{$0.isLetter}),after = change["after_address"].string.drop(while:{$0.isLetter})
+            if let from = Int(before),let to = Int(after) { return "대응을 추정한 행이 \(from)행에서 \(to)행으로 이동했습니다." }
+            return "대응을 추정한 행의 물리 위치가 바뀌었습니다."
+        case "formula": return "수식 원문이 바뀌었습니다. 수식은 재계산하지 않았습니다."
+        case "stored_value": return "저장된 값이 바뀌었습니다. 수식 결과는 이전 계산값일 수 있습니다."
+        case "value_type": return "저장된 값의 유형이 바뀌었습니다."
+        case "cache_availability": return "수식의 저장 결과 유무가 바뀌었습니다. 결과가 없다고 셀이 삭제된 것은 아닙니다."
+        case "calculation_settings": return "지원하는 저장된 계산 설정이 바뀌었습니다. 재계산을 수행하거나 결과의 최신성을 확인한 것은 아닙니다."
+        case "number_format": return "원본 숫자 형식이 바뀌었습니다."
+        case "style": return "지원하는 기본 서식이 바뀌었습니다."
+        case "visibility": return "관측된 행·열의 숨김 상태가 바뀌었습니다."
+        case "row_correspondence": return "대응되지 않은 행에서 셀이 관측되었습니다. 실제 추가·삭제로 단정하지 않습니다."
+        case "cell_observation":
+            if change["alignment_method"].string == "cross_format_date_representation" { return "서로 다른 형식의 날짜·시간 표현을 같은 값으로 확인할 수 없습니다. 실제 값·유형 변경으로 단정하지 않습니다." }
+            if change["alignment_method"].string == "unresolved_formula_interpretation" { return "셀·수식·저장 결과의 관측이 바뀌었습니다. 공유·배열 수식의 의미가 미확정이므로 수식 삭제·직접 입력·재계산 결과로 단정하지 않습니다." }
+            return "한쪽에서만 셀이 관측되었습니다. 관측 없음은 명시된 빈 셀·0과 다릅니다."
+        case "sheet_observation": return "한쪽 버전에서만 시트가 관측되었습니다. 대응 확인이 필요하며 실제 추가·삭제로 단정하지 않습니다."
+        case "sheet_dimensions": return "지원하는 행·열 크기 또는 숨김 구간이 바뀌었습니다. 셀 관측이 없는 빈 위치의 메타데이터도 포함합니다."
+        case "merges": return "관측된 셀 병합 범위가 바뀌었습니다."
+        case "sheet_name": return raw.hasPrefix("Sheet name: ") ? "시트 이름: " + raw.dropFirst("Sheet name: ".count) : raw
+        case "sheet_position": return raw.hasPrefix("Sheet index: ") ? "시트 순서(0부터): " + raw.dropFirst("Sheet index: ".count) : raw
+        case "sheet_visibility": return raw.hasPrefix("Sheet hidden: ") ? "시트 숨김 상태: " + raw.dropFirst("Sheet hidden: ".count).replacingOccurrences(of:"true",with:"숨김").replacingOccurrences(of:"false",with:"표시") : raw
+        case "date_system":
+            if raw.hasPrefix("Date system changed from "),let end = raw.firstIndex(of:";") {
+                let transition = raw[raw.index(raw.startIndex,offsetBy:"Date system changed from ".count)..<end].replacingOccurrences(of:" to ",with:" → ")
+                return "날짜 기준이 \(transition)(으)로 바뀌었습니다. 숫자 날짜값을 변환하거나 같은 값으로 단정하지 않습니다."
+            }
+            return "날짜 기준이 바뀌었습니다. 숫자 날짜값을 변환하거나 같은 값으로 단정하지 않습니다."
+        default: return raw
+        }
+    }
     static func availability(_ value: String) -> String { switch value { case "not_materialized": return "저장된 셀 관측 없음 · 빈 셀·삭제로 단정하지 않음"; case "correspondence_unresolved": return "대응 미확정 · 다른 셀로 건너뛰지 않음"; case "available": return "저장된 관측 있음"; default: return value } }
     static func association(_ value: String) -> String { switch value { case "exact": return "원문 일치"; case "inferred": return "추정 대응"; case "needs_review": return "대응 확인 필요"; default: return value.isEmpty ? "대응 미확정" : value } }
     static func method(_ value: String) -> String { switch value { case "unique_nonempty_first_column_key": return "첫 열의 중복 없는 값으로 추정"; case "unique_exact_row_content": return "중복 없는 행 내용의 일치로 추정"; case "unique_exact_sheet_name": return "중복 없는 시트 이름으로 추정"; case "unique_exact_sheet_content": return "중복 없는 시트 내용으로 추정"; case "physical_row_fallback": return "같은 물리 행 번호 · 대응 확인 필요"; case "unmatched_row_observation": return "행 대응을 찾지 못함"; case "unmatched_sheet_observation": return "시트 대응을 찾지 못함"; case "selected_physical_cell": return "직접 선택한 물리 셀"; case "no_unambiguous_cell_lineage": return "모호하지 않은 셀 이력을 찾지 못함"; default: return value } }
@@ -1333,7 +1389,14 @@ struct WorkbookGrid: NSViewRepresentable {
             checks["pane_evidence"] = try assertPanes(model,window:window)
             checks["header_scroll_geometry"] = try await exerciseHeaderScrollGeometry(model,window:window)
             try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-compare.png"))
-            if request["require_dense_raw_proof"].bool { try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-dense-raw.png")) }
+            if request["require_dense_raw_proof"].bool {
+                try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-dense-raw.png"))
+                checks["dense_raw_continuation"] = try await exerciseDenseContinuation(model)
+                try await Task.sleep(nanoseconds:250_000_000)
+                _ = try assertPanes(model,window:window)
+                try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-dense-raw-continuation.png"))
+                await model.loadSelectedCells()
+            }
             checks["actual_native_grid_capture"] = true
 
             // Independent fixtures can require distant forward/backward moves.
@@ -1504,6 +1567,22 @@ struct WorkbookGrid: NSViewRepresentable {
         guard String(decoding:units,as:UTF16.self) == expected else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_TRUTH",message:"선택한 A1의 전체 원문이 독립 합성 원본과 다릅니다.") }
         await model.loadSelectedCells()
         return ["selected_address":"A1","viewport_cells_per_side":1200,"preview_truncated":true,"raw_utf16_length":units.count,"raw_pages":pages,"full_raw_matches_independent_fixture":true,"first_raw_model_page_prepared_for_static_capture_review":true]
+    }
+    private static func exerciseDenseContinuation(_ model: WorkbookModel) async throws -> [String:Any] {
+        let expected = Array((String(repeating:"한글😀 데이터 원문 \"따옴표\" ",count:100) + "1:1").utf16)
+        let firstBefore = model.beforeCell["text_continuations"]["value"]["offset"].int,firstAfter = model.afterCell["text_continuations"]["value"]["offset"].int
+        guard let next = model.cellTextNext,next > model.cellTextOffset else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_NEXT",message:"선택한 원문의 다음 조각으로 이동할 수 없습니다.") }
+        // This is the same shared production pager used by each cell section's
+        // visible continuation button, without claiming an OS button click.
+        await model.loadSelectedCells(offset:next)
+        guard model.cellFailure.isEmpty,model.beforeAddress == "A1",model.afterAddress == "A1" else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_NEXT_SCOPE",message:"이어 읽은 A1의 원본 범위가 달라졌습니다.") }
+        var excerpts: [[String:Any]] = []
+        for (side,cell,previous) in [("before",model.beforeCell,firstBefore),("after",model.afterCell,firstAfter)] {
+            let continuation = cell["text_continuations"]["value"],start = continuation["offset"].int,units = Array(cell["value"].string.utf16),end = start+units.count
+            guard start > previous,start <= end,end <= expected.count,continuation["total_length"].int == expected.count,units == Array(expected[start..<end]) else { throw BridgeError(code:"WORKBOOK_SMOKE_DENSE_NEXT_TRUTH",message:"이어 읽은 조각의 범위·내용이 독립 원본과 다릅니다: " + side) }
+            excerpts.append(["side":side,"address":cell["address"].string,"start_utf16":start,"end_utf16_exclusive":end,"total_utf16":expected.count,"excerpt_matches_independent_fixture":true])
+        }
+        return ["requested_shared_offset":next,"both_sides_advanced":true,"excerpts":excerpts,"interaction_scope":"production pager action plus separate actual static capture; no OS click automation"]
     }
     private static func exerciseSameAddressReveal(_ model: WorkbookModel,request: JSON,window: NSWindow,folder: URL) async throws -> [String:Any] {
         let address = request["same_address_reveal_address"].string.isEmpty ? "B2" : request["same_address_reveal_address"].string
