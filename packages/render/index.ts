@@ -11,6 +11,7 @@ import { pdfOptions } from '../ingest/pdf.js';
 import { DocverError,MAX_PPTX_EXPANDED_BYTES,byteHash,type OfficeInputPreparationData } from '../schema/index.js';
 import { runTool,officeExecutable } from '../runtime/tools.js';
 import {officeZipDirectory,readOfficeZipPart} from '../runtime/office-zip.js';
+import {readRegularFile} from '../runtime/regular-file.js';
 import { XMLParser,XMLValidator } from 'fast-xml-parser';
 import {prepareOfficeInput} from './office-input.js';
 import {readXml,xmlDecoder,decodeXmlReferences} from '../xml/index.js';
@@ -113,11 +114,16 @@ export async function convertPptx(path:string,executable=officeExecutable()??'so
   return (await convertPptxDetailed(path,executable,timeout,signal,sourceBytes)).pdf;
 }
 export async function convertPptxDetailed(path:string,executable=officeExecutable()??'soffice',timeout=120_000,signal?:AbortSignal,sourceBytes?:Uint8Array):Promise<{pdf:Buffer;input:OfficeInputPreparationData}> {
+  signal?.throwIfAborted();
+  // Read once before conversion setup so input boundary errors retain their
+  // identity and a caller's verified source bytes are never reopened by path.
+  const input=sourceBytes??await readRegularFile(path,{signal});
+  signal?.throwIfAborted();
   if(executable.includes('/')&&!existsSync(executable))throw new DocverError('CONVERTER_UNAVAILABLE','PPTX renderer executable not found');
   const folder=await realpath(await mkdtemp(join(tmpdir(),'docver-render-')));
   try {
     const output=join(folder,'output'); await mkdir(output);
-    const input=sourceBytes??await readFile(path);validateRenderPackage(input);const copiedSource=join(folder,'input.pptx');await writeFile(copiedSource,input,{mode:0o600});
+    validateRenderPackage(input);const copiedSource=join(folder,'input.pptx');await writeFile(copiedSource,input,{mode:0o600});
     const deadline=performance.now()+timeout,prepared=await prepareOfficeInput(folder,byteHash(input),Math.max(1,Math.min(30_000,deadline-performance.now())),signal);
     // Replace only the private job copy, retaining a stable converter filename.
     if(prepared.path!==copiedSource)await rename(prepared.path,copiedSource);

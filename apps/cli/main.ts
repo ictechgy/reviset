@@ -7,6 +7,7 @@ import { analyze } from '../../packages/engine/index.js';
 import { QueryService, querySchemas, type QueryName } from '../../packages/query/index.js';
 import { exportReport } from '../../packages/export/index.js';
 import { renderPdf, convertPptx } from '../../packages/render/index.js';
+import { readRegularFile } from '../../packages/runtime/regular-file.js';
 import { handleWorkbookAction } from '../bridge/workbook.js';
 const {positionals,values}=parseArgs({allowPositionals:true,strict:true,options:{store:{type:'string',default:'.docver'},manifest:{type:'string'},project:{type:'string'},report:{type:'string',default:'latest'},out:{type:'string'},tool:{type:'string'},args:{type:'string',default:'{}'},file:{type:'string'},page:{type:'string',default:'1'},converter:{type:'string'}}});
 const command=positionals[0];
@@ -47,7 +48,8 @@ try {
     }
   } else if(command==='preview') {
     if(!values.file||!values.out)throw new Error('--file and --out are required');
-    const bytes=values.file.toLowerCase().endsWith('.pptx')?await convertPptx(values.file,values.converter):await readFile(values.file);
+    const sourceBytes=await readRegularFile(values.file);
+    const bytes=values.file.toLowerCase().endsWith('.pptx')?await convertPptx(values.file,values.converter,undefined,undefined,sourceBytes):sourceBytes;
     await writeFile(values.out,await renderPdf(bytes,Number(values.page)));console.log(JSON.stringify({preview:values.out}));
   } else {
     console.log(`Reviset — document and spreadsheet history\n\nCommands:\n  npm run fixtures\n  npm run cli -- analyze --manifest tests/fixtures/generated/forward/manifest.json\n  npm run cli -- query --project prj_forward --tool list_changes --args '{"kind":"text_modified"}'\n  npm run cli -- export --project prj_forward --out artifacts/forward\n  npm run cli -- preview --file example.pdf --out preview.png\n  npm run cli -- workbook-analyze --manifest workbook-manifest.json\n  npm run cli -- workbook-query --project wprj_ID --tool list_workbook_revisions\n  npm run cli -- workbook-export --project wprj_ID --out artifacts/workbook\n  npm run mcp -- --store .docver --project prj_forward\n\nUse revision_occurrence_id when the same revision appears multiple times. No LLM account is required.`);
