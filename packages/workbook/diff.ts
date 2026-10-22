@@ -150,13 +150,16 @@ export function diffWorkbooks(before: WorkbookRevisionData, after: WorkbookRevis
     if (sheetStructureComparable&&canonical([...a.merges].sort()) !== canonical([...b.merges].sort())) add(pair, 'merges', 'Merged range observations changed');
     const explicitBlanks=(a.blank_style_ranges?.length??0)>0||(b.blank_style_ranges?.length??0)>0||a.cells.some(c=>c.blank_style_only)||b.cells.some(c=>c.blank_style_only),sparseFormatting=before.format===after.format&&explicitBlanks;
     const beforeBlanks=explicitBlanks?blankStylesAtCells(a,b.cells,signal):null,afterBlanks=explicitBlanks?blankStylesAtCells(b,a.cells,signal):null;
-    const physicalBlankTransition=(cell:WorkbookCellData,fromBefore:boolean)=>{
+    const physicalFormattingObserved=new Set<WorkbookCellData>();
+    const physicalBlankTransition=(cell:WorkbookCellData,fromBefore:boolean,includeContent=true)=>{
+      signal?.throwIfAborted();
       const source=(fromBefore?afterBlanks:beforeBlanks)?.get(cell);if(!source)return false;
       const blank='row_start'in source?{...blankRangeCell(fromBefore?b:a,source,cell.row,cell.column),difference_range:`${cell.address}:${cell.address}`}:source;
       const l=fromBefore?cell:blank,r=fromBefore?blank:cell,method='physical_blank_content_coordinate';
       const raw=(c:WorkbookCellData)=>[c.value_type,c.value,c.formula,c.formula_dialect,c.formula_interpretation??'not_formula',c.cached_result,c.cache_freshness];
-      if(canonical(raw(l))!==canonical(raw(r)))add(pair,'cell_observation',`Explicit blank and content observations differ at physical coordinate ${cell.address}. Both source endpoints are retained; row lineage and the cause of the difference require review.`,l,r,'needs_review',method);
-      if(before.format===after.format){
+      if(includeContent&&canonical(raw(l))!==canonical(raw(r)))add(pair,'cell_observation',`Explicit blank and content observations differ at physical coordinate ${cell.address}. Both source endpoints are retained; row lineage and the cause of the difference require review.`,l,r,'needs_review',method);
+      if(before.format===after.format&&!physicalFormattingObserved.has(cell)){
+        physicalFormattingObserved.add(cell);
         if(styleIdentity(l,before)!==styleIdentity(r,after))add(pair,'style',`Supported style differs at physical coordinate ${cell.address} between an explicit blank and a materialized cell; row lineage is not asserted.`,l,r,'needs_review',method);
         if(l.number_format!==r.number_format)add(pair,'number_format',`Number format differs at physical coordinate ${cell.address} between an explicit blank and a materialized cell; row lineage is not asserted.`,l,r,'needs_review',method);
         if(l.hidden_row!==r.hidden_row||l.hidden_column!==r.hidden_column)add(pair,'visibility',`Hidden-axis observations differ at physical coordinate ${cell.address}; row lineage is not asserted.`,l,r,'needs_review',method);
@@ -168,7 +171,9 @@ export function diffWorkbooks(before: WorkbookRevisionData, after: WorkbookRevis
       const data={kind:'formatting_range' as const,from_revision_occurrence_id:before.revision_occurrence_id,to_revision_occurrence_id:after.revision_occurrence_id,from_sheet_id:a.sheet_id,to_sheet_id:b.sheet_id,before_address:old?cellAddress(old.row_start,old.column_start):null,after_address:next?cellAddress(next.row_start,next.column_start):null,before:old?{...blankRangeCell(a,difference.before_source!,old.row_start,old.column_start),difference_range:rangeAddress(old)}:null,after:next?{...blankRangeCell(b,difference.after_source!,next.row_start,next.column_start),difference_range:rangeAddress(next)}:null,before_blank_style_range:old,after_blank_style_range:next,association:'needs_review' as const,alignment_method:'physical_blank_formatting_range',description:`Explicit blank formatting observations differ at ${rangeAddress(range)}. Coordinates are physical; this does not assert row lineage or a semantic content insertion/deletion.`};
       if(result.length>=100_000)throw new DocverError('WORKBOOK_DIFF_LIMIT','Workbook exceeds 100000 change observations');result.push({change_id:workbookID('wchg',data),...data});
     }
-    for (const row of rowPairs(rows(a,sparseFormatting), rows(b,sparseFormatting),before,after,styleIdentity)) {
+    // Explicit blank cells never establish content-row correspondence. Apply
+    // this to both encodings even when cross-format style equivalence is unavailable.
+    for (const row of rowPairs(rows(a,explicitBlanks), rows(b,explicitBlanks),before,after,styleIdentity)) {
       signal?.throwIfAborted(); const x = row.before, y = row.after;
       if (!x || !y) { for (const c of x?.cells ?? y!.cells) if(!physicalBlankTransition(c,!!x))add(pair, 'row_correspondence', 'Cell observed on an unmatched row; no confirmed semantic deletion/addition', x ? c : null, y ? c : null, 'needs_review', row.method); continue; }
       if (x.row !== y.row) add(pair, 'row_position', `Inferred corresponding row moved from ${x.row} to ${y.row}`, x.cells[0] ?? null, y.cells[0] ?? null, row.association, row.method);
@@ -196,6 +201,14 @@ export function diffWorkbooks(before: WorkbookRevisionData, after: WorkbookRevis
         ];
         for (const [kind, oldValue, newValue, description] of fields) if (canonical(oldValue) !== canonical(newValue)) add(pair, kind, description, l, r, row.association, row.method);
       }
+    }
+    // A content row can match elsewhere, bypassing physicalBlankTransition in
+    // the row pass. Its masked physical coordinates still need independent
+    // formatting observations. Do not reinterpret the inferred move as a value
+    // edit, and do not duplicate formatting already compared above.
+    if(sparseFormatting){
+      for(const cell of beforeBlanks!.keys())physicalBlankTransition(cell,false,false);
+      for(const cell of afterBlanks!.keys())physicalBlankTransition(cell,true,false);
     }
   }
   return result;
