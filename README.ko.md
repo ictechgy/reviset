@@ -117,7 +117,9 @@ npm test        # 전체 통합 검사; 네이티브 검사는 macOS 도구 체�
 
 테스트 준비 단계는 PDF.js worker의 고정 패치를 적용하고 지원 Mac에서는 Vision helper를 빌드합니다. 전체 검사는 OCR·Office·네이티브 검사를 포함해 시간이 걸릴 수 있습니다.
 
-최신 [LibreOffice 호환성 검사](docs/LIBREOFFICE-2026-10-22.md)는 실제 Calc·Impress 저장 파일을 사용했고, 출력 PDF의 사각형 가림 인식 문제를 수정했습니다. 검증 기록은 실행 소스별로 구분합니다.
+최신 [공식 공개 문서 검사](docs/PUBLIC-CORPUS-2026-10-22.md)는 DESNZ·NASA·NIST·W3C 원본 9개를 프로세스 격리 환경에서 확인했습니다. **결과는 부분 통과입니다.** 스프레드시트 저장값 98,613개는 독립 판독과 일치했지만 원본 ODS 2개는 셀 한도를 넘었고, LibreOffice 변환의 텍스트 6곳 누락·PDF 취소선 오인식·492쪽 PDF의 자원 제한 내 처리 실패가 확인됐습니다.
+
+이전 [LibreOffice 호환성 검사](docs/LIBREOFFICE-2026-10-22.md)는 실제 Calc·Impress 저장 파일을 사용했고, 출력 PDF의 사각형 가림 인식 문제를 수정했습니다. 검증 기록은 실행 소스별로 구분합니다.
 
 | 검증 | 실행 소스 | 결과 |
 | --- | --- | --- |
@@ -131,6 +133,7 @@ npm test        # 전체 통합 검사; 네이티브 검사는 macOS 도구 체�
 
 | 문서 | 내용 |
 | --- | --- |
+| [공식 공개 문서 검사](docs/PUBLIC-CORPUS-2026-10-22.md) | 실문서 결과, 보안 격리, 확인된 한계와 소스 범위 |
 | [품질 현황](docs/QUALITY.md) | 검증 결과, 남은 정확도·배포 기준 |
 | [LibreOffice 호환성·수정](docs/LIBREOFFICE-2026-10-22.md) | 실제 Calc·Impress 저장, PDF 가림, 최종 앱·과거 보고서 검증 |
 | [이전 전체 수정 리뷰·검증](docs/REVIEW-2026-10-22.md) | 입력·ZIP 경계, 저장 복구, 네이티브 수정과 소스별 리뷰·패키지 증거 |

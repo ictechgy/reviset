@@ -370,3 +370,10 @@ Early independent WIP reviews caught the context-key failure, missing warning co
 - Claude E completeCOMMENT와E2 limit-only closureAPPROVE, Grok E completeREQUEST_CHANGES와E2 limit-only closureAPPROVE는각scope별원문을보존한다. E2 narrowapproval은monitor지적을닫지않는다. 480 OCR218정확/22오독/240빈,PowerPointstrict0/26은OPEN이다.
 
 - E3 집중17/17PASS3444.312667ms(wrapper3.470154초), 실제native감독검사2408.273ms. parent-side그룹변경은EACCES/원래G그룹유지, Mach taskport거절, ptrace는부모SIGSEGV와전체ownedPID종료로failclosed를확인했다. 초기E3검사에서실제SIGSEGV를에러에표시하지못한진단회귀가드러나signal을TOOL_FAILED에도보존하고재검사했다. 서명된runtimeguard SHA b995ae2ed0fc0e482ccd6c1a27872a84bdf384e41cedd995f1c7d19e3b7d9ffa; 최종앱/이동ZIP복사본의같은서명flags와entitlement는별도확인한다.
+
+
+## 2026-10-22–23 공식 공개 문서 검사
+
+공식 배포처의 원본 9개와 실제 LibreOffice 파생 파일을 격리 환경에서 검사했다. 저장값 98,613개·통합 문서 MCP 34회, NASA/W3C/DESNZ 문서 MCP 108회를 확인했다. 두 원본 ODS는 기존 50만 셀 한도에서 차단되었고, LibreOffice 변환 텍스트 6곳 누락·PDF 표시 오인식 2건·대형 NIST PDF 처리 실패가 남았다. NIST 첫 실행은 25분 취소, 검증된 캐시 재시도는 네이티브 492쪽을 마친 뒤 저장 보고서 완성 전에 4 GiB 메모리 한도에서 중단됐다. 이 실패들을 합격으로 세지 않는다.
+
+미리보기 입력 사본을 읽기 전용 경로로 분리하고 출력의 배타적 생성·해시·크기 검증 및 실행별 증거 보존을 보완했다. 실제 공개 문서 실행의 기존 엔진/App3 helper와 수정 helper의 집중 검증을 분리한다. 원본 파일은 재배포하지 않으며 출처·SHA와 보안 경계·검증 소스·리뷰 범위는 [검사 보고서](PUBLIC-CORPUS-2026-10-22.md)에 기록한다.

@@ -1105,3 +1105,10 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 - 영향 104개 검사는 f911, 마지막 TypeScript 5개 검사는 f3이며 해당 TypeScript 바이트는 836과 같다. 최종 Swift 10개 파일은 경고 오류 컴파일을 통과했다. 검사 코드의 비동기 선택 조기 종료와 PDF 로딩 중 캡처를 실제 실패→수정→재검증했고 실패 이미지·중간 앱은 보존했다.
 - Clean runtime `8364e3d9d67f2ed4ed5ffa3d58ce50e1313ab93e`의 `release/Reviset-LibreOffice-3.app`: native 6회·MCP 5세션·화면 20장 직접 검사 PASS. 원본·과거 보관소·보고서·기존 앱 hash를 보존했다. Old53 수동 연결 2건의 실제 old/new MCP 각 17페이지 동일성과 최종 backend 동일 바이트 결합도 통과했다.
 - Complete635→836의 4개 파일 독립 리뷰는 코드 APPROVE·구조 CLEAR다. Claude/Grok 외부 검토와 실제 실패 근거를 구분해 기록했다. 상세 [호환성 결과](docs/LIBREOFFICE-2026-10-22.md). 보편 OCR·PowerPoint 엄격 충실도, 다른 Mac·공증·OS 입력·VoiceOver는 이번 검증 합격으로 확대하지 않는다.
+
+
+## 2026-10-22–23 공식 공개 문서 검사
+
+공식 배포처의 원본 9개와 실제 LibreOffice 파생 파일을 격리 환경에서 검사했다. 저장값 98,613개·통합 문서 MCP 34회, NASA/W3C/DESNZ 문서 MCP 108회를 확인했다. 두 원본 ODS는 기존 50만 셀 한도에서 차단되었고, LibreOffice 변환 텍스트 6곳 누락·PDF 표시 오인식 2건·대형 NIST PDF 처리 실패가 남았다. NIST 첫 실행은 25분 취소, 검증된 캐시 재시도는 네이티브 492쪽을 마친 뒤 저장 보고서 완성 전에 4 GiB 메모리 한도에서 중단됐다. 이 실패들을 합격으로 세지 않는다.
+
+미리보기 입력 사본을 읽기 전용 경로로 분리하고 출력의 배타적 생성·해시·크기 검증 및 실행별 증거 보존을 보완했다. 실제 공개 문서 실행의 기존 엔진/App3 helper와 수정 helper의 집중 검증을 분리한다. 원본 파일은 재배포하지 않으며 출처·SHA와 보안 경계·검증 소스·리뷰 범위는 [검사 보고서](docs/PUBLIC-CORPUS-2026-10-22.md)에 기록한다.

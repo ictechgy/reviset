@@ -1,0 +1,149 @@
+{
+  "acquisition_date": "2026-10-22",
+  "scope": "Public official documents, local validation only; fixture bytes are not redistributed. Screening is not proof against parser vulnerabilities or prompt injection. PASS_STATIC_ONLY forbids Office opening/refresh and permits only isolated static extraction.",
+  "sources": [
+    {
+      "id": "desnz-provisional-xlsx",
+      "format": "xlsx",
+      "url": "https://assets.publishing.service.gov.uk/media/660305b1c34a860011be75f2/2023-provisional-emissions-data-tables.xlsx",
+      "sha256": "83a6183fda559772400568795109314e6f8d9376356472c6e31c3e2ada7254f7",
+      "bytes": 256673,
+      "publisher_page": "https://www.gov.uk/government/statistics/provisional-uk-greenhouse-gas-emissions-national-statistics-2023",
+      "screening": {
+        "status": "PASS_STATIC_ONLY",
+        "findings": [
+          "active-or-refresh-part:xl/externalLinks/_rels/externalLink1.xml.rels",
+          "active-or-refresh-part:xl/externalLinks/externalLink1.xml",
+          "external-resource:http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing"
+        ],
+        "passive_links": 5
+      },
+      "zip_members": 72,
+      "expanded_bytes": 1008150,
+      "restriction": "Static ZIP/XML ingestion only inside network-denied OS sandbox; never send original to LibreOffice, never refresh links or images"
+    },
+    {
+      "id": "desnz-provisional-ods",
+      "format": "ods",
+      "url": "https://assets.publishing.service.gov.uk/media/660305d69741c5001a39dbf9/2023-provisional-emissions-data-tables.ods",
+      "sha256": "2dd695703e65bee8bc0cf1f16e4214ace0aa2eb4a1ff86c5ba68ee9e4916cd68",
+      "bytes": 198805,
+      "publisher_page": "https://www.gov.uk/government/statistics/provisional-uk-greenhouse-gas-emissions-national-statistics-2023",
+      "screening": {
+        "status": "PASS",
+        "findings": [],
+        "passive_links": 16
+      },
+      "zip_members": 7,
+      "expanded_bytes": 1641538
+    },
+    {
+      "id": "desnz-final-xlsx",
+      "format": "xlsx",
+      "url": "https://assets.publishing.service.gov.uk/media/67e3e460e8428b01705de02f/final-greenhouse-gas-emissions-tables-2023.xlsx",
+      "sha256": "4f4055e47fa2f5b89c201352e5252f1ec3b0208115f355713c45f9bce3cc7613",
+      "bytes": 684100,
+      "publisher_page": "https://www.gov.uk/government/statistics/final-uk-greenhouse-gas-emissions-statistics-1990-to-2023",
+      "screening": {
+        "status": "PASS_STATIC_ONLY",
+        "findings": [
+          "active-or-refresh-part:xl/externalLinks/_rels/externalLink1.xml.rels",
+          "active-or-refresh-part:xl/externalLinks/externalLink1.xml",
+          "external-resource:http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing",
+          "external-resource:http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+        ],
+        "passive_links": 5
+      },
+      "zip_members": 128,
+      "expanded_bytes": 3070786,
+      "restriction": "Static ZIP/XML ingestion only inside network-denied OS sandbox; never send original to LibreOffice, never refresh links or images"
+    },
+    {
+      "id": "desnz-final-ods",
+      "format": "ods",
+      "url": "https://assets.publishing.service.gov.uk/media/67e3e4679137aeade25de029/final-greenhouse-gas-emissions-tables-2023.ods",
+      "sha256": "f24eca63dce9211eb5b54a4ead0f85ebe5ed2260a7be82b6ecb69f1e6bd3a4ad",
+      "bytes": 560047,
+      "publisher_page": "https://www.gov.uk/government/statistics/final-uk-greenhouse-gas-emissions-statistics-1990-to-2023",
+      "screening": {
+        "status": "PASS",
+        "findings": [],
+        "passive_links": 29
+      },
+      "zip_members": 7,
+      "expanded_bytes": 6078954
+    },
+    {
+      "id": "nasa-omi",
+      "format": "pptx",
+      "url": "https://ntrs.nasa.gov/api/citations/20240007006/downloads/OMI%20Phase-F%202024.pptx?attachment=true",
+      "sha256": "2791d91cac39a7f005c9a2e08e801ac3ea96f13bf08e3312fc00b787d8927dda",
+      "bytes": 737123,
+      "publisher_page": "https://ntrs.nasa.gov/citations/20240007006",
+      "screening": {
+        "status": "PASS",
+        "findings": [],
+        "passive_links": 3
+      },
+      "slides": 8,
+      "zip_members": 57,
+      "expanded_bytes": 836995
+    },
+    {
+      "id": "nist-controls",
+      "format": "pdf",
+      "url": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf",
+      "sha256": "fc63bcd61715d0181dd8e85998b1e6201ae3515fc6626102101cab1841e11ec6",
+      "bytes": 6073678,
+      "publisher_page": "https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final",
+      "screening": {
+        "status": "PASS",
+        "findings": [],
+        "passive_links": 226
+      },
+      "pages": 492
+    },
+    {
+      "id": "desnz-provisional-pdf",
+      "format": "pdf",
+      "url": "https://assets.publishing.service.gov.uk/media/6604460f91a320001a82b0fd/uk-greenhouse-gas-emissions-provisional-figures-statistical-release-2023.pdf",
+      "sha256": "b53b8df9ca1f22460154a33b77b0e2d12402f5abc5291a9debf4c66d19060b1c",
+      "bytes": 684207,
+      "publisher_page": "https://www.gov.uk/government/statistics/provisional-uk-greenhouse-gas-emissions-national-statistics-2023",
+      "screening": {
+        "status": "PASS",
+        "findings": [],
+        "passive_links": 78
+      },
+      "pages": 28
+    },
+    {
+      "id": "desnz-final-pdf",
+      "format": "pdf",
+      "url": "https://assets.publishing.service.gov.uk/media/67a30e4f7da1f1ac64e5feb1/2023-final-greenhouse-gas-emissions-statistical-release.pdf",
+      "sha256": "cd77028c0ffdaff538f67157049ae7d1800a4a5427f650637417589d9b2ac089",
+      "bytes": 926745,
+      "publisher_page": "https://www.gov.uk/government/statistics/final-uk-greenhouse-gas-emissions-statistics-1990-to-2023",
+      "screening": {
+        "status": "PASS",
+        "findings": [],
+        "passive_links": 115
+      },
+      "pages": 40
+    },
+    {
+      "id": "w3c-ocr",
+      "format": "pdf",
+      "url": "https://www.w3.org/WAI/WCAG22/working-examples/pdf-ocr/ocr-example.pdf",
+      "sha256": "7a161be656c7e82986a1959890eadbdcd0876e15e01b28fd00900190de15eed5",
+      "bytes": 481118,
+      "publisher_page": "https://www.w3.org/WAI/WCAG22/working-examples/pdf-ocr/",
+      "screening": {
+        "status": "PASS",
+        "findings": [],
+        "passive_links": 0
+      },
+      "pages": 1
+    }
+  ]
+}

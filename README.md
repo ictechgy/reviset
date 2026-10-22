@@ -115,7 +115,9 @@ npm test        # Integration suite; native checks need the macOS toolchain
 
 Test preparation applies the pinned PDF.js worker patch and builds the Vision helper on supported Macs. The integration suite includes OCR, Office, and native checks and can take time.
 
-The latest [LibreOffice compatibility check](docs/LIBREOFFICE-2026-10-22.md) used real Calc and Impress saves and fixed an exported-PDF rectangle recognition issue. Results remain tied to their execution source:
+The newer [official public-document test](docs/PUBLIC-CORPUS-2026-10-22.md) checked nine originals from DESNZ, NASA, NIST and W3C under process isolation. **Results are partial:** 98,613 saved spreadsheet values matched independent readers, while two direct ODS imports hit the cell limit, LibreOffice conversion lost six text spans, PDF strike inference had false positives, and the 492-page PDF did not complete within the tested resource budgets.
+
+The earlier [LibreOffice compatibility check](docs/LIBREOFFICE-2026-10-22.md) used real Calc and Impress saves and fixed an exported-PDF rectangle recognition issue. Results remain tied to their execution source:
 
 | Validation | Source snapshot | Result |
 | --- | --- | --- |
@@ -131,6 +133,7 @@ Most detailed documents below are in Korean.
 
 | Document | Contents |
 | --- | --- |
+| [Official public-document results](docs/PUBLIC-CORPUS-2026-10-22.md) | Real-data results, security isolation, confirmed limits and exact source scope |
 | [Quality status](docs/QUALITY.md) | Validation results and remaining accuracy/distribution gates |
 | [LibreOffice compatibility and repair](docs/LIBREOFFICE-2026-10-22.md) | Actual Calc/Impress saves, PDF covers, final app and historical-report verification |
 | [Earlier overall repair review](docs/REVIEW-2026-10-22.md) | Input/archive boundaries, commit recovery, native fixes, and snapshot-bound review/package evidence |
