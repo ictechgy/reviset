@@ -59,7 +59,7 @@ export class WorkbookQueryService {
       this.permit(args.project_id);
       if (name === 'list_workbook_reports') items = this.service.reports(args.project_id);
       else {
-        report = name === 'get_workbook_cell_history' ? this.service.report(args.project_id, args.report_id) : this.service.metadata(args.project_id, args.report_id); args.report_id = report.report_id;
+        report = this.service.metadata(args.project_id, args.report_id); args.report_id = report.report_id;
         const revision = () => { const found = report!.revisions.find(r => r.revision_occurrence_id === args.revision_occurrence_id); if (!found) throw new DocverError('WORKBOOK_REVISION_SCOPE', 'Workbook occurrence is outside this fixed report'); return found; };
         const selectedSheet = () => { const found = revision().sheets.find(s => s.sheet_id === args.sheet_id); if (!found) throw new DocverError('WORKBOOK_SHEET_SCOPE', 'Workbook sheet is outside the selected occurrence'); return found; };
         switch (name) {
@@ -92,7 +92,9 @@ export class WorkbookQueryService {
             extra = { matching: 'literal_stored_value_or_formula_source_no_execution' }; break;
           }
           case 'get_workbook_cell_history': {
-            const s = selectedSheet(), selected = revision(), startCell = s.cells.find(c => c.row === args.row && c.column === args.column) ?? null;
+            const s = selectedSheet(), selected = revision(),readCell=(r:typeof selected,sheet:WorkbookSheetData,row:number,column:number)=>this.service.indexedCells(report!.project_id,report!.report_id,r.revision_occurrence_id,sheet.sheet_id,row,row+1,column,column+1,report,false)[0]??null;
+            const startCell=readCell(selected,s,args.row,args.column),columns=new Map<string,{byRow:Map<number,string>;byKey:Map<string,{count:number;row:number}>}>();
+            const keyIndex=(r:typeof selected,sheet:WorkbookSheetData)=>{const key=r.revision_occurrence_id+'|'+sheet.sheet_id,existing=columns.get(key);if(existing)return existing;const byRow=new Map<number,string>(),byKey=new Map<string,{count:number;row:number}>();for(const cell of this.service.indexedCells(report!.project_id,report!.report_id,r.revision_occurrence_id,sheet.sheet_id,1,1_048_577,1,2,report,false)){if(cell.value===null||cell.value===''||cell.formula!==null||cell.formula_interpretation==='unresolved')continue;const value=canonical([cell.value_type,cell.value]);byRow.set(cell.row,value);const previous=byKey.get(value);if(previous)previous.count++;else byKey.set(value,{count:1,row:cell.row});}const index={byRow,byKey};columns.set(key,index);return index;};
             // Every row is grounded in a physical location. Follow only unique inferred anchors;
             // uncertain links stop, rather than silently hopping to another occupant of A1.
             const located = new Map<number, { sheet: WorkbookSheetData; cell: WorkbookCellData | null; association: string; method: string }>(); located.set(selected.index, { sheet: s, cell: startCell, association: 'exact', method: 'selected_physical_cell' });
@@ -100,11 +102,11 @@ export class WorkbookQueryService {
               const next = current + direction; if (next < 0 || next >= report.revisions.length) break;
               const at = located.get(current)!, target = report.revisions[next], sheetCandidates = target.sheets.filter(v => v.name === at.sheet.name);
               if (sheetCandidates.length !== 1 || !at.cell) break; const targetSheet = sheetCandidates[0];
-              const first = at.sheet.cells.find(c => c.row === at.cell!.row && c.column === 1), key = first && first.value !== null && first.value !== '' && first.formula === null && first.formula_interpretation!=='unresolved' ? canonical([first.value_type, first.value]) : null;
+              const oldIndex=keyIndex(report.revisions[current],at.sheet),key=oldIndex.byRow.get(at.cell.row);
               let row = at.cell.row, method = 'physical_row_fallback', association = 'needs_review';
-              if (key) { const oldMatches = at.sheet.cells.filter(c => c.column === 1 && c.formula === null && c.formula_interpretation!=='unresolved' && canonical([c.value_type, c.value]) === key), matches = targetSheet.cells.filter(c => c.column === 1 && c.formula === null && c.formula_interpretation!=='unresolved' && canonical([c.value_type, c.value]) === key); if (oldMatches.length === 1 && matches.length === 1) { row = matches[0].row; method = 'unique_nonempty_first_column_key'; association = 'inferred'; } }
+              if (key) {const oldMatch=oldIndex.byKey.get(key),match=keyIndex(target,targetSheet).byKey.get(key);if(oldMatch?.count===1&&match?.count===1){row=match.row;method='unique_nonempty_first_column_key';association='inferred';}}
               if (association === 'needs_review') break;
-              located.set(next, { sheet: targetSheet, cell: targetSheet.cells.find(c => c.row === row && c.column === at.cell!.column) ?? null, association, method }); current = next;
+              located.set(next, { sheet: targetSheet, cell: readCell(target,targetSheet,row,at.cell.column), association, method }); current = next;
             } }
             items = report.revisions.map(r => { const at = located.get(r.index); return { revision_occurrence_id: r.revision_occurrence_id, label: r.label, sheet_id: at?.sheet.sheet_id ?? null, cell: at ? boundedCell(this.cellStyle(report!,r.revision_occurrence_id,at.cell), args.text_offset, args.text_length) : null, availability: at ? at.cell ? 'available' : 'not_materialized' : 'correspondence_unresolved', association: at?.association ?? 'needs_review', alignment_method: at?.method ?? 'no_unambiguous_cell_lineage' }; }); extra = { inference_warning: 'Unique first-column keys infer lineage; no true edit author/time is inferred' }; break;
           }
@@ -122,9 +124,11 @@ export class WorkbookQueryService {
     if (from < 0 || to < 0 || to < from) throw new DocverError('WORKBOOK_RANGE_SCOPE', 'Workbook interval must be ordered fixed occurrence IDs in this report');
     if (from === to) return [];
     if (args.mode === 'range_net') {
+      if(to===from+1)return this.service.indexedChanges(report.project_id,report.report_id,[report.revisions[to].revision_occurrence_id],args.change_id);
       const key=hash({project_id:report.project_id,report_id:report.report_id,from:args.from_revision_occurrence_id,to:args.to_revision_occurrence_id}),cached=this.netCache.get(key);
       if(cached){this.netCache.delete(key);this.netCache.set(key,cached);return cached.changes;}
-      const full=this.service.report(report.project_id,report.report_id),changes=diffWorkbooks(full.revisions[from],full.revisions[to]),bytes=Buffer.byteLength(JSON.stringify(changes));
+      const endpoint=(index:number)=>{const revision=report.revisions[index];return {...revision,sheets:revision.sheets.map(sheet=>({...sheet,cells:this.service.indexedCells(report.project_id,report.report_id,revision.revision_occurrence_id,sheet.sheet_id,1,1_048_577,1,16_385,report,false)}))};};
+      const changes=diffWorkbooks(endpoint(from),endpoint(to)),bytes=Buffer.byteLength(JSON.stringify(changes));
       if(bytes<=16*1024*1024){while(this.netCache.size>=2||this.netBytes+bytes>16*1024*1024){const oldest=this.netCache.keys().next().value;if(oldest===undefined)break;this.netBytes-=this.netCache.get(oldest)!.bytes;this.netCache.delete(oldest);}this.netCache.set(key,{changes,bytes});this.netBytes+=bytes;}
       return changes;
     }
@@ -136,7 +140,7 @@ export class WorkbookQueryService {
     return {...metadata,description:c.description.slice(0,2048),component,before_observation:before?'available':'not_materialized',after_observation:after?'available':'not_materialized',raw_detail_query:'get_workbook_change',raw_detail_components:['before','after'],...(component==='before'?{before:boundedCell(report?this.cellStyle(report,c.from_revision_occurrence_id,before):before,args.text_offset,args.text_length)}:component==='after'?{after:boundedCell(report?this.cellStyle(report,c.to_revision_occurrence_id,after):after,args.text_offset,args.text_length)}:{})};
   }
   private paginate(name: string, args: any, all: any[], extra: Record<string, any>, measure?: (result: Record<string, any>) => number) {
-    const { cursor, limit, max_output_tokens, ...selectors } = args, binding = hash({ name, selectors }); let index = 0;
+    const { cursor, limit, max_output_tokens,text_offset:_textOffset,text_length:_textLength, ...selectors } = args, binding = hash({ name, selectors }); let index = 0;
     if (cursor) {
       try { const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')); if (parsed.scope !== binding || parsed.checksum !== hash({ scope: parsed.scope, index: parsed.index }) || !Number.isSafeInteger(parsed.index) || parsed.index < 0 || parsed.index > all.length) throw new Error('cursor'); index = parsed.index; }
       catch { throw new DocverError('WORKBOOK_CURSOR_SCOPE', 'Cursor is invalid or belongs to another report/query/selector'); }
