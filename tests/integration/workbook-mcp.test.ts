@@ -8,6 +8,23 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { Store } from '../../packages/storage/index.js';
 import { WorkbookService } from '../../packages/workbook/service.js';
 import { byteHash } from '../../packages/schema/index.js';
+import { odsFixture } from '../workbook-fixtures.js';
+
+test('real read-only MCP distinguishes missing cross-format blank coverage from unchanged formatting', {timeout:30_000}, async()=>{
+  const root=await mkdtemp(join(tmpdir(),'reviset-cross-format-mcp-')),library=join(root,'library'),store=new Store(library),service=new WorkbookService(store);
+  let transport:StdioClientTransport|undefined,client:Client|undefined;
+  try{
+    const ods=join(root,'styled.ods'),csv=join(root,'empty.csv');await writeFile(ods,odsFixture('<table:table-row table:number-rows-repeated="1048576"><table:table-cell table:number-columns-repeated="16384" table:style-name="paint"/></table:table-row>',{automatic:'<style:style style:name="paint" style:family="table-cell"><style:table-cell-properties fo:background-color="#ffee00"/></style:style>'}));await writeFile(csv,'');
+    const project=await service.create('cross-format sparse coverage',[{label:'styled',path:ods},{label:'csv',path:csv}]),stage=await service.run(project.project_id);await service.commit(project.project_id,stage);
+    const report=service.report(project.project_id,stage.report_id),source=report.revisions[0],peer=report.revisions[1],scope={project_id:project.project_id,report_id:stage.report_id,max_output_tokens:4000},db=join(library,'docver.sqlite'),before=byteHash(await readFile(db));
+    transport=new StdioClientTransport({command:process.execPath,args:['--import','tsx',resolve('apps/mcp/main.ts'),'--store',library,'--project',project.project_id],stderr:'pipe'});client=new Client({name:'blank-formatting-coverage-test',version:'1.0.0'});await client.connect(transport);
+    const invoke=async(name:string,args:Record<string,unknown>)=>{const result=await client!.callTool({name,arguments:{...scope,...args}});assert.notEqual(result.isError,true,JSON.stringify(result));assert.ok(Buffer.byteLength(JSON.stringify(result))<=4000);return result.structuredContent as Record<string,any>;};
+    const gaps=await invoke('list_workbook_coverage_gaps',{revision_occurrence_id:source.revision_occurrence_id,sheet_id:source.sheets[0].sheet_id});assert.equal(gaps.items.filter((g:any)=>g.feature==='cross_format_blank_formatting').length,1);
+    const changes=await invoke('list_workbook_changes',{from_revision_occurrence_id:source.revision_occurrence_id,to_revision_occurrence_id:peer.revision_occurrence_id,sheet_id:peer.sheets[0].sheet_id,kind:'formatting_range',mode:'range_net'});assert.equal(changes.total,0);assert.equal(changes.blank_formatting_comparison,'unsupported_across_formats');assert.equal(changes.blank_formatting_coverage_gap_count,1);assert.equal(changes.blank_formatting_coverage_scope,'comparison_interval');
+    const ranges=await invoke('list_workbook_formatting_ranges',{revision_occurrence_id:source.revision_occurrence_id,sheet_id:source.sheets[0].sheet_id});assert.equal(ranges.items[0].address,'A1:XFD1048576');
+    await client.close();client=undefined;await transport.close();transport=undefined;assert.equal(byteHash(await readFile(db)),before);
+  }finally{await client?.close();await transport?.close();store.close();await rm(root,{recursive:true,force:true});}
+});
 
 test('real workbook MCP scopes a read-only library and reconstructs bounded untrusted Unicode source', {timeout:90_000}, async()=>{
   const root=await mkdtemp(join(tmpdir(),'docver-workbook-mcp-')),library=join(root,'library'),store=new Store(library),service=new WorkbookService(store);

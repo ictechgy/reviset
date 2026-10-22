@@ -95,9 +95,24 @@ export class WorkbookQueryService {
             if (args.component === 'style') { items = Object.entries(raw?.style ?? {}).map(([key,value]) => { const part = chunk(value,args.text_offset,args.text_length); return { key,value:part.value,text_continuations:{value:part.continuation},text_offset_unit:'utf16_code_units' }; }); extra = { availability: raw ? 'available' : 'not_materialized', component:'style', revision_occurrence_id:args.revision_occurrence_id,sheet_id:args.sheet_id }; }
             break;
           }
-          case 'list_workbook_changes': items = this.changes(report, args).filter(c => !args.kind || c.kind === args.kind).filter(c => !args.sheet_id || c.from_sheet_id === args.sheet_id || c.to_sheet_id === args.sheet_id).map(c => this.boundedChange(c, args)); extra = { mode: args.mode, from_revision_occurrence_id: args.from_revision_occurrence_id, to_revision_occurrence_id: args.to_revision_occurrence_id, interval_semantics: args.mode === 'history' ? 'adjacent_events_in_interval' : 'endpoint_comparison_not_intermediate_events' }; if (args.sheet_id && !report.revisions.some(r => r.sheets.some(s => s.sheet_id === args.sheet_id))) throw new DocverError('WORKBOOK_SHEET_SCOPE', 'Sheet filter is outside this report'); break;
+          case 'list_workbook_changes': {
+            items = this.changes(report, args).filter(c => !args.kind || c.kind === args.kind).filter(c => !args.sheet_id || c.from_sheet_id === args.sheet_id || c.to_sheet_id === args.sheet_id).map(c => this.boundedChange(c, args)); extra = { mode: args.mode, from_revision_occurrence_id: args.from_revision_occurrence_id, to_revision_occurrence_id: args.to_revision_occurrence_id, interval_semantics: args.mode === 'history' ? 'adjacent_events_in_interval' : 'endpoint_comparison_not_intermediate_events' };
+            if (args.sheet_id && !report.revisions.some(r => r.sheets.some(s => s.sheet_id === args.sheet_id))) throw new DocverError('WORKBOOK_SHEET_SCOPE', 'Sheet filter is outside this report');
+            // Preserve historical response semantics. New reports explicitly
+            // distinguish zero observed changes from unsupported blank styles.
+            if(report.engine_version==='workbook.1.1'){
+              const revisions=report.revisions,from=revisions.findIndex(r=>r.revision_occurrence_id===args.from_revision_occurrence_id),to=revisions.findIndex(r=>r.revision_occurrence_id===args.to_revision_occurrence_id);
+              const comparisons=args.mode==='range_net'?[[revisions[from],revisions[to]]]:revisions.slice(from+1,to+1).map((r,i)=>[revisions[from+i],r]);
+              const occurrences=new Set(comparisons.filter(([a,b])=>a.format!==b.format).flatMap(pair=>pair.map(r=>r.revision_occurrence_id)));
+              // The interval warning survives sheet/kind filters. A filtered
+              // peer sheet need not share the styled source's occurrence ID.
+              const gaps=report.coverage_gaps.filter(g=>g.feature==='cross_format_blank_formatting'&&g.revision_occurrence_id&&occurrences.has(g.revision_occurrence_id));
+              if(gaps.length)Object.assign(extra,{blank_formatting_comparison:'unsupported_across_formats',blank_formatting_coverage_scope:'comparison_interval',blank_formatting_coverage_gap_count:gaps.length,coverage_query:'list_workbook_coverage_gaps'});
+            }
+            break;
+          }
           case 'get_workbook_change': {
-            let candidates = args.mode==='range_net'?[]:this.service.indexedChanges(args.project_id, report.report_id, report.revisions.map(r => r.revision_occurrence_id),args.change_id);
+            let candidates = args.mode==='range_net'?[]:this.service.indexedChanges(args.project_id, report.report_id, report.revisions.map(r => r.revision_occurrence_id),args.change_id,report);
             if (args.mode === 'range_net') { if (!args.from_revision_occurrence_id || !args.to_revision_occurrence_id) throw new DocverError('WORKBOOK_RANGE_REQUIRED', 'A net change requires fixed endpoint occurrence IDs'); candidates = this.changes(report, args); }
             else if(args.from_revision_occurrence_id||args.to_revision_occurrence_id){if(!args.from_revision_occurrence_id||!args.to_revision_occurrence_id)throw new DocverError('WORKBOOK_RANGE_REQUIRED','A history interval requires both fixed endpoint occurrence IDs');candidates=this.changes(report,args);}
             const change = candidates.find(c => c.change_id === args.change_id); if (!change) throw new DocverError('WORKBOOK_CHANGE_SCOPE', 'Change is outside the requested fixed report/range'); items = [this.boundedChange(change, args,args.component,report)]; break;
@@ -143,7 +158,7 @@ export class WorkbookQueryService {
     if (from < 0 || to < 0 || to < from) throw new DocverError('WORKBOOK_RANGE_SCOPE', 'Workbook interval must be ordered fixed occurrence IDs in this report');
     if (from === to) return [];
     if (args.mode === 'range_net') {
-      if(to===from+1)return this.service.indexedChanges(report.project_id,report.report_id,[report.revisions[to].revision_occurrence_id],args.change_id);
+      if(to===from+1)return this.service.indexedChanges(report.project_id,report.report_id,[report.revisions[to].revision_occurrence_id],args.change_id,report);
       const key=hash({project_id:report.project_id,report_id:report.report_id,from:args.from_revision_occurrence_id,to:args.to_revision_occurrence_id}),cached=this.netCache.get(key);
       if(cached){this.netCache.delete(key);this.netCache.set(key,cached);return cached.changes;}
       const endpoint=(index:number)=>{const revision=report.revisions[index];return {...revision,sheets:revision.sheets.map(sheet=>({...sheet,cells:this.service.indexedCells(report.project_id,report.report_id,revision.revision_occurrence_id,sheet.sheet_id,1,1_048_577,1,16_385,report,false,false)}))};};
@@ -151,7 +166,7 @@ export class WorkbookQueryService {
       if(bytes!==null){while(this.netCache.size>=2||this.netBytes+bytes>NET_CACHE_BYTES){const oldest=this.netCache.keys().next().value;if(oldest===undefined)break;this.netBytes-=this.netCache.get(oldest)!.bytes;this.netCache.delete(oldest);}this.netCache.set(key,{changes,bytes});this.netBytes+=bytes;}
       return changes;
     }
-    const allowed = report.revisions.slice(from + 1, to + 1).map(r => r.revision_occurrence_id); return this.service.indexedChanges(report.project_id,report.report_id,allowed,args.change_id);
+    const allowed = report.revisions.slice(from + 1, to + 1).map(r => r.revision_occurrence_id); return this.service.indexedChanges(report.project_id,report.report_id,allowed,args.change_id,report);
   }
   private cellStyle(report:WorkbookReportData,occurrence:string,cell:WorkbookCellData|null){if(!cell?.style_ref)return cell;const style=report.revisions.find(r=>r.revision_occurrence_id===occurrence)?.style_definitions?.[cell.style_ref];if(!style||workbookID('wstyle',style)!==cell.style_ref)throw new DocverError('WORKBOOK_STYLE_SCOPE','Cell style definition is outside this source occurrence or damaged');return {...cell,style};}
   private boundedChange(c: WorkbookChangeData, args: any, component:'summary'|'before'|'after'='summary',report?:WorkbookReportData) {

@@ -19,18 +19,25 @@ export const WorkbookChange = z.object({
 export type WorkbookChangeData = z.infer<typeof WorkbookChange>;
 // Legacy reports have no sparse-blank markers. Keep both their stored schema
 // and the marker-free historical diff path distinct from engine 1.1 semantics.
+export function workbookCellVersionFieldViolation(engine:string,cell:WorkbookCellData|null){
+  return engine==='workbook.1.0'&&cell?(['blank_style_only','source_range','difference_range'] as const).find(key=>cell[key]!==undefined):undefined;
+}
+export function workbookChangeVersionFieldViolation(engine:string,change:WorkbookChangeData):(string|number)[]|null{
+  if(engine!=='workbook.1.0')return null;
+  if(change.kind==='formatting_range')return ['kind'];
+  for(const key of ['before_blank_style_range','after_blank_style_range'] as const)if(change[key]!==undefined)return [key];
+  for(const side of ['before','after'] as const){const field=workbookCellVersionFieldViolation(engine,change[side]);if(field)return [side,field];}
+  return null;
+}
 export function workbookVersionFieldViolation(report: {engine_version:string;revisions:WorkbookRevisionData[];changes:WorkbookChangeData[]}): (string|number)[] | null {
   if(report.engine_version!=='workbook.1.0')return null;
-  const cellField=(cell:WorkbookCellData|null)=>cell&&(['blank_style_only','source_range','difference_range'] as const).find(key=>cell[key]!==undefined);
   for(const [ri,revision]of report.revisions.entries())for(const [si,sheet]of revision.sheets.entries()){
     const path=['revisions',ri,'sheets',si];
     if(sheet.blank_style_ranges!==undefined)return [...path,'blank_style_ranges'];
-    for(const [ci,cell]of sheet.cells.entries()){const field=cellField(cell);if(field)return [...path,'cells',ci,field];}
+    for(const [ci,cell]of sheet.cells.entries()){const field=workbookCellVersionFieldViolation(report.engine_version,cell);if(field)return [...path,'cells',ci,field];}
   }
   for(const [index,change]of report.changes.entries()){
-    if(change.kind==='formatting_range')return ['changes',index,'kind'];
-    for(const key of ['before_blank_style_range','after_blank_style_range'] as const)if(change[key]!==undefined)return ['changes',index,key];
-    for(const side of ['before','after'] as const){const field=cellField(change[side]);if(field)return ['changes',index,side,field];}
+    const path=workbookChangeVersionFieldViolation(report.engine_version,change);if(path)return ['changes',index,...path];
   }
   return null;
 }

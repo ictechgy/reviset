@@ -2,6 +2,8 @@
 
 Real public documents exposed compatibility and accuracy limitations that the earlier synthetic LibreOffice check did not cover. Results are **partial**, not a blanket compatibility or OCR-accuracy pass.
 
+Subsequent fixes and their separate validation are recorded in the [2026-10-23 repair report](PUBLIC-CORPUS-FIXES-2026-10-23.md). The historical results below retain their original execution scope.
+
 ## Corpus and provenance
 
 Nine original files were tested: four UK DESNZ spreadsheets (2023 provisional/final, XLSX and ODS), two corresponding statistical-release PDFs (28 and 40 pages), NASA's eight-slide OMI Phase-F presentation, NIST SP 800-53 Revision 5 (492 pages), and the previously pinned one-page W3C OCR example. Eight files were acquired from official HTTPS download endpoints; the W3C cache was independently rehashed. Exact URLs, sizes and SHA-256 values are in [the corpus manifest](fixtures/official-corpus-2026-10-22.json). Original and converted bytes remain local and are not redistributed in this repository.

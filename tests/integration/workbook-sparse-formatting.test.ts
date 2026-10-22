@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {odsFixture} from '../workbook-fixtures.js';
+import {odsFixture,xlsxFixture} from '../workbook-fixtures.js';
 import {extractWorkbook} from '../../packages/workbook/ingest.js';
 import {WorkbookObservation,workbookID} from '../../packages/workbook/types.js';
 import {blankCellsInViewport,validateBlankRangeLayout} from '../../packages/workbook/sparse.js';
@@ -12,6 +12,7 @@ import {WorkbookService,validateIdentity} from '../../packages/workbook/service.
 import {WorkbookQueryService} from '../../packages/workbook/query.js';
 import {Store} from '../../packages/storage/index.js';
 import {handleWorkbookAction} from '../../apps/bridge/workbook.js';
+import {canonical,hash} from '../../packages/schema/index.js';
 
 const styles=(color='#ffee00')=>`<style:style style:name="paint" style:family="table-cell"><style:table-cell-properties fo:background-color="${color}"/></style:style>`;
 const repeated=(rows:number,columns:number,color?:string)=>odsFixture(`<table:table-row table:number-rows-repeated="${rows}"><table:table-cell table:style-name="paint" table:number-columns-repeated="${columns}"/></table:table-row>`,{automatic:styles(color)});
@@ -108,4 +109,81 @@ test('workbook1.0 rejects every1.1-only source/change field while retaining exac
     r=>{r.changes[0].after!.difference_range='A1:A1';},
   ];
   for(const mutate of variants){const mixed=structuredClone(legacy);mutate(mixed);const {report_id:_old,...mixedBody}=mixed;mixed.report_id=workbookID('wreport',mixedBody);assert.equal(WorkbookReport.safeParse(mixed).success,false,'engine1.0 cannot adopt1.1-only observations');assert.throws(()=>validateIdentity(mixed),{code:'WORKBOOK_ENGINE_SEMANTICS'});}
+});
+
+test('cross-format blank formatting remains explicitly unsupported in sheet-scoped coverage and empty change queries',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'reviset-cross-blank-')),store=new Store(join(root,'library'));
+  try{
+    const service=new WorkbookService(store);
+    for(const columns of [1,65])for(const format of ['xlsx','csv'] as const)for(const reverse of [false,true]){
+      const ods=join(root,`blank-${columns}.ods`),peer=join(root,`empty.${format}`);
+      await writeFile(ods,repeated(1,columns));await writeFile(peer,format==='xlsx'?xlsxFixture('<sheetData/>'):new Uint8Array());
+      const sources=[{label:'styled',path:ods},{label:'peer',path:peer}];if(reverse)sources.reverse();
+      const project=await service.create('cross-format blank coverage',sources),stage=await service.run(project.project_id);await service.commit(project.project_id,stage);
+      const report=service.report(project.project_id,stage.report_id),source=report.revisions.find(r=>r.format==='ods')!,sheet=source.sheets[0],q=new WorkbookQueryService(service,new Set([project.project_id])),scope={project_id:project.project_id,report_id:report.report_id};
+      const gaps=await q.query('list_workbook_coverage_gaps',{...scope,revision_occurrence_id:source.revision_occurrence_id,sheet_id:sheet.sheet_id,max_output_tokens:8000});
+      assert.equal(gaps.items.filter((g:any)=>g.feature==='cross_format_blank_formatting').length,1,`${columns} ${format} reverse=${reverse}`);
+      assert.ok(service.view(project.project_id,report.report_id).coverage_gaps.some(g=>g.feature==='cross_format_blank_formatting'&&g.sheet_id===sheet.sheet_id));
+      for(const mode of ['history','range_net']){
+        const changes=await q.query('list_workbook_changes',{...scope,from_revision_occurrence_id:report.revisions[0].revision_occurrence_id,to_revision_occurrence_id:report.revisions[1].revision_occurrence_id,kind:'formatting_range',mode,max_output_tokens:8000});
+        assert.equal(changes.total,0);assert.equal(changes.blank_formatting_comparison,'unsupported_across_formats');assert.equal(changes.blank_formatting_coverage_gap_count,1);assert.equal(changes.coverage_query,'list_workbook_coverage_gaps');
+        const filtered=await q.query('list_workbook_changes',{...scope,from_revision_occurrence_id:report.revisions[0].revision_occurrence_id,to_revision_occurrence_id:report.revisions[1].revision_occurrence_id,sheet_id:report.revisions.find(r=>r.format!== 'ods')!.sheets[0].sheet_id,kind:'formatting_range',mode,max_output_tokens:8000});assert.equal(filtered.blank_formatting_comparison,'unsupported_across_formats');assert.equal(filtered.blank_formatting_coverage_scope,'comparison_interval');
+      }
+      if(columns===65&&format==='xlsx'&&!reverse){
+        const exported=await service.export(project.project_id,report.report_id,join(root,'export'));
+        assert.ok(JSON.parse(await readFile(exported.files[0],'utf8')).report.coverage_gaps.some((g:any)=>g.feature==='cross_format_blank_formatting'&&g.sheet_id===sheet.sheet_id));
+      }
+    }
+    // The styled first source has no cross-format adjacent peer, but may be a
+    // nonadjacent net endpoint. Its sheet-scoped limitation must still be readable.
+    const blank=join(root,'blank-65.ods'),empty=join(root,'empty.ods'),xlsx=join(root,'empty.xlsx');await writeFile(empty,odsFixture('<table:table-row/>'));
+    const project=await service.create('nonadjacent cross-format coverage',[{label:'styled',path:blank},{label:'empty',path:empty},{label:'xlsx',path:xlsx}]),stage=await service.run(project.project_id);await service.commit(project.project_id,stage);
+    const report=service.report(project.project_id,stage.report_id),q=new WorkbookQueryService(service,new Set([project.project_id])),scope={project_id:project.project_id,report_id:report.report_id},from=report.revisions[0];
+    const gaps=await q.query('list_workbook_coverage_gaps',{...scope,revision_occurrence_id:from.revision_occurrence_id,sheet_id:from.sheets[0].sheet_id,max_output_tokens:8000});assert.equal(gaps.items.filter((g:any)=>g.feature==='cross_format_blank_formatting').length,1);
+    const interval={...scope,from_revision_occurrence_id:from.revision_occurrence_id,mode:'range_net',max_output_tokens:8000};
+    assert.equal((await q.query('list_workbook_changes',{...interval,to_revision_occurrence_id:report.revisions[2].revision_occurrence_id})).blank_formatting_comparison,'unsupported_across_formats');
+    assert.equal((await q.query('list_workbook_changes',{...interval,to_revision_occurrence_id:report.revisions[2].revision_occurrence_id,mode:'history'})).blank_formatting_comparison,undefined,'only actual adjacent cross-format comparisons contribute to history coverage');
+    assert.equal((await q.query('list_workbook_changes',{...interval,to_revision_occurrence_id:report.revisions[1].revision_occurrence_id})).blank_formatting_comparison,undefined,'same-format intervals remain comparable');
+  }finally{store.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('many formula-dependent blank rectangles retain individual provenance and one sheet-level coverage gap',async()=>{
+  for(const wholeSheet of [false,true]){
+    const rows=Array.from({length:128},(_,i)=>'<table:table-row>'+(i===0?`<table:table-cell table:formula="of:=1" ${wholeSheet?'table:matrix-covered="true"':'table:number-matrix-columns-spanned="66" table:number-matrix-rows-spanned="64"'} office:value-type="float" office:value="1"/>`:'<table:table-cell/>')+'<table:table-cell table:style-name="paint" table:number-columns-repeated="65"/></table:table-row>').join('');
+    const observed=await extractWorkbook(odsFixture(rows,{automatic:styles()}),'ods'),sheet=observed.sheets[0];
+    assert.equal(sheet.blank_style_ranges?.length,128);assert.equal(sheet.blank_style_ranges!.filter(r=>r.formula_interpretation==='unresolved').length,wholeSheet?128:64);
+    const gaps=sheet.coverage_gaps.filter(g=>g.feature==='blank_range_formula_interpretation');assert.equal(gaps.length,1);assert.equal(gaps[0].sheet_id,sheet.sheet_id);assert.equal(gaps[0].address,undefined);
+    for(const row of [1,64,65,128])assert.equal(blankCellsInViewport(sheet,row,row+1,2,3)[0].formula_interpretation,wholeSheet||row<=64?'unresolved':'not_formula');
+  }
+});
+
+test('hash-valid sparse index mutations cannot expose1.1 fields under an owning1.0 report',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'reviset-legacy-index-')),store=new Store(join(root,'library')),service=new WorkbookService(store);
+  try{
+    const sources=[];for(const [i,value]of ['old','new'].entries()){const path=join(root,`${i}.csv`);await writeFile(path,`key,value\nk,${value}\n`);sources.push({label:String(i),path});}
+    const project=await service.create('legacy indexes',sources),stage=await service.run(project.project_id);await service.commit(project.project_id,stage);
+    const current=service.report(project.project_id,stage.report_id),{report_id:_current,...body}=current,legacy=WorkbookReport.parse({...body,engine_version:'workbook.1.0',report_id:workbookID('wreport',{...body,engine_version:'workbook.1.0'})});validateIdentity(legacy);
+    store.db.prepare('INSERT INTO workbook_reports_v1 VALUES (?,?,?,?)').run(legacy.report_id,project.project_id,new Date().toISOString(),canonical(legacy));
+    const metadata=JSON.parse(String(store.db.prepare('SELECT body FROM workbook_metadata_v1 WHERE report_id=?').get(current.report_id)!.body));metadata.report_id=legacy.report_id;metadata.engine_version='workbook.1.0';const metadataBody=canonical(metadata);
+    store.db.prepare('INSERT INTO workbook_metadata_v1 VALUES (?,?,?,?)').run(legacy.report_id,project.project_id,metadataBody,hash({project_id:project.project_id,report_id:legacy.report_id,body:metadataBody}));
+    for(const row of store.db.prepare('SELECT * FROM workbook_cells_v1 WHERE report_id=?').all(current.report_id))store.db.prepare('INSERT INTO workbook_cells_v1 VALUES (?,?,?,?,?,?,?)').run(legacy.report_id,row.revision_occurrence_id,row.sheet_id,row.row,row.col,row.body,hash({report_id:legacy.report_id,occurrence:row.revision_occurrence_id,sheet_id:row.sheet_id,row:row.row,column:row.col,body:row.body}));
+    for(const row of store.db.prepare('SELECT * FROM workbook_changes_v1 WHERE report_id=?').all(current.report_id))store.db.prepare('INSERT INTO workbook_changes_v1 VALUES (?,?,?,?,?,?,?)').run(legacy.report_id,row.change_id,row.from_revision,row.to_revision,row.position,row.body,hash({report_id:legacy.report_id,position:row.position,body:row.body}));
+    const scope={project_id:project.project_id,report_id:legacy.report_id},source=legacy.revisions[0],sheet=source.sheets[0],q=new WorkbookQueryService(service,new Set([project.project_id]));
+    assert.deepEqual(service.report(project.project_id,legacy.report_id),legacy);
+    const cellArgs={...scope,revision_occurrence_id:source.revision_occurrence_id,sheet_id:sheet.sheet_id,row:2,column:2};assert.equal((await q.query('get_workbook_cell',cellArgs)).items[0].value,'old');
+    const cell=store.db.prepare('SELECT * FROM workbook_cells_v1 WHERE report_id=? AND revision_occurrence_id=? AND row=2 AND col=2').get(legacy.report_id,source.revision_occurrence_id)!;
+    const writeCell=(body:string)=>store.db.prepare('UPDATE workbook_cells_v1 SET body=?,body_sha=? WHERE report_id=? AND revision_occurrence_id=? AND sheet_id=? AND row=2 AND col=2').run(body,hash({report_id:legacy.report_id,occurrence:source.revision_occurrence_id,sheet_id:sheet.sheet_id,row:2,column:2,body}),legacy.report_id,source.revision_occurrence_id,sheet.sheet_id);
+    for(const fields of [{blank_style_only:true},{source_range:'B2:B2'},{difference_range:'B2:B2'}]){writeCell(canonical({...JSON.parse(String(cell.body)),...fields}));await assert.rejects(q.query('get_workbook_cell',cellArgs),{code:'WORKBOOK_INDEX_CORRUPT'});writeCell(String(cell.body));}
+    const change=store.db.prepare('SELECT * FROM workbook_changes_v1 WHERE report_id=? ORDER BY position LIMIT 1').get(legacy.report_id)!;
+    const writeChange=(value:any)=>{const {change_id:_id,...content}=value;value.change_id=workbookID('wchg',content);const body=canonical(value);store.db.prepare('UPDATE workbook_changes_v1 SET change_id=?,body=?,body_sha=? WHERE report_id=? AND position=?').run(value.change_id,body,hash({report_id:legacy.report_id,position:change.position,body}),legacy.report_id,change.position);};
+    const changesArgs={...scope,from_revision_occurrence_id:source.revision_occurrence_id,to_revision_occurrence_id:legacy.revisions[1].revision_occurrence_id,mode:'history',max_output_tokens:8000},valid=await q.query('list_workbook_changes',changesArgs);assert.ok(valid.total>0);assert.equal(valid.blank_formatting_comparison,undefined);
+    const mutations=[(c:any)=>{c.kind='formatting_range';},(c:any)=>{c.before_blank_style_range=null;},(c:any)=>{c.after_blank_style_range=null;},(c:any)=>{c.before.blank_style_only=true;},(c:any)=>{c.before.source_range='B2:B2';},(c:any)=>{c.after.difference_range='B2:B2';}];
+    for(const mutate of mutations){const invalid=JSON.parse(String(change.body));mutate(invalid);writeChange(invalid);await assert.rejects(q.query('list_workbook_changes',changesArgs),{code:'WORKBOOK_INDEX_CORRUPT'});assert.throws(()=>service.indexedChanges(project.project_id,legacy.report_id,[legacy.revisions[1].revision_occurrence_id]),{code:'WORKBOOK_INDEX_CORRUPT'});writeChange(JSON.parse(String(change.body)));}
+    assert.deepEqual(await q.query('list_workbook_changes',changesArgs),valid);assert.deepEqual(service.report(project.project_id,legacy.report_id),legacy);
+  }finally{store.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('renamed sheets with different blank-style encodings remain unresolved rather than asserting lineage',async()=>{
+  const before=await revision(repeated(2,100),'before'),after=await revision(odsFixture('<table:table table:name="Renamed"><table:table-row table:number-rows-repeated="2">'+Array.from({length:100},()=>'<table:table-cell table:style-name="paint"/>').join('')+'</table:table-row></table:table>',{automatic:styles()}),'after');
+  const events=diffWorkbooks(before,after);assert.equal(events.length,2);assert.ok(events.every(c=>c.kind==='sheet_observation'&&c.association==='needs_review'&&c.alignment_method==='unmatched_sheet_observation'));
 });

@@ -79,12 +79,13 @@ async function applyFormulaInterpretation(sheet: WorkbookSheetData, ranges: Form
       cell.formula_interpretation = 'unresolved'; cell.cached_result = saved?.has(cell) || cell.value !== null ? 'present' : 'missing'; cell.cache_freshness = 'unknown';
     }
   }
-  let rangeChecks=0;
+  let rangeChecks=0,unresolvedBlank=false;
   for(const blank of sheet.blank_style_ranges??[]){
     await checkpoint(state);let intersects=wholeSheet;
     if(!intersects)for(const [row,column,endRow,endColumn]of ranges){if(++rangeChecks>2_000_000)fail('WORKBOOK_LIMIT','Formula and blank formatting intersections exceed bounded comparison budget');if(row<=blank.row_end&&endRow>=blank.row_start&&column<=blank.column_end&&endColumn>=blank.column_start){intersects=true;break;}}
-    if(intersects){blank.formula_interpretation='unresolved';gap(sheet.coverage_gaps,'blank_range_formula_interpretation','An explicit blank formatting rectangle intersects an unresolved formula-dependent region. The whole retained rectangle is conservatively unresolved; its absence of a saved value is not certified direct input.',sheet.sheet_id);}
+    if(intersects){blank.formula_interpretation='unresolved';unresolvedBlank=true;}
   }
+  if(unresolvedBlank)gap(sheet.coverage_gaps,'blank_range_formula_interpretation','An explicit blank formatting rectangle intersects an unresolved formula-dependent region. The whole retained rectangle is conservatively unresolved; its absence of a saved value is not certified direct input.',sheet.sheet_id);
   gap(sheet.coverage_gaps,'formula_interpretation',wholeSheet ? 'Formula-dependent ranges cannot be safely resolved; every source cell on this sheet is conservatively unresolved, with saved values only.' : 'Shared/array/matrix source ranges are unresolved; saved follower values are not certified direct inputs or expanded formulas.',sheet.sheet_id);
 }
 

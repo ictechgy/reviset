@@ -104,7 +104,7 @@ A `latest` query resolves to a fixed report ID in the response. Use that ID for 
 - Formulas, macros, and external links are not executed or recalculated. Saved formula results can be absent or stale.
 - Universal OCR accuracy, pixel-identical PowerPoint rendering, and complete reproduction of charts, pivots, or advanced formatting have not been achieved. Font substitutions, coverage gaps, and uncertainty remain visible.
 - LibreOffice conversion is withheld for PPTX files with macros/OLE, unsupported embedded objects, or external resources. Inspect the structure view or a separately supplied PDF from the same version.
-- Document limits include 512 MiB per file, 1,000 PDF pages, and 100 versions per project. Workbook limits include 64 MiB per file and report totals of 500,000 materialized cells, 100,000 changes, and 256 MiB. These limits apply jointly with other parser/archive limits; they are not time, memory, or accuracy guarantees. See the [spreadsheet contract](docs/SPREADSHEETS.md) for details.
+- Document limits include 512 MiB per file, 1,000 PDF pages, and 100 versions per project. Workbook limits include 64 MiB per file and report totals of 500,000 materialized cells, 100,000 blank-style ranges, 100,000 changes, and 256 MiB. These limits apply jointly with other parser/archive limits; they are not time, memory, or accuracy guarantees. See the [spreadsheet contract](docs/SPREADSHEETS.md) for details.
 
 ## Development and validation
 
@@ -115,7 +115,7 @@ npm test        # Integration suite; native checks need the macOS toolchain
 
 Test preparation applies the pinned PDF.js worker patch and builds the Vision helper on supported Macs. The integration suite includes OCR, Office, and native checks and can take time.
 
-The newer [official public-document test](docs/PUBLIC-CORPUS-2026-10-22.md) checked nine originals from DESNZ, NASA, NIST and W3C under process isolation. **Results are partial:** 98,613 saved spreadsheet values matched independent readers, while two direct ODS imports hit the cell limit, LibreOffice conversion lost six text spans, PDF strike inference had false positives, and the 492-page PDF did not complete within the tested resource budgets.
+The [official public-document test](docs/PUBLIC-CORPUS-2026-10-22.md) checked nine originals from DESNZ, NASA, NIST and W3C under process isolation. Its failures led to [follow-up repairs](docs/PUBLIC-CORPUS-FIXES-2026-10-23.md): direct ODS imports now preserve large blank-style regions and all 48,660 checked saved values; strike and regional-diff guards address the reported false positives; cached 492-page analysis, app persistence and actual MCP traversal pass their stated resource checks. LibreOffice's upstream conversion text loss and unresolved cross-version correspondence remain explicit. See the repair report for exact source/helper scope, cold-run results and remaining limits.
 
 The earlier [LibreOffice compatibility check](docs/LIBREOFFICE-2026-10-22.md) used real Calc and Impress saves and fixed an exported-PDF rectangle recognition issue. Results remain tied to their execution source:
 
