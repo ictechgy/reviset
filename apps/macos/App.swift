@@ -30,7 +30,10 @@ import CryptoKit
             } else if model.initializing {
                 ProgressView("보관소를 준비하는 중…").frame(minWidth:640,minHeight:420)
             } else {
-                WorkbookWorkspace(bridge:model.bridge)
+                VStack(spacing:0) {
+                    if !model.workbookRecoveryWarning.isEmpty { Label(model.workbookRecoveryWarning,systemImage:"info.circle").font(.caption).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(.orange.opacity(0.1)) }
+                    WorkbookWorkspace(bridge:model.bridge)
+                }
             }
             }.task { await model.start() }
         }.defaultSize(width:1440,height:960).windowToolbarStyle(.unifiedCompact)

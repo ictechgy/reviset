@@ -71,6 +71,9 @@ private extension JSON {
     @Published var loadingMCP = false
     @Published var status = ""
     @Published var failure = ""
+    @Published private var recoveryWarnings: [String:String] = [:]
+    private var recoveryWarningRuns: [String:String] = [:]
+    var recoveryWarning: String { recoveryWarnings[projectID] ?? "" }
     @Published var rangeFailure = ""
     @Published var changesFailure = ""
     @Published var comparisonNotice = ""
@@ -440,20 +443,28 @@ private extension JSON {
             releases = value.raw is [Any] ? value.array : value["items"].array
         } catch { guard current(ticket), scope == identity else { return }; failure = error.localizedDescription }
     }
+    private func noteRecovery(_ message: String,project: String,run: String) { recoveryWarningRuns[project] = run; recoveryWarnings[project] = message }
+    private func clearRecovery(project: String,run: String) {
+        if recoveryWarningRuns[project] == run { recoveryWarningRuns.removeValue(forKey:project); recoveryWarnings.removeValue(forKey:project) }
+    }
     func run() async {
         guard active, !busy, !loadingDemo, !projectID.isEmpty else { return }
         let project = projectID, oldReport = reportID, token = UUID()
         defer { bridge.releaseAnalysis(owner:token) }
         var stagedRunID = ""
+        var commitAttempted = false
         analysisToken = token; committing = false
         invalidateReads(); busy = true; cancelRequested = false; failure = ""; status = "원본 통합 문서를 읽고 버전 차이를 분석하는 중…"
         do {
             let staged = try await bridge.call("workbookAnalyze",["project_id":project],analysis:true,analysisOwner:token,holdAnalysis:true)
             stagedRunID = staged["analysis_run_id"].string
             guard active, !cancelRequested, projectID == project else { throw CancellationError() }
-            committing = true; status = "고정 보고서를 저장하는 중…"
+            committing = true; commitAttempted = true; status = "고정 보고서를 저장하는 중…"
             let committed = try await bridge.call("workbookCommit",["project_id":project,"result":staged.raw])
+            if committed["cleanup_pending"].bool { noteRecovery("분석 결과는 저장됐으며 임시 파일 정리를 확인해야 합니다.",project:project,run:stagedRunID) }
+            else { clearRecovery(project:project,run:stagedRunID) }
             stagedRunID = ""
+            bridge.releaseAnalysis(owner:token)
             guard projectID == project else { throw CancellationError() }
             analysisToken = nil; committing = false; busy = false; status = "분석 완료 · 원본과 보고서를 고정했습니다."
             let completion = begin("analysis-completion")
@@ -462,21 +473,47 @@ private extension JSON {
             await selectProject(project,snapshot:committed["report_id"].string)
             if active,projectID == project,reportID == committed["report_id"].string { status = "분석 완료 · 원본과 보고서를 고정했습니다." }
         } catch {
-            var cleanupFailure = ""
+            var recoveryReport = "",cleanupFailure = "",saveUncertain = false
             if !stagedRunID.isEmpty {
-                // Keep the shared analysis reservation until this exact owned
-                // staged run is settled. Never recover another project/run.
-                committing = true; status = "이번 분석의 임시 결과를 정리하는 중…"
-                do { _ = try await bridge.call("workbookDiscard",["project_id":project,"analysis_run_id":stagedRunID]) }
-                catch { cleanupFailure = "임시 분석 정리를 확인하지 못했습니다: " + error.localizedDescription }
+                // A lost commit reply does not establish a failed commit. Check
+                // this exact owned run before considering its staged-file cleanup.
+                committing = true; status = "이번 분석의 저장 상태를 확인하는 중…"
+                do {
+                    let run = try await bridge.call("workbookRunStatus",["project_id":project,"analysis_run_id":stagedRunID])
+                    guard run["project_id"].string == project,run["analysis_run_id"].string == stagedRunID else { throw BridgeError(code:"WORKBOOK_RUN_SCOPE",message:"이번 분석의 저장 상태 범위를 확인하지 못했습니다.") }
+                    if run["status"].string == "success",!run["report_id"].string.isEmpty {
+                        recoveryReport = run["report_id"].string; clearRecovery(project:project,run:stagedRunID)
+                    } else if run["status"].string == "staged" {
+                        status = "이번 분석의 임시 결과를 정리하는 중…"
+                        do { _ = try await bridge.call("workbookDiscard",["project_id":project,"analysis_run_id":stagedRunID]); clearRecovery(project:project,run:stagedRunID) }
+                        catch { cleanupFailure = "임시 분석 정리를 확인하지 못했습니다: " + error.localizedDescription }
+                    } else if run["status"].string != "failed" {
+                        saveUncertain = commitAttempted; cleanupFailure = "이번 분석의 저장·정리 상태를 다시 확인해야 합니다."
+                    }
+                } catch {
+                    saveUncertain = commitAttempted
+                    cleanupFailure = (saveUncertain ? "저장 여부 확인 필요: " : "임시 분석 상태 확인 필요: ") + error.localizedDescription
+                }
+                if !cleanupFailure.isEmpty { noteRecovery(cleanupFailure,project:project,run:stagedRunID) }
             }
+            // The database outcome/owned cleanup attempt is settled before UI
+            // reads. A slow or cancelled report refresh cannot hold the writer.
+            bridge.releaseAnalysis(owner:token)
             analysisToken = nil; committing = false; busy = false
+            if !recoveryReport.isEmpty {
+                let completion = begin("analysis-completion")
+                await refreshProjects()
+                guard active,current(completion),projectID == project else { return }
+                await selectProject(project,snapshot:recoveryReport)
+                if active,projectID == project,reportID == recoveryReport { status = ready ? "저장된 분석 결과를 확인해 다시 열었습니다." : "저장된 분석 결과를 확인했습니다. 화면을 다시 불러와주세요." }
+                return
+            }
             let cancelled = cancelRequested || error is CancellationError || (error as? BridgeError)?.code == "CANCELLED"
-            let outcome = cancelled ? "분석을 취소했습니다. 이전 고정 보고서를 유지합니다." : "분석하지 못했습니다. 이전 고정 보고서를 유지합니다."
+            let outcome = saveUncertain ? "저장 여부 확인 필요 · 마지막으로 확인한 보고서를 표시합니다." : cancelled ? "분석을 취소했습니다. 이전 고정 보고서를 유지합니다." : "분석하지 못했습니다. 이전 고정 보고서를 유지합니다."
             let message = error.localizedDescription
             if active, projectID == project, !oldReport.isEmpty { await selectProject(project,snapshot:oldReport) }
             guard projectID == project else { return }
-            failure = [cancelled ? "" : message,cleanupFailure].filter { !$0.isEmpty }.joined(separator:"\n")
+            failure = cancelled || saveUncertain ? "" : message
             status = outcome
         }
     }
@@ -625,6 +662,7 @@ struct WorkbookWorkspace: View {
                 }
             }
             if !model.failure.isEmpty { Text(verbatim:model.failure).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if !model.recoveryWarning.isEmpty { Text(verbatim:model.recoveryWarning).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
         }.padding(12)
     }
     private var emptyWorkspace: some View {

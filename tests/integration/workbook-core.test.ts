@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat, readdir } from 'node:fs/promises';
+import { mkdirSync,renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Store } from '../../packages/storage/index.js';
@@ -65,12 +66,36 @@ test('cross-format dialect/type gaps are not interpreted as formula/style deleti
   for(const [left,right]of [[serial,iso],[iso,serial]] as const){const changes=diffWorkbooks(left,right);assert.ok(!changes.some(c=>['stored_value','value_type'].includes(c.kind)));assert.ok(changes.some(c=>c.kind==='cell_observation'&&c.association==='needs_review'&&c.alignment_method==='cross_format_date_representation'));}
 });
 
+test('ODS numeric/currency/percentage format vocabulary cannot hide real cross-format value changes while genuine date/time styles remain reviewable',()=>{
+  for(const [kind,xlsxFormat]of [['number-style','0.00'],['currency-style','"USD"0.00'],['percentage-style','0.00%']]as const){
+    const xlsx=revision('before',[cell(1,1,'key'),cell(1,2,'100',{value_type:'number',number_format:xlsxFormat})]);
+    const ods=revision('after',[cell(1,1,'key'),cell(1,2,'120',{value_type:'number',number_format:'ods:'+JSON.stringify({name:kind,attrs:{name:'has-days-and-seconds-in-a-label'},content:[]})})],{format:'ods',date_system:'iso8601'});
+    for(const [left,right]of [[xlsx,ods],[ods,xlsx]]as const){const changes=diffWorkbooks(left,right);assert.ok(changes.some(c=>c.kind==='stored_value'&&c.before_address==='B1'&&c.after_address==='B1'),kind);assert.ok(!changes.some(c=>c.alignment_method==='cross_format_date_representation'),kind);}
+  }
+  for(const kind of ['date-style','time-style']){
+    const xlsx=revision('before',[cell(1,1,'key'),cell(1,2,'45292',{value_type:'number',number_format:'General'})]);
+    const ods=revision('after',[cell(1,1,'key'),cell(1,2,'45293',{value_type:'number',number_format:'ods:'+JSON.stringify({name:kind,attrs:{},content:[]})})],{format:'ods',date_system:'iso8601'});
+    for(const [left,right]of [[xlsx,ods],[ods,xlsx]]as const){const changes=diffWorkbooks(left,right);assert.ok(changes.some(c=>c.kind==='cell_observation'&&c.alignment_method==='cross_format_date_representation'&&c.association==='needs_review'));assert.ok(!changes.some(c=>c.kind==='stored_value'||c.kind==='value_type'));}
+  }
+});
+
 test('interned styles compare semantic definitions, reject broken references, and leave raw inline legacy cells supported',()=>{
   const oldStyle={'font.name.val':'Calibri'},newStyle={'font.name.val':'Aptos'},oldRef=workbookID('wstyle',oldStyle),newRef=workbookID('wstyle',newStyle);
   const a=revision('before',[cell(1,1,'key'),cell(1,2,'1',{style:{},style_ref:oldRef})],{style_definitions:{[oldRef]:oldStyle}}),b=revision('after',[cell(1,1,'key'),cell(1,2,'1',{style:{},style_ref:newRef})],{style_definitions:{[newRef]:newStyle}});
   const changes=diffWorkbooks(a,b);assert.ok(changes.some(c=>c.kind==='style'&&c.before?.style_ref===oldRef&&c.after?.style_ref===newRef));assert.deepEqual(changes.find(c=>c.kind==='style')?.before?.style,{});
   const missing=structuredClone(b);missing.style_definitions={};assert.throws(()=>diffWorkbooks(a,missing),{code:'WORKBOOK_STYLE_SCOPE'});
   assert.ok(diffWorkbooks(revision('before',[cell(1,1,'key'),cell(1,2,'1',{style:oldStyle})]),revision('after',[cell(1,1,'key'),cell(1,2,'1',{style:newStyle})])).some(c=>c.kind==='style'));
+});
+
+test('a large style reused by 1000 cells stays interned during sheet/row matching and still exposes semantic style changes',()=>{
+  const style=Object.fromEntries(Array.from({length:256},(_,i)=>['property_'+i,'x'.repeat(4096)])),reference=workbookID('wstyle',style);
+  const cells=Array.from({length:1000},(_,i)=>cell(i+1,2,'row-'+i,{style:{},style_ref:reference})),before=revision('before',cells,{style_definitions:{[reference]:style}}),after=revision('after',structuredClone(cells),{style_definitions:{[reference]:style}});after.sheets[0].name='Renamed';
+  assert.ok(Buffer.byteLength(canonical({revisions:[before,after]}))<256*1024*1024);
+  const renamed=diffWorkbooks(before,after);assert.equal(renamed.filter(c=>c.kind==='sheet_name').length,1);assert.ok(!renamed.some(c=>c.kind==='sheet_observation'||c.kind==='style'||c.kind==='stored_value'));
+  const moved=revision('after',cells.map(c=>({...c,row:c.row+1,address:cellAddress(c.row+1,c.column)})),{style_definitions:{[reference]:style}}),moves=diffWorkbooks(before,moved);assert.equal(moves.filter(c=>c.kind==='row_position').length,1000);assert.ok(moves.every(c=>c.alignment_method==='unique_exact_row_content'));
+  const changedStyle={...style,property_0:'y'.repeat(4096)},changedReference=workbookID('wstyle',changedStyle),changed=revision('after',cells.map((c,i)=>i===500?{...c,style_ref:changedReference}:c),{style_definitions:{[reference]:style,[changedReference]:changedStyle}}),changes=diffWorkbooks(before,changed);assert.equal(changes.filter(c=>c.kind==='style').length,1);assert.equal(changes.find(c=>c.kind==='style')?.before?.style_ref,reference);assert.equal(changes.find(c=>c.kind==='style')?.after?.style_ref,changedReference);
+  const wrong=revision('after',cells,{style_definitions:{[reference]:changedStyle}});assert.throws(()=>diffWorkbooks(before,wrong),{code:'WORKBOOK_STYLE_SCOPE'});
+  const inline=revision('before',Array.from({length:8},(_,i)=>cell(i+1,2,'inline-'+i,{style}))),inlineAfter=revision('after',inline.sheets[0].cells.map(c=>({...c})));inlineAfter.sheets[0].name='Inline renamed';assert.equal(diffWorkbooks(inline,inlineAfter).filter(c=>c.kind==='sheet_name').length,1);
 });
 
 test('shared formula expansion and array-result followers never assert formula deletion or direct-input semantics when interpretation is unresolved',()=>{
@@ -176,6 +201,26 @@ test('discard invalidates only the exact owned active run, cleans superseded sta
     const first=await f.service.run(f.draft.project_id),next=await f.service.run(f.draft.project_id);await assert.rejects(readFile(join(folder,first.staged_name)),{code:'ENOENT'});await assert.rejects(f.service.commit(f.draft.project_id,first),{code:'STALE_RUN'});
     await f.service.commit(peer.project_id,peerStage);assert.equal(f.service.reports(peer.project_id).length,1);const reopened=new Store(f.store.root);try{const afterRestart=new WorkbookService(reopened);await afterRestart.recover(f.draft.project_id);await assert.rejects(afterRestart.commit(f.draft.project_id,next),{code:'STALE_RUN'});assert.equal(afterRestart.reports(peer.project_id).length,1);assert.equal(canonical(afterRestart.report(f.draft.project_id,f.report.report_id)),original);}finally{reopened.close();}
     assert.deepEqual(await readdir(folder),[]);
+  }finally{await f.close();}
+});
+
+test('a durable commit remains successful when private stage cleanup fails, and exact-run status recovers a lost reply without crossing projects',async()=>{
+  const f=await fixture();try{
+    const fixed=canonical(f.report),pending=await f.service.run(f.draft.project_id),path=join(f.store.root,'workbook-staging-v1',pending.staged_name),retained=path+'.test-retained';
+    assert.equal(f.service.runStatus(f.draft.project_id,pending.analysis_run_id).status,'staged');assert.equal(f.service.runStatus(f.draft.project_id,pending.analysis_run_id).report_id,null);
+    // The real transaction's success update replaces only this test-owned stage
+    // with an empty directory after its bytes were verified. No production hook.
+    f.store.db.function('workbook_core_stage_cleanup_fault',()=>{renameSync(path,retained);mkdirSync(path,{mode:0o700});return 0;});
+    f.store.db.exec("CREATE TEMP TRIGGER workbook_core_stage_cleanup_fault AFTER UPDATE OF status ON workbook_runs_v1 WHEN NEW.status='success' AND OLD.status='staged' BEGIN SELECT workbook_core_stage_cleanup_fault(); END");
+    let result;try{result=await f.service.commit(f.draft.project_id,pending);}finally{f.store.db.exec('DROP TRIGGER workbook_core_stage_cleanup_fault');}
+    assert.equal(result.status,'complete');assert.equal(result.cleanup_pending,true);assert.equal(result.report_id,f.report.report_id);assert.equal((await stat(path)).isDirectory(),true);assert.equal(canonical(f.service.report(f.draft.project_id,f.report.report_id)),fixed);
+    const recovered:any=await handleWorkbookAction(f.store,'workbookRunStatus',{project_id:f.draft.project_id,analysis_run_id:pending.analysis_run_id});assert.equal(recovered.status,'success');assert.equal(recovered.report_id,f.report.report_id);await assert.rejects(f.service.discard(f.draft.project_id,pending.analysis_run_id),{code:'STALE_RUN'});
+    await rm(path,{recursive:true});renameSync(retained,path);await f.service.recover();await assert.rejects(readFile(path),{code:'ENOENT'});assert.equal(canonical(f.service.report(f.draft.project_id,f.report.report_id)),fixed);
+    const peer=await f.service.create('peer scope',[{path:f.paths[0],label:'peer'}]),peerStage=await f.service.run(peer.project_id);await f.service.commit(peer.project_id,peerStage);assert.throws(()=>f.service.runStatus(peer.project_id,pending.analysis_run_id),{code:'WORKBOOK_RUN_SCOPE'});
+    const next=await f.service.run(f.draft.project_id);await f.service.commit(f.draft.project_id,next); // caller intentionally retains no commit response
+    const reader=new Store(f.store.root,true);try{const status=new WorkbookService(reader).runStatus(f.draft.project_id,next.analysis_run_id);assert.equal(status.status,'success');assert.equal(status.report_id,f.report.report_id);}finally{reader.close();}
+    f.store.db.prepare('UPDATE workbook_runs_v1 SET report_id=? WHERE id=?').run(peerStage.report_id,next.analysis_run_id);assert.throws(()=>f.service.runStatus(f.draft.project_id,next.analysis_run_id),{code:'WORKBOOK_RUN_CORRUPT'});f.store.db.prepare('UPDATE workbook_runs_v1 SET report_id=? WHERE id=?').run(f.report.report_id,next.analysis_run_id);
+    const discarded=await f.service.run(f.draft.project_id);await f.service.discard(f.draft.project_id,discarded.analysis_run_id);const cancelled=f.service.runStatus(f.draft.project_id,discarded.analysis_run_id);assert.equal(cancelled.status,'failed');assert.equal(cancelled.report_id,null);assert.equal(cancelled.error,'CANCELLED');assert.equal(canonical(f.service.report(f.draft.project_id,f.report.report_id)),fixed);
   }finally{await f.close();}
 });
 

@@ -9,6 +9,8 @@ const root=process.argv[process.argv.indexOf('--root')+1],events=join(root,'revi
  else if(action==='create'){if(args.title==='fail'){delay=150;error={code:'CONTROLLED_CREATE_FAILURE',message:'controlled create failure'};}else value={project_id:'prj_b'};}
  else if(action==='analyze'){delay=150;error={code:'CONTROLLED_RUN_FAILURE',message:'controlled run failure'};}
  else if(action==='recover')value=[];
+ else if(action==='workbookRecover')error={code:'CONTROLLED_WORKBOOK_RECOVERY_FAILURE',message:'controlled workbook cleanup failure'};
+ else if(action==='sidecarRecover')value={skipped:0};
  else if(action==='changes'){if(project.startsWith('prj_pending'))delay=300;if(args.report_id==='rpt_range_fail')error={code:'CONTROLLED_RANGE_FAILURE',message:'controlled range failure'};value=args.report_id==='rpt_history'?[{change_id:'chg_history',kind:'text_modified',from_occurrence:'occ_b',to_occurrence:'occ_c',evidence:[{revision_occurrence_id:'occ_b',page_id:'page_b'},{revision_occurrence_id:'occ_c',page_id:'page_c'}]}]:[];}
  else throw new Error('Unexpected action '+action);
  appendFileSync(events,JSON.stringify({action,project:action==='create'?'create:'+args.title:project??'',count,event:'started'})+'\n');setTimeout(()=>console.log(JSON.stringify({ok:!error,protocol_version:'0.1.0',schema_version:'0.4.0',value,error})),delay);

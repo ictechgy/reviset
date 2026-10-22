@@ -8,7 +8,7 @@ import { cellAddress, workbookID, type WorkbookCellData, type WorkbookFormatData
 
 // These are rejection limits, never truncation targets. No workbook code is evaluated.
 export const WORKBOOK_LIMITS = Object.freeze({ input: 64 * 1024 * 1024, expanded: 128 * 1024 * 1024, part: 32 * 1024 * 1024, entries: 4096, sheets: 100, cells: 500_000, rows: 1_048_576, columns: 16_384, cellText: 1024 * 1024, xmlNodes: 2_000_000, metadata: 100_000, styleEntries: 2_000_000, text: 64 * 1024 * 1024 });
-type Element = { name: string; attrs: Record<string,string>; children: Element[]; text: string; content: (string | Element)[] };
+type Element = { name: string; namespace: string; attrs: Record<string,string>; children: Element[]; text: string; content: (string | Element)[] };
 type State = { signal?: AbortSignal; cells: number; nodes: number; text: number; ticks: number; styleEntries: number; styleDefinitions: Record<string,Record<string,string>>; styleRefs: WeakMap<Record<string,string>,string>; stylesByCanonical: Map<string,string>; gaps: WorkbookGapData[] };
 function fail(code: string, message: string): never { throw new DocverError(code, message); }
 const array = <T>(value: T | T[] | undefined): T[] => value === undefined ? [] : Array.isArray(value) ? value : [value];
@@ -129,18 +129,46 @@ const ODF_NS = 'urn:oasis:names:tc:opendocument:xmlns:';
 const MAIN_NS = new Set(['http://schemas.openxmlformats.org/spreadsheetml/2006/main','http://purl.oclc.org/ooxml/spreadsheetml/main']);
 const REL_NS = new Set(['http://schemas.openxmlformats.org/officeDocument/2006/relationships','http://purl.oclc.org/ooxml/officeDocument/relationships']);
 const NS_PREFIX = new Map<string,string>([...['office','table','text','style','number','manifest','draw','chart','presentation','form','config','meta'].map(prefix => [ODF_NS + (prefix === 'number' ? 'datastyle' : prefix) + ':1.0',prefix] as [string,string]),[ODF_NS + 'svg-compatible:1.0','svg'],[ODF_NS + 'xsl-fo-compatible:1.0','fo'],['http://www.w3.org/1999/xlink','xlink'],['http://www.w3.org/XML/1998/namespace','xml'],...Array.from(REL_NS,uri => [uri,'r'] as [string,string]),['urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0','calcext']]);
-const CRITICAL_ODF_NODES: Record<string,string> = Object.fromEntries([
-  ...['document-content','document-styles','body','spreadsheet'].map(name => [name,'office']),
-  ...['table','table-row','table-cell','covered-table-cell','table-column','table-row-group','table-column-group','table-header-rows','table-rows','table-header-columns','table-columns'].map(name => [name,'table']),
-  ...['style','default-style','styles','automatic-styles'].map(name => [name,name === 'styles' || name === 'automatic-styles' ? 'office' : 'style']),
-  ...['manifest','file-entry','encryption-data'].map(name => [name,'manifest']),
+type XmlContext = {domain:'xlsx'|'ods'|'manifest'|'rels'|'types';name:string};
+const XML_CHILDREN = new Map<string,Map<string,string>>();
+function xmlChildren(domain: XmlContext['domain'],parent: string,names: string[],namespace: string) { const key = domain + ':' + parent, map = XML_CHILDREN.get(key) ?? new Map<string,string>(); for (const name of names) map.set(name,namespace); XML_CHILDREN.set(key,map); }
+for (const [parent,names] of [
+  ['workbook',['sheets','workbookPr','calcPr','definedNames']],['sheets',['sheet']],
+  ['worksheet',['dimension','sheetData','cols','mergeCells','conditionalFormatting','dataValidations','tableParts','autoFilter','sheetProtection','extLst','drawing']],['sheetData',['row']],['row',['c']],['c',['f','v','is']],
+  ['sst',['si']],['si',['t','r','rPh','phoneticPr']],['is',['t','r','rPh','phoneticPr']],['r',['t','rPr']],
+  ['styleSheet',['fonts','fills','borders','cellXfs','cellStyleXfs','numFmts','dxfs','colors','extLst']],['cellXfs',['xf']],['cellStyleXfs',['xf']],['xf',['alignment','protection']],['numFmts',['numFmt']],['cols',['col']],['mergeCells',['mergeCell']],
+] as const) xmlChildren('xlsx',parent,[...names],'xlsx');
+for (const [parent,names,prefix] of [
+  ['document-content',['body','automatic-styles'],'office'],['document-styles',['styles','automatic-styles'],'office'],['body',['spreadsheet'],'office'],['spreadsheet',['table'],'table'],
+  ...['table','table-row-group','table-column-group','table-header-rows','table-rows','table-header-columns','table-columns'].map(parent => [parent,['table-row','table-column','table-row-group','table-column-group','table-header-rows','table-rows','table-header-columns','table-columns'],'table'] as const),
+  ['table-row',['table-cell','covered-table-cell'],'table'],['table-cell',['p'],'text'],['covered-table-cell',['p'],'text'],
+  ['styles',['style','default-style'],'style'],['automatic-styles',['style','default-style'],'style'],
+] as const) xmlChildren('ods',parent,[...names],ODF_NS + prefix + ':1.0');
+xmlChildren('manifest','manifest',['file-entry'],ODF_NS + 'manifest:1.0'); xmlChildren('manifest','file-entry',['encryption-data'],ODF_NS + 'manifest:1.0');
+xmlChildren('rels','Relationships',['Relationship'],'http://schemas.openxmlformats.org/package/2006/relationships');
+xmlChildren('types','Types',['Override','Default'],'http://schemas.openxmlformats.org/package/2006/content-types');
+const ODS_CELL_ATTRIBUTES = new Map<string,Set<string>>([
+  ...['value-type','value','string-value','boolean-value','date-value','time-value','currency'].map(name => [name,new Set([ODF_NS + 'office:1.0',...(name === 'value-type' ? ['urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0'] : [])])] as [string,Set<string>]),
+  ...['formula','number-columns-repeated','number-columns-spanned','number-rows-spanned','number-matrix-columns-spanned','number-matrix-rows-spanned','matrix-covered'].map(name => [name,new Set([ODF_NS + 'table:1.0'])] as [string,Set<string>]),
 ]);
-const CRITICAL_XLSX_NODES = new Set(['workbook','worksheet','sheets','sheet','sheetData','row','c','f','v','is','sst','si','styleSheet','cellXfs','cellStyleXfs','xf','numFmts','numFmt','mergeCells','mergeCell','cols','col']);
-const CRITICAL_ATTRIBUTES: Record<string,Set<string>> = Object.fromEntries([
-  ...['value-type','value','string-value','boolean-value','date-value','time-value','currency'].map(name => [name,new Set([ODF_NS + 'office:1.0',...(name === 'date-value' ? [ODF_NS + 'table:1.0'] : []),...(name === 'value-type' ? ['urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0'] : [])])]),
-  ...['formula','number-rows-repeated','number-columns-repeated','number-columns-spanned','number-rows-spanned','number-matrix-columns-spanned','number-matrix-rows-spanned','matrix-covered','visibility','default-cell-style-name'].map(name => [name,new Set([ODF_NS + 'table:1.0'])]),
-  ['id',new Set([...REL_NS,...Array.from(NS_PREFIX.keys()).filter(uri => uri.startsWith(ODF_NS)),'http://www.w3.org/XML/1998/namespace'])],
-]);
+function xmlNamespaceMatches(uri: string,expected: string) { return !uri || (expected === 'xlsx' ? MAIN_NS.has(uri) : uri === expected); }
+function rootContext(name: string,uri: string): XmlContext | null {
+  let domain: XmlContext['domain'] | undefined, expected = '';
+  if (['workbook','worksheet','sst','styleSheet'].includes(name)) { domain = 'xlsx'; expected = 'xlsx'; }
+  else if (name === 'document-content' || name === 'document-styles') { domain = 'ods'; expected = ODF_NS + 'office:1.0'; }
+  else if (name === 'manifest') { domain = 'manifest'; expected = ODF_NS + 'manifest:1.0'; }
+  else if (name === 'Relationships') { domain = 'rels'; expected = 'http://schemas.openxmlformats.org/package/2006/relationships'; }
+  else if (name === 'Types') { domain = 'types'; expected = 'http://schemas.openxmlformats.org/package/2006/content-types'; }
+  if (domain && !xmlNamespaceMatches(uri,expected)) fail('UNSUPPORTED_NAMESPACE','Unexpected namespace for workbook root'); return domain ? {domain,name} : null;
+}
+function scopedAttributeNamespace(context: XmlContext | null,name: string): Set<string> | undefined {
+  if (context?.domain === 'ods') {
+    if (context.name === 'table-cell' || context.name === 'covered-table-cell') return ODS_CELL_ATTRIBUTES.get(name);
+    if (['table-row','table-column','table-row-group','table-column-group'].includes(context.name) && ['number-rows-repeated','number-columns-repeated','visibility','default-cell-style-name','display'].includes(name)) return new Set([ODF_NS + 'table:1.0']);
+  }
+  if (context?.domain === 'xlsx' && context.name === 'sheet' && name === 'id') return REL_NS;
+  return undefined;
+}
 function expandedName(name: string, namespaces: Map<string,string>, attribute = false): {name:string;uri:string} {
   const index = name.indexOf(':'); if (index < 0) return {name,uri:attribute ? '' : namespaces.get('') ?? ''};
   const prefix = name.slice(0,index), uri = namespaces.get(prefix); if (!uri) fail('UNSUPPORTED_NAMESPACE','Undeclared XML namespace prefix'); return {name:name.slice(index + 1),uri};
@@ -150,31 +178,46 @@ function parseXml(bytes: Uint8Array, state: State): Element {
   // Count before allocating a JS XML tree; readXml already bounds depth/markup.
   const tags = source.match(/<(?![!?/])/g)?.length ?? 0; state.nodes += tags; if (state.nodes > WORKBOOK_LIMITS.xmlNodes) fail('WORKBOOK_LIMIT', 'XML node count exceeds workbook limit');
   const raw = new XMLParser({ ignoreAttributes: false, preserveOrder: true, processEntities: false, parseTagValue: false, parseAttributeValue: false, trimValues: false, cdataPropName: '#cdata' }).parse(source) as Record<string,unknown>[];
-  const convert = (records: Record<string,unknown>[], inherited = new Map([['xml','http://www.w3.org/XML/1998/namespace']])): Element[] => {
+  const convert = (records: Record<string,unknown>[], inherited = new Map([['xml','http://www.w3.org/XML/1998/namespace']]), parent: XmlContext | null | undefined = undefined): Element[] => {
     const nodes: Element[] = [];
     for (const record of records) for (const [key,value] of Object.entries(record)) {
       if (key.startsWith('?') || key === ':@' || key === '#text' || key === '#cdata') continue;
       const rawAttrs = Object.entries((record[':@'] ?? {}) as Record<string,unknown>).map(([name,value]) => [name.replace(/^@_/,''),decodeXmlReferences(String(value))] as [string,string]);
       const declarations = rawAttrs.filter(([name]) => name === 'xmlns' || name.startsWith('xmlns:')); let namespaces = inherited;
       if (declarations.length) { namespaces = new Map(inherited); for (const [name,value] of declarations) { if (name.length > 255 || value.length > 4096) fail('WORKBOOK_LIMIT','XML namespace declaration exceeds limit'); const prefix = name === 'xmlns' ? '' : name.slice(6); if (prefix === 'xmlns' || prefix === 'xml' && value !== 'http://www.w3.org/XML/1998/namespace' || prefix !== 'xml' && value === 'http://www.w3.org/XML/1998/namespace' || value === 'http://www.w3.org/2000/xmlns/' || prefix && !value) fail('UNSUPPORTED_NAMESPACE','Invalid reserved XML namespace binding'); namespaces.set(prefix,value); } if (namespaces.size > 256) fail('WORKBOOK_LIMIT','XML namespace count exceeds limit'); }
-      const nodeName = expandedName(key,namespaces), expected = Object.hasOwn(CRITICAL_ODF_NODES,nodeName.name) ? CRITICAL_ODF_NODES[nodeName.name] : undefined;
-      if (nodeName.uri && (expected && nodeName.uri !== ODF_NS + expected + ':1.0' || CRITICAL_XLSX_NODES.has(nodeName.name) && !MAIN_NS.has(nodeName.uri))) fail('UNSUPPORTED_NAMESPACE','Unexpected namespace for workbook structural element');
+      const nodeName = expandedName(key,namespaces); let context: XmlContext | null = null;
+      if (parent === undefined) context = rootContext(nodeName.name,nodeName.uri);
+      else if (parent) { const expected = XML_CHILDREN.get(parent.domain + ':' + parent.name)?.get(nodeName.name); if (expected !== undefined) { if (!xmlNamespaceMatches(nodeName.uri,expected)) fail('UNSUPPORTED_NAMESPACE','Unexpected namespace in primary workbook structure'); context = {domain:parent.domain,name:nodeName.name}; } }
+      // Unknown/extension subtrees are unmodelled metadata. Their local names
+      // never acquire cell-context authority (xm:f is not a stored cell formula).
       const attrs: Record<string,string> = Object.create(null) as Record<string,string>;
       for (const [name,value] of rawAttrs) {
         if (name === 'xmlns' || name.startsWith('xmlns:')) continue; if (value.length > WORKBOOK_LIMITS.cellText) fail('WORKBOOK_LIMIT','XML attribute exceeds text budget');
-        const expanded = expandedName(name,namespaces,true), allowed = Object.hasOwn(CRITICAL_ATTRIBUTES,expanded.name) ? CRITICAL_ATTRIBUTES[expanded.name] : undefined; if (expanded.uri && allowed && !allowed.has(expanded.uri)) fail('UNSUPPORTED_NAMESPACE','Unexpected namespace for workbook value/formula attribute');
+        const expanded = expandedName(name,namespaces,true), allowed = scopedAttributeNamespace(context,expanded.name); if (expanded.uri && allowed && !allowed.has(expanded.uri)) fail('UNSUPPORTED_NAMESPACE','Unexpected namespace for workbook value/formula attribute');
         const canonical = expanded.uri ? `${NS_PREFIX.get(expanded.uri) ?? '{' + expanded.uri + '}'}:${expanded.name}` : expanded.name;
         if (Object.hasOwn(attrs,canonical)) fail('INVALID_WORKBOOK','Duplicate expanded XML attribute'); attrs[canonical] = value;
       }
       const content = array(value as Record<string,unknown>[]); let text = ''; const elements: Element[] = [], ordered: (string | Element)[] = [];
-      for (const item of content) { if ('#text' in item) { const value = decodeXmlReferences(String(item['#text'])); text += value; ordered.push(value); } else if ('#cdata' in item) for (const data of array(item['#cdata'] as Record<string,unknown>[])) { const value = String(data['#text'] ?? ''); text += value; ordered.push(value); } else { const converted = convert([item],namespaces); elements.push(...converted); ordered.push(...converted); } }
-      nodes.push({ name: nodeName.name, attrs, children: elements, text, content: ordered });
+      for (const item of content) { if ('#text' in item) { const value = decodeXmlReferences(String(item['#text'])); text += value; ordered.push(value); } else if ('#cdata' in item) for (const data of array(item['#cdata'] as Record<string,unknown>[])) { const value = String(data['#text'] ?? ''); text += value; ordered.push(value); } else { const converted = convert([item],namespaces,context); elements.push(...converted); ordered.push(...converted); } }
+      nodes.push({ name: nodeName.name, namespace: nodeName.uri, attrs, children: elements, text, content: ordered });
     }
     return nodes;
   };
   const roots = convert(raw); if (roots.length !== 1) fail('INVALID_WORKBOOK', 'XML package part must have one root'); return roots[0];
 }
-function collectText(node: Element | undefined): string { return node ? node.content.map(item => typeof item === 'string' ? item : collectText(item)).join('') : ''; }
+function appendCellText(previous: string,next: string): string { if (next.length > WORKBOOK_LIMITS.cellText - previous.length) fail('WORKBOOK_LIMIT','Expanded primary cell text exceeds limit'); return previous + next; }
+function xlsxPrimaryText(container: Element | undefined,gaps: WorkbookGapData[],sheet_id?: string): string {
+  let result = '';
+  const requireMain = (node: Element) => { if (node.namespace && !MAIN_NS.has(node.namespace)) fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary spreadsheet text'); };
+  const primary = (node: Element) => { requireMain(node); if (node.children.length) fail('INVALID_WORKBOOK','Nested elements in XLSX primary text'); for (const item of node.content) if (typeof item === 'string') result = appendCellText(result,item); };
+  for (const child of container?.children ?? []) {
+    if (child.name === 't') primary(child);
+    else if (child.name === 'r') { requireMain(child); for (const run of child.children) { if (run.name === 't') primary(run); else if (run.name === 'rPr') gap(gaps,'rich_text','Rich-text run formatting is not retained; primary text is retained.',sheet_id); else gap(gaps,'rich_text_extensions','Unmodelled rich-text extensions are excluded from primary cell text.',sheet_id); } }
+    else if (child.name === 'rPh' || child.name === 'phoneticPr') { requireMain(child); gap(gaps,'phonetic_guides','Phonetic pronunciation guides are separate annotations and are excluded from primary cell text.',sheet_id); }
+    else gap(gaps,'rich_text_extensions','Unmodelled rich-text extensions are excluded from primary cell text.',sheet_id);
+  }
+  return xlsxString(result);
+}
 function requiredPart(parts: Map<string,Uint8Array>, name: string) { const bytes = parts.get(name); if (!bytes) fail('INVALID_WORKBOOK', `Missing workbook package part: ${name}`); return bytes; }
 function resolvePart(base: string, target: string): string {
   if (!target || target.includes('\\') || /[\u0000-\u001f?#]/.test(target) || /^[a-z][a-z0-9+.-]*:/i.test(target)) fail('INVALID_WORKBOOK', 'Invalid internal package relationship');
@@ -199,13 +242,38 @@ function xlsxStyles(parts: Map<string,Uint8Array>, path: string | undefined, sta
   const fonts = children(first(root,'fonts'),'font'), fills = children(first(root,'fills'),'fill'), borders = children(first(root,'borders'),'border'), baseXfs = children(first(root,'cellStyleXfs'),'xf');
   const formats = new Map<number,string>(); for (const node of children(first(root,'numFmts'),'numFmt')) { const id = integer(attr(node,'numFmtId'),0,65535,'number format ID',0), code = attr(node,'formatCode'); if (!code || formats.has(id)) fail('INVALID_WORKBOOK', 'Invalid number format'); formats.set(id,textBudget(state,code)); }
   if (first(root,'dxfs')?.children.length || first(root,'colors')) gap(state.gaps,'advanced_styles','Conditional/differential styles and theme/indexed color resolution are not evaluated.');
+  const applyNames = ['applyFont','applyFill','applyBorder','applyAlignment','applyNumberFormat','applyProtection'] as const;
+  const readApply = (node: Element | undefined,values?: Record<string,string>,prefix = 'xf') => {
+    const flags = new Map<string,boolean>();
+    for (const name of applyNames) { const raw = attr(node,name); if (raw === undefined) continue; if (!['0','1','false','true'].includes(raw)) fail('INVALID_WORKBOOK','Invalid XLSX style application boolean'); flags.set(name,truth(raw)); if (values) values[`${prefix}.${name}`] = raw; }
+    return flags;
+  };
+  for (const base of baseXfs) readApply(base);
+  const nodeValues = new WeakMap<Element,Record<string,string>>();
+  const properties = (node: Element | undefined,prefix: string): Record<string,string> => { if (!node) return {}; const known = nodeValues.get(node); if (known) return known; const values: Record<string,string> = {}; xmlStyle(node,prefix,values); nodeValues.set(node,values); return values; };
+  const signature = (values: Record<string,string>) => JSON.stringify(Object.entries(values).sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0));
   return children(first(root,'cellXfs'),'xf').map(xf => {
-    const inherited = attr(xf,'xfId') === undefined ? undefined : baseXfs[integer(attr(xf,'xfId'),0,Math.max(0,baseXfs.length - 1),'base style index',0)];
+    const inherited = attr(xf,'xfId') === undefined ? baseXfs[0] : baseXfs[integer(attr(xf,'xfId'),0,Math.max(0,baseXfs.length - 1),'base style index',0)];
     if (attr(xf,'xfId') !== undefined && !inherited) fail('INVALID_WORKBOOK','Missing inherited cell style');
-    const values: Record<string,string> = {}; let number: string | null = null;
-    for (const [prop,collection,prefix] of [['fontId',fonts,'font'],['fillId',fills,'fill'],['borderId',borders,'border']] as const) { const raw = attr(xf,prop) ?? attr(inherited,prop); if (raw !== undefined) { const index = integer(raw,0,Math.max(0,collection.length - 1),`${prefix} index`,0); if (!collection[index]) fail('INVALID_WORKBOOK','Missing semantic style definition'); xmlStyle(collection[index],prefix,values); } }
-    for (const name of ['alignment','protection']) xmlStyle(first(xf,name) ?? first(inherited,name),name,values);
-    const numId = integer(attr(xf,'numFmtId') ?? attr(inherited,'numFmtId'),0,65535,'number format ID',0); number = formats.get(numId) ?? BUILTIN_FORMATS[numId] ?? null; if (number === null) gap(state.gaps,'number_format','Some built-in locale-specific number formats are not resolved.');
+    const values: Record<string,string> = {}, flags = readApply(xf,values); let number: string | null = null;
+    const baseFlags = readApply(inherited,values,'base'); if (baseFlags.size) gap(state.gaps,'style_application','Base-style application flags are retained as source evidence; exact named-style rendering is not certified.');
+    for (const [prop,collection,prefix,flag] of [['fontId',fonts,'font','applyFont'],['fillId',fills,'fill','applyFill'],['borderId',borders,'border','applyBorder']] as const) {
+      const lookup = (raw: string | undefined) => { if (raw === undefined) return undefined; const index = integer(raw,0,Math.max(0,collection.length - 1),`${prefix} index`,0); if (!collection[index]) fail('INVALID_WORKBOOK','Missing semantic style definition'); return collection[index]; };
+      const direct = lookup(attr(xf,prop)), base = lookup(attr(inherited,prop)), selected = flags.get(flag) === false ? base ?? collection[0] : direct ?? base;
+      if (!flags.has(flag) && direct && base && signature(properties(direct,prefix)) !== signature(properties(base,prefix))) gap(state.gaps,'style_application','Some style groups omit apply flags while direct and base properties differ; observed properties are retained and exact Excel application is not certified.');
+      Object.assign(values,properties(selected,prefix)); if (Object.keys(values).length > 256) fail('WORKBOOK_LIMIT','Combined semantic style exceeds property limit');
+    }
+    for (const [name,flag] of [['alignment','applyAlignment'],['protection','applyProtection']] as const) {
+      const direct = first(xf,name), base = first(inherited,name), selected = flags.get(flag) === false ? base : direct ?? base;
+      if (!flags.has(flag) && direct && signature(properties(direct,name)) !== signature(properties(base,name))) gap(state.gaps,'style_application','Some style groups omit apply flags while direct and base properties differ; observed properties are retained and exact Excel application is not certified.');
+      Object.assign(values,properties(selected,name)); if (Object.keys(values).length > 256) fail('WORKBOOK_LIMIT','Combined semantic style exceeds property limit');
+    }
+    const directNumber = attr(xf,'numFmtId'), baseNumber = attr(inherited,'numFmtId');
+    const format = (raw: string | undefined) => { const id = integer(raw,0,65535,'number format ID',0); return formats.get(id) ?? BUILTIN_FORMATS[id] ?? null; };
+    const directFormat = directNumber === undefined ? undefined : format(directNumber), baseFormat = format(baseNumber);
+    number = flags.get('applyNumberFormat') === false ? baseFormat : directFormat === undefined ? baseFormat : directFormat;
+    if (!flags.has('applyNumberFormat') && directFormat !== undefined && directFormat !== baseFormat) gap(state.gaps,'style_application','Some style groups omit apply flags while direct and base properties differ; observed properties are retained and exact Excel application is not certified.');
+    if (number === null) gap(state.gaps,'number_format','Some built-in locale-specific number formats are not resolved.');
     return { number, values };
   });
 }
@@ -231,7 +299,7 @@ async function extractXlsx(parts: Map<string,Uint8Array>, state: State): Promise
   const relPath = posix.join(posix.dirname(path),'_rels',posix.basename(path) + '.rels'), links = relationships(parts,relPath,state);
   const linkFor = (suffix: string) => { const found = links.filter(link => link.type.endsWith('/' + suffix)); if (found.length > 1 || found.some(link => link.external)) fail('INVALID_WORKBOOK',`Invalid ${suffix} relationship`); return found[0] ? resolvePart(path,found[0].target) : undefined; };
   const styleList = xlsxStyles(parts,linkFor('styles'),state), sharedPath = linkFor('sharedStrings'), shared: string[] = [];
-  if (sharedPath) { const strings = parseXml(requiredPart(parts,sharedPath),state); if (strings.name !== 'sst') fail('INVALID_WORKBOOK','Invalid shared strings'); for (const item of children(strings,'si')) { if (shared.length >= WORKBOOK_LIMITS.cells) fail('WORKBOOK_LIMIT','Too many shared strings'); const runs = children(item,'r'); if (runs.some(run => first(run,'rPr'))) gap(state.gaps,'rich_text','Inline rich-text run formatting is not retained; text content is retained.'); shared.push(textBudget(state,xlsxString(runs.length ? runs.map(run => collectText(first(run,'t'))).join('') : collectText(first(item,'t'))))); } }
+  if (sharedPath) { const strings = parseXml(requiredPart(parts,sharedPath),state); if (strings.name !== 'sst') fail('INVALID_WORKBOOK','Invalid shared strings'); for (const item of children(strings,'si')) { if (shared.length >= WORKBOOK_LIMITS.cells) fail('WORKBOOK_LIMIT','Too many shared strings'); shared.push(textBudget(state,xlsxPrimaryText(item,state.gaps))); } }
   for (const name of parts.keys()) {
     for (const [pattern,feature] of [[/(?:^|\/)externalLinks\//i,'external_links'],[/(?:^|\/)embeddings\//i,'embedded_objects'],[/(?:^|\/)drawings\//i,'drawings'],[/(?:^|\/)charts\//i,'charts'],[/(?:^|\/)(?:pivotTables|pivotCache)\//i,'pivots'],[/(?:^|\/)tables\//i,'structured_tables'],[/(?:^|\/)connections(?:\/|\.xml$)/i,'connections'],[/(?:^|\/)queryTables\//i,'query_tables']] as const) if (pattern.test(name)) gap(state.gaps,feature,`${feature} are outside the compared cell model and are never evaluated or refreshed.`);
     if (/(?:^|\/)comments[^/]*\.xml$/i.test(name)) gap(state.gaps,'comments','Cell comments are not part of compared cell content.');
@@ -267,7 +335,7 @@ async function extractXlsx(parts: Map<string,Uint8Array>, state: State): Promise
         if (styleRaw !== undefined || styleList.length) { const index = integer(styleRaw,0,Math.max(0,styleList.length - 1),'cell style index',0); const style = styleList[index]; if (!style) fail('INVALID_WORKBOOK','Missing cell style'); cell.number_format = style.number; cell.style = style.values; }
         if (['f','v','is'].some(name => children(node,name).length > 1)) fail('INVALID_WORKBOOK','Duplicate cell content');
         const f = first(node,'f'), valueNode = first(node,'v'), type = attr(node,'t') ?? 'n'; if (f) { cell.formula = f.text; cell.formula_dialect = 'xlsx_a1'; cell.formula_interpretation = 'explicit'; cell.cached_result = valueNode || first(node,'is') ? 'present' : 'missing'; if (attr(f,'t') && attr(f,'t') !== 'normal') { cell.formula_interpretation = 'unresolved'; const ref = attr(f,'ref'), sharedId = attr(f,'si'); if (ref) { addFormulaRange(formulaRanges,parseRange(ref)); if (attr(f,'t') === 'shared' && sharedId !== undefined) sharedWithRange.add(sharedId); } else if (attr(f,'t') === 'shared' && sharedId !== undefined) sharedWithoutRange.add(sharedId); else wholeFormulaSheet = true; gap(sheet.coverage_gaps,'shared_array_formulas','Shared/array/spill/data-table formulas are not expanded; source text and saved values are retained with unresolved interpretation.',sheet.sheet_id); } }
-        if (type === 'inlineStr') { cell.value_type = 'string'; const inline = first(node,'is'); cell.value = xlsxString(children(inline,'r').length ? children(inline,'r').map(run => collectText(first(run,'t'))).join('') : collectText(first(inline,'t'))); if (children(inline,'r').some(run => first(run,'rPr'))) gap(sheet.coverage_gaps,'rich_text','Inline rich-text run formatting is not retained.',sheet.sheet_id); }
+        if (type === 'inlineStr') { cell.value_type = 'string'; cell.value = xlsxPrimaryText(first(node,'is'),sheet.coverage_gaps,sheet.sheet_id); }
         else if (valueNode) { const value = valueNode.text;
           if (type === 's') { const index = integer(value,0,Math.max(0,shared.length - 1),'shared string index',0); if (shared[index] === undefined) fail('INVALID_WORKBOOK','Missing shared string'); cell.value_type = 'string'; cell.value = shared[index]; }
           else if (type === 'str') { cell.value_type = 'string'; cell.value = xlsxString(value); }
@@ -295,7 +363,22 @@ async function extractXlsx(parts: Map<string,Uint8Array>, state: State): Promise
   return { format: 'xlsx', sheets, coverage_gaps: state.gaps, calculation: 'stored_values_only_no_recalculation', date_system: truth(attr(first(root,'workbookPr'),'date1904')) ? '1904' : '1900', calc_flags: calculationFlags(first(root,'calcPr'),['calcId','calcMode','fullCalcOnLoad','refMode','iterate','iterateCount','iterateDelta','fullPrecision','calcCompleted','calcOnSave','concurrentCalc','concurrentManualCount','forceFullCalc'],state) };
 }
 function descendants(node: Element, name: string): Element[] { const found: Element[] = []; const visit = (current: Element) => { if (current.name === name) found.push(current); for (const child of current.children) visit(child); }; visit(node); return found; }
-function odsText(node: Element | undefined): string { if (!node) return ''; if (node.name === 's') return ' '.repeat(integer(attr(node,'text:c'),1,WORKBOOK_LIMITS.cellText,'ODS text space repetition')); if (node.name === 'tab') return '\t'; if (node.name === 'line-break') return '\n'; let result = ''; for (const item of node.content) { result += typeof item === 'string' ? item : odsText(item); if (result.length > WORKBOOK_LIMITS.cellText) fail('WORKBOOK_LIMIT','ODS rich text exceeds cell budget'); } return result; }
+function odsPrimaryText(paragraphs: Element[],gaps: WorkbookGapData[],sheet_id?: string): string {
+  let result = '';
+  const write = (value: string) => { result = appendCellText(result,value); };
+  const visit = (node: Element) => {
+    if (node.namespace && node.namespace !== ODF_NS + 'text:1.0') {
+      if (['p','span','s','tab','line-break','ruby','ruby-base','ruby-text'].includes(node.name)) fail('UNSUPPORTED_NAMESPACE','Foreign namespace cannot supply primary ODS text');
+      gap(gaps,'rich_text_extensions','Embedded/foreign rich-text annotations are excluded from primary cell text.',sheet_id); return;
+    }
+    if (node.name === 's') { const count = integer(attr(node,'text:c'),1,WORKBOOK_LIMITS.cellText,'ODS text space repetition'); if (count > WORKBOOK_LIMITS.cellText - result.length) fail('WORKBOOK_LIMIT','Expanded ODS spaces exceed cell text budget'); write(' '.repeat(count)); return; }
+    if (node.name === 'tab') { write('\t'); return; } if (node.name === 'line-break') { write('\n'); return; }
+    if (node.name === 'ruby' || node.name === 'ruby-text') { gap(gaps,'phonetic_guides','Ruby pronunciation annotations are excluded from primary cell text.',sheet_id); if (node.name === 'ruby') for (const child of children(node,'ruby-base')) visit(child); return; }
+    for (const item of node.content) if (typeof item === 'string') write(item); else visit(item);
+  };
+  for (const [index,paragraph] of paragraphs.entries()) { if (index) write('\n'); visit(paragraph); }
+  return result;
+}
 function canonicalStyle(node: Element): string { const attrs = Object.fromEntries(Object.entries(node.attrs).filter(([name]) => !['name','display-name'].includes(local(name)) && !name.startsWith('xmlns')).map(([name,value]) => [local(name),value]).sort(([a],[b]) => a.localeCompare(b))); return JSON.stringify({name:node.name,attrs,content:node.content.map(item => typeof item === 'string' ? item : canonicalStyle(item))}); }
 type OdsStyles = { cell(name?: string): Style; effective(name?: string): boolean; hidden(name?: string): boolean; size(name: string | undefined, kind: 'row' | 'column'): string | null };
 type OdsStyleScope = { styles: Map<string,Element>; formats: Map<string,Element> };
@@ -378,7 +461,7 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
   const spreadsheet = first(first(root,'body'),'spreadsheet'); if (!spreadsheet) fail('INVALID_WORKBOOK','Missing ODS spreadsheet body');
   const tables = children(spreadsheet,'table'); if (!tables.length || tables.length > WORKBOOK_LIMITS.sheets) fail('WORKBOOK_LIMIT','Workbook must have 1 to 100 sheets');
   if (descendants(root,'scripts').length || descendants(root,'event-listener').length) gap(state.gaps,'scripts_events','Scripts/event bindings are not executed or modelled.');
-  for (const [tag,feature] of [['frame','drawings'],['object','embedded_objects'],['data-pilot-tables','pivots'],['database-ranges','structured_tables'],['named-expressions','defined_names'],['content-validations','data_validation'],['conditional-formats','conditional_formatting'],['chart','charts']] as const) if (descendants(root,tag).length) gap(state.gaps,feature,`${feature} are not evaluated by the cell comparison model.`);
+  for (const [tag,feature] of [['frame','drawings'],['object','embedded_objects'],['data-pilot-tables','pivots'],['database-ranges','structured_tables'],['named-expressions','defined_names'],['content-validations','data_validation'],['conditional-formats','conditional_formatting'],['chart','charts'],['filter-condition','filters'],['equation','drawings']] as const) if (descendants(root,tag).length) gap(state.gaps,feature,`${feature} are not evaluated by the cell comparison model.`);
   for (const entry of descendants(manifest,'file-entry')) { const media = attr(entry,'manifest:media-type') ?? ''; if (media === 'application/vnd.oasis.opendocument.chart') gap(state.gaps,'charts','Embedded charts are not evaluated by the cell comparison model.'); else if (media && /(?:^Object|^Pictures\/)/.test(attr(entry,'manifest:full-path') ?? '')) gap(state.gaps,'embedded_objects','Embedded packages/images are not evaluated by the cell comparison model.'); }
   for (const node of descendants(root,'a')) if (attr(node,'xlink:href')) gap(state.gaps,'external_relationships','Linked content is retained only as cell text; targets are never followed.');
   if (descendants(root,'table-source').length || descendants(root,'dde-link').length || descendants(root,'cell-range-source').length) gap(state.gaps,'external_relationships','External/DDE data sources are never opened or refreshed.');
@@ -419,7 +502,7 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
       if (perRow > 0) for (let rr = row; rr <= lastRow; rr++) for (const item of rowCells) if (item.material) for (let cc = item.column; cc < item.column + item.repeat; cc++) {
         await checkpoint(state); const node = item.node, cell = makeCell(sheet,rr,cc), col = effectiveColumns[cc], semantic = styles.cell(item.style ?? col?.style); cell.style = semantic.values; cell.number_format = semantic.number; cell.hidden_row = hiddenRow; cell.hidden_column = col?.hidden ?? false; cell.formula = attr(node,'table:formula') ?? null; if (cell.formula !== null) { cell.formula_dialect = 'ods_openformula'; cell.formula_interpretation = 'explicit'; }
         const type = attr(node,'office:value-type'), explicitString = attr(node,'office:string-value'), paragraphs = children(node,'p');
-        if (type === 'string' || explicitString !== undefined || (!type && paragraphs.length)) { cell.value_type = 'string'; cell.value = explicitString ?? paragraphs.map(odsText).join('\n'); }
+        if (type === 'string' || explicitString !== undefined || (!type && paragraphs.length)) { cell.value_type = 'string'; cell.value = explicitString ?? odsPrimaryText(paragraphs,sheet.coverage_gaps,sheet.sheet_id); }
         else if (type === 'float' || type === 'percentage' || type === 'currency') { const value = attr(node,'office:value'); cell.value_type = 'number'; cell.value = value === undefined ? null : numeric(value); if (type === 'currency' && attr(node,'office:currency')) cell.style = {...cell.style,currency:attr(node,'office:currency')!}; }
         else if (type === 'boolean') { const value = attr(node,'office:boolean-value'); cell.value_type = 'boolean'; cell.value = value === undefined ? null : validateBoolean(value); }
         else if (type === 'date') { cell.value_type = 'date'; cell.value = attr(node,'office:date-value') ?? null; }

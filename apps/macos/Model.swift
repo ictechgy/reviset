@@ -56,6 +56,7 @@ struct ReorderConfirmation:Identifiable {
         }
     }
     @Published var sidecarRecoveryWarning = ""
+    @Published var workbookRecoveryWarning = ""
     var sidecarResult = JSON()
     var sidecarFailure = ""
     @Published var loading = false
@@ -131,7 +132,8 @@ struct ReorderConfirmation:Identifiable {
         guard error.isEmpty && !started else {if !started{initializing=false};return};started = true;defer{initializing=false}
         do {
             _ = try await bridge.call("recover")
-            _ = try await bridge.call("workbookRecover")
+            do { _ = try await bridge.call("workbookRecover") }
+            catch { workbookRecoveryWarning = "이전 스프레드시트 임시 작업을 정리하지 못했습니다. 문서 비교는 계속 사용할 수 있습니다. " + error.localizedDescription }
             if let recovered=try? await bridge.call("sidecarRecover"),recovered["skipped"].int>0 {sidecarRecoveryWarning="이전 참고 작업 \(recovered["skipped"].int)개를 자동 정리하지 못했습니다. 원문과 변경 이력은 계속 사용할 수 있습니다."}
             if FileManager.default.fileExists(atPath:bridge.resources.appendingPathComponent("onlyoffice-sidecar/provider.json").path) {sidecarConfigured = (try? await bridge.call("sidecarInfo")["configured"].bool) ?? false}
             try await refresh(); if let p = projects.first(where:{!$0["unreadable"].bool}) ?? projects.first { await selectProject(p["project_id"].string) }
@@ -255,6 +257,7 @@ struct ReorderConfirmation:Identifiable {
             if cancelRequested { throw BridgeError(code: "CANCELLED", message: "분석을 취소했습니다.") }
             committing = true; status = "고정 보고서를 저장합니다"
             _ = try await bridge.call("commit", ["project_id": id, "result": result.raw])
+            bridge.releaseAnalysis(owner:token)
             analysisToken=nil;busy = false; committing = false
             await selectProject(id, snapshot: result["report_id"].string)
             var summary=["새 고정 보고서 저장"]
@@ -271,6 +274,7 @@ struct ReorderConfirmation:Identifiable {
                 _ = try? await bridge.call("recover", progress["analysis_run_id"].string.isEmpty ? [:] : ["run_id": progress["analysis_run_id"].string])
                 status = "분석을 취소했습니다. 이전 보고서는 유지됩니다."
             } else { fail(error) }
+            bridge.releaseAnalysis(owner:token)
             try? await refresh();busy=false
             if !report.isNull {try? await updateChanges()}
         }

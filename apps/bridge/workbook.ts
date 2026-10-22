@@ -18,6 +18,7 @@ export async function handleWorkbookAction(store: Store, action: string, input: 
       finally { clearInterval(parentWatch); process.removeListener('SIGTERM', cancel); process.removeListener('SIGINT', cancel); }
     }
     case 'workbookCommit': { const a = z.object({ project_id: key, result: z.unknown() }).parse(args); return service.commit(a.project_id, a.result); }
+    case 'workbookRunStatus':{const a=z.object({project_id:key,analysis_run_id:z.string().regex(/^wrun_[a-f0-9-]+$/)}).parse(args);return service.runStatus(a.project_id,a.analysis_run_id);}
     case 'workbookDiscard':{const a=z.object({project_id:key,analysis_run_id:z.string().regex(/^wrun_[a-f0-9-]+$/)}).parse(args);return service.discard(a.project_id,a.analysis_run_id);}
     case 'workbookRecover': { const a = z.object({ project_id: key.optional() }).parse(args); return service.recover(a.project_id); }
     case 'workbookReports': { const a = z.object({ project_id: key }).parse(args); return service.reports(a.project_id); }

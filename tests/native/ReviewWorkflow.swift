@@ -45,6 +45,8 @@ import SwiftUI
   model.projectID="prj_history";var bad=validReport.dictionary;bad["report_id"]="rpt_range_fail";model.report=JSON(bad);model.changes=[JSON(["change_id":"stale_change"])];model.selectedChangeID="stale_change"
   do{try await model.updateChanges();throw NSError(domain:"RangeFailureExpected",code:1)}catch{}
   try require(model.changes.isEmpty && model.selected.isNull && !model.changesFailure.isEmpty && !model.loadingChanges,"FailedRangeDisplayedPriorChanges")
-  print("PASS actual native workflow: scoped MCP late/ABA replies, copy readiness, selection/create race, reorder cancel/stale safety, history interval/evidence, locked-second-instance startup has no bridge calls")
+  model.error="";await model.start()
+  try require(!model.initializing && model.error.isEmpty && !model.workbookRecoveryWarning.isEmpty && !model.projects.isEmpty,"WorkbookCleanupFailureBlockedDocuments")
+  print("PASS actual native workflow: scoped MCP late/ABA replies, copy readiness, selection/create race, reorder cancel/stale safety, history interval/evidence, locked-second-instance startup has no bridge calls, workbook cleanup warning preserves document startup")
  }
 }

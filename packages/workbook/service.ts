@@ -174,7 +174,21 @@ export class WorkbookService {
       this.store.db.prepare("UPDATE workbook_runs_v1 SET report_id=?,status='success',finished_at=? WHERE id=?").run(report.report_id, new Date().toISOString(), data.analysis_run_id);
       this.store.db.exec('COMMIT');
     } catch (error) { this.store.db.exec('ROLLBACK'); throw error; }
-    await rm(path, { force: true }); return { project_id: projectId, report_id: report.report_id, status: 'complete' };
+    // COMMIT is the outcome boundary. A leftover private stage does not undo
+    // the durable report and must not turn a completed analysis into a failure.
+    let cleanupPending=false;try{await rm(path,{force:true});}catch{cleanupPending=true;}
+    return { project_id: projectId, report_id: report.report_id, status: 'complete',cleanup_pending:cleanupPending };
+  }
+  runStatus(projectId:string,runId:string){
+    this.requireProject(projectId);if(!/^wrun_[a-f0-9-]+$/.test(runId))throw new DocverError('WORKBOOK_RUN_SCOPE','Invalid workbook run ID');
+    const run=this.store.db.prepare('SELECT status,report_id,started_at,finished_at,error FROM workbook_runs_v1 WHERE id=? AND project_id=?').get(runId,projectId);if(!run)throw new DocverError('WORKBOOK_RUN_SCOPE','Workbook run is outside this project');
+    const status=String(run.status);if(!['running','staged','success','failed'].includes(status))throw new DocverError('WORKBOOK_RUN_CORRUPT','Workbook run status is damaged');
+    let reportId:string|null=null;
+    if(status==='success'){
+      if(typeof run.report_id!=='string'||!/^wreport_[a-f0-9]{64}$/.test(run.report_id))throw new DocverError('WORKBOOK_RUN_CORRUPT','Successful workbook run has no valid fixed report');
+      try{reportId=this.resolveReportId(projectId,run.report_id);}catch{throw new DocverError('WORKBOOK_RUN_CORRUPT','Successful workbook run report is outside its project or missing');}
+    }
+    return {project_id:projectId,analysis_run_id:runId,status,report_id:reportId,started_at:String(run.started_at),finished_at:run.finished_at===null?null:String(run.finished_at),error:run.error===null?null:String(run.error)};
   }
   async recover(projectId?: string) {
     this.writable(); if (projectId) this.requireProject(projectId); const pending = this.store.db.prepare("SELECT id,project_id FROM workbook_runs_v1 WHERE status IN ('running','staged')" + (projectId ? ' AND project_id=?' : '')).all(...(projectId ? [projectId] : []));
