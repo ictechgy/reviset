@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { readFile, mkdir, stat } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { join, extname, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../storage/index.js';
@@ -7,7 +7,8 @@ import { QueryService } from '../query/index.js';
 import { analyze, type AnalyzeProgress } from '../engine/index.js';
 import { exportReport } from '../export/index.js';
 import { renderPdf } from '../render/index.js';
-import { byteHash,MAX_INPUT_BYTES, DocverError, Report, Decision, StoredDecision, MappingRelation,hash,canonical,BundleDecision,type BundleSelectionData,type RelationSelectionData, type InputManifest, type ReportData } from '../schema/index.js';
+import { byteHash, DocverError, Report, Decision, StoredDecision, MappingRelation,hash,canonical,BundleDecision,type BundleSelectionData,type RelationSelectionData, type InputManifest, type ReportData } from '../schema/index.js';
+import { readRegularFile } from '../runtime/regular-file.js';
 
 import {createBundleDecision} from '../bundle/index.js';
 import {rewriteMappings} from '../matching/relations.js';
@@ -46,7 +47,7 @@ export class DesktopService {
     else this.store.db.prepare(`UPDATE runs SET status='interrupted',finished_at=? WHERE status='running' AND project_id IN (SELECT id FROM ${DESKTOP_PROJECTS_TABLE})`).run(new Date().toISOString());
     return this.projects();
   }
-  async create(title:string,revisions:{label:string;files:string[];expected_sha256?:(string|null)[]}[]):Promise<DesktopDraft> {
+  async create(title:string,revisions:{label:string;files:string[];expected_sha256?:(string|null)[]}[],signal?:AbortSignal):Promise<DesktopDraft> {
     const imported:DesktopDraft['revisions']=[];await mkdir(join(this.root,'imports'),{recursive:true});
     for(const rev of revisions) {
       if(rev.expected_sha256&&(rev.expected_sha256.length!==rev.files.length||rev.expected_sha256.some(v=>v!==null&&!/^[a-f0-9]{64}$/.test(v))))throw new DocverError('INPUT_IDENTITY','선택한 파일의 검증 정보를 확인하세요.');
@@ -54,8 +55,7 @@ export class DesktopService {
       for(const [index,path] of rev.files.entries()) {
         const ext=extname(path).toLowerCase();
         if(!['.pptx','.pdf'].includes(ext))throw new DocverError('UNSUPPORTED_FORMAT','PPTX 또는 PDF 파일을 선택하세요.');
-        const size=(await stat(path)).size;if(size>MAX_INPUT_BYTES)throw new DocverError('FILE_LIMIT','파일당 512 MiB 이하를 지원합니다.');
-        const bytes=await readFile(path);if(bytes.length>MAX_INPUT_BYTES)throw new DocverError('FILE_LIMIT','파일 크기가 가져오기 한도를 넘었습니다.');
+        const bytes=await readRegularFile(path,{signal});
         const digest=byteHash(bytes);
         if(rev.expected_sha256?.[index]&&rev.expected_sha256[index]!==digest)throw new DocverError('SOURCE_CHANGED',`선택 후 파일 내용이 변경되었습니다: ${basename(path)}. 파일을 다시 선택하세요.`);
         const blob=digest+ext,target=join(this.root,'imports',blob);
@@ -65,14 +65,15 @@ export class DesktopService {
       if(files.length===2&&extname(files[0].blob)===extname(files[1].blob))throw new DocverError('INVALID_BUNDLE','같은 버전은 PPTX와 PDF를 하나씩 묶을 수 있습니다.');
       imported.push({label:rev.label,files});
     }
-    return this.save(Draft.parse({project_id:'prj_'+randomUUID().replaceAll('-',''),title,revisions:imported,mapping_decisions:[],last_report_id:null,dirty:true}));
+    signal?.throwIfAborted();return this.save(Draft.parse({project_id:'prj_'+randomUUID().replaceAll('-',''),title,revisions:imported,mapping_decisions:[],last_report_id:null,dirty:true}));
   }
-  manifest(projectId:string):InputManifest {
-    const p=this.project(projectId);return {project_id:p.project_id,title:p.title,revisions:p.revisions.map(r=>({label:r.label,files:r.files.map(f=>join(this.root,'imports',f.blob))})),mapping_decisions:p.mapping_decisions,mapping_relations:p.mapping_relations,bundle_decisions:p.bundle_decisions};
+  private projectManifest(p:DesktopDraft):InputManifest {
+    return {project_id:p.project_id,title:p.title,revisions:p.revisions.map(r=>({label:r.label,files:r.files.map(f=>join(this.root,'imports',f.blob))})),mapping_decisions:p.mapping_decisions,mapping_relations:p.mapping_relations,bundle_decisions:p.bundle_decisions};
   }
+  manifest(projectId:string):InputManifest {return this.projectManifest(this.project(projectId));}
   async run(projectId:string,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,persist=true) {
-    const input=this.manifest(projectId),draft_hash=hash(input);
-    const result={...await analyze(input,this.root,this.store,signal,onProgress,{persist:false}),draft_hash};
+    const project=this.project(projectId),input=this.projectManifest(project),draft_hash=hash(input),expectedInputSha256=project.revisions.map(revision=>revision.files.map(file=>file.blob.slice(0,64)));
+    const result={...await analyze(input,this.root,this.store,signal,onProgress,{persist:false,expectedInputSha256}),draft_hash};
     if(persist){try{this.commit(projectId,result);}catch(e){this.store.failRun(result.analysis_run_id,e instanceof DocverError?e.code:'COMMIT_FAILED');throw e;}}return result;
   }
   commit(projectId:string,result:{report:ReportData;analysis_run_id:string;draft_hash:string}) {

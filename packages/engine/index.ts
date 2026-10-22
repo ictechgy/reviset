@@ -27,8 +27,13 @@ function dependencyVersion(name:string):string {
   throw new Error('Dependency metadata not found: '+name);
 }
 export interface AnalyzeProgress {analysis_run_id:string;phase:'extract'|'render'|'match'|'save'|'complete';current:number;total:number;label?:string}
-export async function analyze(input:InputManifest,baseDir:string,store:Store,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,options:{persist?:boolean;ocr?:'off'|'auto'|'all';pptxPreview?:boolean}={}):Promise<{report:ReportData,analysis_run_id:string}> {
+export interface AnalyzeOptions {persist?:boolean;ocr?:'off'|'auto'|'all';pptxPreview?:boolean;expectedInputSha256?:readonly (readonly string[])[]}
+export async function analyze(input:InputManifest,baseDir:string,store:Store,signal?:AbortSignal,onProgress?:(progress:AnalyzeProgress)=>void,options:AnalyzeOptions={}):Promise<{report:ReportData,analysis_run_id:string}> {
   const manifest=Manifest.parse(input);
+  // Desktop drafts bind imports to persisted content hashes. Keep this contract
+  // internal so manifests and stored report identities remain compatible.
+  const expectedInputSha256=options.expectedInputSha256;
+  if(expectedInputSha256&&(expectedInputSha256.length!==manifest.revisions.length||expectedInputSha256.some((row,index)=>row.length!==manifest.revisions[index].files.length||row.some(digest=>!/^[a-f0-9]{64}$/.test(digest)))))throw new DocverError('INPUT_IDENTITY','Expected input identities must match every document occurrence');
   const environment:Record<string,string>={node:process.version,platform:process.platform,arch:process.arch,engine:ENGINE_VERSION,
     pdfjs:dependencyVersion('pdfjs-dist'),pdfjs_worker_sha256:await pdfWorkerEnvironment(),pdf_text_geometry_policy:PDF_TEXT_GEOMETRY_POLICY,matching_work_policy:MATCHING_WORK_POLICY,xml:dependencyVersion('fast-xml-parser'),fflate:dependencyVersion('fflate'),pptx_text_policy:PPTX_TEXT_POLICY,
     renderer:options.pptxPreview===false?'disabled':manifest.revisions.some(r=>r.files.some(f=>/\.pptx$/i.test(f)))?await officeEnvironment()??'unavailable':'not_used',ocr:options.ocr==='off'?'disabled':await ocrEnvironment(),settings:`ocr:${options.ocr??'auto'};max-input-512MiB;max-pdf-pages-1000`};
@@ -40,10 +45,12 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
     for(const [index,entry] of manifest.revisions.entries()) {
       const inputs=[];
       for(const [fileIndex,file] of entry.files.entries()) {
+        signal?.throwIfAborted();
+        if(expectedInputSha256){inputs.push('sha256:'+expectedInputSha256[index][fileIndex]);continue;}
         try {
           const path=resolve(baseDir,file),size=(await stat(path)).size;
           inputs.push(size>MAX_INPUT_BYTES?`oversized:${size}`:'sha256:'+await fileSha256(path,signal));
-        } catch {inputs.push(`unreadable:${index}:${fileIndex}`);}
+        } catch(error) {if(signal?.aborted)throw error;inputs.push(`unreadable:${index}:${fileIndex}`);}
       }
       inputIdentities.push([...inputs]);
       const pptx=entry.files.findIndex(f=>/\.pptx$/i.test(f)),pdf=entry.files.findIndex(f=>/\.pdf$/i.test(f));
@@ -63,9 +70,15 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
         try {
           const expected=inputIdentities[index][fileIndex],cacheKey=JSON.stringify([expected,/\.pptx$/i.test(file)?'pptx':'pdf']);
           let observation=cache.get(cacheKey);
-          if(!observation){const loaded=await ingest(path,{ocr:options.ocr??'auto',reuseRasterOcr:revisions.some(r=>r.pages.some(p=>p.ocr?.status==='available')),cacheRoot:join(store.root,'cache'),signal,onPage:(current,total)=>onProgress?.({analysis_run_id:run,phase:'extract',current:index,total:manifest.revisions.length,label:entry.label+` · PDF ${current}/${total}`})});
+          if(!observation){const loaded=await ingest(path,{ocr:options.ocr??'auto',expectedSha256:expected.startsWith('sha256:')?expected.slice(7):undefined,reuseRasterOcr:revisions.some(r=>r.pages.some(p=>p.ocr?.status==='available')),cacheRoot:join(store.root,'cache'),signal,onPage:(current,total)=>onProgress?.({analysis_run_id:run,phase:'extract',current:index,total:manifest.revisions.length,label:entry.label+` · PDF ${current}/${total}`})});
             if(loaded.asset.asset_id!==expected)throw new DocverError('SOURCE_CHANGED','Input changed while analysis was starting; retry with stable source files');
             store.putAsset(loaded.asset.asset_id,loaded.bytes);const {bytes,...metadata}=loaded;observation=structuredClone(metadata);cache.set(cacheKey,observation);
+          }else{
+            // Cached parsing cannot certify a different occurrence's current
+            // path. Verify its bytes before reusing the observation.
+            let digest:string;
+            try{digest=await fileSha256(path,signal);}catch(error){if(signal?.aborted)throw error;throw new DocverError('SOURCE_CHANGED','Cached document input is no longer readable as its expected original');}
+            if('sha256:'+digest!==expected)throw new DocverError('SOURCE_CHANGED','Cached document input no longer matches its expected original hash');
           }
           // Raw parse observations belong to the asset. Bundle/preview enrichment
           // belongs to this occurrence and must never leak through the cache.
@@ -74,7 +87,9 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
         } catch(e) {
           if(signal?.aborted||(e instanceof DocverError&&['CANCELLED','SOURCE_CHANGED'].includes(e.code)))throw e;
           // Preserve a content identity even when parsing fails; never put local paths in a report.
-          try {const size=(await stat(path)).size;failedInputs.push(size>MAX_INPUT_BYTES?`oversized:${size}`:'sha256:'+await fileSha256(path,signal));} catch {failedInputs.push('unreadable:'+failedInputs.length);}
+          const expected=inputIdentities[index][fileIndex];
+          if(expected.startsWith('sha256:'))failedInputs.push(expected);
+          else try {const size=(await stat(path)).size;failedInputs.push(size>MAX_INPUT_BYTES?`oversized:${size}`:'sha256:'+await fileSha256(path,signal));} catch(error) {if(signal?.aborted)throw error;failedInputs.push('unreadable:'+failedInputs.length);}
           errors.push({code:e instanceof DocverError?e.code:'INPUT_UNREADABLE',message:e instanceof DocverError?e.message:'Input could not be read'});
         }
       }

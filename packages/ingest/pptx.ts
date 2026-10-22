@@ -1,10 +1,9 @@
-import { unzipSync } from 'fflate';
+import { readOfficeZip } from '../runtime/office-zip.js';
 import { XMLParser } from 'fast-xml-parser';
 import {MAX_XML_DEPTH,readXml,xmlCharacter} from '../xml/index.js';
 import { posix } from 'node:path';
-import { MAX_PPTX_EXPANDED_BYTES,MAX_PPTX_PART_BYTES,box, byteHash, DocverError, id, normalize, type ElementData, type PageData } from '../schema/index.js';
+import { box, byteHash, DocverError, id, normalize, type ElementData, type PageData } from '../schema/index.js';
 
-const MAX_UNCOMPRESSED=MAX_PPTX_EXPANDED_BYTES;
 const parserOptions={ignoreAttributes:false, removeNSPrefix:false, transformTagName:(name:string)=>name.split(':').at(-1)!, textNodeName:'#text',
   trimValues:false, parseTagValue:false, parseAttributeValue:false, processEntities:false,maxNestedTags:MAX_XML_DEPTH};
 const parser=new XMLParser(parserOptions),orderedParser=new XMLParser({...parserOptions,preserveOrder:true,cdataPropName:'#cdata'});
@@ -53,14 +52,7 @@ export function extractPptx(bytes:Uint8Array, assetId:string):PageData[] {
     if(!runs)throw new DocverError('PPTX_TEXT_ORDER','DrawingML paragraph order is unavailable');
     return runs.join('');
   }).join('\n');
-  let total=0;
-  let zip:Record<string,Uint8Array>;
-  try { zip=unzipSync(bytes,{filter:entry=> {
-    total+=entry.originalSize;
-    if (total>MAX_UNCOMPRESSED || entry.originalSize>MAX_PPTX_PART_BYTES) throw new DocverError('ZIP_LIMIT','Uncompressed package exceeds limit');
-    if (entry.name.startsWith('/') || entry.name.split('/').includes('..')) throw new DocverError('ZIP_PATH','Unsafe ZIP part');
-    return true;
-  }}); } catch(e) { if(e instanceof DocverError) throw e; throw new DocverError('INVALID_PPTX','Invalid ZIP package'); }
+  const zip=readOfficeZip(bytes);
   function xml(path:string):any {
     if (!zip[path]) throw new DocverError('MISSING_PART',`Missing OOXML part: ${path}`);
     const source=readXml(zip[path]);

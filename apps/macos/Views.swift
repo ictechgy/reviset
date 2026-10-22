@@ -112,6 +112,7 @@ struct MainView: View {
     var body: some View {
         VStack(spacing:0) {
             if !model.error.isEmpty { HStack { Image(systemName:"exclamationmark.triangle.fill");Text(model.error).textSelection(.enabled);Spacer();Button("닫기"){model.error=""} }.padding(10).background(.red.opacity(0.1)) }
+            if !model.documentRecoveryWarning.isEmpty {HStack {Image(systemName:"info.circle");Text(model.documentRecoveryWarning).textSelection(.enabled);Spacer();Button("닫기"){model.documentRecoveryWarning=""}}.font(.caption).padding(10).background(.orange.opacity(0.1))}
             if !model.workbookRecoveryWarning.isEmpty {HStack {Image(systemName:"info.circle");Text(model.workbookRecoveryWarning);Spacer();Button("닫기"){model.workbookRecoveryWarning=""}}.font(.caption).padding(10).background(.orange.opacity(0.1))}
             if !model.sidecarRecoveryWarning.isEmpty {HStack {Image(systemName:"info.circle");Text(model.sidecarRecoveryWarning);Spacer();Button("임시 작업 폴더"){NSWorkspace.shared.open(model.bridge.library.appendingPathComponent("sidecars-v1"))};Button("닫기"){model.sidecarRecoveryWarning=""}}.font(.caption).padding(10).background(.orange.opacity(0.1))}
             if model.busy { HStack { ProgressView().controlSize(.small);Text(model.status);Text("\(model.progress["current"].int)/\(max(1,model.progress["total"].int))").foregroundStyle(.secondary);Spacer();Button(model.committing ? "저장 중" : "분석 취소"){model.cancel()}.disabled(model.committing) }.padding(10).background(.blue.opacity(0.06)) }
@@ -311,16 +312,45 @@ struct HistoryView: View {
     }
 }
 struct HistoryGraphView:View {
+    struct PageIndex {
+        struct Entry {
+            let revisionIndex:Int
+            let order:Int
+            let page:JSON
+        }
+        struct LineagePages {
+            let first:JSON
+            let pagesByRevision:[Int:[JSON]]
+        }
+        private var pagesByID:[String:[Entry]]=[:]
+        init(revisions:[JSON],primaryPages:(JSON)->[JSON]) {
+            var order=0
+            for (revisionIndex,revision) in revisions.enumerated() {
+                for page in primaryPages(revision) {
+                    pagesByID[page["page_id"].string,default:[]].append(Entry(revisionIndex:revisionIndex,order:order,page:page))
+                    order += 1
+                }
+            }
+        }
+        func lineage(_ lineage:JSON)->LineagePages? {
+            // Preserve source order even when lineage IDs are reversed or repeated.
+            let members=Set(lineage["page_ids"].array.map(\.string)).flatMap { pagesByID[$0] ?? [] }.sorted { $0.order<$1.order }
+            guard let first=members.first else { return nil }
+            return LineagePages(first:first.page,pagesByRevision:Dictionary(grouping:members,by:\.revisionIndex).mapValues { $0.map(\.page) })
+        }
+    }
     @EnvironmentObject var model:AppModel
-    var body:some View {VStack(alignment:.leading,spacing:14){HStack{VStack(alignment:.leading){Text("전체 버전 이력").font(.title2.weight(.semibold));Text("중간에 생겼다가 사라진 페이지와 관측 공백을 함께 보존합니다.").font(.caption).foregroundStyle(.secondary);Text("— 관측 없음 · 실제 삭제 여부는 변경 이벤트와 원문 근거에서 확인하세요.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)};Spacer()}.padding(.horizontal,18).padding(.top,20)
-        ScrollView([.vertical,.horizontal]){LazyVStack(alignment:.leading,spacing:1){HStack{Text("페이지 계보").frame(width:180,alignment:.leading);ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in Text(versionDisplayName(i,r)).frame(width:130)}}.font(.caption.weight(.semibold)).padding(9)
+    var body:some View {
+        let revisions=model.revisions
+        let pageIndex=PageIndex(revisions:revisions,primaryPages:model.primaryPages)
+        VStack(alignment:.leading,spacing:14){HStack{VStack(alignment:.leading){Text("전체 버전 이력").font(.title2.weight(.semibold));Text("중간에 생겼다가 사라진 페이지와 관측 공백을 함께 보존합니다.").font(.caption).foregroundStyle(.secondary);Text("— 관측 없음 · 실제 삭제 여부는 변경 이벤트와 원문 근거에서 확인하세요.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)};Spacer()}.padding(.horizontal,18).padding(.top,20)
+        ScrollView([.vertical,.horizontal]){LazyVStack(alignment:.leading,spacing:1){HStack{Text("페이지 계보").frame(width:180,alignment:.leading);ForEach(Array(revisions.enumerated()),id:\.offset){i,r in Text(versionDisplayName(i,r)).frame(width:130)}}.font(.caption.weight(.semibold)).padding(9)
             ForEach(model.report["lineages"].array){lineage in
-                let all=model.revisions.flatMap{model.primaryPages($0)},ids=lineage["page_ids"].array.map(\.string)
-                if let first=all.first(where:{ids.contains($0["page_id"].string)}){
+                if let pages=pageIndex.lineage(lineage){
                     HStack(alignment:.top) {
-                        Text(first["text"].string.components(separatedBy:"\n").first ?? "페이지").font(.caption).lineLimit(1).frame(width:180,alignment:.leading)
-                        ForEach(Array(model.revisions.enumerated()),id:\.offset) { i,r in
-                            let members=model.primaryPages(r).filter { ids.contains($0["page_id"].string) }
+                        Text(pages.first["text"].string.components(separatedBy:"\n").first ?? "페이지").font(.caption).lineLimit(1).frame(width:180,alignment:.leading)
+                        ForEach(Array(revisions.enumerated()),id:\.offset) { i,r in
+                            let members=pages.pagesByRevision[i] ?? []
                             VStack(spacing:4) {
                                 if members.isEmpty { Text("—").font(.caption).foregroundStyle(.secondary).padding(.vertical,7) }
                                 ForEach(members) { page in

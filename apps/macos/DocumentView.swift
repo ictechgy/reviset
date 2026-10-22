@@ -77,18 +77,40 @@ struct OriginalPDFView: NSViewRepresentable {
     let evidence: JSON
     let page: JSON
     func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator { var path = ""; var pageNumber = -1; var zoom = -1.0; var marks: [(PDFPage, PDFAnnotation)] = [] }
+    final class Coordinator: NSObject {
+        var path = ""; var pageNumber = -1; var zoom = -1.0
+        var marks: [(PDFPage, PDFAnnotation)] = []
+        var selectedPage: PDFPage?
+        func observe(_ view: PDFView) {
+            NotificationCenter.default.addObserver(self, selector: #selector(pageChanged(_:)), name: .PDFViewPageChanged, object: view)
+        }
+        @objc private func pageChanged(_ notification: Notification) {
+            guard let view = notification.object as? PDFView, let selectedPage,
+                  selectedPage.document === view.document, view.currentPage !== selectedPage else { return }
+            // The model owns source/reference associations. PDF links and native
+            // keys cannot independently change the page behind its evidence.
+            view.go(to: selectedPage)
+        }
+        deinit { NotificationCenter.default.removeObserver(self) }
+    }
     func makeNSView(context: Context) -> PDFView {
         let view = PDFView(); view.displayMode = .singlePage; view.displayDirection = .vertical
         view.displaysPageBreaks = true; view.pageShadowsEnabled = true; view.backgroundColor = NSColor.underPageBackgroundColor
-        view.minScaleFactor = 0.1; view.maxScaleFactor = 8; return view
+        view.minScaleFactor = 0.1; view.maxScaleFactor = 8
+        context.coordinator.observe(view); return view
+    }
+    static func dismantleNSView(_ view: PDFView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(coordinator, name: .PDFViewPageChanged, object: view)
+        coordinator.selectedPage = nil
     }
     func updateNSView(_ view: PDFView, context: Context) {
         let sourceChanged=context.coordinator.path != path
+        context.coordinator.selectedPage = nil
         if sourceChanged { view.document = PDFDocument(url: URL(fileURLWithPath: path)); context.coordinator.path = path }
-        for (p, a) in context.coordinator.marks { p.removeAnnotation(a) }; context.coordinator.marks = []
+        for (p, a) in context.coordinator.marks { p.removeAnnotation(a); view.annotationsChanged(on: p) }; context.coordinator.marks = []
         guard let current = view.document?.page(at: max(0, pageNumber - 1)) else { return }
-        if sourceChanged || context.coordinator.pageNumber != pageNumber || context.coordinator.zoom != zoom {
+        context.coordinator.selectedPage = current
+        if sourceChanged || context.coordinator.pageNumber != pageNumber || context.coordinator.zoom != zoom || view.currentPage !== current {
             view.autoScales = zoom == 0;view.go(to:current);if zoom>0{view.scaleFactor=zoom}
             context.coordinator.pageNumber=pageNumber;context.coordinator.zoom=zoom
         }

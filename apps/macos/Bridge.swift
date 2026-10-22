@@ -7,7 +7,7 @@ struct JSON: @unchecked Sendable, Identifiable {
     subscript(_ key: String) -> JSON { JSON((raw as? [String: Any])?[key] ?? NSNull()) }
     var string: String { raw as? String ?? "" }
     var number: Double { (raw as? NSNumber)?.doubleValue ?? 0 }
-    var int: Int { Int(number) }
+    var int: Int { Int(exactly:number.rounded(.towardZero)) ?? 0 }
     var bool: Bool { (raw as? NSNumber)?.boolValue ?? false }
     var array: [JSON] { (raw as? [Any] ?? []).map(JSON.init) }
     var dictionary: [String: Any] { raw as? [String: Any] ?? [:] }
@@ -58,7 +58,12 @@ final class Bridge: @unchecked Sendable {
     private var currentAnalysisOwner: UUID?
     private var sidecarRequests: [UUID:BridgeRequestCancellation] = [:]
     private var cancelled = false
-    init(resources: URL, library: URL) { self.resources = resources; self.library = library }
+    init(resources: URL, library: URL) {
+        // A helper can exit before consuming stdin. Let FileHandle report EPIPE
+        // as an error instead of allowing that write to terminate the app.
+        _ = Darwin.signal(SIGPIPE,SIG_IGN)
+        self.resources = resources; self.library = library
+    }
     func cancel(owner:UUID? = nil) {
         lock.lock();guard analysisReserved,currentAnalysisOwner == owner else{lock.unlock();return};cancelled=true;let process=analysisProcess;lock.unlock()
         guard let process,process.isRunning else{return};let pid=process.processIdentifier;guard pid>1 else{return};process.terminate()

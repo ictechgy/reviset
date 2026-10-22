@@ -155,7 +155,7 @@ private extension JSON {
     }
     func invalidateReads() {
         for channel in Array(owners.keys) { invalidate(channel) }
-        loadingRange = false; loadingChanges = false; loadingCell = false; loadingHistory = false; loadingMCP = false
+        loadingReport = false; loadingRange = false; loadingChanges = false; loadingCell = false; loadingHistory = false; loadingMCP = false
         mcp = ""; mcpScope = ""; mcpFailure = ""
     }
     func closeReads() {
@@ -561,17 +561,40 @@ private extension JSON {
     func cancelAnalysis() { guard canCancelAnalysis,let token = analysisToken else { return }; cancelRequested = true; status = "취소 중… 이전 고정 보고서를 유지합니다."; bridge.cancel(owner:token) }
     func create(title: String, rows: [WorkbookImportRow]) async throws {
         guard active, !busy, !loadingDemo else { throw BridgeError(code:"WORKBOOK_BUSY",message:"현재 작업이 끝난 뒤 가져오세요.") }
+        let retainedProject = projectID, retainedReport = reportID, retainedRange = rangeScope
+        let interruptedReport = loadingReport || report.isNull
+        let interruptedRange = loadingRange, interruptedChanges = loadingChanges, interruptedCell = loadingCell, interruptedHistory = loadingHistory
+        let restoreMCP = loadingMCP || !mcp.isEmpty, retainedOffset = cellTextOffset
         busy = true; failure = ""; invalidateReads()
+        let completion = begin("create-completion")
+        func retained() -> Bool { active && current(completion) && projectID == retainedProject && reportID == retainedReport && rangeScope == retainedRange }
         do {
             let value = try await bridge.call("workbookCreate",["title":title,"revisions":rows.map { ["label":$0.label,"path":$0.url.path,"expected_sha256":$0.identity.sha256] }])
-            busy = false; importPresented = false
-            guard active else { return }
-            let project = value["project_id"].string, completion = begin("create-completion")
+            busy = false
+            guard retained() else { return }; importPresented = false
+            let project = value["project_id"].string
             await refreshProjects()
-            guard active, current(completion) else { return }
+            guard retained() else { return }
             await selectProject(project)
             guard active, projectID == project else { return }; await run()
-        } catch { busy = false; throw error }
+        } catch {
+            busy = false
+            if retained(), !retainedProject.isEmpty {
+                if interruptedReport {
+                    await selectProject(retainedProject,snapshot:retainedReport)
+                } else {
+                    // Cancellation is not an empty observation. Retry the reads
+                    // owned by the retained view, stopping at any newer scope.
+                    if interruptedRange || beforeCells.isEmpty || afterCells.isEmpty { await loadRange() }
+                    if retained(), interruptedChanges || changesFromID.isEmpty { await loadChanges(preserveEndpoints:!changesFromID.isEmpty && !changesToID.isEmpty) }
+                    if retained(), interruptedCell { await loadSelectedCells(offset:retainedOffset) }
+                    if retained(), interruptedHistory { await loadCellHistory() }
+                    if retained(), restoreMCP { await loadMCP() }
+                    if retained() { await loadReleases() }
+                }
+            }
+            throw error
+        }
     }
     func useDemo() async {
         guard active, !busy, !loadingDemo, !loadingReport else { return }
@@ -1286,14 +1309,14 @@ struct WorkbookGrid: NSViewRepresentable {
         func numberOfRows(in tableView: NSTableView) -> Int { parent.rowCount }
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             guard let tableColumn else { return nil }
-            let id = NSUserInterfaceItemIdentifier("WorkbookPlainCell")
+            let id = NSUserInterfaceItemIdentifier(tableColumn.identifier.rawValue == "row" ? "WorkbookRowNumberCell":"WorkbookPlainCell")
             let cell = tableView.makeView(withIdentifier:id,owner:self) as? NSTableCellView ?? NSTableCellView()
             cell.identifier = id
             cell.wantsLayer = true; cell.layer?.borderWidth = 0; cell.layer?.backgroundColor = NSColor.clear.cgColor
             let text: NSTextField
             if let existing = cell.textField { text = existing } else { text = NSTextField(labelWithString:""); text.translatesAutoresizingMaskIntoConstraints = false; text.lineBreakMode = .byTruncatingTail; cell.addSubview(text); cell.textField = text; NSLayoutConstraint.activate([text.leadingAnchor.constraint(equalTo:cell.leadingAnchor,constant:6),text.trailingAnchor.constraint(equalTo:cell.trailingAnchor,constant:-5),text.centerYAnchor.constraint(equalTo:cell.centerYAnchor)]) }
             let physicalRow = parent.rowStart+row
-            if tableColumn.identifier.rawValue == "row" { text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.row.\(physicalRow)"); text.stringValue = String(physicalRow); text.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular); text.textColor = .secondaryLabelColor; cell.toolTip = nil }
+            if tableColumn.identifier.rawValue == "row" { text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.row.\(physicalRow)"); text.stringValue = String(physicalRow); text.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular); text.textColor = .secondaryLabelColor; text.setAccessibilityLabel("\(physicalRow)행"); cell.toolTip = nil }
             else {
                 let column = Int(tableColumn.identifier.rawValue) ?? 1
                 text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.cell." + WorkbookGrid.address(physicalRow,column))

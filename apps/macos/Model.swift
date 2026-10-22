@@ -56,6 +56,7 @@ struct ReorderConfirmation:Identifiable {
         }
     }
     @Published var sidecarRecoveryWarning = ""
+    @Published var documentRecoveryWarning = ""
     @Published var workbookRecoveryWarning = ""
     var sidecarResult = JSON()
     var sidecarFailure = ""
@@ -131,7 +132,8 @@ struct ReorderConfirmation:Identifiable {
     func start() async {
         guard error.isEmpty && !started else {if !started{initializing=false};return};started = true;defer{initializing=false}
         do {
-            _ = try await bridge.call("recover")
+            do { _ = try await bridge.call("recover") }
+            catch { documentRecoveryWarning = "이전 문서 임시 작업을 정리하지 못했습니다. 저장된 보고서는 계속 열 수 있습니다. " + error.localizedDescription }
             do { _ = try await bridge.call("workbookRecover") }
             catch { workbookRecoveryWarning = "이전 스프레드시트 임시 작업을 정리하지 못했습니다. 문서 비교는 계속 사용할 수 있습니다. " + error.localizedDescription }
             if let recovered=try? await bridge.call("sidecarRecover"),recovered["skipped"].int>0 {sidecarRecoveryWarning="이전 참고 작업 \(recovered["skipped"].int)개를 자동 정리하지 못했습니다. 원문과 변경 이력은 계속 사용할 수 있습니다."}
@@ -160,7 +162,7 @@ struct ReorderConfirmation:Identifiable {
     }
     func updateChanges() async throws {
         guard !report.isNull else { return }
-        if revisions.count < 2 { changes = []; selectedChangeID = ""; return }
+        if revisions.count < 2 { changes = []; selectedChangeID = ""; selectEvidence(); return }
         let history = tab == "history", start = history ? 0 : from, end = history ? revisions.count - 1 : to
         let project=projectID,reportID=report["report_id"].string,before=revision(start)["revision_occurrence_id"].string,after=revision(end)["revision_occurrence_id"].string
         let mode=history ? "history" : end == start+1 ? "adjacent" : "range_net"
@@ -186,20 +188,34 @@ struct ReorderConfirmation:Identifiable {
             if pendingRange?.generation==generation {pendingRange=nil}
         } catch {
             guard generation==rangeGeneration else{return}
-            changes=[];selectedChangeID=nil;loadingChanges=false;changesFailure=error.localizedDescription
+            changes=[];selectedChangeID=nil;loadingChanges=false;changesFailure=error.localizedDescription;selectEvidence()
             if pendingRange?.generation==generation {pendingRange=nil}
             throw error
         }
     }
 
     func selectEvidence() {
-        if let n=pageNavigation,n.report==report["report_id"].string,n.from==from,n.to==to {leftPageID=n.left;rightPageID=n.right;return}
-        guard !selected.isNull else { evidenceWarning="";return }
+        if let n=pageNavigation,n.report==report["report_id"].string,n.from==from,n.to==to {
+            leftPageID=normalizedPage(n.left,in:revision(from),preserveAbsent:true)
+            rightPageID=normalizedPage(n.right,in:revision(to),preserveAbsent:true)
+            return
+        }
+        guard !selected.isNull else {
+            evidenceWarning=""
+            leftPageID=normalizedPage(leftPageID,in:revision(from))
+            rightPageID=normalizedPage(rightPageID,in:revision(to))
+            return
+        }
         if tab == "history" { return }
         evidenceWarning=""
         let evidence = selected["evidence"].array
         leftPageID = evidenceSelection(evidence, in:revision(from), current:leftPageID)
         rightPageID = evidenceSelection(evidence, in:revision(to), current:rightPageID)
+    }
+    private func normalizedPage(_ id:String,in revision:JSON,preserveAbsent:Bool = false)->String {
+        let pages=primaryPages(revision)
+        if (preserveAbsent && id.isEmpty) || pages.contains(where:{$0["page_id"].string==id}) { return id }
+        return pages.first?["page_id"].string ?? ""
     }
     func evidenceSelection(_ evidence:[JSON],in revision:JSON,current:String)->String {
         let relevant=evidence.filter { $0["revision_occurrence_id"].string == revision["revision_occurrence_id"].string }
@@ -249,35 +265,86 @@ struct ReorderConfirmation:Identifiable {
     func changeRange() { Task { do { try await updateChanges() } catch { fail(error) } } }
     func run(_ id: String) async {
         guard libraryAvailable && !initializing && !busy && !projects.contains(where:{$0["project_id"].string==id && $0["unreadable"].bool}) else { return };selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailure="";evidenceWarning="";let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); status = "문서를 준비하고 있습니다"
+        let generation=selectionGeneration,retainedProject=projectID,retainedReport=report["report_id"].string
+        var runID="",commitAttempted=false
         defer{bridge.releaseAnalysis(owner:token)}
         do {
             let result = try await bridge.call("analyze", ["project_id": id], analysis: true,progress:{ [weak self] p in
                 Task { @MainActor in guard let self,self.busy,!self.committing,self.analysisToken==token else{return}; self.progress = p; self.status = p["phase"].string == "match" ? "페이지 대응과 변경을 계산합니다" : p["phase"].string == "render" ? p["label"].string+" 화면 준비 중" : p["label"].string.isEmpty ? "원본을 추출합니다" : p["label"].string + " 추출 중" }
             },analysisOwner:token,holdAnalysis:true)
+            runID=result["analysis_run_id"].string
             if cancelRequested { throw BridgeError(code: "CANCELLED", message: "분석을 취소했습니다.") }
-            committing = true; status = "고정 보고서를 저장합니다"
-            _ = try await bridge.call("commit", ["project_id": id, "result": result.raw])
+            committing = true; commitAttempted=true; status = "고정 보고서를 저장합니다"
+            let committed = try await bridge.call("commit", ["project_id": id, "result": result.raw])
+            guard committed["status"].string=="complete",!committed["report_id"].string.isEmpty else { throw BridgeError(code:"COMMIT_REPLY",message:"분석 저장 응답을 확인하지 못했습니다.") }
             bridge.releaseAnalysis(owner:token)
             analysisToken=nil;busy = false; committing = false
-            await selectProject(id, snapshot: result["report_id"].string)
-            var summary=["새 고정 보고서 저장"]
-            let quality=report["quality_counts"]
-            if quality["ocr_inferred_pages"].int>0{summary.append("OCR 추정 \(quality["ocr_inferred_pages"].int)쪽")}
-            if quality["ocr_failed_pages"].int>0{summary.append("OCR 실패 \(quality["ocr_failed_pages"].int)쪽")}
-            if quality["unresolved_comparison_pages"].int>0{summary.append("판독 보류 \(quality["unresolved_comparison_pages"].int)쪽")}
-            if quality["pptx_without_render"].int>0{summary.append("PPTX 렌더 없음 \(quality["pptx_without_render"].int)쪽")}
-            if quality["reference_pdf_pages"].int>0{summary.append("제공 PDF 화면 \(quality["reference_pdf_pages"].int)쪽 · 사용자 연결 \(quality["human_reference_pdf_pages"].int)쪽 · 자동 추정 \(quality["inferred_reference_pdf_pages"].int)쪽")}
-            status=summary.joined(separator:" · ")
+            guard generation==selectionGeneration else { return }
+            if committed["cleanup_pending"].bool { documentRecoveryWarning="분석 결과는 저장됐으며 임시 파일 정리를 확인해야 합니다." }
+            await openCompletedReport(id,snapshot:committed["report_id"].string,recovered:false)
         } catch {
-            analysisToken=nil;committing = false
-            if cancelRequested || (error as? BridgeError)?.code == "CANCELLED" {
-                _ = try? await bridge.call("recover", progress["analysis_run_id"].string.isEmpty ? [:] : ["run_id": progress["analysis_run_id"].string])
-                status = "분석을 취소했습니다. 이전 보고서는 유지됩니다."
-            } else { fail(error) }
+            let runError=error
+            if runID.isEmpty { runID=progress["analysis_run_id"].string }
+            var recoveredReport="",cleanupPending=false,uncertain=commitAttempted,recoveryWarning=""
+            var mayRecover = !commitAttempted
+            if commitAttempted, !runID.isEmpty {
+                committing=true;status="이번 분석의 저장 상태를 확인합니다"
+                do {
+                    let run=try await bridge.call("runStatus",["project_id":id,"analysis_run_id":runID])
+                    guard run["project_id"].string==id,run["analysis_run_id"].string==runID else { throw BridgeError(code:"RUN_SCOPE",message:"이번 분석의 저장 상태 범위를 확인하지 못했습니다.") }
+                    if ["success","partial"].contains(run["status"].string),!run["report_id"].string.isEmpty {
+                        recoveredReport=run["report_id"].string;cleanupPending=run["cleanup_pending"].bool;uncertain=false
+                    } else if ["running","failed","interrupted"].contains(run["status"].string),run["report_id"].isNull {
+                        uncertain=false;mayRecover=true
+                    } else { recoveryWarning="이번 분석의 저장 여부를 확인하지 못했습니다." }
+                } catch { recoveryWarning="이번 분석의 저장 여부 확인 필요: " + error.localizedDescription }
+            }
+            if mayRecover,!runID.isEmpty {
+                do { _ = try await bridge.call("recover",["run_id":runID]) }
+                catch { recoveryWarning="이번 문서 분석의 임시 파일 정리를 확인하지 못했습니다. " + error.localizedDescription }
+            }
+            // Release the writer only after the exact owned run is reconciled;
+            // report reads must not hold another window's analysis reservation.
             bridge.releaseAnalysis(owner:token)
-            try? await refresh();busy=false
-            if !report.isNull {try? await updateChanges()}
+            analysisToken=nil;committing=false;busy=false
+            guard generation==selectionGeneration else { return }
+            if cleanupPending { recoveryWarning="분석 결과는 저장됐으며 임시 파일 정리를 확인해야 합니다." }
+            if uncertain && recoveryWarning.isEmpty { recoveryWarning="이번 분석의 저장 여부를 확인하지 못했습니다. 저장 상태를 다시 확인해야 합니다." }
+            if !recoveryWarning.isEmpty { documentRecoveryWarning=recoveryWarning }
+            if !recoveredReport.isEmpty {
+                await openCompletedReport(id,snapshot:recoveredReport,recovered:true)
+                return
+            }
+            let cancelled=cancelRequested || runError is CancellationError || (runError as? BridgeError)?.code=="CANCELLED"
+            let outcome=uncertain ? "저장 여부 확인 필요 · 마지막으로 확인한 상태를 유지합니다." : cancelled ? "분석을 취소했습니다. 이전 보고서는 유지됩니다." : "분석하지 못했습니다. 이전 보고서는 유지됩니다."
+            try? await refresh()
+            guard generation==selectionGeneration,projectID==retainedProject else { return }
+            var completionGeneration=generation
+            if !retainedProject.isEmpty {
+                if let loaded=try? await bridge.call("reports",["project_id":retainedProject]).array {
+                    guard generation==selectionGeneration,projectID==retainedProject else { return };reports=loaded
+                }
+                if report.isNull,!retainedReport.isEmpty { completionGeneration += 1;await selectProject(retainedProject,snapshot:retainedReport) }
+                else if !report.isNull { try? await updateChanges() }
+            }
+            guard selectionGeneration==completionGeneration,projectID==retainedProject else { return }
+            if !cancelled && !uncertain { fail(runError) }
+            status=outcome
         }
+    }
+    private func openCompletedReport(_ project:String,snapshot:String,recovered:Bool) async {
+        let generation=selectionGeneration+1
+        await selectProject(project,snapshot:snapshot)
+        guard generation==selectionGeneration,projectID==project else { return }
+        guard report["report_id"].string==snapshot else { status="저장된 분석 결과를 확인했습니다. 보고서를 다시 불러와주세요.";return }
+        var summary=[recovered ? "저장된 분석 결과를 확인해 다시 열었습니다." : "새 고정 보고서 저장"]
+        let quality=report["quality_counts"]
+        if quality["ocr_inferred_pages"].int>0{summary.append("OCR 추정 \(quality["ocr_inferred_pages"].int)쪽")}
+        if quality["ocr_failed_pages"].int>0{summary.append("OCR 실패 \(quality["ocr_failed_pages"].int)쪽")}
+        if quality["unresolved_comparison_pages"].int>0{summary.append("판독 보류 \(quality["unresolved_comparison_pages"].int)쪽")}
+        if quality["pptx_without_render"].int>0{summary.append("PPTX 렌더 없음 \(quality["pptx_without_render"].int)쪽")}
+        if quality["reference_pdf_pages"].int>0{summary.append("제공 PDF 화면 \(quality["reference_pdf_pages"].int)쪽 · 사용자 연결 \(quality["human_reference_pdf_pages"].int)쪽 · 자동 추정 \(quality["inferred_reference_pdf_pages"].int)쪽")}
+        status=summary.joined(separator:" · ")
     }
     func cancel() { guard busy && !committing,let token=analysisToken else { return }; cancelRequested = true; bridge.cancel(owner:token); status = "분석을 취소하고 있습니다" }
     func create(title: String, rows: [ImportRow]) async throws -> JSON {

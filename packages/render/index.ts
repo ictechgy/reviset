@@ -8,9 +8,9 @@ import { tmpdir,homedir } from 'node:os';
 import { join, resolve,dirname,posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { pdfOptions } from '../ingest/pdf.js';
-import { DocverError,MAX_PPTX_EXPANDED_BYTES,MAX_PPTX_PART_BYTES,byteHash,type OfficeInputPreparationData } from '../schema/index.js';
+import { DocverError,MAX_PPTX_EXPANDED_BYTES,byteHash,type OfficeInputPreparationData } from '../schema/index.js';
 import { runTool,officeExecutable } from '../runtime/tools.js';
-import { unzipSync } from 'fflate';
+import {officeZipDirectory,readOfficeZipPart} from '../runtime/office-zip.js';
 import { XMLParser,XMLValidator } from 'fast-xml-parser';
 import {prepareOfficeInput} from './office-input.js';
 import {readXml,xmlDecoder,decodeXmlReferences} from '../xml/index.js';
@@ -19,9 +19,13 @@ export const svgResourcePolicy='fragment-only-no-xml-base-v1';
 export const officeIsolationPolicy='isolated-env-profile-ipc-mach-no-directory-enumeration-v2';
 export function validateRenderPackage(bytes:Uint8Array,depth=0,budget={total:0}):void{
   if(depth>2)throw new DocverError('ZIP_LIMIT','Nested render package exceeds limit');
-  const parts=new Set<string>();
-  const zip=unzipSync(bytes,{filter:e=>{parts.add(e.name);budget.total+=e.originalSize;if(budget.total>MAX_PPTX_EXPANDED_BYTES||e.originalSize>MAX_PPTX_PART_BYTES)throw new DocverError('ZIP_LIMIT','Render package exceeds limit');return e.name.endsWith('.rels')||/\.svg$/i.test(e.name)||/(?:^|\/)media\//i.test(e.name)||/vbaProject|embeddings\//i.test(e.name);}});
-  for(const [name,value] of Object.entries(zip)){
+  const entries=officeZipDirectory(bytes),parts=new Set(entries.map(entry=>entry.name));
+  for(const entry of entries){budget.total+=entry.size;if(budget.total>MAX_PPTX_EXPANDED_BYTES)throw new DocverError('ZIP_LIMIT','Render package exceeds limit');}
+  for(const entry of entries){
+    // Every member is size/CRC checked, even when its semantic inspection is
+    // unnecessary. Unselected XML/media cannot hide a different ZIP payload.
+    const name=entry.name,value=readOfficeZipPart(bytes,entry);
+    if(!(name.endsWith('.rels')||/\.svg$/i.test(name)||/(?:^|\/)media\//i.test(name)||/vbaProject|embeddings\//i.test(name)))continue;
     if(name.endsWith('/'))continue;
     if(/vbaProject|embeddings\/.*\.bin$/i.test(name))throw new DocverError('ACTIVE_CONTENT','Embedded executable/OLE content is not sent to the renderer');
     if(/embeddings\/.*\.xlsx$/i.test(name)){validateRenderPackage(value,depth+1,budget);continue;}

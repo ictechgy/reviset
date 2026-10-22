@@ -1,6 +1,6 @@
 import { readFileSync,createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { mkdir,writeFile,readFile,rm,readdir } from 'node:fs/promises';
+import { mkdir,writeFile,readFile,rm,readdir,lstat } from 'node:fs/promises';
 import { dirname,join,resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
@@ -17,6 +17,7 @@ const root=resolve(process.argv[rootArg+1]),service=new DesktopService(root),arg
 function projectResponse(project:DesktopDraft){const {bundle_decisions,...rest}=project;return {...rest,bundle_decision_count:bundle_decisions.length,draft_hash:hash(service.manifest(project.project_id))};}
 function readableDraftHash(projectId:string){try{return hash(service.manifest(projectId));}catch(error){if(error instanceof DocverError&&error.code==='DRAFT_UNREADABLE')return null;throw error;}}
 function fixedLatestReport(projectId:string){try{return service.store.resolveReportId(projectId,'latest');}catch(error){if(error instanceof DocverError&&error.code==='REPORT_NOT_FOUND')return null;throw error;}}
+async function stageCleanupPending(runId:string):Promise<boolean>{try{await lstat(join(root,'staging-v4',runId+'.json'));return true;}catch(error){return (error as NodeJS.ErrnoException).code!=='ENOENT';}}
 async function verifiedSource(assetId:string):Promise<string>{
   if(!/^sha256:[a-f0-9]{64}$/.test(assetId))throw new DocverError('ASSET_ID','잘못된 원본 ID입니다.');
   const path=join(root,'assets',assetId.slice(7)),digest=createHash('sha256');for await(const chunk of createReadStream(path,{highWaterMark:1024*1024}))digest.update(chunk);
@@ -52,7 +53,28 @@ try{
         const data=Buffer.from(JSON.stringify(result.report)),folder=join(root,'staging-v4');await mkdir(folder,{recursive:true,mode:0o700});controller.signal.throwIfAborted();const name=result.analysis_run_id+'.json';await writeFile(join(folder,name),data,{flag:'wx',mode:0o600});value={analysis_run_id:result.analysis_run_id,report_id:result.report.report_id,staged_name:name,sha256:byteHash(data),draft_hash:result.draft_hash,project_id,schema_version:SCHEMA_VERSION,engine_version:ENGINE_VERSION};
       }finally{clearInterval(parentWatch);process.removeListener('SIGTERM',cancel);process.removeListener('SIGINT',cancel);}break;
     }
-    case 'commit':{const {project_id}=z.object({project_id:key}).parse(args);const d=z.object({analysis_run_id:z.string().regex(/^run_[a-f0-9-]+$/),report_id:key,staged_name:z.string().regex(/^run_[a-f0-9-]+\.json$/),sha256:z.string().regex(/^[a-f0-9]{64}$/),draft_hash:z.string(),project_id:key,schema_version:z.literal(SCHEMA_VERSION),engine_version:z.literal(ENGINE_VERSION)}).parse(args.result);if(d.project_id!==project_id||d.staged_name!==d.analysis_run_id+'.json'||d.draft_hash!==hash(service.manifest(project_id)))throw new DocverError('STALE_RUN','입력이 바뀐 분석 결과는 저장하지 않습니다.');const path=join(root,'staging-v4',d.staged_name),data=await readFile(path);if(byteHash(data)!==d.sha256)throw new DocverError('STAGED_HASH','분석 결과 hash 검증에 실패했습니다.');const report=JSON.parse(data.toString('utf8'));if(report.report_id!==d.report_id)throw new DocverError('STAGED_ID','분석 보고서 ID가 일치하지 않습니다.');value=service.commit(project_id,{report,analysis_run_id:d.analysis_run_id,draft_hash:d.draft_hash});await rm(path);break;}
+    case 'commit':{
+      const {project_id}=z.object({project_id:key}).parse(args);
+      const d=z.object({analysis_run_id:z.string().regex(/^run_[a-f0-9-]+$/),report_id:key,staged_name:z.string().regex(/^run_[a-f0-9-]+\.json$/),sha256:z.string().regex(/^[a-f0-9]{64}$/),draft_hash:z.string(),project_id:key,schema_version:z.literal(SCHEMA_VERSION),engine_version:z.literal(ENGINE_VERSION)}).parse(args.result);
+      if(d.project_id!==project_id||d.staged_name!==d.analysis_run_id+'.json'||d.draft_hash!==hash(service.manifest(project_id)))throw new DocverError('STALE_RUN','입력이 바뀐 분석 결과는 저장하지 않습니다.');
+      const path=join(root,'staging-v4',d.staged_name),data=await readFile(path);
+      if(byteHash(data)!==d.sha256)throw new DocverError('STAGED_HASH','분석 결과 hash 검증에 실패했습니다.');
+      const report=JSON.parse(data.toString('utf8'));
+      if(report.report_id!==d.report_id)throw new DocverError('STAGED_ID','분석 보고서 ID가 일치하지 않습니다.');
+      const reportId=service.commit(project_id,{report,analysis_run_id:d.analysis_run_id,draft_hash:d.draft_hash});
+      let cleanupPending=false;try{await rm(path,{force:true});}catch{cleanupPending=true;}
+      value={report_id:reportId,status:'complete',cleanup_pending:cleanupPending};break;
+    }
+    case 'runStatus':{
+      const {project_id,analysis_run_id}=z.object({project_id:key,analysis_run_id:z.string().regex(/^run_[a-f0-9-]+$/)}).parse(args);
+      const run=service.store.db.prepare('SELECT status,report_id FROM runs WHERE id=? AND project_id=?').get(analysis_run_id,project_id);
+      if(!run)throw new DocverError('RUN_SCOPE','분석 실행이 이 프로젝트에 속하지 않습니다.');
+      const status=String(run.status);if(!['running','success','partial','failed','interrupted'].includes(status))throw new DocverError('RUN_CORRUPT','분석 실행 상태를 확인할 수 없습니다.');
+      const saved=status==='success'||status==='partial';
+      if(saved&&(typeof run.report_id!=='string'||run.report_id==='latest'))throw new DocverError('RUN_CORRUPT','저장된 고정 보고서를 확인할 수 없습니다.');
+      const reportId=saved?service.store.resolveReportId(project_id,String(run.report_id)):null;
+      value={project_id,analysis_run_id,status,report_id:reportId,cleanup_pending:saved?await stageCleanupPending(analysis_run_id):false};break;
+    }
     case 'reorder':{const d=z.object({project_id:key,order:z.array(z.number().int()),discard_human_decisions:z.boolean().default(false),draft_hash:z.string().regex(/^[a-f0-9]{64}$/).optional()}).parse(args);value=projectResponse(service.reorder(d.project_id,d.order,d.discard_human_decisions,d.draft_hash));break;}
     case 'mapping':{const d=scope.extend({decision:Decision}).parse(args);value=projectResponse(service.mapping(d.project_id,d.report_id,d.decision));break;}
     case 'mappingRelation':{const d=scope.extend({selection:RelationSelection,unlink:z.boolean().default(false),draft_hash:z.string().regex(/^[a-f0-9]{64}$/)}).parse(args);value=projectResponse(service.mappingRelation(d.project_id,d.report_id,d.selection,d.unlink,d.draft_hash));break;}
