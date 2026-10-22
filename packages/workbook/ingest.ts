@@ -538,27 +538,20 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
     const columns: {start: number; end: number; hidden: boolean; style: string | undefined}[] = []; let nextColumn = 1;
     for (const {node:col,inheritedHidden} of flattenOdsColumns(table)) { const repeat = integer(attr(col,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS column repetition'), end = nextColumn + repeat - 1; if (end > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS column repetition exceeds worksheet bounds'); const visibility = odsVisibility(col), hidden = inheritedHidden || visibility === 'collapse' || visibility === 'filter'; const size = styles.size(attr(col,'table:style-name'),'column'); columns.push({start:nextColumn,end,hidden,style:attr(col,'table:default-cell-style-name')}); if (hidden || size !== null) { addAxisMetadata(sheet.column_metadata,{start:nextColumn,end,hidden,size}); sheet.column_count = Math.max(sheet.column_count,end); } nextColumn = end + 1; }
     const effectiveColumns: ({hidden:boolean;style:string|undefined}|undefined)[] = new Array(WORKBOOK_LIMITS.columns + 1); for (const column of columns) for (let cc = column.start; cc <= column.end; cc++) effectiveColumns[cc] = column;
-    const styledColumnPrefix = new Uint32Array(WORKBOOK_LIMITS.columns + 1); for (let cc = 1; cc <= WORKBOOK_LIMITS.columns; cc++) styledColumnPrefix[cc] = styledColumnPrefix[cc - 1] + (styles.effective(effectiveColumns[cc]?.style) ? 1 : 0);
-    const styleRuns: {start:number;end:number;effective:boolean}[] = [];
-    for (let cc = 1; cc <= WORKBOOK_LIMITS.columns; cc++) { const effective = styledColumnPrefix[cc] !== styledColumnPrefix[cc - 1], previous = styleRuns.at(-1); if (previous?.effective === effective) previous.end = cc; else styleRuns.push({start:cc,end:cc,effective}); }
+    if (columns.some(column => column.style !== undefined)) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles can cover absent cells; only materialized cell formatting is compared, and blank formatted rectangles are not expanded.',sheet.sheet_id);
     let row = 1;
     for (const {node:rowNode,inheritedHidden} of flattenOdsRows(table)) {
       await checkpoint(state);
       const rowRepeat = integer(attr(rowNode,'table:number-rows-repeated'),1,WORKBOOK_LIMITS.rows,'ODS row repetition'), lastRow = row + rowRepeat - 1; if (lastRow > WORKBOOK_LIMITS.rows) fail('WORKBOOK_LIMIT','ODS row repetition exceeds worksheet bounds');
       const visibility = odsVisibility(rowNode), hiddenRow = inheritedHidden || visibility === 'collapse' || visibility === 'filter', rowSize = styles.size(attr(rowNode,'table:style-name'),'row'); if (hiddenRow || rowSize !== null) { addAxisMetadata(sheet.row_metadata,{start:row,end:lastRow,hidden:hiddenRow,size:rowSize}); sheet.row_count = Math.max(sheet.row_count,lastRow); }
+      const rowDefaultStyle = attr(rowNode,'table:default-cell-style-name'); if (rowDefaultStyle !== undefined) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles can cover absent cells; only materialized cell formatting is compared, and blank formatted rectangles are not expanded.',sheet.sheet_id);
       const rowCells: {node: Element; column: number; repeat: number; style: string | undefined; material: boolean}[] = []; let column = 1;
       for (const node of rowNode.children.filter(child => child.name === 'table-cell' || child.name === 'covered-table-cell')) {
         const repeat = integer(attr(node,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS cell repetition'); if (column + repeat - 1 > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS cell repetition exceeds worksheet bounds');
-        const style = attr(node,'table:style-name') ?? attr(rowNode,'table:default-cell-style-name');
+        const directStyle = attr(node,'table:style-name'), style = directStyle ?? rowDefaultStyle;
         const sourceContent = node.name === 'covered-table-cell' || attr(node,'office:value-type') !== undefined || attr(node,'table:formula') !== undefined || node.children.length > 0 || attr(node,'table:number-columns-spanned') !== undefined || attr(node,'table:number-rows-spanned') !== undefined;
         if (node.name === 'covered-table-cell' && (attr(node,'office:value-type') || attr(node,'table:formula') || node.children.length)) { wholeFormulaSheet = true; gap(sheet.coverage_gaps,'covered_cell_content','Covered source cells contain independent saved content; the sheet is conservatively unresolved.',sheet.sheet_id); }
-        if (sourceContent || style !== undefined && styles.effective(style)) rowCells.push({node,column,repeat,style,material:true});
-        else if (style === undefined && styledColumnPrefix[column + repeat - 1] !== styledColumnPrefix[column - 1]) {
-          // A repeated blank can cross a small styled column and thousands of
-          // default columns. Keep only the effective runs, before repeat checks.
-          let low = 0, high = styleRuns.length; while (low < high) { const middle = (low + high) >>> 1; if (styleRuns[middle].end < column) low = middle + 1; else high = middle; }
-          for (let index = low; index < styleRuns.length && styleRuns[index].start < column + repeat; index++) if (styleRuns[index].effective) { const start = Math.max(column,styleRuns[index].start), end = Math.min(column + repeat - 1,styleRuns[index].end); rowCells.push({node,column:start,repeat:end - start + 1,style,material:true}); }
-        }
+        if (sourceContent || directStyle !== undefined && styles.effective(directStyle)) rowCells.push({node,column,repeat,style,material:true});
         column += repeat;
       }
       const perRow = rowCells.reduce((count,cell) => count + (cell.material ? cell.repeat : 0),0); if (perRow * rowRepeat > WORKBOOK_LIMITS.cells - state.cells) fail('WORKBOOK_LIMIT','ODS materialized repetitions exceed cell budget');

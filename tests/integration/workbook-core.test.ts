@@ -6,9 +6,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Store } from '../../packages/storage/index.js';
 import { byteHash, canonical } from '../../packages/schema/index.js';
-import { WorkbookService,validateIdentity } from '../../packages/workbook/service.js';
+import { WorkbookService,validateIdentity,MAX_WORKBOOK_REPORT_BYTES } from '../../packages/workbook/service.js';
 import { WorkbookQueryService,boundedWorkbookNetCacheBytes } from '../../packages/workbook/query.js';
 import { diffWorkbooks, type WorkbookRevisionData } from '../../packages/workbook/diff.js';
+import { extractWorkbook } from '../../packages/workbook/ingest.js';
 import { cellAddress,workbookID, type WorkbookCellData, type WorkbookSheetData } from '../../packages/workbook/types.js';
 import { handleWorkbookAction } from '../../apps/bridge/workbook.js';
 import { xlsxFixture,xmlEscape,workbookStyles } from '../workbook-fixtures.js';
@@ -44,6 +45,19 @@ test('workbook diff separates formulas, cached results, exact decimals, blanks, 
   assert.ok(diffWorkbooks(before,missing).some(c=>c.description.includes('missing cache is not a deleted cell')));
   assert.ok(diffWorkbooks(before,missing).some(c=>c.kind==='cache_availability'));assert.ok(!diffWorkbooks(before,missing).some(c=>c.kind==='stored_value'&&c.before_address==='B1'));
   const boolA=revision('before',[cell(1,1,'k'),cell(1,2,'1',{value_type:'boolean'})]),boolB=revision('after',[cell(1,1,'k'),cell(1,2,'true',{value_type:'boolean'})]);boolB.calc_flags={calcMode:'manual'};const boolDiff=diffWorkbooks(boolA,boolB);assert.ok(!boolDiff.some(c=>c.kind==='stored_value'));assert.ok(boolDiff.some(c=>c.kind==='calculation_settings'));
+});
+
+test('raw XLSX formula caches becoming empty or absent change availability without asserting a result type edit',async()=>{
+  const source=(cache:string,type='')=>xlsxFixture('<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>key</t></is></c><c r="B1"'+(type?' t="'+type+'"':'')+'><f t="normal">IF(A1=&quot;key&quot;,1,&quot;1&quot;)</f>'+cache+'</c></row></sheetData>');
+  const observations=await Promise.all([source('<v>1</v>'),source('<v/>'),source(''),source('<v>1</v>','str')].map(bytes=>extractWorkbook(bytes,'xlsx'))),revisions=observations.map((observation,index):WorkbookRevisionData=>({...observation,revision_occurrence_id:'cache_'+index,label:'cache '+index,index,asset_id:'sha256:'+String(index).repeat(64)}));
+  const observedCell=(index:number)=>revisions[index].sheets[0].cells.find(c=>c.address==='B1')!;
+  assert.equal(observedCell(0).value_type,'number');assert.equal(observedCell(0).cached_result,'present');
+  for(const missing of [1,2]){
+    assert.equal(observedCell(missing).value,null);assert.equal(observedCell(missing).value_type,'blank');assert.equal(observedCell(missing).cached_result,'missing');assert.equal(observedCell(missing).formula_interpretation,'explicit');
+    for(const [before,after]of [[0,missing],[missing,0]]){const changes=diffWorkbooks(revisions[before],revisions[after]);assert.deepEqual(changes.map(c=>c.kind),['cache_availability']);assert.ok(changes.every(c=>c.before?.formula===c.after?.formula));}
+  }
+  const resolvedTypeChange=diffWorkbooks(revisions[0],revisions[3]);assert.equal(observedCell(3).cached_result,'present');assert.equal(observedCell(3).value_type,'string');assert.ok(resolvedTypeChange.some(c=>c.kind==='value_type'&&c.before_address==='B1'));assert.ok(!resolvedTypeChange.some(c=>c.kind==='cache_availability'));
+  const changedFormula=structuredClone(revisions[1]),changedCell=changedFormula.sheets[0].cells.find(c=>c.address==='B1')!;changedCell.formula='2';changedCell.number_format='0.0';changedCell.hidden_row=true;const knownEdits=diffWorkbooks(revisions[0],changedFormula);assert.ok(knownEdits.some(c=>c.kind==='formula'));assert.ok(knownEdits.some(c=>c.kind==='number_format'));assert.ok(knownEdits.some(c=>c.kind==='visibility'));assert.ok(!knownEdits.some(c=>c.kind==='value_type'||c.kind==='stored_value'));
 });
 
 test('inferred unique keys preserve physical row moves; duplicate keys never establish certain lineage or false semantic deletion',()=>{
@@ -243,6 +257,21 @@ test('dense 1200-cell Unicode grid previews stay compact despite semantic styles
     const searched=await q.query('search_workbook_cells',{project_id:draft.project_id,report_id:report.report_id,revision_occurrence_id:r.revision_occurrence_id,sheet_id:s.sheet_id,query:'한😀',limit:1,max_output_tokens:8000},wireBytes);assert.equal(searched.total,1200);assert.deepEqual(searched.items[0].style,cell.items[0].style);assert.equal(searched.items[0].style_ref,s.cells[0].style_ref);assert.ok(wireBytes(searched)<=8000);
     const bad=structuredClone(report),key='wstyle_'+'f'.repeat(64);bad.revisions[0].style_definitions={[key]:{bad:'definition'}};bad.report_id=workbookID('wreport',Object.fromEntries(Object.entries(bad).filter(([field])=>field!=='report_id')));assert.throws(()=>validateIdentity(bad),{code:'WORKBOOK_STYLE_SCOPE'});
     const exported=await service.export(draft.project_id,report.report_id,join(root,'export')),records=(await readFile(exported.files.find(p=>p.endsWith('.jsonl'))!,'utf8')).trim().split('\n').map(line=>JSON.parse(line));assert.equal(records[0].record_type,'workbook_manifest');assert.equal(records[0].report_id,report.report_id);assert.deepEqual(records[0].revisions[0].style_definitions[s.cells[0].style_ref!],r.style_definitions![s.cells[0].style_ref!]);
+  }finally{store.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('cumulative revision text rejects an oversized report before parsing later originals and leaves only a failed run',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'docver-workbook-report-budget-')),store=new Store(join(root,'library')),service=new WorkbookService(store),source=join(root,'large-text.xlsx'),sentinel=join(root,'unreached.xlsx');try{
+    // One legal 1 MiB UTF-16 cell has 3 MiB of UTF-8 source text, compressed
+    // to a small original. Repeated occurrences must still consume report bytes.
+    const text='한'.repeat(1024*1024),bytes=xlsxFixture('<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>'+text+'</t></is></c></row></sheetData>');assert.ok(bytes.length<64*1024);assert.ok(Buffer.byteLength(text)*99>MAX_WORKBOOK_REPORT_BYTES);await writeFile(source,bytes);
+    // This SHA-correct malformed original would fail parsing if analysis kept
+    // retaining revisions after the earlier cumulative budget was exhausted.
+    await writeFile(sentinel,'This original must not be parsed after the report budget is exhausted.');
+    const draft=await service.create('Cumulative report budget',Array.from({length:100},(_,index)=>({path:index===99?sentinel:source,label:'v'+(index+1)})));assert.equal(draft.revisions[0].asset_id,'sha256:'+byteHash(bytes));
+    await assert.rejects(service.run(draft.project_id),{code:'WORKBOOK_REPORT_LIMIT'});assert.deepEqual(service.reports(draft.project_id),[]);
+    const run=store.db.prepare('SELECT id,status,error,report_id,staged_sha,finished_at FROM workbook_runs_v1 WHERE project_id=?').get(draft.project_id)!;assert.equal(run.status,'failed');assert.equal(run.error,'WORKBOOK_REPORT_LIMIT');assert.equal(run.report_id,null);assert.equal(run.staged_sha,null);assert.ok(run.finished_at);assert.equal(service.runStatus(draft.project_id,String(run.id)).status,'failed');
+    const stages=await readdir(join(store.root,'workbook-staging-v1')).catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return [];throw error;});assert.deepEqual(stages,[]);assert.equal(store.db.prepare('SELECT count(*) AS n FROM workbook_reports_v1').get()!.n,0);assert.equal(store.db.prepare('SELECT count(*) AS n FROM workbook_cells_v1').get()!.n,0);
   }finally{store.close();await rm(root,{recursive:true,force:true});}
 });
 

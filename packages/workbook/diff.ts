@@ -139,7 +139,7 @@ export function diffWorkbooks(before: WorkbookRevisionData, after: WorkbookRevis
           ...(!missingFormulaCache&&!unresolvedFormula&&!uncertainDateRepresentation ? [['stored_value', observedValue(l), observedValue(r), 'Stored value changed; formula results may be stale']] as [WorkbookChangeData['kind'],unknown,unknown,string][]:[]),
           ...(!untyped && !crossDialect && !unresolvedFormula ? [['formula', l.formula, r.formula, 'Formula source changed; formulas were not recalculated']] as [WorkbookChangeData['kind'], unknown, unknown, string][] : []),
           ...(!untyped ? [
-          ...(!unresolvedFormula&&!uncertainDateRepresentation ? [['value_type', l.value_type, r.value_type, 'Stored value type changed']] as [WorkbookChangeData['kind'],unknown,unknown,string][]:[]),
+          ...(!missingFormulaCache&&!unresolvedFormula&&!uncertainDateRepresentation ? [['value_type', l.value_type, r.value_type, 'Stored value type changed']] as [WorkbookChangeData['kind'],unknown,unknown,string][]:[]),
           ...(!unresolvedFormula ? [['cache_availability', l.cached_result, r.cached_result, 'Saved formula result availability changed; a missing cache is not a deleted cell']] as [WorkbookChangeData['kind'],unknown,unknown,string][] : []),
           ...(before.format===after.format ? [ ['number_format', l.number_format, r.number_format, 'Number format changed'],['style', styleIdentity(l,before), styleIdentity(r,after), 'Supported basic style changed'] ] as [WorkbookChangeData['kind'],unknown,unknown,string][] : []),
           ['visibility', [l.hidden_row, l.hidden_column], [r.hidden_row, r.hidden_column], 'Hidden row/column observation changed'],

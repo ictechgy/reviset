@@ -173,7 +173,7 @@ export class WorkbookQueryService {
           const short = { ...base, items: [shrunk], next_cursor: next, output_limited: true };
           if (size(short) <= budget) { fitted = true; break; }
         }
-        if (!fitted) throw new DocverError('OUTPUT_BUDGET_TOO_SMALL', 'Output budget cannot fit one structured workbook item; increase max_output_tokens');
+        if (!fitted) throw new DocverError('OUTPUT_BUDGET_TOO_SMALL', name === 'list_workbook_sheets' ? 'Output budget cannot fit sheet metadata; reduce metadata_limit or increase max_output_tokens' : 'Output budget cannot fit one structured workbook item; increase max_output_tokens');
         selected.push(shrunk); outputLimited = true;
       } break; }
       selected.push(projected);

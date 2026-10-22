@@ -19,6 +19,10 @@ type WorkbookStageData = z.infer<typeof WorkbookStage>;
 export const MAX_WORKBOOK_INPUT_BYTES = 64 * 1024 * 1024;
 export const MAX_WORKBOOK_REPORT_BYTES = 256 * 1024 * 1024;
 const NOT_FOUND = () => new DocverError('WORKBOOK_PROJECT_NOT_FOUND', 'Workbook project is outside this library or scope');
+const reportLimit = () => new DocverError('WORKBOOK_REPORT_LIMIT', 'Serialized workbook report exceeds 256 MiB; no partial result is committed');
+function reportSerialization<T>(serialize:()=>T):T {
+  try{return serialize();}catch(error){if(error instanceof RangeError)throw reportLimit();throw error;}
+}
 
 async function regularFile(path: string, expected?: string, maxBytes=MAX_WORKBOOK_INPUT_BYTES): Promise<Buffer> {
   let handle; try {
@@ -124,21 +128,25 @@ export class WorkbookService {
     this.store.db.prepare('INSERT INTO workbook_runs_v1 VALUES (?,?,NULL,?,NULL,?,NULL,?,NULL)').run(runId, projectId, new Date().toISOString(), 'running', draftHash);
     const folder = join(this.store.root, 'workbook-staging-v1'), stagedName = runId + '.json', path = join(folder, stagedName);
     try {
-      const revisions: WorkbookRevisionData[] = []; let materialized = 0;
+      const revisions: WorkbookRevisionData[] = []; let materialized = 0, serializedLowerBound = 0;
+      // Every retained revision/change is present once in the final JSON. Charging
+      // their serialized bytes omits only container/header/duplicated gap overhead,
+      // so rejection can happen before accumulating all revisions or canonicalizing them.
+      const charge=(value:WorkbookRevisionData|WorkbookReportData['changes'][number])=>{serializedLowerBound+=reportSerialization(()=>Buffer.byteLength(JSON.stringify(value)));if(serializedLowerBound>MAX_WORKBOOK_REPORT_BYTES)throw reportLimit();};
       for (const [index, source] of draft.revisions.entries()) {
         signal?.throwIfAborted(); const bytes = await regularFile(join(this.store.root, 'assets', source.asset_id.slice(7)), source.asset_id.slice(7)); signal?.throwIfAborted();
         const observation = WorkbookObservation.parse(await extractWorkbook(bytes, source.format, { signal })); signal?.throwIfAborted();
         materialized += observation.sheets.reduce((n, s) => n + s.cells.length, 0); if (materialized > 500_000) throw new DocverError('WORKBOOK_REPORT_LIMIT', 'This report exceeds the 500,000 materialized-cell aggregate limit');
         const occurrence = workbookID('wrev', { project_id: projectId, index, asset_id: source.asset_id, label: source.label });
         const sheets = observation.sheets.map((sheet, i) => { const sheetId = workbookID('wsheet', { occurrence, index: i, source_ref: sheet.source_ref }); return { ...sheet, sheet_id: sheetId, coverage_gaps: sheet.coverage_gaps.map(g => ({ ...g, sheet_id: sheetId })) }; });
-        revisions.push({ ...observation, sheets, revision_occurrence_id: occurrence, label: source.label, index, asset_id: source.asset_id });
+        const revision = { ...observation, sheets, revision_occurrence_id: occurrence, label: source.label, index, asset_id: source.asset_id };charge(revision);revisions.push(revision);
       }
       const changes: WorkbookReportData['changes'] = [];
-      for (let i = 1; i < revisions.length; i++) { signal?.throwIfAborted(); for(const change of diffWorkbooks(revisions[i - 1], revisions[i], signal)){if(changes.length>=100_000)throw new DocverError('WORKBOOK_DIFF_LIMIT', 'This report exceeds the 100,000 change-observation limit');changes.push(change);} await new Promise<void>(r => setImmediate(r)); }
+      for (let i = 1; i < revisions.length; i++) { signal?.throwIfAborted(); for(const change of diffWorkbooks(revisions[i - 1], revisions[i], signal)){if(changes.length>=100_000)throw new DocverError('WORKBOOK_DIFF_LIMIT', 'This report exceeds the 100,000 change-observation limit');charge(change);changes.push(change);} await new Promise<void>(r => setImmediate(r)); }
       const crossGaps = revisions.flatMap((r,i) => i === 0 || r.format === revisions[i - 1].format ? [] : [{ feature: 'cross_format_capabilities', reason: `Comparing ${revisions[i - 1].format} to ${r.format}: unsupported styles/types/visibility in CSV, differing XLSX/ODS formula dialects, style/number-format vocabularies and row/column dimension units are not interpreted as edits or deletions. Raw observations remain separately readable; cross-format semantic equivalence is not certified.`, revision_occurrence_id: r.revision_occurrence_id },{feature:'cross_format_date_representation',reason:'Numeric date/time serials, workbook date epochs and ISO date/time source values are retained without cross-format normalization. Different lexical/type representations are reviewable source observations, not asserted date/time value edits.',revision_occurrence_id:r.revision_occurrence_id}]);
       const data = { schema_version: WORKBOOK_SCHEMA_VERSION, engine_version: WORKBOOK_ENGINE_VERSION, project_id: projectId, title: draft.title, status: 'complete' as const, comparison_coverage:'supported_cells_only' as const, calculation: 'stored_values_only_no_recalculation' as const, revisions, changes, coverage_gaps: [...revisions.flatMap(v => [...v.coverage_gaps, ...v.sheets.flatMap(s => s.coverage_gaps)].map(g => ({ ...g, revision_occurrence_id: v.revision_occurrence_id }))), ...crossGaps,{feature:'inferred_correspondence',reason:'Supported cell extraction completed; sheet/row associations remain inferred from unique names, row contents or first-column keys. Physical fallback and unmatched observations require review; advanced objects and true editing attribution are outside this model.'}] };
-      const report = WorkbookReport.parse({ ...data, report_id: workbookID('wreport', data) }); validateIdentity(report); const encoded = Buffer.from(canonical(report));
-      if (encoded.length > MAX_WORKBOOK_REPORT_BYTES) throw new DocverError('WORKBOOK_REPORT_LIMIT', 'Serialized workbook report exceeds 256 MiB; no partial result is committed');
+      const {report,encoded}=reportSerialization(()=>{const report=WorkbookReport.parse({...data,report_id:workbookID('wreport',data)});validateIdentity(report);return {report,encoded:Buffer.from(canonical(report))};});
+      if (encoded.length > MAX_WORKBOOK_REPORT_BYTES) throw reportLimit();
       signal?.throwIfAborted(); if (hash(this.project(projectId)) !== draftHash) throw new DocverError('STALE_RUN', 'Workbook input changed during analysis');
       await mkdir(folder, { recursive: true, mode: 0o700 }); await writeFile(path, encoded, { flag: 'wx', mode: 0o600 }); signal?.throwIfAborted();
       const digest = byteHash(encoded); const updated = this.store.db.prepare("UPDATE workbook_runs_v1 SET status='staged',staged_sha=? WHERE id=? AND status='running'").run(digest, runId);
