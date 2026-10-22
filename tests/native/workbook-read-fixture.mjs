@@ -14,6 +14,11 @@ process.stdin.on('end',()=>{
   else if(action==='workbookGrid') {
     value={...args,items:[{address:'A2',row:2,column:1,value:control.value??'fresh'}]};
     if(control.mode==='grid-fail') error={code:'CONTROLLED_GRID_FAILURE',message:'controlled range read failure'};
+  } else if(action==='workbookQuery'&&args.name==='list_workbook_changes') {
+    value={...query,items:control.value==='nonempty'?[{change_id:'change'}]:[],total:control.value==='nonempty'?1:0,next_cursor:null};
+    if(control.mode!=='changes-supported')value.blank_formatting_comparison='unsupported_across_formats';
+    if(control.mode==='changes-fail')error={code:'CONTROLLED_CHANGES_FAILURE',message:'controlled changes read failure'};
+    for(const [mode,key] of [['project','project_id'],['report','report_id'],['from','from_revision_occurrence_id'],['to','to_revision_occurrence_id'],['mode','mode']])if(control.mode==='changes-wrong-'+mode)value[key]='foreign';
   } else if(action==='workbookQuery'&&args.name==='get_workbook_cell') {
     const cell={address:'A2',row:2,column:1,value:control.value??'fresh',formula:null,number_format:'General'};
     value={project_id:query.project_id,report_id:query.report_id,revision_occurrence_id:query.revision_occurrence_id,sheet_id:query.sheet_id,availability:'available',items:[cell]};

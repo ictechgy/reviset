@@ -43,7 +43,7 @@ process.stdin.on('end',()=>{
     const q=args.args;
     if(args.name==='get_workbook_cell')value={...q,availability:'available',items:[{address:'A2',row:2,column:1,value:mode}]};
     else if(args.name==='get_workbook_cell_history')value={items:[{revision_occurrence_id:'new',address:'A2',value:mode}],total:1,next_cursor:null};
-    else value={items:[{change_id:'change',from_revision_occurrence_id:'old',to_revision_occurrence_id:'new'}],total:1,next_cursor:null};
+    else value={...q,items:[{change_id:'change',from_revision_occurrence_id:'old',to_revision_occurrence_id:'new'}],total:1,next_cursor:null};
     if(control.delayQuery===args.name)delay=250;
   }else if(action==='workbookCreate'){
     // The following reads use fresh data after the interrupted request ends.

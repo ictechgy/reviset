@@ -89,9 +89,55 @@ import AppKit
         try require(started,"LateRequestDidNotStart")
         try control("ok","newest");await model.loadSelectedCells();await late.value
         try require(model.cellFailure.isEmpty && model.beforeCell["value"].string=="newest" && model.afterCell["value"].string=="newest" && !model.loadingCell,"SupersededRetryOverwroteNewSource")
+        // A zero-item response must retain its coverage warning. Only the current
+        // report/interval response may own the warning, independently of rows.
+        for contents in ["empty","nonempty"] {
+            try control("changes-unsupported",contents);await model.loadChanges()
+            try require(!model.blankFormattingWarning.isEmpty && model.changes.isEmpty == (contents == "empty") && model.changesFailure.isEmpty,"BlankFormattingWarningLost-"+contents)
+        }
+        try control("changes-supported");await model.changeMode("history")
+        try require(model.blankFormattingWarning.isEmpty && model.changesFailure.isEmpty,"SupportedIntervalKeptFormattingWarning")
+        try control("changes-unsupported");await model.loadChanges()
+        try control("changes-fail");await model.loadChanges()
+        try require(model.blankFormattingWarning.isEmpty && !model.changesFailure.isEmpty,"FailedChangesKeptFormattingWarning")
+        for field in ["project","report","from","to","mode"] {
+            try control("changes-wrong-"+field);await model.loadChanges()
+            try require(model.blankFormattingWarning.isEmpty && !model.changesFailure.isEmpty,"ForeignChangesOwnedFormattingWarning-"+field)
+        }
+        try control("changes-unsupported");await model.loadChanges()
+        try control("changes-late","empty",delay:500)
+        let lateChanges=Task { await model.loadChanges() }
+        var changesStarted=false
+        for _ in 0..<200 {
+            let events=(try? String(contentsOf:root.appendingPathComponent("read-events.jsonl"),encoding:.utf8)) ?? ""
+            if events.contains("\"mode\":\"changes-late\"") { changesStarted=true;break }
+            try await Task.sleep(nanoseconds:5_000_000)
+        }
+        try require(changesStarted && model.loadingChanges && model.blankFormattingWarning.isEmpty,"PendingChangesKeptFormattingWarning")
+        try control("changes-supported");await model.loadChanges();await lateChanges.value
+        try require(!model.loadingChanges && model.changesFailure.isEmpty && model.blankFormattingWarning.isEmpty,"SupersededChangesRestoredFormattingWarning")
+        try control("changes-unsupported");await model.loadChanges()
+        model.changesToID="other"
+        try require(model.blankFormattingWarning.isEmpty,"DifferentIntervalInheritedFormattingWarning")
+        model.changesToID="new"
+        model.reportID="other-report"
+        try require(model.blankFormattingWarning.isEmpty,"DifferentReportInheritedFormattingWarning")
+        model.reportID="report";model.projectID="other-project"
+        try require(model.blankFormattingWarning.isEmpty,"DifferentProjectInheritedFormattingWarning")
+        model.projectID="project"
+        model.invalidateReads()
+        try require(model.blankFormattingWarning.isEmpty,"InvalidatedReadsKeptFormattingWarning")
+        try control("changes-unsupported");await model.loadChanges()
+        let retainedReport=model.report
+        model.clearSelection()
+        try require(model.blankFormattingWarning.isEmpty,"ClearedSelectionKeptFormattingWarning")
+        model.reportID="report";model.report=retainedReport;model.beforeID="old";model.afterID="new"
+        await model.loadChanges()
+        try require(!model.blankFormattingWarning.isEmpty,"WarningNotRestoredAfterFreshQuery")
         model.closeReads()
+        try require(model.blankFormattingWarning.isEmpty,"ClosedWindowKeptFormattingWarning")
         await model.loadSelectedCells()
         try require(!model.ready && model.beforeCell.isNull && model.afterCell.isNull && !model.loadingCell,"ClosedWindowRetriedRead")
-        print("PASS native workbook reads: first/continuation/range recovery; fourteen wrong-scope/malformed responses withheld; missing observations preserved; superseded retry and closed-window guards")
+        print("PASS native workbook reads: first/continuation/range recovery; fourteen wrong-scope/malformed responses withheld; missing observations preserved; superseded retry and closed-window guards; scoped blank-formatting warnings for empty/nonempty changes, reset/pending/error/stale/foreign response guards")
     }
 }

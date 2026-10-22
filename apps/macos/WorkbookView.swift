@@ -80,6 +80,7 @@ private extension JSON {
     @Published var addressFailure = ""
     @Published var changesFailure = ""
     @Published var comparisonNotice = ""
+    @Published private var blankFormattingWarningScope = ""
     @Published var cellFailure = ""
     @Published var mcpFailure = ""
     @Published var mcp = ""
@@ -115,6 +116,10 @@ private extension JSON {
     var scope: String { projectID + "|" + reportID }
     var rangeScope: String { [scope,beforeID,afterID,beforeSheetID,afterSheetID,String(beforeRowStart),String(beforeColumnStart),String(afterRowStart),String(afterColumnStart)].joined(separator:"|") }
     var comparisonScope: String { [scope,changesFromID,changesToID,changesMode].joined(separator:"|") }
+    var blankFormattingWarning: String {
+        guard ready,!loadingChanges,changesFailure.isEmpty,blankFormattingWarningScope == comparisonScope else { return "" }
+        return "서로 다른 파일 형식에서는 빈 셀의 서식을 비교할 수 없습니다. 변경 목록이 비어 있어도 서식이 같다는 뜻은 아닙니다. 원본의 빈 셀 서식을 확인하세요."
+    }
     var independentPaneCoordinates: Bool { beforeRowStart != afterRowStart || beforeColumnStart != afterColumnStart || beforeAddress != afterAddress }
     var navigationRangePrefix: String {
         let differentRanges = beforeRowStart != afterRowStart || beforeColumnStart != afterColumnStart
@@ -156,7 +161,7 @@ private extension JSON {
     func invalidateReads() {
         for channel in Array(owners.keys) { invalidate(channel) }
         loadingReport = false; loadingRange = false; loadingChanges = false; loadingCell = false; loadingHistory = false; loadingMCP = false
-        mcp = ""; mcpScope = ""; mcpFailure = ""
+        mcp = ""; mcpScope = ""; mcpFailure = ""; blankFormattingWarningScope = ""
     }
     func closeReads() {
         active = false; invalidateReads(); loadingReport = false; loadingDemo = false; clearCells()
@@ -170,7 +175,7 @@ private extension JSON {
     }
     func clearSelection() {
         clearCells(); changes = []; coverage = []; releases = []; resetChangePaging(); changeTotal = 0
-        changesFailure = ""; comparisonNotice = ""; changesFromID = ""; changesToID = ""; loadingChanges = false; report = JSON(); reportID = ""
+        changesFailure = ""; comparisonNotice = ""; blankFormattingWarningScope = ""; changesFromID = ""; changesToID = ""; loadingChanges = false; report = JSON(); reportID = ""
         beforeID = ""; afterID = ""; beforeSheetID = ""; afterSheetID = ""
         rowStart = 1; columnStart = 1; addressInput = "A1"
     }
@@ -254,7 +259,7 @@ private extension JSON {
         guard let leftIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == left}),let rightIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == right}) else { return }
         if leftIndex > rightIndex { swap(&left,&right); status = "저장된 버전 순서에 맞게 이전·이후를 자동으로 정렬했습니다." }
         clearCells(); invalidate("changes")
-        beforeID = left; afterID = right; comparisonNotice = ""
+        beforeID = left; afterID = right; comparisonNotice = ""; blankFormattingWarningScope = ""
         changes = []; resetChangePaging(); changeTotal = 0
         rowStart = 1; columnStart = 1; addressInput = "A1"; selectInitialSheets()
         let identity = rangeScope
@@ -315,12 +320,14 @@ private extension JSON {
         if next { back.append(changePageCursor); if back.count > cursorHistoryLimit { back.removeFirst(back.count-cursorHistoryLimit) } }
         if previous { back.removeLast() }
         let ticket = begin("changes"), identity = comparisonScope
-        loadingChanges = true; changesFailure = ""; selectedChangeID = ""
+        loadingChanges = true; changesFailure = ""; selectedChangeID = ""; blankFormattingWarningScope = ""
         var args: [String:Any] = ["from_revision_occurrence_id":changesFromID,"to_revision_occurrence_id":changesToID,"mode":changesMode,"limit":100,"max_output_tokens":pagingOutputBudget,"text_length":128]
         if !targetCursor.isEmpty { args["cursor"] = targetCursor }
         do {
             let value = try await query("list_workbook_changes",args,ticket:ticket)
             guard current(ticket), comparisonScope == identity else { return }
+            guard value["project_id"].string == projectID,value["report_id"].string == reportID,value["from_revision_occurrence_id"].string == changesFromID,value["to_revision_occurrence_id"].string == changesToID,value["mode"].string == changesMode else { throw BridgeError(code:"WORKBOOK_CHANGES_SCOPE",message:"변경 목록 응답의 프로젝트·보고서·비교 구간을 확인하지 못했습니다.") }
+            if value["blank_formatting_comparison"].string == "unsupported_across_formats" { blankFormattingWarningScope = identity }
             changes = value["items"].array; changeCursor = value["next_cursor"].string
             changePageCursor = targetCursor; changePreviousCursors = back; changePageNumber = targetPage
             changeTotal = value["total"].int; loadingChanges = false
@@ -827,6 +834,9 @@ struct WorkbookWorkspace: View {
             if !model.changeCursor.isEmpty { Text("응답 크기로 나누어 표시합니다. ‘다음 페이지’에서 변경을 계속 확인하세요.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             else if !model.changePreviousCursors.isEmpty { Text("마지막 페이지입니다. 앞선 변경은 ‘이전 페이지’에서 확인하세요.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.comparisonNotice.isEmpty { Text(verbatim:model.comparisonNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
+            if !model.blankFormattingWarning.isEmpty {
+                Label(model.blankFormattingWarning,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,12).padding(.vertical,3).accessibilityIdentifier("Docver.workbook.blankFormattingWarning")
+            }
             if model.changePageNumber > model.changePreviousCursors.count+1 { Text("최근 128개 페이지까지 되돌아갈 수 있습니다. 구간을 다시 선택하면 처음부터 조회합니다.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12) }
             if model.loadingChanges { ProgressView("변경을 읽는 중…").frame(maxWidth:.infinity,maxHeight:.infinity) }
             else if !model.changesFailure.isEmpty { Text(verbatim:model.changesFailure).font(.caption).foregroundStyle(.red).padding(12).frame(maxWidth:.infinity,maxHeight:.infinity) }
@@ -1402,6 +1412,7 @@ struct WorkbookGrid: NSViewRepresentable {
             let project = model.projectID,snapshot = model.reportID,metadata = try model.report.data()
             var checks: [String:Any] = ["native_ui":"SwiftUI/AppKit NSTableView","sparse_viewport":true,"viewport_rows":model.rowLimit,"viewport_columns":model.columnLimit,"source_sha_forwarded":!originals.isEmpty,"public_bundled_demo_action":useDemo]
             checks["initial_net_change_count"] = model.changeTotal
+            if request.dictionary.keys.contains("expected_blank_formatting_warning") { checks["initial_blank_formatting_warning"] = try checkBlankFormattingWarning(model,request:request) }
             let requiredKinds = request["required_change_kinds"].array.map(\.string)
             if !requiredKinds.isEmpty {
                 await model.changeMode("history")
@@ -1457,6 +1468,7 @@ struct WorkbookGrid: NSViewRepresentable {
             guard let window = NSApp.windows.first(where:{$0.isVisible && containsGrid($0.contentView)}) else { throw BridgeError(code:"WORKBOOK_SMOKE_WINDOW",message:"실제 네이티브 통합 문서 그리드 창이 없습니다.") }
             checks["pane_evidence"] = try assertPanes(model,window:window)
             checks["header_scroll_geometry"] = try await exerciseHeaderScrollGeometry(model,window:window)
+            if request.dictionary.keys.contains("expected_blank_formatting_warning") { checks["rendered_blank_formatting_warning"] = try checkBlankFormattingWarning(model,request:request) }
             try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-compare.png"))
             if request["require_dense_raw_proof"].bool {
                 try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-dense-raw.png"))
@@ -1543,6 +1555,11 @@ struct WorkbookGrid: NSViewRepresentable {
             if let output { try? JSON(["completed":false,"error":error.localizedDescription]).data().write(to:output.appendingPathComponent("validation.json")) }
         }
         NSApp.terminate(nil)
+    }
+    private static func checkBlankFormattingWarning(_ model: WorkbookModel,request: JSON) throws -> [String:Any] {
+        guard model.ready,!model.loadingChanges,model.changesFailure.isEmpty,(!model.blankFormattingWarning.isEmpty) == request["expected_blank_formatting_warning"].bool else { throw BridgeError(code:"WORKBOOK_SMOKE_FORMATTING_WARNING",message:"현재 비교 구간의 빈 셀 서식 판독 한계 안내가 예상과 다릅니다.") }
+        if request.dictionary.keys.contains("expected_blank_formatting_empty"),model.changes.isEmpty != request["expected_blank_formatting_empty"].bool { throw BridgeError(code:"WORKBOOK_SMOKE_FORMATTING_EMPTY",message:"빈 셀 서식 안내를 검증할 변경 목록의 빈 상태가 예상과 다릅니다.") }
+        return ["warning":model.blankFormattingWarning,"empty_changes":model.changes.isEmpty,"comparison_scope":model.comparisonScope]
     }
     private static func containsGrid(_ view: NSView?) -> Bool {
         guard let view else { return false }
