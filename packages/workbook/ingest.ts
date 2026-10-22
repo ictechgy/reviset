@@ -352,7 +352,10 @@ async function extractXlsx(parts: Map<string,Uint8Array>, state: State): Promise
       for (const node of children(rowNode,'c')) {
         await checkpoint(state); let column = previousColumn + 1; if (attr(node,'r')) { const [cellRow,cellColumn] = parseAddress(attr(node,'r')!); if (cellRow !== row) fail('INVALID_WORKBOOK','Cell address disagrees with row'); column = cellColumn; } if (column <= previousColumn || column > WORKBOOK_LIMITS.columns) fail('INVALID_WORKBOOK','Duplicate or unordered worksheet cells'); previousColumn = column;
         const cell = makeCell(sheet,row,column); if (addresses.has(cell.address)) fail('INVALID_WORKBOOK','Duplicate worksheet cell'); addresses.add(cell.address); cell.hidden_row = hidden; cell.hidden_column = effectiveColumns[column]?.hidden ?? false;
-        const columnStyle = effectiveColumns[column]?.style, styleRaw = attr(node,'s') ?? (truth(attr(rowNode,'customFormat')) ? attr(rowNode,'s') : undefined) ?? columnStyle;
+        // CT_Cell@s defaults to0 for an allocated <c>. Axis defaults are
+        // unsupported absent-cell coverage, not overrides of this cell's style.
+        // https://learn.microsoft.com/en-us/office/open-xml/spreadsheet/how-to-insert-a-chart-into-a-spreadsheet#cell-element
+        const styleRaw = attr(node,'s');
         if (state.cells >= WORKBOOK_LIMITS.cells) fail('WORKBOOK_LIMIT','Workbook materialized cell budget exceeded');
         if (styleRaw !== undefined || styleList.length) { const index = integer(styleRaw,0,Math.max(0,styleList.length - 1),'cell style index',0); const style = styleList.get(index); cell.number_format = style.number; cell.style = style.values; }
         if (['f','v','is'].some(name => children(node,name).length > 1)) fail('INVALID_WORKBOOK','Duplicate cell content');
