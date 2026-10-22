@@ -131,6 +131,7 @@ struct ReorderConfirmation:Identifiable {
         guard error.isEmpty && !started else {if !started{initializing=false};return};started = true;defer{initializing=false}
         do {
             _ = try await bridge.call("recover")
+            _ = try await bridge.call("workbookRecover")
             if let recovered=try? await bridge.call("sidecarRecover"),recovered["skipped"].int>0 {sidecarRecoveryWarning="이전 참고 작업 \(recovered["skipped"].int)개를 자동 정리하지 못했습니다. 원문과 변경 이력은 계속 사용할 수 있습니다."}
             if FileManager.default.fileExists(atPath:bridge.resources.appendingPathComponent("onlyoffice-sidecar/provider.json").path) {sidecarConfigured = (try? await bridge.call("sidecarInfo")["configured"].bool) ?? false}
             try await refresh(); if let p = projects.first(where:{!$0["unreadable"].bool}) ?? projects.first { await selectProject(p["project_id"].string) }

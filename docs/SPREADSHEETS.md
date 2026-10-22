@@ -35,3 +35,15 @@ Shared/array/spill/matrix formulas can store results in cells without an ordinar
 The aggregate report limit is 500,000 materialized cells across all revisions, 100,000 changes and 256 MiB canonical serialized JSON; originals remain at most 64 MiB. These limits apply jointly. Sparse grids do not deserialize the full report. Analysis, full lineage and endpoint diff can require substantial memory; a limit is not a throughput guarantee. The native helper uses a 2 GiB V8 heap bound. Actual measured size, peak RSS and elapsed times are recorded separately from limits.
 
 CLI entry points: `workbook-analyze --manifest <json> --store <library>`, `workbook-query --project <wprj_ID> --report <wreport_ID> --tool <tool> --args <json>`, and `workbook-export --project <wprj_ID> --report <wreport_ID> --out <directory>`. Manifests contain `title` and ordered `revisions` with `label`, relative/absolute `path`, optional `expected_sha256`. Local export preserves originals by SHA filename and emits quoted Markdown, JSON and JSONL.
+
+## Review-driven consumer corrections
+
+Cell styles are interned in per-revision `style_definitions` with stable semantic `style_ref` IDs. Their full content remains in the immutable report; raw cell readers resolve the reference before exposing style fields. Budget charging counts distinct style definitions, while actual cell contents remain individually bounded. Style-definition tables do not spill into version-summary or native view responses. Changes to workbook defaults remain semantic observations.
+
+Change lists and `get_workbook_change component=summary` return bounded identifiers, endpoints, physical addresses and interpretation summaries. `component=before|after` returns one exact source cell, with the same text continuation contract as a cell read. This avoids duplicating both cells into multiple MCP envelopes. Native grids use a compact preview-specific projection; selected-cell evidence remains independently paged.
+
+Workbook stages are recovered during app startup under the exclusive library lock. A cancelled or failed native operation discards only its owned staged run before releasing admission; a new run removes its superseded stages. Neither workbook initialization nor its smoke driver starts through a locked second process. Each comparison pane highlights its actual source coordinate, including distant row moves.
+
+Cell reads also expose one canonical cell in `items[0]`, not a second top-level copy. `availability=not_materialized` uses an empty items array; this differs from a materialized blank cell. Every continuation belongs to its cell field.
+
+JSONL exports begin with one `record_type=workbook_manifest` carrying fixed identities and per-revision style definitions, followed by `record_type=workbook_change` records. Shared style dictionaries are written once; readers resolve `style_ref` against the corresponding source occurrence. Markdown links to the paired authoritative JSON for full definitions.

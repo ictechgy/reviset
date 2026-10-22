@@ -9,11 +9,22 @@ export function xlsxFixture(sheetXml: string, options: {name?: string; hidden?: 
   for (const [name,content] of Object.entries(options.extra ?? {})) parts[name] = typeof content === 'string' ? strToU8(content) : content;
   return zipSync(parts,{mtime:new Date(1980,0,1)});
 }
-export function odsFixture(tableXml: string, options: {styles?: string; automatic?: string; extra?: Record<string,string | Uint8Array>; manifest?: string} = {}): Uint8Array {
+export function odsFixture(tableXml: string, options: {styles?: string; automatic?: string; stylesAutomatic?: string; extra?: Record<string,string | Uint8Array>; manifest?: string} = {}): Uint8Array {
   const namespaces = 'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0"';
   const parts: Zippable = {mimetype:strToU8('application/vnd.oasis.opendocument.spreadsheet'),'META-INF/manifest.xml':strToU8(options.manifest ?? '<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/></manifest:manifest>'),'content.xml':strToU8(`<office:document-content ${namespaces}><office:automatic-styles>${options.automatic ?? ''}</office:automatic-styles><office:body><office:spreadsheet>${tableXml.startsWith('<table:table ') ? tableXml : `<table:table table:name="Sheet1">${tableXml}</table:table>`}</office:spreadsheet></office:body></office:document-content>`)};
-  if (options.styles) parts['styles.xml'] = strToU8(`<office:document-styles ${namespaces}><office:styles>${options.styles}</office:styles></office:document-styles>`);
+  if (options.styles || options.stylesAutomatic) parts['styles.xml'] = strToU8(`<office:document-styles ${namespaces}><office:styles>${options.styles ?? ''}</office:styles><office:automatic-styles>${options.stylesAutomatic ?? ''}</office:automatic-styles></office:document-styles>`);
   for (const [name,content] of Object.entries(options.extra ?? {})) parts[name] = typeof content === 'string' ? strToU8(content) : content;
   return zipSync(parts,{mtime:new Date(1980,0,1)});
 }
 export const workbookStyles = '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="0.000"/></numFmts><fonts count="2"><font><name val="Calibri"/><sz val="11"/></font><font><name val="Calibri"/><b/><color rgb="FF005500"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0"><alignment horizontal="right"/></xf></cellXfs></styleSheet>';
+
+export const excelDefaultStyles = '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>';
+// Default200k is for root's explicitly scheduled large parser qualification;
+// ordinary integration tests request20k. Source bytes have ordinary Excel style0.
+export function defaultStyledXlsxFixture(cellCount = 200_000): Uint8Array {
+  if (!Number.isInteger(cellCount) || cellCount < 1 || cellCount > 500_000) throw new RangeError('Fixture size');
+  const columns = Array.from({length:100},(_,index) => index < 26 ? String.fromCharCode(65 + index) : String.fromCharCode(64 + Math.floor(index / 26)) + String.fromCharCode(65 + index % 26));
+  const rows: string[] = [];
+  for (let offset = 0; offset < cellCount; offset += 100) { const row = offset / 100 + 1; rows.push(`<row r="${row}">` + columns.slice(0,Math.min(100,cellCount - offset)).map(column => `<c r="${column}${row}"><v>1</v></c>`).join('') + '</row>'); }
+  return xlsxFixture('<sheetData>' + rows.join('') + '</sheetData>',{styles:excelDefaultStyles});
+}

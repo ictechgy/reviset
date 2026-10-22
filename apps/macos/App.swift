@@ -7,7 +7,16 @@ import CryptoKit
     @StateObject private var model=AppModel()
     @Environment(\.openWindow) private var openWindow
     var body: some Scene {
-        Window("Docver", id:"main") {MainView().environmentObject(model).task {await Smoke.runIfRequested(model);if ProcessInfo.processInfo.environment["DOCVER_WORKBOOK_SMOKE_REQUEST"] != nil {openWindow(id:"workbooks")}}.onReceive(NotificationCenter.default.publisher(for:NSApplication.willTerminateNotification)){_ in model.bridge.terminateAnalysis();model.sidecarRequest=nil;model.bridge.cancelSidecars()}}
+        Window("Docver", id:"main") {MainView().environmentObject(model).task {
+            await Smoke.runIfRequested(model)
+            if ProcessInfo.processInfo.environment["DOCVER_WORKBOOK_SMOKE_REQUEST"] != nil {
+                for _ in 0..<400 { if !model.initializing { break }; try? await Task.sleep(nanoseconds:50_000_000) }
+                if let path=ProcessInfo.processInfo.environment["DOCVER_WORKBOOK_SMOKE_REQUEST"],let data=try? Data(contentsOf:URL(fileURLWithPath:path)),let raw=try? JSONSerialization.jsonObject(with:data),JSON(raw)["expect_library_locked"].bool {
+                    openWindow(id:"workbooks")
+                    await Smoke.workbookLockProbe(model,request:JSON(raw))
+                } else if model.libraryAvailable && !model.initializing { openWindow(id:"workbooks") }
+            }
+        }.onReceive(NotificationCenter.default.publisher(for:NSApplication.willTerminateNotification)){_ in model.bridge.terminateAnalysis();model.sidecarRequest=nil;model.bridge.cancelSidecars()}}
         .defaultSize(width:1440,height:960)
         .windowToolbarStyle(.unifiedCompact)
         .commands {
@@ -15,12 +24,33 @@ import CryptoKit
             CommandGroup(after:.sidebar){Button("문서 크게 보기"){model.focus.toggle()}.keyboardShortcut("f",modifiers:[.command,.option]);Button("근거 패널"){model.inspector.toggle()}.keyboardShortcut("i",modifiers:[.command,.option])}
         }
         Window("Docver · 스프레드시트",id:"workbooks") {
-            WorkbookWorkspace(bridge:model.bridge).disabled(!model.libraryAvailable || model.initializing)
+            Group {
+            if !model.libraryAvailable {
+                VStack(spacing:12) { Image(systemName:"lock.fill").font(.largeTitle); Text("다른 Docver가 이 보관소를 사용하고 있습니다."); Text("해당 앱을 종료한 뒤 다시 여세요.").foregroundStyle(.secondary) }.frame(minWidth:640,minHeight:420)
+            } else if model.initializing {
+                ProgressView("보관소를 준비하는 중…").frame(minWidth:640,minHeight:420)
+            } else {
+                WorkbookWorkspace(bridge:model.bridge)
+            }
+            }.task { await model.start() }
         }.defaultSize(width:1440,height:960).windowToolbarStyle(.unifiedCompact)
     }
 }
 @MainActor enum Smoke {
     private static var started=false
+    static func workbookLockProbe(_ model:AppModel,request:JSON) async {
+        let folder=URL(fileURLWithPath:request["output"].string)
+        do {
+            try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+            let db=model.bridge.library.appendingPathComponent("docver.sqlite"),before=try fileDigest(db)
+            try await Task.sleep(nanoseconds:500_000_000)
+            func hasGrid(_ view:NSView)->Bool { if view.identifier?.rawValue.hasPrefix("Docver.workbook.grid.") == true {return true};return view.subviews.contains(where:hasGrid) }
+            let grids=NSApp.windows.compactMap(\.contentView).contains(where:hasGrid),after=try fileDigest(db)
+            let passed = !model.libraryAvailable && !model.initializing && !grids && before == after
+            try JSON(["completed":passed,"checks":["library_lock_denied":!model.libraryAvailable,"workbook_grid_not_instantiated":!grids,"database_bytes_unchanged":before == after],"interaction_scope":"actual second app process and restored workbook scene; no OS gestures"]).data().write(to:folder.appendingPathComponent("validation.json"))
+        } catch {try? JSON(["completed":false,"error":error.localizedDescription]).data().write(to:folder.appendingPathComponent("validation.json"))}
+        NSApp.terminate(nil)
+    }
     static func runIfRequested(_ model:AppModel) async {
         guard !started,let path=ProcessInfo.processInfo.environment["DOCVER_SMOKE_REQUEST"] else{return};started=true
         do{

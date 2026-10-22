@@ -108,8 +108,8 @@ XLSX·ODS·UTF-8 CSV 프로젝트는 문서와 별도 ID(`wprj_…`)를 사용�
 
 1. `list_workbook_projects` → `list_workbook_reports` → `get_workbook_report`로 보고서의 범위·엔진·한계를 확인합니다.
 2. `list_workbook_revisions` → `list_workbook_sheets`로 `revision_occurrence_id`, `sheet_id`를 선택합니다. 같은 파일이 다시 나타나도 버전 occurrence는 별개입니다.
-3. `get_workbook_range`로 물리 좌표 영역을 읽고 `get_workbook_cell`로 원본 저장값·수식·유형·서식을 확인합니다. `cell.text_continuations`의 `next_offset`으로 `text_offset`을 이어 읽습니다. 오프셋 단위는 UTF-16이며 빈 문자열·누락·아직 읽지 않은 부분은 구분됩니다. 긴 서식은 `component=style`과 커서로 읽습니다.
-4. `list_workbook_changes`에 두 occurrence ID와 `mode=history`를 주면 구간 내 인접 변경 이력을, `mode=range_net`을 주면 양 끝의 차이를 읽습니다. A→B→A는 이력이 존재해도 양 끝 차이는 0일 수 있습니다. `get_workbook_change`는 원문 전후·대응 방법·판정 상태를 제공합니다.
+3. `get_workbook_range`로 물리 좌표 영역을 읽고 `get_workbook_cell`로 원본 저장값·수식·유형·서식을 확인합니다. `items[0].text_continuations`의 `next_offset`으로 `text_offset`을 이어 읽습니다. 오프셋 단위는 UTF-16이며 빈 문자열·누락·아직 읽지 않은 부분은 구분됩니다. 긴 서식은 `component=style`과 커서로 읽습니다.
+4. `list_workbook_changes`에 두 occurrence ID와 `mode=history`를 주면 구간 내 인접 변경 이력을, `mode=range_net`을 주면 양 끝의 차이를 읽습니다. A→B→A는 이력이 존재해도 양 끝 차이는 0일 수 있습니다. `get_workbook_change`의 기본 `component=summary`는 대응 방법과 판정 상태를, `component=before|after`는 해당 쪽 원본 셀을 제공합니다. 각 셀의 텍스트 이어 읽기 정보를 따르세요. 변경 목록은 요약이며 원문 전후가 전부 포함되지 않습니다.
 5. `get_workbook_cell_history`로 선택 셀의 추정 계보를, `search_workbook_cells`로 저장값/수식의 리터럴 검색을 합니다. 대응이 모호하면 계보를 중단하며 같은 주소의 다음 점유자를 같은 항목으로 단정하지 않습니다.
 6. `list_workbook_coverage_gaps`와 `list_workbook_sheets`의 메타데이터 페이지를 끝까지 읽습니다. 출력 크기와 커서 제한 때문에 한 응답이 전체 시트를 뜻하지 않습니다.
 

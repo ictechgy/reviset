@@ -15,6 +15,8 @@ import SwiftUI
   func records()->[JSON]{guard let text=try? String(contentsOf:events,encoding:.utf8)else{return []};return text.split(separator:"\n").compactMap{try? JSONSerialization.jsonObject(with:Data($0.utf8))}.map(JSON.init)}
   func started(_ action:String,_ project:String,_ count:Int=0)async throws{for _ in 0..<200{if records().contains(where:{$0["action"].string==action&&$0["project"].string==project&&$0["count"].int==count}){return};try await Task.sleep(nanoseconds:5_000_000)};throw NSError(domain:"ActionDidNotStart",code:1)}
   func require(_ value:Bool,_ name:String)throws{if !value{throw NSError(domain:name,code:1)}}
+  let lockedPeer=AppModel();try require(!lockedPeer.libraryAvailable,"SecondWriterAcquiredLibrary")
+  await lockedPeer.start();try require(!lockedPeer.initializing && records().isEmpty,"LockedStartupAccessedBridge")
   model.projectID="prj_a";let a=Task{await model.loadMCP()};try await started("mcpConfig","prj_a",1)
   model.projectID="prj_b";try require(model.mcp.isEmpty&&model.currentMCPConfig==nil,"OldConfigurationRemainsCopyable")
   await model.loadMCP();await a.value;try require(model.currentMCPConfig?.contains("prj_b")==true && !model.mcp.contains("prj_a"),"LateAReplacedBConfiguration")
@@ -43,6 +45,6 @@ import SwiftUI
   model.projectID="prj_history";var bad=validReport.dictionary;bad["report_id"]="rpt_range_fail";model.report=JSON(bad);model.changes=[JSON(["change_id":"stale_change"])];model.selectedChangeID="stale_change"
   do{try await model.updateChanges();throw NSError(domain:"RangeFailureExpected",code:1)}catch{}
   try require(model.changes.isEmpty && model.selected.isNull && !model.changesFailure.isEmpty && !model.loadingChanges,"FailedRangeDisplayedPriorChanges")
-  print("PASS actual native workflow: scoped MCP late/ABA replies, copy readiness, selection/create race, reorder cancel/stale safety, history interval/evidence")
+  print("PASS actual native workflow: scoped MCP late/ABA replies, copy readiness, selection/create race, reorder cancel/stale safety, history interval/evidence, locked-second-instance startup has no bridge calls")
  }
 }

@@ -37,11 +37,13 @@ test('real workbook MCP scopes a read-only library and reconstructs bounded untr
     do {
       assert.ok(!seen.has(offset),'text continuation must advance');seen.add(offset);
       const part=await invoke('get_workbook_cell',{...base,row:2,column:2,text_offset:offset,text_length:4096,max_output_tokens:4000});
-      reconstructed+=part.cell.value;const next=part.cell.text_continuations.value.next_offset;if(next===null)break;offset=next;
+      const sourceCell=part.items[0];assert.equal('cell' in part,false);reconstructed+=sourceCell.value;const next=sourceCell.text_continuations.value.next_offset;if(next===null)break;offset=next;
     }while(true);
     assert.equal(reconstructed,original);
     const interval={project_id:project.project_id,report_id:staged.report_id,from_revision_occurrence_id:report.revisions[0].revision_occurrence_id,to_revision_occurrence_id:report.revisions[2].revision_occurrence_id,max_output_tokens:8000};
     const history=await invoke('list_workbook_changes',{...interval,mode:'history'}),net=await invoke('list_workbook_changes',{...interval,mode:'range_net'});assert.ok(history.total>0);assert.equal(net.total,0);
+    const ordinary=await invoke('list_workbook_changes',{...interval,mode:'history',max_output_tokens:4000});assert.ok(ordinary.items.length>0);
+    for(const component of ['summary','before','after']){const detail=await invoke('get_workbook_change',{project_id:project.project_id,report_id:staged.report_id,change_id:ordinary.items[0].change_id,component,max_output_tokens:4000});assert.equal(detail.items.length,1);assert.equal('change' in detail,false,'one canonical item avoids envelope amplification');}
     const gaps=await invoke('list_workbook_coverage_gaps',{project_id:project.project_id,report_id:staged.report_id,max_output_tokens:4000});assert.ok(gaps.total>0);
     await client.close();client=undefined;await transport.close();transport=undefined;
     assert.equal(byteHash(await readFile(db)),before,'real stdio reads may not alter database bytes');assert.equal(service.report(project.project_id,staged.report_id).report_id,staged.report_id);

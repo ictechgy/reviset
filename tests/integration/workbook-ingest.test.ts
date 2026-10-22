@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { unzipSync, zipSync, strToU8 } from 'fflate';
 import { extractWorkbook, WORKBOOK_LIMITS } from '../../packages/workbook/ingest.js';
 import { WorkbookObservation } from '../../packages/workbook/types.js';
-import { xlsxFixture, odsFixture, workbookStyles } from '../workbook-fixtures.js';
+import { xlsxFixture, odsFixture, workbookStyles, defaultStyledXlsxFixture } from '../workbook-fixtures.js';
 
 const code = (value: string) => (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && error.code === value;
 const cell = (observation: Awaited<ReturnType<typeof extractWorkbook>>, address: string) => observation.sheets[0].cells.find(item => item.address === address)!;
+const style = (observation: Awaited<ReturnType<typeof extractWorkbook>>, address: string) => { const item = cell(observation,address); return item.style_ref ? observation.style_definitions![item.style_ref] : item.style; };
 
 test('XLSX preserves formula source, cache, constants, zero, blank, dates and numeric-looking text independently',async () => {
   const bytes = xlsxFixture('<sheetData><row r="1"><c r="A1"><f>SUM(A2:A3)</f><v>120.00</v></c><c r="B1"><v>120.00</v></c><c r="C1"><f>1+1</f></c><c r="D1" t="str"><f>IF(1,&quot;&quot;,&quot;X&quot;)</f><v/></c><c r="E1" t="inlineStr"><is><t>00120</t></is></c><c r="F1"><v>0</v></c><c r="G1"/><c r="H1" t="b"><v>0</v></c><c r="I1" t="d"><v>2026-10-22T01:00:00Z</v></c></row></sheetData>',{date1904:true});
@@ -19,7 +20,7 @@ test('XLSX preserves formula source, cache, constants, zero, blank, dates and nu
 
 test('XLSX hidden sheets/rows/columns, empty metadata, styles and merges remain sparse and semantic',async () => {
   const observed = await extractWorkbook(xlsxFixture('<dimension ref="A1:D9"/><cols><col min="2" max="3" hidden="1" width="18.00"/></cols><sheetData><row r="2" hidden="1" ht="23.5"><c r="B2" s="1"><v>2.000</v></c></row><row r="9" hidden="1"/></sheetData><mergeCells><mergeCell ref="B2:C3"/></mergeCells>',{hidden:true,styles:workbookStyles}),'xlsx');
-  assert.equal(observed.sheets[0].hidden,true); assert.equal(observed.sheets[0].row_count,9); assert.equal(observed.sheets[0].cells.length,1); assert.equal(cell(observed,'B2').hidden_row,true); assert.equal(cell(observed,'B2').hidden_column,true); assert.equal(cell(observed,'B2').number_format,'0.000'); assert.equal(cell(observed,'B2').style['font.b'],'true'); assert.equal(cell(observed,'B2').style['alignment.horizontal'],'right');
+  assert.equal(observed.sheets[0].hidden,true); assert.equal(observed.sheets[0].row_count,9); assert.equal(observed.sheets[0].cells.length,1); assert.equal(cell(observed,'B2').hidden_row,true); assert.equal(cell(observed,'B2').hidden_column,true); assert.equal(cell(observed,'B2').number_format,'0.000'); assert.equal(style(observed,'B2') ['font.b'],'true'); assert.equal(style(observed,'B2') ['alignment.horizontal'],'right');
   assert.deepEqual(observed.sheets[0].merges,['B2:C3']); assert.deepEqual(observed.sheets[0].column_metadata,[{start:2,end:3,hidden:true,size:'18.00'}]); assert.ok(observed.sheets[0].row_metadata.some(meta => meta.start === 9 && meta.hidden));
 });
 
@@ -40,7 +41,7 @@ test('XLSX shared formula followers retain present-but-empty formula source and 
 test('ODS preserves typed lexical cache, empty strings, rich paragraphs, formulas, styles and hidden metadata',async () => {
   const automatic = '<style:style style:name="ce1" style:family="table-cell"><style:text-properties fo:font-weight="bold"/></style:style><style:style style:name="co1" style:family="table-column"><style:table-column-properties style:column-width="2.3cm"/></style:style><style:style style:name="ta1" style:family="table"><style:table-properties table:display="false"/></style:style>';
   const observed = await extractWorkbook(odsFixture('<table:table table:name="예산" table:style-name="ta1"><table:table-column table:style-name="co1" table:visibility="collapse"/><table:table-row table:visibility="collapse"><table:table-cell office:value-type="float" office:value="120.00" table:formula="of:=SUM([.A2:.A3])" table:style-name="ce1" table:number-columns-spanned="2"><text:p>120</text:p></table:table-cell><table:covered-table-cell/><table:table-cell office:value-type="string"><text:p>A<text:span>B</text:span>C<text:s text:c="2"/>D<text:tab/>E<text:line-break/>F</text:p><text:p>한글😀</text:p></table:table-cell><table:table-cell office:value-type="string" office:string-value="" table:formula="of:=&quot;&quot;"/><table:table-cell table:formula="of:=2+2"/></table:table-row></table:table>',{automatic}),'ods');
-  WorkbookObservation.parse(observed); assert.equal(observed.date_system,'iso8601'); assert.equal(observed.sheets[0].hidden,true); assert.equal(cell(observed,'A1').value,'120.00'); assert.equal(cell(observed,'A1').formula,'of:=SUM([.A2:.A3])'); assert.equal(cell(observed,'A1').formula_dialect,'ods_openformula'); assert.equal(cell(observed,'A1').style['text-properties.font-weight'],'bold'); assert.equal(cell(observed,'A1').hidden_column,true); assert.equal(cell(observed,'C1').value,'ABC  D\tE\nF\n한글😀'); assert.equal(cell(observed,'D1').value,''); assert.equal(cell(observed,'D1').cached_result,'present'); assert.equal(cell(observed,'E1').cached_result,'missing'); assert.deepEqual(observed.sheets[0].merges,['A1:B1']); assert.equal(observed.sheets[0].column_metadata[0].size,'2.3cm');
+  WorkbookObservation.parse(observed); assert.equal(observed.date_system,'iso8601'); assert.equal(observed.sheets[0].hidden,true); assert.equal(cell(observed,'A1').value,'120.00'); assert.equal(cell(observed,'A1').formula,'of:=SUM([.A2:.A3])'); assert.equal(cell(observed,'A1').formula_dialect,'ods_openformula'); assert.equal(style(observed,'A1') ['text-properties.font-weight'],'bold'); assert.equal(cell(observed,'A1').hidden_column,true); assert.equal(cell(observed,'C1').value,'ABC  D\tE\nF\n한글😀'); assert.equal(cell(observed,'D1').value,''); assert.equal(cell(observed,'D1').cached_result,'present'); assert.equal(cell(observed,'E1').cached_result,'missing'); assert.deepEqual(observed.sheets[0].merges,['A1:B1']); assert.equal(observed.sheets[0].column_metadata[0].size,'2.3cm');
 });
 
 test('ODS skips a million empty repeated rows without materializing them and rejects expansion beyond limits',async () => {
@@ -51,7 +52,7 @@ test('ODS skips a million empty repeated rows without materializing them and rej
 });
 
 test('ODS styled empty cells are retained, including repeated styles and blank rows/column visibility',async () => {
-  const observed = await extractWorkbook(odsFixture('<table:table-column table:visibility="collapse" table:number-columns-repeated="2"/><table:table-row table:number-rows-repeated="2" table:visibility="filter"><table:table-cell table:style-name="ce1" table:number-columns-repeated="2"/></table:table-row>',{automatic:'<style:style style:name="ce1" style:family="table-cell"><style:table-cell-properties fo:background-color="#ffee00"/></style:style>'}),'ods'); assert.equal(observed.sheets[0].cells.length,4); assert.equal(cell(observed,'B2').value_type,'blank'); assert.equal(cell(observed,'B2').hidden_row,true); assert.equal(cell(observed,'B2').style['table-cell-properties.background-color'],'#ffee00'); assert.deepEqual(observed.sheets[0].row_metadata,[{start:1,end:2,hidden:true,size:null}]);
+  const observed = await extractWorkbook(odsFixture('<table:table-column table:visibility="collapse" table:number-columns-repeated="2"/><table:table-row table:number-rows-repeated="2" table:visibility="filter"><table:table-cell table:style-name="ce1" table:number-columns-repeated="2"/></table:table-row>',{automatic:'<style:style style:name="ce1" style:family="table-cell"><style:table-cell-properties fo:background-color="#ffee00"/></style:style>'}),'ods'); assert.equal(observed.sheets[0].cells.length,4); assert.equal(cell(observed,'B2').value_type,'blank'); assert.equal(cell(observed,'B2').hidden_row,true); assert.equal(style(observed,'B2') ['table-cell-properties.background-color'],'#ffee00'); assert.deepEqual(observed.sheets[0].row_metadata,[{start:1,end:2,hidden:true,size:null}]);
 });
 
 test('UTF-8 CSV preserves quoted newlines, quotes, numeric text, blank, formula-looking text and Unicode',async () => {
@@ -106,11 +107,9 @@ test('advanced XLSX and ODS features produce individually named coverage gaps',a
   const odsGaps = new Set([...ods.coverage_gaps,...ods.sheets[0].coverage_gaps].map(gap => gap.feature)); for (const name of ['charts','pivots','defined_names','structured_tables','data_validation']) assert.ok(odsGaps.has(name),name);
 });
 
-test('repeated styles cannot amplify a compact ODS into unbounded materialized metadata',async () => {
-  // One long shared font name costs little in the XML/tree. Repeating its cell
-  // must still charge the logical report footprint; no giant fixture is allocated.
-  const bytes = odsFixture('<table:table-row table:number-rows-repeated="16384"><table:table-cell table:style-name="ce1" office:value-type="float" office:value="1"/></table:table-row>',{automatic:`<style:style style:name="ce1" style:family="table-cell"><style:text-properties fo:font-family="${'x'.repeat(4096)}"/></style:style>`});
-  await assert.rejects(extractWorkbook(bytes,'ods'),code('WORKBOOK_LIMIT'));
+test('repeated long semantic styles are interned once without imposing an artificial cell limit',async () => {
+  const bytes = odsFixture('<table:table-row table:number-rows-repeated="20000"><table:table-cell table:style-name="ce1" office:value-type="float" office:value="1"/></table:table-row>',{automatic:`<style:style style:name="ce1" style:family="table-cell"><style:text-properties fo:font-family="${'x'.repeat(4096)}"/></style:style>`});
+  const observed = await extractWorkbook(bytes,'ods'); assert.equal(observed.sheets[0].cells.length,20000); assert.equal(Object.keys(observed.style_definitions ?? {}).length,1); assert.equal(style(observed,'A1')['text-properties.font-family'].length,4096); assert.equal(cell(observed,'A1').style_ref,cell(observed,'A20000').style_ref); assert.deepEqual(cell(observed,'A20000').style,{});
 });
 
 test('calculation flags are known bounded metadata and never arbitrary unpaged XML attributes',async () => {
@@ -131,4 +130,55 @@ test('ODS matrix spans classify ordinary and covered saved followers without exp
   const observed = await extractWorkbook(odsFixture('<table:table-row><table:table-cell table:formula="of:=TRANSPOSE([.A5:.B6])" table:number-matrix-columns-spanned="2" table:number-matrix-rows-spanned="2" office:value-type="float" office:value="1"/><table:table-cell office:value-type="float" office:value="2"/><table:table-cell office:value-type="float" office:value="99"/></table:table-row><table:table-row><table:table-cell office:value-type="float" office:value="3"/><table:covered-table-cell/></table:table-row>'),'ods');
   assert.equal(cell(observed,'A1').formula_interpretation,'unresolved'); assert.equal(cell(observed,'B1').formula,null); assert.equal(cell(observed,'B1').formula_interpretation,'unresolved'); assert.equal(cell(observed,'B1').value,'2'); assert.equal(cell(observed,'B1').cached_result,'present'); assert.equal(cell(observed,'B2').cached_result,'missing'); assert.equal(cell(observed,'B2').formula_interpretation,'unresolved'); assert.equal(cell(observed,'C1').formula_interpretation,'not_formula');
   const huge = await extractWorkbook(xlsxFixture('<sheetData><row r="1"><c r="A1"><f t="array" ref="A1:XFD1048576">1</f><v>1</v></c></row></sheetData>'),'xlsx'); assert.equal(huge.sheets[0].cells.length,1);
+});
+
+test('nested ODS row/column groups preserve inherited hidden state and source visibility toggles',async () => {
+  const row = (number: number, visibility = '') => `<table:table-row${visibility ? ` table:visibility="${visibility}"` : ''}>${[1,2,3,4].map(column => `<table:table-cell office:value-type="float" office:value="${number * 10 + column}"/>`).join('')}</table:table-row>`;
+  const source = (hidden: boolean) => odsFixture(`<table:table table:name="Groups"><table:table-column-group table:display="${hidden ? 'false' : 'true'}"><table:table-column/><table:table-column-group table:display="true"><table:table-column/></table:table-column-group><table:table-column-group table:display="false"><table:table-column/></table:table-column-group></table:table-column-group><table:table-column/><table:table-row-group table:display="${hidden ? 'false' : 'true'}">${row(1)}<table:table-row-group table:display="true">${row(2)}</table:table-row-group><table:table-row-group table:display="false">${row(3)}</table:table-row-group>${row(4,'filter')}</table:table-row-group>${row(5)}</table:table>`);
+  const hidden = await extractWorkbook(source(true),'ods'), visible = await extractWorkbook(source(false),'ods');
+  for (const address of ['A1','B1','C1','A2','B2','C2','A3']) { assert.equal(cell(hidden,address).hidden_row,true,address); assert.equal(cell(hidden,address).hidden_column,true,address); }
+  assert.equal(cell(hidden,'D1').hidden_column,false); assert.equal(cell(hidden,'A5').hidden_row,false);
+  assert.equal(cell(visible,'A1').hidden_row,false); assert.equal(cell(visible,'B2').hidden_row,false); assert.equal(cell(visible,'B2').hidden_column,false); assert.equal(cell(visible,'C2').hidden_column,true); assert.equal(cell(visible,'A3').hidden_row,true); assert.equal(cell(visible,'A4').hidden_row,true);
+  assert.equal(cell(hidden,'B2').value,cell(visible,'B2').value); assert.deepEqual(hidden.sheets[0].row_metadata.map(item => [item.start,item.end,item.hidden]),[[1,1,true],[2,2,true],[3,3,true],[4,4,true]]); assert.deepEqual(visible.sheets[0].row_metadata.map(item => [item.start,item.end,item.hidden]),[[3,3,true],[4,4,true]]);
+  assert.deepEqual(visible.sheets[0].column_metadata.map(item => [item.start,item.end,item.hidden]),[[3,3,true]]);
+});
+
+test('hidden ODS groups retain million-row sparse metadata without expanding repeated blanks',async () => {
+  const bytes = odsFixture('<table:table table:name="SparseGroups"><table:table-column-group table:display="false"><table:table-column-group table:display="true"><table:table-column table:number-columns-repeated="16384"/></table:table-column-group></table:table-column-group><table:table-row-group table:display="false"><table:table-row-group table:display="true"><table:table-row table:number-rows-repeated="1048576"><table:table-cell table:number-columns-repeated="16384"/></table:table-row></table:table-row-group></table:table-row-group></table:table>');
+  const observed = await extractWorkbook(bytes,'ods'), sheet = observed.sheets[0]; assert.equal(sheet.cells.length,0); assert.equal(sheet.row_count,1048576); assert.equal(sheet.column_count,16384); assert.deepEqual(sheet.row_metadata,[{start:1,end:1048576,hidden:true,size:null}]); assert.deepEqual(sheet.column_metadata,[{start:1,end:16384,hidden:true,size:null}]);
+  await assert.rejects(extractWorkbook(odsFixture('<table:table-row-group table:display="false"><table:table-row table:number-rows-repeated="1048577"/></table:table-row-group>'),'ods'),code('WORKBOOK_LIMIT'));
+});
+
+test('ordinary Excel default formatting is interned and remains semantically compared',async () => {
+  const source = defaultStyledXlsxFixture(20000), original = source.slice(), observed = await extractWorkbook(source,'xlsx'); assert.deepEqual(source,original); assert.equal(observed.sheets[0].cells.length,20000); assert.equal(Object.keys(observed.style_definitions ?? {}).length,1); assert.equal(style(observed,'A1')['font.name.val'],'Calibri'); assert.equal(cell(observed,'A1').style_ref,cell(observed,'CV200').style_ref); assert.deepEqual(cell(observed,'A1').style,{});
+  const parts = unzipSync(source); parts['xl/styles.xml'] = strToU8(new TextDecoder().decode(parts['xl/styles.xml']).replace('Calibri','Aptos')); const changed = await extractWorkbook(zipSync(parts),'xlsx'); assert.notEqual(cell(observed,'A1').style_ref,cell(changed,'A1').style_ref); assert.equal(style(changed,'A1')['font.name.val'],'Aptos');
+});
+
+test('ODS document-default column/row styles leave trailing million-row empty ranges sparse',async () => {
+  const styles = '<style:default-style style:family="table-cell"><style:text-properties fo:font-size="10pt"/></style:default-style><style:style style:name="Default" style:family="table-cell"/>';
+  const observed = await extractWorkbook(odsFixture('<table:table-column table:number-columns-repeated="1024" table:default-cell-style-name="Default"/><table:table-row><table:table-cell office:value-type="float" office:value="7"/></table:table-row><table:table-row table:number-rows-repeated="1048575" table:default-cell-style-name="Default"><table:table-cell table:number-columns-repeated="1024"/></table:table-row>',{styles}),'ods'); assert.equal(observed.sheets[0].cells.length,1); assert.equal(observed.sheets[0].row_count,1); assert.equal(style(observed,'A1')['text-properties.font-size'],'10pt');
+  const nondefault = await extractWorkbook(odsFixture('<table:table-column table:default-cell-style-name="Color"/><table:table-row><table:table-cell/></table:table-row>',{styles:styles + '<style:style style:name="Color" style:family="table-cell"><style:table-cell-properties fo:background-color="#ffff00"/></style:style>'}),'ods'); assert.equal(nondefault.sheets[0].cells.length,1); assert.equal(style(nondefault,'A1')['table-cell-properties.background-color'],'#ffff00');
+});
+
+test('ODS automatic style names are scoped to their part and common parent styles retain precedence',async () => {
+  const common = '<style:style style:name="Base" style:family="table-cell"><style:text-properties fo:font-weight="bold"/></style:style>';
+  const stylesAutomatic = '<style:style style:name="ce1" style:family="table-cell"><style:text-properties fo:color="#ff0000"/></style:style><style:style style:name="Base" style:family="table-cell"><style:text-properties fo:font-style="italic"/></style:style>';
+  const automatic = '<style:style style:name="ce1" style:family="table-cell" style:parent-style-name="Base"><style:text-properties fo:color="#008800"/></style:style><style:style style:name="Base" style:family="table-cell"><style:text-properties fo:font-style="italic"/></style:style>';
+  const observed = await extractWorkbook(odsFixture('<table:table-row><table:table-cell table:style-name="ce1" office:value-type="float" office:value="1"/></table:table-row>',{styles:common,stylesAutomatic,automatic}),'ods'); assert.equal(style(observed,'A1')['text-properties.color'],'#008800'); assert.equal(style(observed,'A1')['text-properties.font-weight'],'bold'); assert.equal(style(observed,'A1')['text-properties.font-style'],undefined);
+  await assert.rejects(extractWorkbook(odsFixture('<table:table-row><table:table-cell table:style-name="ce1" office:value-type="float" office:value="1"/></table:table-row>',{stylesAutomatic}),'ods'),code('INVALID_WORKBOOK'));
+});
+
+test('valid namespace aliases retain ODS values/formulas and XLSX relationship IDs; wrong URIs fail explicitly',async () => {
+  const source = odsFixture('<table:table-row><table:table-cell office:value-type="float" office:value="42" table:formula="of:=6*7"/></table:table-row>'), parts = unzipSync(source);
+  const rebind = (value: string,from: string,to: string) => value.replaceAll(`xmlns:${from}=`,`xmlns:${to}=`).replace(new RegExp(`(<\\/?|\\s)${from}:`,'g'),`$1${to}:`);
+  let content = new TextDecoder().decode(parts['content.xml']); for (const [from,to] of [['office','o'],['table','t'],['style','s']]) content = rebind(content,from,to); parts['content.xml'] = strToU8(content); const aliased = await extractWorkbook(zipSync(parts),'ods'); assert.equal(cell(aliased,'A1').value,'42'); assert.equal(cell(aliased,'A1').formula,'of:=6*7');
+  parts['content.xml'] = strToU8(content.replace('xmlns:o="urn:oasis:names:tc:opendocument:xmlns:office:1.0"','xmlns:o="urn:wrong:office"')); await assert.rejects(extractWorkbook(zipSync(parts),'ods'),code('UNSUPPORTED_NAMESPACE'));
+  const attributeOnly = unzipSync(source); attributeOnly['content.xml'] = strToU8(new TextDecoder().decode(attributeOnly['content.xml']).replace('office:value-type="float"','bad:value-type="float" xmlns:bad="urn:wrong:office"')); await assert.rejects(extractWorkbook(zipSync(attributeOnly),'ods'),code('UNSUPPORTED_NAMESPACE'));
+  const book = unzipSync(xlsxFixture('<sheetData/>')); book['xl/workbook.xml'] = strToU8(rebind(new TextDecoder().decode(book['xl/workbook.xml']),'r','rel')); assert.equal((await extractWorkbook(zipSync(book),'xlsx')).sheets.length,1);
+});
+
+test('ODS repeated blanks crossing default and nondefault columns materialize only effective style runs',async () => {
+  const styles = '<style:style style:name="Default" style:family="table-cell"/><style:style style:name="Color" style:family="table-cell"><style:table-cell-properties fo:background-color="#ffff00"/></style:style>';
+  const observed = await extractWorkbook(odsFixture('<table:table-column table:default-cell-style-name="Color"/><table:table-column table:number-columns-repeated="16383" table:default-cell-style-name="Default"/><table:table-row table:number-rows-repeated="100"><table:table-cell table:number-columns-repeated="16384"/></table:table-row>',{styles}),'ods'); assert.equal(observed.sheets[0].cells.length,100); assert.equal(observed.sheets[0].column_count,1); assert.equal(style(observed,'A100')['table-cell-properties.background-color'],'#ffff00');
+  const override = await extractWorkbook(odsFixture('<table:table-column table:default-cell-style-name="Color"/><table:table-row table:number-rows-repeated="1048576"><table:table-cell table:style-name="Default"/></table:table-row>',{styles}),'ods'); assert.equal(override.sheets[0].cells.length,0);
 });

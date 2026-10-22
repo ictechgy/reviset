@@ -15,6 +15,7 @@ export const WorkbookCell = z.object({
   formula_dialect: z.enum(['xlsx_a1', 'ods_openformula']).nullable(),
   formula_interpretation: z.enum(['explicit', 'not_formula', 'unresolved']).optional(),
   number_format: z.string().nullable(), style: z.record(z.string(), z.string()),
+  style_ref: z.string().regex(/^wstyle_[a-f0-9]{64}$/).optional(),
   hidden_row: z.boolean(), hidden_column: z.boolean(),
   source_ref: z.string(),
 });
@@ -27,6 +28,7 @@ export const WorkbookSheet = z.object({
   cell_extraction_complete: z.literal(true),
 });
 export const WorkbookObservation = z.object({
+  style_definitions: z.record(z.string(), z.record(z.string(), z.string())).optional(),
   format: WorkbookFormat, sheets: z.array(WorkbookSheet), coverage_gaps: z.array(WorkbookGap),
   calculation: z.literal('stored_values_only_no_recalculation'),
   date_system: z.enum(['1900', '1904', 'iso8601', 'unknown']),
