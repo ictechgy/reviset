@@ -12,7 +12,9 @@ export function rectanglePath(paths:any):boolean{
   // LibreOffice may start halfway along an edge, repeat vertices, and emit
   // an explicit closing line before closePath. Keep this proof bounded and
   // accept only one closed M/L/Z subpath; other geometry stays uncertain.
-  if(!Array.isArray(paths)||paths.length===0||paths.length>256)return false;
+  // Pinned PDF.js paints only data[0]; never join separate buffers into a
+  // contour that the renderer did not paint.
+  if(!Array.isArray(paths)||paths.length!==1)return false;
   const p:number[]=[];
   for(const part of paths){
     if(!Array.isArray(part)&&!(ArrayBuffer.isView(part)&&!(part instanceof DataView)))return false;

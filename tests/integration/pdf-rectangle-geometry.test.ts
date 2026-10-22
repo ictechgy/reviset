@@ -26,7 +26,7 @@ test('LibreOffice edge-midpoint and redundant-closing rectangles remain rectangl
     [[5,0],[0,0],[0,5],[0,10],[10,10],[10,0],[5,0]],
     [[5,0],[5,0],[0,0],[0,0],[0,10],[10,10],[10,0],[5,0],[5,0]],
   ])assert.equal(rectanglePath([path(points)]),true,JSON.stringify(points));
-  assert.equal(rectanglePath([[0,0,0,1,10,0],[1,10,10,1,0,10,4]]),true,'Buffers may split one subpath');
+  assert.equal(rectanglePath([[0,0,0,1,10,0],[1,10,10,1,0,10,4]]),false,'PDF.js paints only the first buffer; never join buffers into invented coverage');
 });
 
 test('rectangle recognition rejects nonrectangular, backtracking, multiple and unbounded paths',()=>{
