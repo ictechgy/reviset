@@ -1,4 +1,12 @@
-# 현재 검증 · 2026-10-22 스프레드시트
+# 현재 검증 · 2026-10-22 Reviset 리네이밍
+
+현재 소스 빌드 앱은 `release/Reviset.app`, clean runtime source는 `1b2f98b4f727972b8261516ec82064908600455d`다. 표시명·실행 파일·CLI·MCP 이름을 Reviset으로 바꿨으며 [호환성 식별자](RENAMING.md)는 유지한다. TypeScript와 관련43개 검사, 네이티브 빌드·엄격 서명 검사가 통과했다.
+
+보존한 Docver-Sheets의 동봉 합성 자료로 만든5버전 문서/3버전 통합 문서 보고서를 새 Reviset 앱에서 다시 열었다. 고정 보고서 ID·본문 hash와 원본 byte가 유지되고, 새 동봉 MCP의 서버명/설정 키·프로젝트 범위 거절·DB byte 불변·기존 `docver://` 인용 조회를 확인했다. 새 실제 캡처2장을 README에 반영했다. 상세 로컬 증거는 `.omx/artifacts/rename-reviset-20261022/native-qualification.json`이며 GitHub에는 원시 검증 폴더를 포함하지 않는다.
+
+이 검증은 리네이밍·기존 보고서 재열기 범위다. 새 대규모 OCR·전체 회귀·이동 ZIP·다른 Mac·공증·OS입력/VoiceOver 검증으로 확대하지 않는다. 이전 앱·ZIP은 당시 이름과 증거로 보존한다.
+
+## 리네이밍 이전 검증 · 2026-10-22 스프레드시트
 
 현재 앱은 `release/Docver-Sheets.app`, ZIP은 `release/Docver-0.5.0-workbook6-arm64.zip`, clean runtime source는 `ba8eae815950f92511b7ebb81335bc1f02c6e79f`다. [후속 변경·검토·한계](WORKBOOK-RECOVERY-2026-10-22.md), [이동 ZIP 검증](../release/validation-workbook6.json), [실행 결합 JSON](../.omx/artifacts/workbook-improve-20261022/composite-qualification.json)을 따른다. 이후 문서 커밋과 앱의 실행 소스를 구분한다.
 

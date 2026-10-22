@@ -58,3 +58,13 @@ Earlier validation records and preserved Docver app bundles keep their original
 names, source SHAs, and screenshots. They describe those exact builds. Renaming
 does not extend their results to a new build, change the project license, or
 qualify a public installer. `HANDOFF.md` and `PLAN.md` remain original records.
+
+The Reviset build at `1b2f98b` passed TypeScript checks, 43 focused tests, the
+native build, and strict signature verification. The running app reopened
+synthetic document and workbook reports created by the preserved Docver build;
+report IDs/bodies and original bytes stayed unchanged. Packaged MCP announced
+`reviset`, enforced project scope, read existing `docver://` citations, and left
+database bytes unchanged. The current [README screenshots](images/README.md)
+were refreshed from this running build; historical captures remain in Git
+history and the original validation records. This is scoped rename validation,
+not a new full regression, OCR benchmark, relocated-ZIP, or notarization result.

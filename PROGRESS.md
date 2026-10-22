@@ -1081,3 +1081,10 @@ and complete original-base reviews follow;no currentpackage/perfection claim.
 - 최종88/88 PASS19.918초, strictSwift3.900초/tsc0.330초/macbuild31.440초.219개 입력 파일 해시를 clean runtime에 결합. 실제 데모·1803UTF16 원문2조각/양쪽 독립 일치·복귀, ZIP공백 이동20검사/12MCP도구15호출/DB불변/기존PPTX·PDF·LibreOffice PASS.
 - 독립 두 역할의 최종 전체5파일 diff는 코드COMMENT(도구 미노출)/구조CLEAR/SOURCE_READY, actionable0. Claude5d전체/ba8delta/최종실제2이미지APPROVE. Grok최종 범위와 판정은 [후속 검증](docs/WORKBOOK-RECOVERY-2026-10-22.md)에 결합한다.
 - 원래42+직전ZIP3/validation3 총44보존 경로 일치, 중간4·5ZIP보존. 공통7backend/helper바이트는076과 동일. 전체341회귀/40만셀분석은 과거고정소스 실측으로 유지한다. 보편OCR·PowerPoint strict/수식재계산/고급Excel/다른Mac·공증/OS입력·VoiceOver는 미해결·범위밖이다.
+
+## 2026-10-22 Reviset / 리비셋 리네이밍
+
+- 사용자 확정 이름 Reviset을 앱 창·Finder 표시·실행 파일·아이콘 파일명·내보내기 폴더·CLI·패키지·MCP 서버/새 설정 키·영문/한국어 README에 적용했다. 기본 산출물은 `release/Reviset.app`; 새 `REVISET_*` 빌드 입력과 기존 `DOCVER_*` 별칭을 지원한다.
+- 저장 경로/DB/번들 식별자/설정 키/도움 실행 파일/`docver://` 인용과 schema·engine·고정 보고서 바이트는 유지한다. 같은 보관소 잠금도 유지한다. [호환성 계약](docs/RENAMING.md).
+- Clean runtime `1b2f98b4f727972b8261516ec82064908600455d`: TypeScript·집중43검사·실제 네이티브 빌드·엄격 서명 PASS. 보존한 Docver-Sheets가 만든 합성5버전 문서/3버전 통합 문서 고정 보고서를 새 앱으로 열고 ID/본문 hash/원본 byte를 보존했다. 새 동봉 MCP 이름·설정·범위 거절·기존 인용·DB byte 불변 확인. HANDOFF/PLAN 및 보존한 두 기존 앱 실행 파일 hash 일치.
+- 실제 새 앱의 문서/시트 캡처2장과 provenance를 갱신했다. 새 OCR 성능·전체 회귀·ZIP 이동·공증/다른 Mac·VoiceOver 자격을 주장하지 않는다. 로컬 증거 `.omx/artifacts/rename-reviset-20261022/`는 GitHub 소스에서 제외한다.
