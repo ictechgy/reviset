@@ -617,6 +617,14 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
     const columns: {start: number; end: number; hidden: boolean; style: string | undefined}[] = []; let nextColumn = 1;
     for (const {node:col,inheritedHidden} of flattenOdsColumns(table)) { const repeat = integer(attr(col,'table:number-columns-repeated'),1,WORKBOOK_LIMITS.columns,'ODS column repetition'), end = nextColumn + repeat - 1; if (end > WORKBOOK_LIMITS.columns) fail('WORKBOOK_LIMIT','ODS column repetition exceeds worksheet bounds'); const visibility = odsVisibility(col), hidden = inheritedHidden || visibility === 'collapse' || visibility === 'filter'; const size = styles.size(attr(col,'table:style-name'),'column'); columns.push({start:nextColumn,end,hidden,style:attr(col,'table:default-cell-style-name')}); if (hidden || size !== null) { addAxisMetadata(sheet.column_metadata,{start:nextColumn,end,hidden,size}); sheet.column_count = Math.max(sheet.column_count,end); } nextColumn = end + 1; }
     const effectiveColumns: ({hidden:boolean;style:string|undefined}|undefined)[] = new Array(WORKBOOK_LIMITS.columns + 1); for (const column of columns) for (let cc = column.start; cc <= column.end; cc++) effectiveColumns[cc] = column;
+    // A sparse row can span every column. Index visibility boundaries once so
+    // each source row visits only its emitted ranges, never its full cell area.
+    // Unmentioned columns are visible; explicit cell styles override defaults.
+    const hiddenColumnRunEnds = new Uint16Array(WORKBOOK_LIMITS.columns + 1);
+    for (let cc = WORKBOOK_LIMITS.columns; cc >= 1; cc--) {
+      if ((cc & 1023) === 0) await checkpoint(state,true);
+      hiddenColumnRunEnds[cc] = cc === WORKBOOK_LIMITS.columns || (effectiveColumns[cc]?.hidden ?? false) !== (effectiveColumns[cc + 1]?.hidden ?? false) ? cc : hiddenColumnRunEnds[cc + 1];
+    }
     if (columns.some(column => column.style !== undefined)) gap(sheet.coverage_gaps,'row_column_default_styles','Default row/column styles covering absent cells are not expanded. Explicit blank-cell styles are retained as materialized cells or bounded sparse rectangles.',sheet.sheet_id);
     let row = 1;
     for (const {node:rowNode,inheritedHidden} of flattenOdsRows(table)) {
@@ -644,8 +652,7 @@ async function extractOds(parts: Map<string,Uint8Array>, state: State): Promise<
         // column defaults. The rectangle remains independent of its cell area.
         const semantic = styles.cell(item.style); let start = item.column;
         while (start < item.column + item.repeat) {
-          await checkpoint(state); const hidden = effectiveColumns[start]?.hidden ?? false; let end = start;
-          while (end + 1 < item.column + item.repeat && (effectiveColumns[end + 1]?.hidden ?? false) === hidden) end++;
+          await checkpoint(state); const hidden = effectiveColumns[start]?.hidden ?? false, end = Math.min(item.column + item.repeat - 1,hiddenColumnRunEnds[start]);
           if (++state.blankRanges > WORKBOOK_LIMITS.metadata) fail('WORKBOOK_LIMIT','Workbook explicit blank formatting ranges exceed 100000 entries');
           const range: WorkbookBlankStyleRangeData = {row_start:row,row_end:lastRow,column_start:start,column_end:end,number_format:semantic.number,style:semantic.values,hidden_row:hiddenRow,hidden_column:hidden,source_ref:`${sheet.source_ref}!${cellAddress(row,start)}:${cellAddress(lastRow,end)}`};
           internStyle(state,range); (sheet.blank_style_ranges ??= []).push(range);
