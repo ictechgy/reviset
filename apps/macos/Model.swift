@@ -349,11 +349,11 @@ struct ReorderConfirmation:Identifiable {
         guard report["report_id"].string==snapshot else { statusMessage = UIMessage("doc.analysis.savedReload");return }
         var summary=[recovered ? UIMessage("doc.analysis.recovered") : UIMessage("doc.analysis.saved")]
         let quality=report["quality_counts"]
-        if quality["ocr_inferred_pages"].int>0{summary.append(.plural("doc.analysis.ocrInferredPages",quality["ocr_inferred_pages"].int))}
-        if quality["ocr_failed_pages"].int>0{summary.append(.plural("doc.analysis.ocrFailedPages",quality["ocr_failed_pages"].int))}
-        if quality["unresolved_comparison_pages"].int>0{summary.append(.plural("doc.analysis.unresolvedPages",quality["unresolved_comparison_pages"].int))}
-        if quality["pptx_without_render"].int>0{summary.append(.plural("doc.analysis.noRenderPages",quality["pptx_without_render"].int))}
-        if quality["reference_pdf_pages"].int>0{summary.append(UIMessage("doc.analysis.referenceSummary", .message(.plural("doc.analysis.referenceTotal",quality["reference_pdf_pages"].int)), .message(.plural("doc.analysis.referenceHuman",quality["human_reference_pdf_pages"].int)), .message(.plural("doc.analysis.referenceInferred",quality["inferred_reference_pdf_pages"].int))))}
+        if quality["ocr_inferred_pages"].int>0{summary.append(UIMessage.plural("doc.analysis.ocrInferredPages",quality["ocr_inferred_pages"].int))}
+        if quality["ocr_failed_pages"].int>0{summary.append(UIMessage.plural("doc.analysis.ocrFailedPages",quality["ocr_failed_pages"].int))}
+        if quality["unresolved_comparison_pages"].int>0{summary.append(UIMessage.plural("doc.analysis.unresolvedPages",quality["unresolved_comparison_pages"].int))}
+        if quality["pptx_without_render"].int>0{summary.append(UIMessage.plural("doc.analysis.noRenderPages",quality["pptx_without_render"].int))}
+        if quality["reference_pdf_pages"].int>0{summary.append(UIMessage("doc.analysis.referenceSummary", .message(UIMessage.plural("doc.analysis.referenceTotal",quality["reference_pdf_pages"].int)), .message(UIMessage.plural("doc.analysis.referenceHuman",quality["human_reference_pdf_pages"].int)), .message(UIMessage.plural("doc.analysis.referenceInferred",quality["inferred_reference_pdf_pages"].int))))}
         statusMessage = .joined(summary, separator:" · ")
     }
     func cancel() { guard busy && !committing,let token=analysisToken else { return }; cancelRequested = true; bridge.cancel(owner:token); statusMessage = UIMessage("doc.analysis.cancelling") }
