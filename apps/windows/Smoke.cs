@@ -168,16 +168,27 @@ internal static class Smoke
         var before = window.Before.Host; var after = window.After.Host; var sidebar = window.SidebarPane; var inspector = window.InspectorPane; var changePane = window.ChangesPane;
         var report = window.ReportId; var beforeVersion = window.Before.RevisionId; var afterVersion = window.After.RevisionId; var page = window.Before.PageId; var row = window.Before.SelectedRow; var column = window.Before.SelectedColumn; var zoom = window.Before.PageImage.LayoutTransform.Value;
         var nativeRows = window.Before.Cells.ItemsSource; var sourceImage = window.Before.PageImage.Source;
-        foreach (var preset in new[] { "focus", "review", "balanced" })
+        var layouts = new[]
+        {
+            (Name: "focus", Layout: WorkspaceLayout.Preset("focus")),
+            (Name: "review", Layout: WorkspaceLayout.Preset("review")),
+            (Name: "changes-left", Layout: WorkspaceLayout.Preset("balanced") with { Changes = "left", Sidebar = false, Inspector = false }),
+            (Name: "changes-right", Layout: WorkspaceLayout.Preset("balanced") with { Changes = "right", Sidebar = false, Inspector = false }),
+            (Name: "vertical", Layout: WorkspaceLayout.Preset("focus") with { VerticalComparison = true }),
+            (Name: "balanced", Layout: WorkspaceLayout.Preset("balanced"))
+        };
+        foreach (var preset in layouts)
         {
             var positions = new[] { window.Before, window.After }.Select(pane => { var scroll = window.IsWorkbook ? pane.GridScroll! : pane.PageScroll; return (scroll.HorizontalOffset, scroll.VerticalOffset); }).ToArray();
-            window.SetLayout(WorkspaceLayout.Preset(preset)); await Tick(window);
+            window.SetLayout(preset.Layout); await Tick(window);
             Require(ReferenceEquals(before, window.Before.Host) && ReferenceEquals(after, window.After.Host) && ReferenceEquals(sidebar, window.SidebarPane) && ReferenceEquals(inspector, window.InspectorPane) && ReferenceEquals(changePane, window.ChangesPane), "Layout recreated a retained pane");
             Require(window.ReportId == report && window.Before.RevisionId == beforeVersion && window.After.RevisionId == afterVersion && window.Before.PageId == page && window.Before.SelectedRow == row && window.Before.SelectedColumn == column, "Layout changed report/version/page/grid state");
             Require(ReferenceEquals(nativeRows, window.Before.Cells.ItemsSource) && ReferenceEquals(sourceImage, window.Before.PageImage.Source) && window.Before.PageImage.LayoutTransform.Value == zoom, "Layout recreated native content or lost zoom");
             for (var index = 0; index < 2; index++) { var pane = index == 0 ? window.Before : window.After; var scroll = window.IsWorkbook ? pane.GridScroll! : pane.PageScroll; Require(Math.Abs(scroll.HorizontalOffset - Math.Min(positions[index].HorizontalOffset, scroll.ScrollableWidth)) <= 1 && Math.Abs(scroll.VerticalOffset - Math.Min(positions[index].VerticalOffset, scroll.ScrollableHeight)) <= 1, "Native viewport changed beyond its measured scrollable clamp"); }
             if (!window.IsWorkbook) Require(window.Before.Zoom == 1.5, "Layout reset user zoom");
+            if (preset.Name is "focus" or "changes-left" or "changes-right" or "vertical") Screenshot(window, Path.Combine(output, name + "-layout-" + preset.Name + ".png"));
         }
+        checks.Add(name + "_actual_focus_left_right_vertical_native_layout_captures_preserve_report_hosts_source_and_viewport");
         var customized = window.Layout with { Changes = "right", InspectorSide = "left", VerticalComparison = true, Sidebar = false, ComparisonRatio = .62 };
         window.SetLayout(customized); window.Preferences.For(window.IsWorkbook).Named["smoke saved"] = window.Layout; window.SavePreferences(); var expected = window.Layout;
         window.SetLayout(new()); window.Preferences.For(window.IsWorkbook).Current = window.Preferences.For(window.IsWorkbook).Named["smoke saved"]; window.ApplyLayout(); window.ReloadPreferencesForSmoke();

@@ -365,13 +365,15 @@ internal sealed class MainWindow : Window
     }
     private async Task OpenReportCore(string fixedReport)
     {
-        var ticket = BeginScope(); reportId = fixedReport; currentReport = default; ClearReport();
+        var project = projectId; var workbook = IsWorkbook; var ticket = BeginScope(); reportId = fixedReport; currentReport = default; ClearReport();
         var value = await Bridge.Call(IsWorkbook ? "workbookView" : "view", Json.Scope(projectId, fixedReport), reads.Token);
         if (ticket != generation) return;
         if (value.Get("report_id").Text() != fixedReport || value.Get("project_id").Text() != projectId) throw new BridgeException("REPORT_SCOPE", "The report response is outside the selected fixed snapshot.");
         currentReport = value; var revisions = value.Get("revisions").Items();
         binding = true; Before.SetRevisions(revisions, 0); After.SetRevisions(revisions, Math.Max(0, revisions.Count - 1)); binding = false;
-        UpdateContext(); await ReloadComparisonCore(); SetBusy(busy);
+        UpdateContext(); var comparisonRead = ReloadComparisonCore(); var comparisonTicket = generation; await comparisonRead;
+        if (IsCurrent(comparisonTicket) && projectId == project && IsWorkbook == workbook && reportId == fixedReport && ComparisonState == "ready") status.Text = Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"];
+        SetBusy(busy);
     }
     internal async Task ReloadComparison()
     {
@@ -672,8 +674,10 @@ internal sealed class MainWindow : Window
         if (!SidebarPane.IsVisible || !projectList.IsVisible || !Layout.Sidebar) throw new InvalidOperationException("Native Layout menu could not restore the project sidebar in a narrow window.");
         if (preferred != (Layout.SidebarWidth, Layout.InspectorWidth, Layout.ChangesWidth, Layout.ChangesHeight, Layout.ComparisonRatio)) throw new InvalidOperationException("Narrow sidebar toggle overwrote preferred dimensions.");
         var existing = projectList.Items.OfType<Choice>().FirstOrDefault(item => item.Id == project) ?? throw new InvalidOperationException("The current existing project was not reachable in the native list.");
-        await OpenProject(existing.Value); await OpenReport(fixedReport);
-        if (projectId != project || reportId != fixedReport || ComparisonState != "ready") throw new InvalidOperationException("Selecting an existing project did not return to its pinned report.");
+        await OpenProject(existing.Value);
+        if (ComparisonState != "ready" || status.Text != Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"]) throw new InvalidOperationException("Existing-project reselection retained loading after a verified comparison.");
+        await OpenReport(fixedReport);
+        if (projectId != project || reportId != fixedReport || ComparisonState != "ready" || status.Text != Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"]) throw new InvalidOperationException("Selecting an existing project did not return to its pinned report with settled ready status.");
     }
     internal async Task CheckProjectTransitionAuthorityForSmoke(Func<Task<string>> counts)
     {
@@ -693,14 +697,16 @@ internal sealed class MainWindow : Window
             if (initialCounts != await counts()) throw new InvalidOperationException("A project mutation dispatched while its real reports reply was pending.");
         }
         finally { release.TrySetResult(); }
-        await loading; if (projectId != candidate.Id || currentProject.Get("project_id").Text() != candidate.Id) throw new InvalidOperationException("Validated candidate did not become authoritative after its reports read settled.");
-        binding = true; projectList.SelectedItem = source; binding = false; await OpenProject(source.Value); await OpenReport(fixedReport);
+        await loading; if (projectId != candidate.Id || currentProject.Get("project_id").Text() != candidate.Id || status.Text == Copy["loading"] || reportId.Length == 0 && status.Text != Copy["noReport"] || reportId.Length > 0 && (ComparisonState != "ready" || status.Text != Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"])) throw new InvalidOperationException("Validated candidate did not become authoritative with its draft/ready status after its reports read settled.");
+        binding = true; projectList.SelectedItem = source; binding = false; await OpenProject(source.Value);
+        if (ComparisonState != "ready" || status.Text != Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"]) throw new InvalidOperationException("Reselecting the saved project left a loading caption after verified comparison readiness.");
+        await OpenReport(fixedReport);
         binding = true; projectList.SelectedItem = candidate; binding = false;
         try { await OpenProject(candidate.Value, _ => throw new IOException("Isolated post-reply project transition settlement failure")); throw new InvalidOperationException("Post-reply transition failure control unexpectedly installed the candidate."); } catch (IOException) { }
         AssertNoWriterTarget(); await Analyze(); await Reorder(); await Export();
         if (initialCounts != await counts()) throw new InvalidOperationException("A failed transition dispatched analysis or changed pinned report counts.");
         binding = true; projectList.SelectedItem = source; binding = false; await OpenProject(source.Value); await OpenReport(fixedReport);
-        if (projectId != source.Id || reportId != fixedReport || ComparisonState != "ready") throw new InvalidOperationException("Project selection did not recover its exact previous pinned report.");
+        if (projectId != source.Id || reportId != fixedReport || ComparisonState != "ready" || status.Text != Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"]) throw new InvalidOperationException("Project selection did not recover its exact previous pinned report and ready status.");
     }
     internal async Task CheckIndependentProjectRefreshForSmoke()
     {
