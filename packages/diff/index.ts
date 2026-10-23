@@ -215,7 +215,8 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     }
     if(formatA===formatB&&(formatA==='pdf'||a.preview?.environment===b.preview?.environment)&&rasterA&&rasterB&&rasterA!==rasterB&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){add('visual_region_changed',a,b,m,sourcePdfAppearance?'pdf_visual_difference_without_text_change':'render_difference_may_include_renderer_substitution');const change=changes.at(-1)!;if(sourcePdfAppearance)change.coverage_gaps[0].feature='visual_comparison';change.appearance_assessment=sourcePdfAppearance?'observed':'inferred';change.evidence=change.evidence.map((e,i)=>({...e,quote:'',method:'native_raster',provenance:(i===0?formatA:formatB)==='pdf'?'observed':'inferred',render_sha256:i===0?rasterA:rasterB}));}
     }
-    if((a.suppressed_text||b.suppressed_text)&&normalize(a.text)!==normalize(b.text)&&normalize(comparisonText(a))===normalize(comparisonText(b)))add('coverage_gap',a,b,m,'raw_text_changed_in_suppressed_layer');
+    const suppressedLayerChanged=normalize(a.suppressed_text??'')!==normalize(b.suppressed_text??'');
+    if((a.suppressed_text||b.suppressed_text)&&normalize(a.text)!==normalize(b.text)&&(normalize(comparisonText(a))===normalize(comparisonText(b))||samePdfSourceLayout&&suppressedLayerChanged))add('coverage_gap',a,b,m,'raw_text_changed_in_suppressed_layer');
     for(const old of a.elements.filter(e=>e.text)){
       const same=b.elements.filter(e=>e.method===old.method&&e.normalized_text===old.normalized_text);
       if(same.length!==1||a.elements.filter(e=>e.method===old.method&&e.normalized_text===old.normalized_text).length!==1)continue;

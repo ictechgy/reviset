@@ -52,10 +52,82 @@ test('split parentheses, mixed-script words and reordered paint runs retain sour
   assert.ok(equivalentGap(changes(a,b)));assert.ok(!changes(a,b).some(c=>c.kind==='text_modified'));
 });
 
+test('visible run equivalence retains a concurrent changed hidden text layer and avoids unchanged-layer warnings',()=>{
+  function hidden(p:PageData,text:string):PageData{
+    p.comparison_basis='hybrid_regions_v1';
+    p.elements.forEach((e,i)=>{e.comparison_role='selected';e.comparison_order=i;});
+    const concealed=page(p.page_id+'_hidden',[{text,y:.5}]).elements[0];
+    concealed.visibility='occluded';concealed.comparison_role='excluded';concealed.reading_order=p.elements.length;
+    concealed.visibility_spans!.forEach(span=>span.state='occluded');
+    p.elements.push(concealed);p.suppressed_text=text;p.text=p.elements.map(e=>e.text).join('\n');
+    return Page.parse(p);
+  }
+  for(const reordered of [false,true])for(const changedHidden of [false,true]){
+    const a=hidden(page('hybrid_a',[{text:'AB'}]),'HIDDEN100'),b=hidden(page('hybrid_b',[{text:'AB',cuts:[1]}],reordered),changedHidden?'HIDDEN101':'HIDDEN100'),frozen=JSON.stringify([a,b]);
+    assert.ok(equivalentPdfSourceLayout(a,b),'Only selected visible glyphs establish the layout proof');
+    const rows=changes(a,b),reasons=rows.flatMap(c=>c.coverage_gaps.map(g=>g.reason));
+    assert.ok(reasons.includes('pdf_source_run_layout_equivalent'));assert.equal(reasons.includes('raw_text_changed_in_suppressed_layer'),changedHidden);assert.ok(!rows.some(c=>c.kind==='text_modified'));
+    assert.deepEqual(reasons,changedHidden?['pdf_source_run_layout_equivalent','raw_text_changed_in_suppressed_layer']:['pdf_source_run_layout_equivalent']);
+    for(const event of rows){assert.deepEqual([event.before,event.after],[a.text,b.text]);assert.deepEqual(event.evidence.map(e=>[e.page_id,e.quote,e.method,e.provenance]),[['hybrid_a',a.text,'pdf_text','observed'],['hybrid_b',b.text,'pdf_text','observed']]);}
+    assert.equal(JSON.stringify([a,b]),frozen,'Raw selected and occluded source observations remain intact');
+  }
+  const a=hidden(page('space_a',[{text:'AB'}]),'HIDDEN 100'),b=hidden(page('space_b',[{text:'AB',cuts:[1]}]),'HIDDEN\n100');
+  assert.ok(equivalentGap(changes(a,b)));assert.ok(!changes(a,b).some(c=>c.coverage_gaps.some(g=>g.reason==='raw_text_changed_in_suppressed_layer')),'Equivalent hidden whitespace is not a new hidden content edit');
+});
+
 test('actual digits, decimal signs, bullets, units and internal token boundaries retain edits',()=>{
   for(const [before,after] of [['Revenue 100','Revenue 101'],['Rate 1.00','Rate 100'],['Balance -100','Balance 100'],['• Approved','Approved'],['Weight 100 kg','Weight 100 g'],['Revenue 1 00','Revenue 100'],['Customer accepted','Customer declined']]){
     const a=page('a',[{text:before}]),b=page('b',[{text:after,cuts:[Math.max(1,after.indexOf(' '))]}]),rows=changes(a,b);
     assert.equal(equivalentPdfSourceLayout(a,b),false,before+' -> '+after);assert.ok(!equivalentGap(rows));assert.ok(rows.some(c=>c.kind==='text_modified'),before+' -> '+after);
+  }
+});
+
+test('PDF grid source table cells participate in the layout proof and retain actual cell edits',()=>{
+  for(const changedValue of [false,true]){
+    const a=page('cell_a',[{text:'AB'},{text:'100'}]),b=page('cell_b',[{text:'AB',cuts:[1]},{text:changedValue?'101':'100'}]);
+    for(const p of [a,b]){const cell=p.elements.at(-1)!;cell.kind='table_cell';cell.table={table_id:'inferred_grid',row:0,column:0,origin:'pdf_grid_inferred',assessment:'inferred'};Page.parse(p);}
+    const frozen=JSON.stringify([a,b]),rows=changes(a,b);
+    assert.equal(equivalentPdfSourceLayout(a,b),!changedValue);assert.equal(equivalentGap(rows),!changedValue);
+    if(changedValue){const edit=rows.find(c=>c.kind==='text_modified')!;assert.ok(edit);assert.deepEqual([edit.before,edit.after],[a.text,b.text]);assert.ok(edit.evidence.some(e=>e.quote==='100'));assert.ok(edit.evidence.some(e=>e.quote==='101'));}
+    else assert.ok(!rows.some(c=>c.kind==='text_modified'));
+    assert.equal(JSON.stringify([a,b]),frozen);
+  }
+});
+
+test('unbacked compared text cannot be erased by a proof covering only selected source runs',()=>{
+  for(const field of ['visible_text','text'] as const){
+    const a=page('extra_a',[{text:'AB'}]),b=page('extra_b',[{text:'AB',cuts:[1]}]);
+    if(field==='text'){delete a.visible_text;delete b.visible_text;}
+    a[field]+='\n100';b[field]+='\n101';
+    const frozen=JSON.stringify([a,b]),rows=changes(a,b);
+    assert.equal(equivalentPdfSourceLayout(a,b),false,field+' includes a value absent from the correlated glyphs');assert.ok(!equivalentGap(rows));assert.ok(rows.some(c=>c.kind==='text_modified'));assert.equal(JSON.stringify([a,b]),frozen);
+  }
+});
+
+test('observation and annotation proof budgets reject either overflowing endpoint',()=>{
+  function padded(p:PageData):PageData{
+    const sourceCount=p.elements.length;
+    for(let i=sourceCount;i<4_096;i++){
+      const annotation=i>=4_096-256;
+      p.elements.push({observation_id:p.page_id+'_metadata_'+i,kind:'shape',text:'',normalized_text:'',bbox:[.8,.8,.01,.01],reading_order:i,availability:'available',method:annotation?'pdf_page_annotation':'locally_authored_shape',source_ref:'metadata/'+i,provenance:'observed',visibility_evidence:annotation?[{method:'pdf_annotation_region_requires_review',bbox:[.8,.8,.01,.01],assessment:'inferred',coverage:1}]:[]});
+    }
+    return Page.parse(p);
+  }
+  const a=padded(page('limit_a',[{text:'AB'}])),b=padded(page('limit_b',[{text:'AB',cuts:[1]}]));
+  assert.ok(equivalentPdfSourceLayout(a,b),'Unrelated bounded metadata does not alter the source proof');assert.ok(equivalentGap(changes(a,b)));
+  for(const side of [0,1])for(const budget of ['observations','annotations']){
+    const pair:[PageData,PageData]=structuredClone([a,b]),p=pair[side];
+    if(budget==='observations')p.elements.push({...p.elements.at(-1)!,observation_id:p.page_id+'_extra',method:'locally_authored_shape',reading_order:p.elements.length});
+    else p.elements.find(e=>e.method==='locally_authored_shape')!.method='pdf_page_annotation';
+    assert.equal(equivalentPdfSourceLayout(...pair),false,budget+' endpoint '+side+' exceeds its work budget');assert.ok(!equivalentGap(changes(...pair)));
+  }
+  const regionPair:[PageData,PageData]=[page('regions_a',[{text:'AB'}]),page('regions_b',[{text:'AB',cuts:[1]}])];
+  for(const p of regionPair)p.elements.push({...a.elements.at(-1)!,observation_id:p.page_id+'_annotation',reading_order:p.elements.length,visibility_evidence:Array.from({length:256},()=>({method:'pdf_annotation_region_requires_review',bbox:[.8,.8,.01,.01] as Box,assessment:'inferred',coverage:1}))});
+  assert.ok(equivalentPdfSourceLayout(...regionPair),'One carrier with 256 nonoverlapping regions remains eligible');
+  for(const side of [0,1]){
+    const pair:[PageData,PageData]=structuredClone(regionPair),carrier=pair[side].elements.at(-1)!;
+    carrier.visibility_evidence!.push({...carrier.visibility_evidence![0]});
+    assert.equal(equivalentPdfSourceLayout(...pair),false,'One carrier with 257 regions exhausts endpoint '+side+' proof budget');assert.ok(!equivalentGap(changes(...pair)));
   }
 });
 

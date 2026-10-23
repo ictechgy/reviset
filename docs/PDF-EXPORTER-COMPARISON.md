@@ -10,7 +10,7 @@ Explicit spaces inside a source run remain significant. At a run boundary, near-
 
 When the checks succeed but the original comparison strings differ, the change list retains `pdf_source_run_layout_equivalent` with both original page strings and source evidence. It withholds the page-wide and regional semantic `text_modified` claim for that pair. Actual native pixel differences remain separate `visual_region_changed` observations, carrying `pdf_visual_difference_without_text_change`: font/export/layout differences and actual graphic or style edits are all possible causes. The app explains both reasons, and MCP clients receive the same report and evidence.
 
-The checks reject unresolved/estimated geometry, OCR participation, annotations overlapping the text, non-visible or struck text, incompatible row boundaries, unsupported direction/rotation, ambiguous joins and overlapping glyphs. The budget is 2,048 source runs and 32,768 UTF-16 source units/glyph spans per page. A rejected comparison retains the existing comparison/uncertainty path; it is not declared equivalent. Rewrapping across different rows, ligatures with incompatible mappings, missing ToUnicode information, arbitrary bidi text and every exporter/font combination are not universally resolved.
+The checks reject unresolved/estimated geometry, OCR participation, annotations overlapping the text, non-visible or struck text, incompatible row boundaries, unsupported direction/rotation, ambiguous joins and overlapping glyphs. Every element contributing to the compared string must be covered, including inferred table cells that retain observed PDF text. The bounded proof admits at most 4,096 total observations, 256 annotation carriers/region-evidence entries, 2,048 source runs and 32,768 UTF-16 source units/glyph spans per page. Annotation intersection checks use only the bounded carrier set. A rejected comparison retains the existing comparison/uncertainty path; it is not declared equivalent. Rewrapping across different rows, ligatures with incompatible mappings, missing ToUnicode information, arbitrary bidi text and every exporter/font combination are not universally resolved.
 
 ## Original and reference authorities
 
@@ -20,7 +20,7 @@ Producer/Creator metadata is not an equality or causality signal. Source text is
 
 ## Historical reports
 
-Engine 54's complete diff is archived unchanged in `packages/diff/legacy-bundle-54.ts`. Historical engine-54 history, directed range results, endpoint IDs and evidence use that kernel; reanalysis creates a new report under engine 55. Engine 53 and older archived kernels retain their own dispatch. Stored manual same-version PDF associations remain accepted for engines 53, 54 and 55.
+Engine 54's complete diff is archived unchanged in `packages/diff/legacy-bundle-54.ts`. Historical engine-54 history, directed range results, endpoint IDs and evidence use that kernel; reanalysis creates a new report under engine 55. Engine 53 and older archived kernels retain their own dispatch. Stored manual same-version PDF associations remain accepted for engines 53, 54 and 55. Visible-layout equivalence does not suppress an independently changed hidden text layer: a normalized change in suppressed text retains its own raw_text_changed_in_suppressed_layer warning. Unchanged hidden text does not acquire that warning merely because visible runs were split.
 
 ## Validation scope
 

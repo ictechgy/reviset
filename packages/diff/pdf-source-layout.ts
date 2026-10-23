@@ -1,10 +1,10 @@
-import {type Box,type ElementData,type PageData,comparisonRegions} from '../schema/index.js';
+import {type Box,type ElementData,type PageData,comparisonRegions,comparisonText} from '../schema/index.js';
 import {rowOrderedRegions} from '../ingest/reading-order.js';
 import {hasUnverifiedPdfGeometry} from '../ingest/pdf-text-geometry.js';
-import {annotationBlocksRegion} from '../ingest/pdf-annotation-regions.js';
+import {annotationBlocksRegion,PDF_ANNOTATION_CARRIER} from '../ingest/pdf-annotation-regions.js';
 
 export const PDF_SOURCE_LAYOUT_POLICY='observed-glyph-run-boundaries-v1';
-const MAX_GLYPHS=32_768,MAX_RUNS=2_048;
+const MAX_GLYPHS=32_768,MAX_RUNS=2_048,MAX_OBSERVATIONS=4_096,MAX_ANNOTATIONS=256;
 type Unit={text:string;bbox:Box;run:ElementData;index:number;spaceBefore:boolean;spaceAfter:boolean};
 type Boundary='space'|'joined'|'row'|'unknown';
 
@@ -13,11 +13,19 @@ type Boundary='space'|'joined'|'row'|'unknown';
 // OCR, estimated geometry and any uncertain appearance cannot prove equality.
 function units(page:PageData):Unit[]|undefined {
   if(page.capabilities.text!=='available'||page.source_transform.length!==6||page.source_transform[0]<=0||page.source_transform[3]>=0||page.source_transform[1]!==0||page.source_transform[2]!==0)return;
-  const runs=page.comparison_basis==='hybrid_regions_v1'?comparisonRegions(page):page.elements.filter(e=>e.kind==='text'&&e.method==='pdf_text');
+  if(page.elements.length>MAX_OBSERVATIONS)return;
+  const annotations=page.elements.filter(e=>e.method===PDF_ANNOTATION_CARRIER);
+  if(annotations.length>MAX_ANNOTATIONS)return;
+  let annotationRegions=0;
+  for(const annotation of annotations){annotationRegions+=annotation.visibility_evidence?.length??0;if(annotationRegions>MAX_ANNOTATIONS)return;}
+  // Prove complete coverage of the actual compared string. Grid inference can
+  // re-kind source runs as table cells; silently filtering them loses edits.
+  const runs=page.comparison_basis==='hybrid_regions_v1'?comparisonRegions(page):page.elements.filter(e=>(e.kind==='text'||e.kind==='table_cell')&&e.method!=='vision_document_cell'&&(e.visibility===undefined||['visible','struck_through'].includes(e.visibility)));
   if(!runs.length||runs.length>MAX_RUNS||page.comparison_basis==='raster_ocr')return;
+  if(runs.map(run=>run.text).join('\n')!==comparisonText(page))return;
   const result:Unit[]=[];let size=0;
   for(const run of runs){
-    if(run.comparison_role==='unresolved'||run.provenance!=='observed'||run.method!=='pdf_text'||run.availability!=='available'||run.visibility!=='visible'||hasUnverifiedPdfGeometry(run)||annotationBlocksRegion(page.elements,run.bbox))return;
+    if(run.comparison_role==='unresolved'||run.provenance!=='observed'||run.method!=='pdf_text'||run.availability!=='available'||run.visibility!=='visible'||hasUnverifiedPdfGeometry(run)||annotationBlocksRegion(annotations,run.bbox))return;
     size+=run.text.length;if(size>MAX_GLYPHS)return;
     if(/[\u0590-\u08ff\u200e\u200f\u202a-\u202e\u2066-\u2069\ufb1d-\ufdff\ufe70-\ufeff\u{10800}-\u{10fff}\u{1e800}-\u{1eeff}]/u.test(run.text))return;
     const spans=run.visibility_spans;if(!spans?.length||spans.length>MAX_GLYPHS-result.length)return;
