@@ -716,12 +716,32 @@ private struct SmokeStructureView: View {
             layout.update{$0.pageFraction=0.63;$0.pageArrangement = .horizontal;$0.sidebarWidth=301;$0.changesDock = .left;$0.changesWidth=417;$0.inspectorWidth=355}
             var merged=before;merged.pageFraction=0.63;merged.pageArrangement = .horizontal;merged.sidebarWidth=301;merged.changesDock = .left;merged.changesWidth=417;merged.inspectorWidth=355
             try await check("geometry edited during Focus",focused:true);try retainedSources()
+            guard layout.saveCurrent(named:"Focus QA "+tab),let named=layout.saved.last,named.configuration==merged else{throw BridgeError(code:"LAYOUT_FOCUS_NAMED_SAVE",message:"Saving during Focus captured transient hidden panels instead of the retained arrangement.")}
+            try await check("named layout saved during Focus",focused:true);try retainedSources()
             let stored=WorkspaceLayoutStore(scope:.document),mergedBytes=WorkspaceLayoutPreferences.data(.document)
-            guard !stored.isFocused,stored.configuration==merged else{throw BridgeError(code:"LAYOUT_FOCUS_PERSIST",message:"A focused geometry edit persisted transient hidden panels or lost the retained arrangement.")}
+            guard !stored.isFocused,stored.configuration==merged,stored.saved.contains(named) else{throw BridgeError(code:"LAYOUT_FOCUS_PERSIST",message:"A focused geometry edit or named save persisted transient hidden panels or lost the retained arrangement.")}
             layout.toggleFocus();try await check("edited geometry restored",focused:false);try retainedSources()
             guard layout.configuration==merged,WorkspaceLayoutPreferences.data(.document)==mergedBytes else{throw BridgeError(code:"LAYOUT_FOCUS_GEOMETRY",message:"Focus exit lost the edited geometry or rewrote its persisted bytes.")}
+            layout.apply(.balanced);layout.apply(named)
+            try await check("focused named layout reapplied",focused:false);try retainedSources()
+            guard layout.configuration==merged else{throw BridgeError(code:"LAYOUT_FOCUS_NAMED_APPLY",message:"Reapplying the focused named layout lost retained visibility or geometry.")}
+            layout.remove(named.id)
+            let panels:[(String,WritableKeyPath<WorkspaceLayoutConfiguration,Bool>)]=[("projects",\.sidebarVisible),("changes",\.changesVisible),("evidence",\.inspectorVisible)]
+            for allHidden in [false,true] {
+                for (name,panel) in panels {
+                    var baseline=merged;baseline.sidebarVisible = !allHidden;baseline.changesVisible = !allHidden;baseline.inspectorVisible = !allHidden
+                    layout.update{$0=baseline};layout.toggleFocus()
+                    try await check("visibility \(name) Focus on, previously hidden \(allHidden)",focused:true);try retainedSources()
+                    layout.update{$0.pageFraction=0.57;$0.changesDock = .right;$0.changesHeight=247}
+                    layout.update{$0[keyPath:panel].toggle();$0.inspectorWidth=367}
+                    var expected=baseline;expected[keyPath:panel]=true;expected.pageFraction=0.57;expected.changesDock = .right;expected.changesHeight=247;expected.inspectorWidth=367
+                    try await check("Focus opens \(name), previously hidden \(allHidden)",focused:false);try retainedSources()
+                    let reopened=WorkspaceLayoutStore(scope:.document)
+                    guard !reopened.isFocused,layout.configuration==expected,reopened.configuration==expected else{throw BridgeError(code:"LAYOUT_FOCUS_VISIBILITY",message:"Opening a panel from Focus discarded unrelated retained panels or edited geometry.")}
+                }
+            }
         }
-        try JSON(["checks":checks,"manual_all_hidden_remains_nonfocus":true,"equal_geometry_focus_published_and_restored":true,"focused_geometry_merges_into_persisted_baseline":true,"report_selection_pdf_identity_page_and_zoom_retained":true,"observations":observations,"viewport_scope":"existing native hosts remain; viewport may clamp naturally when pane dimensions change","interaction_scope":"production model/layout actions and AppKit content; no OS gestures"]).data().write(to:output.appendingPathComponent("document-chrome-observations.json"))
+        try JSON(["checks":checks,"manual_all_hidden_remains_nonfocus":true,"equal_geometry_focus_published_and_restored":true,"focused_geometry_merges_into_persisted_baseline":true,"focused_visibility_exit_merges_only_changed_flags":true,"focused_named_save_reload_and_apply_retain_baseline":true,"report_selection_pdf_identity_page_and_zoom_retained":true,"observations":observations,"viewport_scope":"existing native hosts remain; viewport may clamp naturally when pane dimensions change","interaction_scope":"production model/layout actions and AppKit content; no OS gestures"]).data().write(to:output.appendingPathComponent("document-chrome-observations.json"))
         return checks
     }
     private static func documentLockProbe(_ model:AppModel,request:JSON,output:URL)async throws {

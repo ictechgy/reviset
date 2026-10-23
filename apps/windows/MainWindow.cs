@@ -71,6 +71,7 @@ internal sealed class MainWindow : Window
     private bool workbookNet;
     private bool NetMode => IsWorkbook ? workbookNet : documentNet;
     private Task modeRequest = Task.CompletedTask;
+    private Task reportRequest = Task.CompletedTask;
     private readonly StackPanel toolbar = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(6) };
     private readonly StackPanel reportBar = new() { Orientation = Orientation.Horizontal };
     private Button more = new();
@@ -86,7 +87,7 @@ internal sealed class MainWindow : Window
     private bool projectChoicesReady;
     private long projectChoicesGeneration;
     private CancellationTokenSource? projectChoicesRead;
-    private sealed record ComparisonSelection(string Project, string Report, bool Workbook, JsonElement Draft, JsonElement Snapshot, PaneSelection Before, PaneSelection After, string IntervalFrom, string IntervalTo);
+    private sealed record ComparisonSelection(string Project, string Report, bool Workbook, JsonElement Draft, JsonElement Snapshot, PaneSelection Before, PaneSelection After, string IntervalFrom, string IntervalTo, double BeforeX, double BeforeY, double AfterX, double AfterY);
     private string projectId = "";
     private string reportId = "";
     private JsonElement currentProject;
@@ -153,7 +154,7 @@ internal sealed class MainWindow : Window
         DockPanel.SetDock(toolbar, Dock.Top); root.Children.Add(toolbar);
         var reportCaption = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) }; BindText(reportCaption, "report"); reportBar.Children.Add(reportCaption); reportBar.Children.Add(reports); reportBar.Children.Add(comparisonMode);
         comparisonMode.SelectionChanged += async (_, _) => { if (!binding && comparisonMode.SelectedItem is Choice selected) { modeRequest = ChangeComparisonMode(selected.Id == "range_net"); await Guard(() => modeRequest); } };
-        reports.SelectionChanged += async (_, _) => { if (!binding && reports.SelectedItem is Choice selected) await Guard(() => OpenReport(selected.Id)); };
+        reports.SelectionChanged += async (_, _) => { if (!binding && reports.SelectedItem is Choice selected) { var request = OpenReport(selected.Id); reportRequest = request; await Guard(() => request); } };
         DockPanel.SetDock(reportBar, Dock.Top); root.Children.Add(reportBar);
         DockPanel.SetDock(context, Dock.Top); root.Children.Add(context);
         DockPanel.SetDock(progress, Dock.Top); root.Children.Add(progress);
@@ -420,7 +421,8 @@ internal sealed class MainWindow : Window
     }
     private ComparisonSelection AdmitMutation()
     {
-        var saved = new ComparisonSelection(projectId, reportId, IsWorkbook, currentProject, currentReport, Before.CaptureSelection(), After.CaptureSelection(), intervalFrom, intervalTo);
+        var beforeScroll = IsWorkbook ? Before.GridScroll : Before.PageScroll; var afterScroll = IsWorkbook ? After.GridScroll : After.PageScroll;
+        var saved = new ComparisonSelection(projectId, reportId, IsWorkbook, currentProject, currentReport, Before.CaptureSelection(), After.CaptureSelection(), intervalFrom, intervalTo, beforeScroll?.HorizontalOffset ?? 0, beforeScroll?.VerticalOffset ?? 0, afterScroll?.HorizontalOffset ?? 0, afterScroll?.VerticalOffset ?? 0);
         BeginScope(); InvalidateAuthority(true); Before.Invalidate(); After.Invalidate(); SetBusy(true); return saved;
     }
     private async Task FinishMutation(CancellationTokenSource owned, ComparisonSelection previous, bool completed)
@@ -443,7 +445,12 @@ internal sealed class MainWindow : Window
         {
             projectId = saved.Project; reportId = saved.Report; IsWorkbook = saved.Workbook; currentProject = saved.Draft; currentReport = saved.Snapshot;
             var revisions = currentReport.Get("revisions").Items(); Before.SetRevisions(revisions, 0); After.SetRevisions(revisions, Math.Max(0, revisions.Count - 1)); Before.RestoreSelection(saved.Before); After.RestoreSelection(saved.After); intervalFrom = saved.IntervalFrom; intervalTo = saved.IntervalTo; UpdateInterval(); UpdateContext();
-            var ticket = BeginScope(); InvalidateAuthority(true); await Before.Load(ticket, reads.Token); await After.Load(ticket, reads.Token); await LoadChanges(false, ticket, reads.Token);
+            var restore = ReloadComparisonCore(true); var ticket = generation; await restore;
+            UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            if (!IsCurrent(ticket) || projectId != saved.Project || reportId != saved.Report) return;
+            var beforeScroll = IsWorkbook ? Before.GridScroll : Before.PageScroll; var afterScroll = IsWorkbook ? After.GridScroll : After.PageScroll;
+            beforeScroll?.ScrollToHorizontalOffset(Math.Min(saved.BeforeX, beforeScroll.ScrollableWidth)); beforeScroll?.ScrollToVerticalOffset(Math.Min(saved.BeforeY, beforeScroll.ScrollableHeight));
+            afterScroll?.ScrollToHorizontalOffset(Math.Min(saved.AfterX, afterScroll.ScrollableWidth)); afterScroll?.ScrollToVerticalOffset(Math.Min(saved.AfterY, afterScroll.ScrollableHeight));
         }
         catch { FailComparison(); }
         finally { restoringOperation = false; }
@@ -499,7 +506,24 @@ internal sealed class MainWindow : Window
         if (busy || IsWorkbook || projectId.Length == 0) return;
         var selectedProject = projectId; var ticket = generation; var projects = await Bridge.Call("projects", token: reads.Token); if (!IsCurrent(ticket) || busy || IsWorkbook || projectId != selectedProject) return; var project = projects.Items().Find(v => v.Get("project_id").Text() == selectedProject); var dialog = new ImportWindow(Copy, false, project.Get("revisions").Items()) { Owner = this }; prepareForSmoke?.Invoke(dialog); if (dialog.ShowDialog() != true || busy || projectId != selectedProject) return;
         var owned = new CancellationTokenSource(); operation = owned; var previous = AdmitMutation(); var completed = false;
-        try { await RecoverBeforeMutation(owned.Token); currentProject = await Bridge.Call("reorder", new { project_id = selectedProject, order = dialog.Rows.Select(v => v.OriginalIndex).ToArray(), draft_hash = project.Get("draft_hash").Text() }, owned.Token); await OpenProjectCore(currentProject); await RefreshProjects(); completed = true; } finally { await FinishMutation(owned, previous, completed); }
+        try
+        {
+            await RecoverBeforeMutation(owned.Token);
+            var draft = await Bridge.Call("reorder", new { project_id = selectedProject, order = dialog.Rows.Select(v => v.OriginalIndex).ToArray(), draft_hash = project.Get("draft_hash").Text() }, owned.Token);
+            if (draft.Get("project_id").Text() != selectedProject) throw new BridgeException("PROJECT_SCOPE", "Reorder returned another project.");
+            if (previous.Report.Length > 0 && previous.Snapshot.ValueKind == JsonValueKind.Object)
+            {
+                // Only the draft changed. Re-read the explicitly pinned snapshot to
+                // refresh its draft identity, then restore the exact evidence scope.
+                var snapshot = await Bridge.Call("view", Json.Scope(selectedProject, previous.Report), owned.Token);
+                if (snapshot.Get("project_id").Text() != selectedProject || snapshot.Get("report_id").Text() != previous.Report) throw new BridgeException("REPORT_SCOPE", "Reorder refresh returned another fixed snapshot.");
+                await RestoreAfterMutation(previous with { Draft = draft, Snapshot = snapshot });
+                if (projectId != selectedProject || reportId != previous.Report || ComparisonState is not ("ready" or "invalid")) throw new BridgeException("REPORT_SCOPE", "The pinned comparison could not be restored after reordering its draft.");
+            }
+            else await OpenProjectCore(draft, previous.Report);
+            await RefreshProjects(); completed = true;
+        }
+        finally { await FinishMutation(owned, previous, completed); }
     }
     private async Task Export()
     {
@@ -894,28 +918,64 @@ internal sealed class MainWindow : Window
     {
         var versions = currentReport.Get("revisions").Items(); Before.SetEvidenceRevision(versions[before].Get("revision_occurrence_id").Text()); After.SetEvidenceRevision(versions[after].Get("revision_occurrence_id").Text()); Before.RestoreDefaultSelection(); After.RestoreDefaultSelection(); await ReloadComparison();
     }
-    internal async Task<object> CheckReorderForSmoke(Func<Task<string>> fixedReportDigest)
+    internal async Task<object> CheckReorderForSmoke(Func<string, Task<string>> fixedReportDigest)
     {
         if (IsWorkbook || reportId.Length == 0) throw new InvalidOperationException("Draft reorder control requires a pinned document report.");
-        var project = projectId; var pinned = reportId; var snapshotLabels = currentReport.Get("revisions").Items().Select(item => item.Get("label").Text()).ToArray();
-        var before = (await Bridge.Call("projects")).Items().First(item => item.Get("project_id").Text() == project); var original = before.Get("revisions").Items().Select(item => item.Get("label").Text()).ToArray(); if (original.Length < 2 || !Regex.IsMatch(before.Get("draft_hash").Text(), "^[a-f0-9]{64}$", RegexOptions.CultureInvariant)) throw new InvalidOperationException("Production projects response lacks the current reorder draft identity.");
-        var expected = original.ToArray(); (expected[0], expected[1]) = (expected[1], expected[0]); var originalDigest = await fixedReportDigest(); var reportsBefore = (await Bridge.Call("reports", new { project_id = project })).GetRawText(); Exception? dialogFailure = null;
+        var project = projectId; var originalReport = reportId; var originalDigest = await fixedReportDigest(originalReport); var savedLayout = Layout;
         static IEnumerable<DependencyObject> Visit(DependencyObject parent) { for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++) { var child = VisualTreeHelper.GetChild(parent, index); yield return child; foreach (var nested in Visit(child)) yield return nested; } }
-        await ReorderCore(dialog => dialog.Loaded += (_, _) => dialog.Dispatcher.BeginInvoke(() =>
+        async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        async Task<JsonElement> Draft() => (await Bridge.Call("projects")).Items().First(item => item.Get("project_id").Text() == project);
+        async Task SelectReport(string id)
         {
-            try
+            var choice = reports.Items.OfType<Choice>().Single(item => item.Id == id);
+            if (!ReferenceEquals(reports.SelectedItem, choice)) { reports.SelectedItem = choice; await reportRequest; }
+            if (reportId != id || ComparisonState != "ready" || busy) throw new InvalidOperationException("Native fixed-report picker did not select its exact report.");
+        }
+        async Task MoveAndSave(int selectedIndex, string[] expected)
+        {
+            Exception? dialogFailure = null;
+            await ReorderCore(dialog => dialog.Loaded += (_, _) => dialog.Dispatcher.BeginInvoke(() =>
             {
-                var table = Visit(dialog).OfType<DataGrid>().Single(); var buttons = Visit(dialog).OfType<Button>().ToArray(); table.SelectedIndex = 0;
-                buttons.Single(button => button.Content as string == Copy["down"]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                if (!dialog.Rows.Select(item => item.Label).SequenceEqual(expected) || !dialog.Rows.Select(item => item.OriginalIndex).Take(2).SequenceEqual(new[] { 1, 0 })) throw new InvalidOperationException("Native reorder Move down did not change the actual labelled input order.");
-                buttons.Single(button => button.Content as string == Copy["save"]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            }
-            catch (Exception error) { dialogFailure = error; dialog.DialogResult = false; }
-        }));
-        if (dialogFailure is not null) throw new InvalidOperationException("Native production reorder dialog failed.", dialogFailure);
-        var after = (await Bridge.Call("projects")).Items().First(item => item.Get("project_id").Text() == project); var afterDigest = await fixedReportDigest(); var reportsAfter = (await Bridge.Call("reports", new { project_id = project })).GetRawText();
-        if (!after.Get("revisions").Items().Select(item => item.Get("label").Text()).SequenceEqual(expected) || !after.Get("dirty").Flag() || after.Get("draft_hash").Text() == before.Get("draft_hash").Text() || !Regex.IsMatch(after.Get("draft_hash").Text(), "^[a-f0-9]{64}$", RegexOptions.CultureInvariant) || projectId != project || reportId != pinned || ComparisonState != "ready" || !currentReport.Get("revisions").Items().Select(item => item.Get("label").Text()).SequenceEqual(snapshotLabels) || reportsBefore != reportsAfter || afterDigest != originalDigest) throw new InvalidOperationException("Production native reorder failed to update only the dirty draft while preserving the exact pinned report.");
-        return new { project_id = project, report_id = pinned, draft_order_before = original, draft_order_after = expected, dirty = true, draft_hash_before = before.Get("draft_hash").Text(), draft_hash_after = after.Get("draft_hash").Text(), fixed_report_body_sha256 = originalDigest, fixed_report_bytes_unchanged = true, dialog_route = "actual native Move down and Save controls through the production Reorder action" };
+                try
+                {
+                    var table = Visit(dialog).OfType<DataGrid>().Single(); var buttons = Visit(dialog).OfType<Button>().ToArray(); table.SelectedIndex = selectedIndex;
+                    var expectedIndexes = Enumerable.Range(0, dialog.Rows.Count).ToArray(); (expectedIndexes[selectedIndex], expectedIndexes[selectedIndex + 1]) = (expectedIndexes[selectedIndex + 1], expectedIndexes[selectedIndex]);
+                    buttons.Single(button => button.Content as string == Copy["down"]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    if (!dialog.Rows.Select(item => item.Label).SequenceEqual(expected) || !dialog.Rows.Select(item => item.OriginalIndex).SequenceEqual(expectedIndexes)) throw new InvalidOperationException("Native reorder Move down did not change the actual labelled input order.");
+                    buttons.Single(button => button.Content as string == Copy["save"]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
+                catch (Exception error) { dialogFailure = error; dialog.DialogResult = false; }
+            }));
+            if (dialogFailure is not null) throw new InvalidOperationException("Native production reorder dialog failed.", dialogFailure);
+        }
+        string[] Labels(JsonElement draft) => draft.Get("revisions").Items().Select(item => item.Get("label").Text()).ToArray();
+        var initial = await Draft(); var labels = Labels(initial); if (labels.Length < 3) throw new InvalidOperationException("Multi-report reorder needs three document revisions.");
+        var orderB = labels.ToArray(); (orderB[0], orderB[1]) = (orderB[1], orderB[0]); await MoveAndSave(0, orderB); await Analyze(); var olderPin = reportId;
+        var orderC = orderB.ToArray(); (orderC[1], orderC[2]) = (orderC[2], orderC[1]); await MoveAndSave(1, orderC); await Analyze(); var latestReport = reportId;
+        var allReports = (await Bridge.Call("reports", new { project_id = project })).Items();
+        if (olderPin == originalReport || olderPin == latestReport || allReports.Count < 3 || allReports[0].Get("report_id").Text() == olderPin || allReports[^1].Get("report_id").Text() != latestReport) throw new InvalidOperationException("Reorder regression requires a distinct older pin which is neither the first nor latest report.");
+        await SelectReport(olderPin); comparisonMode.SelectedIndex = 0; await modeRequest; await CheckIntermediateEventForSmoke();
+        var revisions = currentReport.Get("revisions").Items(); var beforePages = revisions[0].Get("pages").Items(); var afterPages = revisions[1].Get("pages").Items();
+        if (beforePages.Count < 2 || afterPages.Count < 2) throw new InvalidOperationException("Older pinned report must expose two distinct PDF pages on both evidence sides.");
+        await Before.SelectPageForSmoke(beforePages[1].Get("page_id").Text()); await After.SelectPageForSmoke(afterPages[1].Get("page_id").Text());
+        comparisonMode.SelectedIndex = 1; await modeRequest; SetLayout(WorkspaceLayout.Preset("focus")); Before.Zoom = 2; After.Zoom = 2; await Settle();
+        Before.PageScroll.ScrollToHorizontalOffset(80); Before.PageScroll.ScrollToVerticalOffset(35); After.PageScroll.ScrollToHorizontalOffset(90); After.PageScroll.ScrollToVerticalOffset(30); await Settle();
+        var beforeSelection = Before.CaptureSelection(); var afterSelection = After.CaptureSelection(); var beforePosition = Before.CaptureViewport(); var afterPosition = After.CaptureViewport(); var fixedFrom = intervalFrom; var fixedTo = intervalTo; var layout = Layout; var beforeHost = Before.Host; var afterHost = After.Host;
+        if (!NetMode || fixedFrom == Before.RevisionId && fixedTo == After.RevisionId || beforePosition.Y <= 0 || afterPosition.Y <= 0 || beforePosition.Page != beforePages[1].Get("page_id").Text() || afterPosition.Page != afterPages[1].Get("page_id").Text()) throw new InvalidOperationException("Reorder control did not establish nondefault pages, manual scroll, and an event pair independent of its net interval.");
+        var before = await Draft(); var original = Labels(before); if (!Regex.IsMatch(before.Get("draft_hash").Text(), "^[a-f0-9]{64}$", RegexOptions.CultureInvariant)) throw new InvalidOperationException("Production projects response lacks the current reorder draft identity.");
+        var expected = original.ToArray(); (expected[0], expected[1]) = (expected[1], expected[0]);
+        var reportsBefore = (await Bridge.Call("reports", new { project_id = project })).GetRawText(); var digests = new Dictionary<string, string>(); foreach (var item in allReports) { var id = item.Get("report_id").Text(); digests[id] = await fixedReportDigest(id); }
+        await MoveAndSave(0, expected); await Settle();
+        var after = await Draft(); var reportsAfter = (await Bridge.Call("reports", new { project_id = project })).GetRawText();
+        foreach (var entry in digests) if (await fixedReportDigest(entry.Key) != entry.Value) throw new InvalidOperationException("Draft reorder changed an immutable fixed report body.");
+        bool SameViewport(ScrollViewer scroll, double x, double y) => Math.Abs(scroll.HorizontalOffset - Math.Min(x, scroll.ScrollableWidth)) <= 1 && Math.Abs(scroll.VerticalOffset - Math.Min(y, scroll.ScrollableHeight)) <= 1;
+        if (!Labels(after).SequenceEqual(expected) || !after.Get("dirty").Flag() || after.Get("draft_hash").Text() == before.Get("draft_hash").Text() || !Regex.IsMatch(after.Get("draft_hash").Text(), "^[a-f0-9]{64}$", RegexOptions.CultureInvariant) || projectId != project || reportId != olderPin || (reports.SelectedItem as Choice)?.Id != olderPin || ComparisonState != "ready" || Before.CaptureSelection() != beforeSelection || After.CaptureSelection() != afterSelection || !NetMode || intervalFrom != fixedFrom || intervalTo != fixedTo || Layout != layout || !ReferenceEquals(beforeHost, Before.Host) || !ReferenceEquals(afterHost, After.Host) || !SameViewport(Before.PageScroll, beforePosition.X, beforePosition.Y) || !SameViewport(After.PageScroll, afterPosition.X, afterPosition.Y) || reportsBefore != reportsAfter || await fixedReportDigest(originalReport) != originalDigest) throw new InvalidOperationException("Production draft reorder lost its older pinned report, exact evidence scope, manual viewport, or immutable reports.");
+        var restoredBefore = new { x = Before.PageScroll.HorizontalOffset, y = Before.PageScroll.VerticalOffset }; var restoredAfter = new { x = After.PageScroll.HorizontalOffset, y = After.PageScroll.VerticalOffset };
+        // Independent subsequent user navigation restores the original five-page
+        // fixture scope used by the bundled MCP verifier, after retention passed.
+        SetLayout(savedLayout); await SelectReport(originalReport);
+        if (currentReport.Get("revisions").Items().Sum(item => item.Get("pages").Items().Count) != 5) throw new InvalidOperationException("Original MCP document fixture was not restored after the multi-report regression.");
+        return new { project_id = project, report_id = olderPin, latest_report_id = latestReport, original_and_final_fixture_report_id = originalReport, fixed_reports = digests, fixed_report_bytes_unchanged = true, reports_list_unchanged = true, draft_order_before = original, draft_order_after = expected, dirty = true, draft_hash_before = before.Get("draft_hash").Text(), draft_hash_after = after.Get("draft_hash").Text(), mode = "range_net", interval_from = fixedFrom, interval_to = fixedTo, before_selection = beforeSelection, after_selection = afterSelection, before_viewport = new { x = beforePosition.X, y = beforePosition.Y }, after_viewport = new { x = afterPosition.X, y = afterPosition.Y }, restored_before_viewport = restoredBefore, restored_after_viewport = restoredAfter, dialog_route = "three actual native Move down and Save actions; production Analyze twice; native report picker selects an older nonfirst fixed report" };
     }
     internal async Task CheckOrderAndAbsenceForSmoke()
     {

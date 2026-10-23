@@ -1751,12 +1751,31 @@ struct WorkbookGrid: NSViewRepresentable {
         layout.update{$0.pageFraction=0.63;$0.pageArrangement = .vertical;$0.sidebarWidth=301;$0.changesDock = .left;$0.changesWidth=417;$0.inspectorWidth=355}
         var merged=custom;merged.pageFraction=0.63;merged.pageArrangement = .vertical;merged.sidebarWidth=301;merged.changesDock = .left;merged.changesWidth=417;merged.inspectorWidth=355
         try await Task.sleep(nanoseconds:250_000_000);try retainedState()
+        guard layout.saveCurrent(named:"Workbook Focus QA"),let named=layout.saved.last,named.configuration==merged,layout.isFocused else{throw BridgeError(code:"WORKBOOK_FOCUS_NAMED_SAVE",message:"Saving during workbook Focus captured transient hidden panels or left Focus.")}
         let stored=WorkspaceLayoutStore(scope:.workbook),mergedBytes=WorkspaceLayoutPreferences.data(.workbook)
-        guard layout.isFocused,!stored.isFocused,stored.configuration==merged else{throw BridgeError(code:"WORKBOOK_FOCUS_PERSIST",message:"A focused workbook geometry edit discarded its retained arrangement or persisted hidden panels.")}
+        guard layout.isFocused,!stored.isFocused,stored.configuration==merged,stored.saved.contains(named) else{throw BridgeError(code:"WORKBOOK_FOCUS_PERSIST",message:"A focused workbook geometry edit or named save discarded its retained arrangement or persisted hidden panels.")}
         layout.toggleFocus();try await Task.sleep(nanoseconds:250_000_000);try retainedState()
         guard !layout.isFocused,layout.configuration==merged,WorkspaceLayoutPreferences.data(.workbook)==mergedBytes else{throw BridgeError(code:"WORKBOOK_FOCUS_RESTORE",message:"Leaving workbook Focus lost its edited arrangement or rewrote persisted bytes.")}
+        layout.apply(.balanced);layout.apply(named);try await Task.sleep(nanoseconds:250_000_000);try retainedState()
+        guard !layout.isFocused,layout.configuration==merged else{throw BridgeError(code:"WORKBOOK_FOCUS_NAMED_APPLY",message:"Reapplying the workbook layout saved during Focus lost retained visibility or geometry.")}
+        layout.remove(named.id)
+        let panels:[(String,WritableKeyPath<WorkspaceLayoutConfiguration,Bool>)]=[("projects",\.sidebarVisible),("changes",\.changesVisible),("evidence",\.inspectorVisible)]
+        var visibilityExits:[[String:Any]]=[]
+        for allHidden in [false,true] {
+            for (name,panel) in panels {
+                var baseline=merged;baseline.sidebarVisible = !allHidden;baseline.changesVisible = !allHidden;baseline.inspectorVisible = !allHidden
+                layout.update{$0=baseline};layout.toggleFocus();try await Task.sleep(nanoseconds:250_000_000);try retainedState()
+                layout.update{$0.pageFraction=0.57;$0.changesDock = .right;$0.changesHeight=247}
+                layout.update{$0[keyPath:panel].toggle();$0.inspectorWidth=367}
+                var expected=baseline;expected[keyPath:panel]=true;expected.pageFraction=0.57;expected.changesDock = .right;expected.changesHeight=247;expected.inspectorWidth=367
+                try await Task.sleep(nanoseconds:250_000_000);try retainedState()
+                let reopened=WorkspaceLayoutStore(scope:.workbook)
+                guard !layout.isFocused,!reopened.isFocused,layout.configuration==expected,reopened.configuration==expected else{throw BridgeError(code:"WORKBOOK_FOCUS_VISIBILITY",message:"Opening a workbook panel from Focus discarded unrelated retained panels or edited geometry.")}
+                visibilityExits.append(["panel":name,"previously_all_hidden":allHidden,"sidebar_visible":expected.sidebarVisible,"changes_visible":expected.changesVisible,"inspector_visible":expected.inspectorVisible])
+            }
+        }
         layout.update{$0=original};try await Task.sleep(nanoseconds:250_000_000)
-        return ["transitions":geometry,"minimum_visible_list_fraction":0.6,"report_selection_raw_cells_grid_coordinator_and_viewport_preserved":true,"focused_geometry_merges_into_persisted_baseline":true,"focus_exit_restores_custom_visibility_and_edited_geometry":true,"interaction_scope":"actual packaged production layout actions and native geometry; no OS gestures"]
+        return ["transitions":geometry,"minimum_visible_list_fraction":0.6,"report_selection_raw_cells_grid_coordinator_and_viewport_preserved":true,"focused_geometry_merges_into_persisted_baseline":true,"focus_exit_restores_custom_visibility_and_edited_geometry":true,"focused_named_save_reload_and_apply_retain_baseline":true,"focused_visibility_exit_merges_only_changed_flags":visibilityExits,"interaction_scope":"actual packaged production layout actions and native geometry; no OS gestures"]
     }
     private static func exerciseLanguageSwitch(_ model: WorkbookModel,window: NSWindow,folder: URL,originals: [WorkbookImportRow]) async throws -> [String:Any] {
         let preferences = LanguagePreferences.shared,defaults = UserDefaults.standard

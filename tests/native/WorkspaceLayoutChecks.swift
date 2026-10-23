@@ -190,8 +190,35 @@ private struct LayoutHarness:View {
                 try require(!duringFocus.isFocused && duringFocus.configuration==merged,"Focused geometry persisted hidden panel state or lost the retained arrangement")
                 scoped.toggleFocus();await settle();try assertIdentity("\(scoped.scope.rawValue) edited Focus restored")
                 try require(!scoped.isFocused && scoped.configuration==merged && WorkspaceLayoutPreferences.data(scoped.scope)==mergedBytes,"Focus exit lost merged geometry or rewrote stored bytes")
-                scoped.toggleFocus();edits=0;scoped.update{edits+=1;$0.sidebarVisible.toggle()}
-                try require(edits==1 && !scoped.isFocused && scoped.configuration.sidebarVisible,"An explicit visibility edit did not leave Focus exactly once")
+                scoped.toggleFocus();scoped.update{$0.pageFraction=0.59;$0.changesHeight=245}
+                var savedExpected=merged;savedExpected.pageFraction=0.59;savedExpected.changesHeight=245
+                try require(scoped.saveCurrent(named:"Saved during Focus"),"Focused named layout save failed")
+                let focusedSaved=scoped.saved.last!,savedReopened=WorkspaceLayoutStore(scope:scoped.scope)
+                try require(scoped.isFocused && focusedSaved.configuration==savedExpected,"Saving during Focus saved transient hidden flags or left Focus")
+                try require(!savedReopened.isFocused && savedReopened.configuration==savedExpected && savedReopened.saved.contains(focusedSaved),"Focused named layout or its retained current arrangement did not survive reload")
+                scoped.apply(.balanced);scoped.apply(.focus);scoped.apply(focusedSaved);await settle();try assertIdentity("\(scoped.scope.rawValue) saved Focus reapplied")
+                try require(!scoped.isFocused && scoped.configuration==savedExpected && WorkspaceLayoutStore(scope:scoped.scope).configuration==savedExpected,"Reapplying a layout saved during Focus lost its retained panel visibility or adjusted geometry")
+                scoped.remove(focusedSaved.id)
+                let panels:[(String,WritableKeyPath<WorkspaceLayoutConfiguration,Bool>)]=[("projects",\.sidebarVisible),("changes",\.changesVisible),("evidence",\.inspectorVisible)]
+                for visibility in 0...2 {
+                    var baseline=custom
+                    if visibility==1 {baseline.sidebarVisible=false;baseline.changesVisible=true;baseline.inspectorVisible=false}
+                    if visibility==2 {baseline.sidebarVisible=false;baseline.changesVisible=false;baseline.inspectorVisible=false}
+                    for (name,panel) in panels {
+                        scoped.update{$0=baseline};scoped.toggleFocus()
+                        scoped.update{$0.sidebarVisible=false;$0.inspectorVisible=false;$0.changesVisible=false}
+                        try require(scoped.isFocused,"No-op hidden-panel synchronization left Focus")
+                        scoped.update{$0.pageFraction=0.57;$0.changesDock = .left;$0.sidebarWidth=301}
+                        edits=0;scoped.update{edits+=1;$0[keyPath:panel].toggle();$0.inspectorWidth=355}
+                        var expected=baseline;expected[keyPath:panel]=true;expected.pageFraction=0.57;expected.changesDock = .left;expected.sidebarWidth=301;expected.inspectorWidth=355
+                        await settle();try assertIdentity("\(scoped.scope.rawValue) Focus opens \(name)/\(visibility)")
+                        try require(edits==1 && !scoped.isFocused && scoped.configuration==expected,"Opening \(name) from Focus lost unrelated retained visibility/geometry or evaluated the edit twice")
+                        let reopened=WorkspaceLayoutStore(scope:scoped.scope),bytes=WorkspaceLayoutPreferences.data(scoped.scope)
+                        try require(!reopened.isFocused && reopened.configuration==expected,"Focus visibility exit persisted unrelated transient hidden panels")
+                        scoped.toggleFocus();scoped.toggleFocus()
+                        try require(scoped.configuration==expected && WorkspaceLayoutPreferences.data(scoped.scope)==bytes,"Focus after a visibility exit lost the merged baseline or rewrote unchanged bytes")
+                    }
+                }
             }
             layout.update{$0=custom};await settle()
             layout.update{$0.sidebarVisible=false};try require(!layout.isFocused,"Hiding projects incorrectly enabled focus")

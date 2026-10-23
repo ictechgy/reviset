@@ -126,13 +126,16 @@ private struct WorkspaceLayoutEnvelope:Codable {
     func update(_ edit:(inout WorkspaceLayoutConfiguration)->Void) {
         var next=configuration;edit(&next)
         guard next.isValid,next != configuration else{return}
-        if isFocused,let previous=preFocusConfiguration,
-           next.sidebarVisible==configuration.sidebarVisible,next.inspectorVisible==configuration.inspectorVisible,next.changesVisible==configuration.changesVisible {
-            // A divider or geometry setting changes the retained arrangement,
-            // without promoting Focus's transient hidden panels to preferences.
+        if isFocused,let previous=preFocusConfiguration {
+            let visibilityChanged=next.sidebarVisible != configuration.sidebarVisible || next.inspectorVisible != configuration.inspectorVisible || next.changesVisible != configuration.changesVisible
+            // Merge only explicitly changed flags with the retained panels.
+            // Focus's other transient hidden flags never become the baseline.
             var retained=next
-            retained.sidebarVisible=previous.sidebarVisible;retained.inspectorVisible=previous.inspectorVisible;retained.changesVisible=previous.changesVisible
-            preFocusConfiguration=retained;configuration=next;persist()
+            if next.sidebarVisible==configuration.sidebarVisible {retained.sidebarVisible=previous.sidebarVisible}
+            if next.inspectorVisible==configuration.inspectorVisible {retained.inspectorVisible=previous.inspectorVisible}
+            if next.changesVisible==configuration.changesVisible {retained.changesVisible=previous.changesVisible}
+            if visibilityChanged {applyConfiguration(retained)}
+            else {preFocusConfiguration=retained;configuration=next;persist()}
         } else {applyConfiguration(next)}
     }
     private func applyConfiguration(_ next:WorkspaceLayoutConfiguration) {
@@ -172,7 +175,7 @@ private struct WorkspaceLayoutEnvelope:Codable {
     }
     @discardableResult func saveCurrent(named name:String)->Bool {
         guard canSave(name) else{return false}
-        saved.append(SavedWorkspaceLayout(id:UUID(),name:name.trimmingCharacters(in:.whitespacesAndNewlines),configuration:configuration));persist();return true
+        saved.append(SavedWorkspaceLayout(id:UUID(),name:name.trimmingCharacters(in:.whitespacesAndNewlines),configuration:preFocusConfiguration ?? configuration));persist();return true
     }
     func remove(_ id:UUID) {saved.removeAll{$0.id==id};persist()}
 }
