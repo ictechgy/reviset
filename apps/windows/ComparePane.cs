@@ -273,6 +273,7 @@ internal sealed class ComparePane
             var path = "Values[" + index + "]"; var style = new Style(typeof(TextBlock)); style.Setters.Add(new Setter(TextBlock.ForegroundProperty, new Binding(path + ".Foreground"))); style.Setters.Add(new Setter(TextBlock.FontStyleProperty, new Binding(path + ".FontStyle"))); style.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(path + ".ToolTip")));
             Cells.Columns.Add(new DataGridTextColumn { Header = ColumnName(column + index), Binding = new Binding(path + ".Text"), ElementStyle = style, Width = 115, IsReadOnly = true });
         }
+        Cells.FrozenColumnCount = 1;
         var observed = gridValue.Get("items").Items().ToDictionary(v => (v.Get("row").Number(), v.Get("column").Number()), v => v);
         var values = new List<GridRow>();
         for (var r = row; r < Math.Min(1_048_577, row + 50); r++)
@@ -285,6 +286,38 @@ internal sealed class ComparePane
             values.Add(new(r, cells));
         }
         Cells.ItemsSource = values; binding = false;
+    }
+    internal async Task<object> CheckFrozenCoordinatesForSmoke()
+    {
+        Cells.UpdateLayout(); var scroll = GridScroll ?? throw new InvalidOperationException("Native grid has no viewport.");
+        if (Cells.FrozenColumnCount != 1 || !Cells.Columns[0].IsFrozen || Cells.Columns[0].Header as string != "#" || Cells.CanUserReorderColumns) throw new InvalidOperationException("Native row-number column is not fixed before the source columns.");
+        for (var index = 1; index < Cells.Columns.Count; index++) if (Cells.Columns[index].Header as string != ColumnName(column + index - 1)) throw new InvalidOperationException("A scrolled source header lost its physical column name.");
+        var header = Descendants(Cells).OfType<DataGridColumnHeadersPresenter>().FirstOrDefault() ?? throw new InvalidOperationException("Native source headers are missing.");
+        var headerBottom = header.TransformToAncestor(Cells).TransformBounds(new Rect(0, 0, header.ActualWidth, header.ActualHeight)).Bottom;
+        var rendered = new List<object>();
+        foreach (var nativeRow in Descendants(Cells).OfType<DataGridRow>())
+        {
+            if (!nativeRow.IsVisible || nativeRow.Item is not GridRow model) continue;
+            var frozen = Descendants(nativeRow).OfType<DataGridCell>().FirstOrDefault(cell => ReferenceEquals(cell.Column, Cells.Columns[0])); if (frozen is null || !frozen.IsVisible) continue;
+            var bounds = frozen.TransformToAncestor(Cells).TransformBounds(new Rect(0, 0, frozen.ActualWidth, frozen.ActualHeight));
+            if (bounds.Top < headerBottom - 1 || bounds.Bottom > Cells.ActualHeight - 1 || bounds.Height <= 0) continue;
+            if (bounds.Left < -1 || bounds.Left > 2 || bounds.Right > Cells.ActualWidth + 1 || frozen.Content is not TextBlock number || number.Text != model.Number || !AuthorizesCell(model.Row, column)) throw new InvalidOperationException("Frozen row number does not identify its visible physical row: row=" + model.Number + ", left=" + bounds.Left + ", right=" + bounds.Right);
+            foreach (var cell in Descendants(nativeRow).OfType<DataGridCell>().Where(cell => cell.Column.DisplayIndex > 0))
+            {
+                var index = cell.Column.DisplayIndex - 1;
+                if (cell.Content is TextBlock value && value.Text != model.Values[index].Text) throw new InvalidOperationException("Recycled source cell no longer matches its physical row/column.");
+            }
+            rendered.Add(new { row = model.Row, rendered_row_number = number.Text, frozen_left = bounds.Left, frozen_right = bounds.Right, top = bounds.Top, bottom = bounds.Bottom });
+        }
+        if (rendered.Count == 0) throw new InvalidOperationException("No complete visible native row-number cell was qualified after scrolling.");
+        var fullHeaders = Descendants(header).OfType<DataGridColumnHeader>().Where(item => item.IsVisible && item.ActualWidth > 0 && item.Column is not null && item.Column.DisplayIndex > 0).Where(item => { var bounds = item.TransformToAncestor(Cells).TransformBounds(new Rect(0, 0, item.ActualWidth, item.ActualHeight)); return bounds.Left >= Cells.Columns[0].ActualWidth - 1 && bounds.Right <= Cells.ActualWidth + 1; }).Select(item => item.Content?.ToString()).ToArray();
+        if (fullHeaders.Length == 0) throw new InvalidOperationException("No complete physical source column header is visible beside the frozen coordinates.");
+        var observed = gridValue.Get("items").Items().FirstOrDefault(); if (observed.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("Stored physical cell query control is missing.");
+        var selection = CaptureSelection(); var ticket = owner.Generation; var rows = Cells.ItemsSource; var x = scroll.HorizontalOffset; var y = scroll.VerticalOffset;
+        var result = await owner.Query("get_workbook_cell", new() { ["revision_occurrence_id"] = RevisionId, ["sheet_id"] = SheetId, ["row"] = observed.Get("row").Number(), ["column"] = observed.Get("column").Number(), ["text_length"] = 4096 }, owner.ReadToken);
+        var stored = result.Get("items").Items().FirstOrDefault(); var expectedAddress = ColumnName(observed.Get("column").Number()) + observed.Get("row").Number().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (!owner.IsCurrent(ticket) || CaptureSelection() != selection || !ReferenceEquals(rows, Cells.ItemsSource) || scroll.HorizontalOffset != x || scroll.VerticalOffset != y || stored.Get("address").Text() != expectedAddress || stored.Get("row").Number() != observed.Get("row").Number() || stored.Get("column").Number() != observed.Get("column").Number() || !stored.Get("value").Text().StartsWith(observed.Get("value").Text(), StringComparison.Ordinal) || !stored.Get("formula").Text().StartsWith(observed.Get("formula").Text(), StringComparison.Ordinal)) throw new InvalidOperationException("Frozen-grid source query altered the viewport/selection or used a different physical cell.");
+        return new { horizontal_offset = x, vertical_offset = y, scrollable_width = scroll.ScrollableWidth, scrollable_height = scroll.ScrollableHeight, viewport_width = Cells.ActualWidth, viewport_height = Cells.ActualHeight, frozen_columns = Cells.FrozenColumnCount, full_source_headers = fullHeaders, visible_row_coordinates = rendered, queried_stored_address = expectedAddress };
     }
     internal void CheckLiteralMarkerForSmoke(string literal)
     {

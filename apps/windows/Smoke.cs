@@ -164,7 +164,7 @@ internal static class Smoke
     private static async Task CheckLayout(MainWindow window, List<string> checks, string output, string name)
     {
         if (!window.IsWorkbook) { window.Before.Zoom = 1.5; window.After.Zoom = 1.5; await Tick(window); window.Before.PageScroll.ScrollToVerticalOffset(20); window.Before.PageScroll.ScrollToHorizontalOffset(15); window.After.PageScroll.ScrollToVerticalOffset(18); window.After.PageScroll.ScrollToHorizontalOffset(12); await Tick(window); }
-        else { await Tick(window); foreach (var pane in new[] { window.Before, window.After }) { pane.GridScroll?.ScrollToVerticalOffset(6); pane.GridScroll?.ScrollToHorizontalOffset(80); } await Tick(window); }
+        else { await Tick(window); foreach (var pane in new[] { window.Before, window.After }) { pane.GridScroll?.ScrollToVerticalOffset(6); pane.GridScroll?.ScrollToHorizontalOffset(80); } await Tick(window); foreach (var pane in new[] { window.Before, window.After }) Require(pane.GridScroll?.HorizontalOffset > 0 && pane.GridScroll.VerticalOffset > 0, "Frozen-coordinate control requires actual nonzero horizontal and vertical manual scrolling."); }
         var before = window.Before.Host; var after = window.After.Host; var sidebar = window.SidebarPane; var inspector = window.InspectorPane; var changePane = window.ChangesPane;
         var report = window.ReportId; var beforeVersion = window.Before.RevisionId; var afterVersion = window.After.RevisionId; var page = window.Before.PageId; var row = window.Before.SelectedRow; var column = window.Before.SelectedColumn; var zoom = window.Before.PageImage.LayoutTransform.Value;
         var nativeRows = window.Before.Cells.ItemsSource; var sourceImage = window.Before.PageImage.Source;
@@ -186,9 +186,11 @@ internal static class Smoke
             Require(ReferenceEquals(nativeRows, window.Before.Cells.ItemsSource) && ReferenceEquals(sourceImage, window.Before.PageImage.Source) && window.Before.PageImage.LayoutTransform.Value == zoom, "Layout recreated native content or lost zoom");
             for (var index = 0; index < 2; index++) { var pane = index == 0 ? window.Before : window.After; var scroll = window.IsWorkbook ? pane.GridScroll! : pane.PageScroll; Require(Math.Abs(scroll.HorizontalOffset - Math.Min(positions[index].HorizontalOffset, scroll.ScrollableWidth)) <= 1 && Math.Abs(scroll.VerticalOffset - Math.Min(positions[index].VerticalOffset, scroll.ScrollableHeight)) <= 1, "Native viewport changed beyond its measured scrollable clamp"); }
             if (!window.IsWorkbook) Require(window.Before.Zoom == 1.5, "Layout reset user zoom");
+            else { var coordinates = new { before = await window.Before.CheckFrozenCoordinatesForSmoke(), after = await window.After.CheckFrozenCoordinatesForSmoke() }; await File.WriteAllTextAsync(Path.Combine(output, name + "-frozen-coordinates-" + preset.Name + ".json"), JsonSerializer.Serialize(coordinates, new JsonSerializerOptions { WriteIndented = true })); }
             if (preset.Name is "focus" or "changes-left" or "changes-right" or "vertical") Screenshot(window, Path.Combine(output, name + "-layout-" + preset.Name + ".png"));
         }
         checks.Add(name + "_actual_focus_left_right_vertical_native_layout_captures_preserve_report_hosts_source_and_viewport");
+        if (window.IsWorkbook) checks.Add("native_frozen_row_numbers_remain_visible_correct_after_manual_xy_scroll_all_layouts_and_physical_stored_cell_queries");
         var customized = window.Layout with { Changes = "right", InspectorSide = "left", VerticalComparison = true, Sidebar = false, ComparisonRatio = .62 };
         window.SetLayout(customized); window.Preferences.For(window.IsWorkbook).Named["smoke saved"] = window.Layout; window.SavePreferences(); var expected = window.Layout;
         window.SetLayout(new()); window.Preferences.For(window.IsWorkbook).Current = window.Preferences.For(window.IsWorkbook).Named["smoke saved"]; window.ApplyLayout(); window.ReloadPreferencesForSmoke();
