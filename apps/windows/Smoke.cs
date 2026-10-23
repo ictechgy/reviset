@@ -90,7 +90,7 @@ internal static class Smoke
             finally { releaseSuperseded.TrySetResult(); }
             try { await oldPageRead; throw new InvalidOperationException("Superseded page request did not cancel"); } catch (OperationCanceledException) { }
             await newestPage; Require(window.Before.ReadState == "ready" && window.Before.VerifiedPreviewText.Contains("Revenue 100", StringComparison.Ordinal) && window.Before.PageId == documentPages[0].Get("page_id").Text(), "Older page cancellation invalidated the newest verified request"); checks.Add("older_page_cancellation_cannot_fail_or_cancel_newest_same_scope_page_request");
-            await CheckLayout(window, checks, output, "document");
+            await CheckLayout(window, checks, output, "document"); window.CheckChangeCaptionLanguageForSmoke(); checks.Add("document_existing_native_change_captions_locally_translate_preserving_row_selection_mode_interval_and_source");
             var documentAssets = await AssetHashes(bridge.Library);
             window.SetLanguage("ko"); await Tick(window); Screenshot(window, Path.Combine(output, "document-ko.png")); window.SetLanguage("en"); await Tick(window); Screenshot(window, Path.Combine(output, "document-en.png"));
             await window.ExportForSmoke(Path.Combine(output, "document-export")); checks.Add("document_pinned_export");
@@ -128,7 +128,7 @@ internal static class Smoke
             var priorReport = window.ReportId; var stageFolder = Path.Combine(bridge.Library, "workbook-staging-v1"); var stageBackup = stageFolder + ".smoke-preserved"; var hadStageFolder = Directory.Exists(stageFolder); if (hadStageFolder) Directory.Move(stageFolder, stageBackup);
             try { await File.WriteAllTextAsync(stageFolder, "Synthetic staging failure control"); try { await window.AnalyzeForSmoke(); throw new InvalidOperationException("Blocked staging path unexpectedly completed analysis."); } catch (BridgeException) { } Require(window.ReportId == priorReport && window.ComparisonState == "ready" && window.DetailText != window.Copy["loading"], "Failed analysis did not restore the prior fixed comparison"); } finally { if (File.Exists(stageFolder)) File.Delete(stageFolder); if (hadStageFolder) Directory.Move(stageBackup, stageFolder); }
             checks.Add("actual_analysis_failure_restores_exact_fixed_comparison");
-            await CheckLayout(window, checks, output, "workbook");
+            await CheckLayout(window, checks, output, "workbook"); window.CheckChangeCaptionLanguageForSmoke(); checks.Add("workbook_existing_native_change_captions_locally_translate_preserving_row_selection_mode_interval_and_source");
             await window.Before.GoForSmoke("B2"); window.CheckLoadedLanguageForSmoke(); checks.Add("loaded_source_detail_locally_relabels_en_ko_preserving_payload_selection_generation"); var workbookAssets = await AssetHashes(bridge.Library); window.SetLanguage("ko"); await Tick(window); Screenshot(window, Path.Combine(output, "workbook-ko.png")); window.SetLanguage("en"); await Tick(window); Screenshot(window, Path.Combine(output, "workbook-en.png"));
             await window.ExportForSmoke(Path.Combine(output, "workbook-export")); Require(Equal(workbookAssets, await AssetHashes(bridge.Library)), "Workbook assets changed during UI/layout/export"); checks.Add("workbook_source_assets_and_pinned_export");
             var workbookLayout = window.Layout; var documentLayout = window.Preferences.Document.Current;

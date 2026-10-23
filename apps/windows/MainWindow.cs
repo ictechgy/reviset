@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Text.Json;
@@ -17,6 +18,14 @@ namespace Reviset.Windows;
 
 internal sealed class MainWindow : Window
 {
+    private sealed class ChangeChoice(string id, string caption, JsonElement value) : INotifyPropertyChanged
+    {
+        public string Id { get; } = id;
+        public JsonElement Value { get; } = value;
+        public string Caption { get; private set; } = caption;
+        public event PropertyChangedEventHandler? PropertyChanged;
+        public void Relabel(string text) { Caption = text; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Caption))); }
+    }
     internal readonly BridgeClient Bridge;
     internal readonly string PreferencesPath;
     internal AppPreferences Preferences { get; private set; }
@@ -84,7 +93,7 @@ internal sealed class MainWindow : Window
     private string nextChanges = "";
     private string intervalFrom = "";
     private string intervalTo = "";
-    private readonly ObservableCollection<Choice> changes = [];
+    private readonly ObservableCollection<ChangeChoice> changes = [];
     private Button importButton = new();
     private Button analyzeButton = new();
     private Button reorderButton = new();
@@ -153,8 +162,8 @@ internal sealed class MainWindow : Window
         var changeDock = new DockPanel(); var changeCaption = Caption("changes"); DockPanel.SetDock(changeCaption, Dock.Top); changeDock.Children.Add(changeCaption); DockPanel.SetDock(intervalCaption, Dock.Top); changeDock.Children.Add(intervalCaption);
         more = Command("more", LoadMoreChanges); DockPanel.SetDock(more, Dock.Bottom); changeDock.Children.Add(more);
         retryComparison = Command("retry", RetryComparison); retryComparison.Visibility = Visibility.Collapsed; DockPanel.SetDock(retryComparison, Dock.Bottom); changeDock.Children.Add(retryComparison);
-        changeList.ItemsSource = changes; changeDock.Children.Add(changeList); ChangesPane.Child = changeDock;
-        changeList.SelectionChanged += async (_, _) => { if (!binding && changeList.SelectedItem is Choice choice) await Guard(() => SelectChange(choice.Value)); };
+        changeList.DisplayMemberPath = nameof(ChangeChoice.Caption); changeList.ItemsSource = changes; changeDock.Children.Add(changeList); ChangesPane.Child = changeDock;
+        changeList.SelectionChanged += async (_, _) => { if (!binding && changeList.SelectedItem is ChangeChoice choice) await Guard(() => SelectChange(choice.Value)); };
         var inspector = new DockPanel(); var caption = Caption("evidence"); DockPanel.SetDock(caption, Dock.Top); inspector.Children.Add(caption);
         var pagingButtons = new WrapPanel(); firstDetail = Command("firstText", FirstDetail); nextDetail = Command("nextText", NextDetail); pagingButtons.Children.Add(firstDetail); pagingButtons.Children.Add(nextDetail); detailPaging.Children.Add(pagingButtons); BindText(detailStyle, "styleDetail"); detailPaging.Children.Add(detailStyle); detailStyle.Click += async (_, _) => await Guard(FirstDetail); detailPaging.Children.Add(detailRange); DockPanel.SetDock(detailPaging, Dock.Top); inspector.Children.Add(detailPaging);
         var metadata = new Expander { Header = "Source metadata / 원본 메타데이터", IsExpanded = false, Content = detailMetadata, MaxHeight = 180 }; DockPanel.SetDock(metadata, Dock.Bottom); inspector.Children.Add(metadata); inspector.Children.Add(detail); InspectorPane.Child = inspector;
@@ -186,7 +195,7 @@ internal sealed class MainWindow : Window
     {
         foreach (var action in relocalize) action(); foreach (var pair in languageItems) pair.Value.IsChecked = pair.Key == Copy.Language;
         var wasBinding = binding; binding = true; comparisonMode.ItemsSource = new[] { new Choice("history", Copy["history"], default), new Choice("range_net", Copy["net"], default) }; comparisonMode.SelectedIndex = NetMode ? 1 : 0; binding = wasBinding;
-        AutomationProperties.SetName(comparisonMode, Copy["comparisonMode"]); Before.Localize(); After.Localize();
+        AutomationProperties.SetName(comparisonMode, Copy["comparisonMode"]); foreach (var change in changes) change.Relabel(ChangeCaption(change.Value)); Before.Localize(); After.Localize();
         detailPaging.Visibility = IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
         RerenderInspector();
         foreach (var splitter in NativeSplitters()) if (splitter.Tag is string key) { AutomationProperties.SetName(splitter, Copy[key]); splitter.ToolTip = Copy[key]; }
@@ -503,6 +512,11 @@ internal sealed class MainWindow : Window
         try { if (Before.ReadState is "loading" or "failed" or "empty") await Before.Load(ticket, reads.Token); if (!IsCurrent(ticket)) return; if (After.ReadState is "loading" or "failed" or "empty") await After.Load(ticket, reads.Token); if (!IsCurrent(ticket)) return; await LoadChanges(false, ticket, reads.Token); }
         catch { if (IsCurrent(ticket) && !reads.IsCancellationRequested) FailComparison(); throw; }
     }
+    private string ChangeCaption(JsonElement change)
+    {
+        var label = Copy["kind_" + change.Get("kind").Text()] + " · " + (IsWorkbook ? change.Get("description").Text() : change.Get("before").Text() + " → " + change.Get("after").Text());
+        if (label.Length <= 210) return label; var end = char.IsHighSurrogate(label[209]) ? 209 : 210; return label[..end] + "…";
+    }
     private async Task LoadChanges(bool append, long ticket, CancellationToken token)
     {
         if (reportId.Length == 0 || intervalFrom.Length == 0 || intervalTo.Length == 0) return;
@@ -518,7 +532,7 @@ internal sealed class MainWindow : Window
         }
         else { values = (await Bridge.Call("changes", new { project_id = projectId, report_id = reportId, from = intervalFrom, to = intervalTo, mode = NetMode ? "range_net" : "history" }, token)).Items(); }
         if (!IsCurrent(ticket)) return; binding = true; if (!append) changes.Clear();
-        foreach (var value in values) { var label = value.Get("kind").Text() + " · " + (IsWorkbook ? value.Get("description").Text() : value.Get("before").Text() + " → " + value.Get("after").Text()); changes.Add(new(value.Get("change_id").Text(), label.Length > 210 ? label[..210] + "…" : label, value)); }
+        foreach (var value in values) changes.Add(new(value.Get("change_id").Text(), ChangeCaption(value), value));
         binding = false; nextChanges = next; changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = !busy; more.IsEnabled = !busy && next.Length > 0; if (changes.Count == 0) detail.Text = Copy["noChanges"] + "\n\n" + Copy["coverage"] + "\n" + currentReport.Get("coverage_gaps").Pretty(); else if (!append) detail.Text = Copy["selectCell"];
     }
     private async Task LoadMoreChanges()
@@ -558,7 +572,7 @@ internal sealed class MainWindow : Window
     {
         var revisions = currentReport.Get("revisions").Items(); if (revisions.Count < 3) throw new InvalidOperationException("An intermediate event needs three revisions");
         var first = revisions[0].Get("revision_occurrence_id").Text(); var middle = revisions[1].Get("revision_occurrence_id").Text(); var fromKey = IsWorkbook ? "from_revision_occurrence_id" : "from_occurrence"; var toKey = IsWorkbook ? "to_revision_occurrence_id" : "to_occurrence";
-        Choice? FindIntermediate() => changes.FirstOrDefault(c => c.Value.Get(fromKey).Text() == first && c.Value.Get(toKey).Text() == middle);
+        ChangeChoice? FindIntermediate() => changes.FirstOrDefault(c => c.Value.Get(fromKey).Text() == first && c.Value.Get(toKey).Text() == middle);
         var selected = FindIntermediate(); var pages = 0; while (selected is null && nextChanges.Length > 0 && pages++ < 100) { await LoadMoreChanges(); selected = FindIntermediate(); }
         if (selected is null) throw new InvalidOperationException("Intermediate fixture event is missing"); var intervalA = intervalFrom; var intervalB = intervalTo; var count = changes.Count;
         await SelectChange(selected.Value);
@@ -741,6 +755,19 @@ internal sealed class MainWindow : Window
         await Before.SelectAvailableSheetForSmoke(); if (Before.ReadState != "ready" || Before.SheetId.Length == 0 || !Before.AuthorizesCell(1, 1)) throw new InvalidOperationException("Explicit available-sheet selection did not load its own source.");
         await SelectSourcePairForSmoke(0, currentReport.Get("revisions").Items().Count - 1);
     }
+    internal void CheckChangeCaptionLanguageForSmoke()
+    {
+        if (changes.Count == 0) throw new InvalidOperationException("Caption locale qualification requires existing change rows.");
+        var oldSelection = changeList.SelectedItem; binding = true; changeList.SelectedItem ??= changes[0]; binding = false;
+        var selection = changeList.SelectedItem; var rows = changes.ToArray(); var raw = rows.Select(change => change.Value.GetRawText()).ToArray(); var english = rows.Select(change => change.Caption).ToArray(); var ticket = generation; var fixedReport = reportId; var from = intervalFrom; var to = intervalTo; var net = NetMode; var before = Before.CaptureSelection(); var after = After.CaptureSelection();
+        foreach (var language in new[] { "ko", "en" })
+        {
+            SetLanguage(language);
+            if (!ReferenceEquals(changeList.SelectedItem, selection) || generation != ticket || reportId != fixedReport || intervalFrom != from || intervalTo != to || NetMode != net || Before.CaptureSelection() != before || After.CaptureSelection() != after || !rows.SequenceEqual(changes) || rows.Where((row, index) => row.Value.GetRawText() != raw[index] || row.Caption != ChangeCaption(row.Value)).Any()) throw new InvalidOperationException("Existing change caption localization altered selection, source or comparison scope.");
+            if (language == "ko" && rows.Select((row, index) => row.Caption != english[index]).All(changed => !changed)) throw new InvalidOperationException("Known change kinds did not translate in the native change list.");
+        }
+        binding = true; changeList.SelectedItem = oldSelection; binding = false;
+    }
     internal void CheckLoadedLanguageForSmoke()
     {
         if (inspectorMode != "raw" || detailPayload.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("Language qualification requires retained loaded source detail.");
@@ -810,7 +837,7 @@ internal sealed class MainWindow : Window
             Before.SetEvidenceRevision(first, ""); await Before.Load(generation, reads.Token); if (Before.SheetId.Length != 0 || Before.ReadState != "absent" || Before.Cells.Items.Count != 0 || Before.AuthorizesCell(1, 1)) throw new InvalidOperationException("Absent evidence substituted a real sheet/cell.");
             Before.SetEvidenceRevision(first, "unknown_sheet_id"); await Before.Load(generation, reads.Token); if (Before.SheetId.Length != 0 || Before.ReadState != "absent" || Before.Cells.Items.Count != 0) throw new InvalidOperationException("Unknown evidence substituted a real sheet/cell.");
             Before.SetEvidenceRevision(first); After.SetEvidenceRevision(last); Before.RestoreDefaultSelection(); After.RestoreDefaultSelection(); await ReloadComparison();
-            Choice? FindAbsent() => changes.FirstOrDefault(c => c.Value.Get("kind").Text() == "sheet_observation" && (c.Value.Get("from_sheet_id").Text().Length == 0 ^ c.Value.Get("to_sheet_id").Text().Length == 0));
+            ChangeChoice? FindAbsent() => changes.FirstOrDefault(c => c.Value.Get("kind").Text() == "sheet_observation" && (c.Value.Get("from_sheet_id").Text().Length == 0 ^ c.Value.Get("to_sheet_id").Text().Length == 0));
             var absent = FindAbsent(); var pages = 0; while (absent is null && nextChanges.Length > 0 && pages++ < 100) { await LoadMoreChanges(); absent = FindAbsent(); }
             if (absent is null) throw new InvalidOperationException("Expected a genuine one-sided sheet event fixture.");
             await SelectChange(absent.Value);
