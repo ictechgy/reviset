@@ -766,7 +766,7 @@ struct WorkbookWorkspace: View {
                 Text(L("workbook.nav.columns",.verbatim(model.navigationRangePrefix),.verbatim(WorkbookGrid.columnLabel(model.columnStart)),.verbatim(WorkbookGrid.columnLabel(model.columnStart+model.columnLimit-1)))).font(.caption.monospacedDigit())
                 Button { Task { await model.moveWindow(columns:model.columnLimit) } } label: { Image(systemName:"chevron.right") }.disabled(model.columnStart+model.columnLimit>16384).accessibilityLabel(L("workbook.nav.nextColumns"))
                 Button { Task { await model.moveWindow(rows:-model.rowLimit) } } label: { Image(systemName:"chevron.up") }.disabled(model.rowStart == 1).accessibilityLabel(L("workbook.nav.previousRows"))
-                Text(L("workbook.nav.rows",.verbatim(model.navigationRangePrefix),.count(model.rowStart),.count(model.rowStart+model.rowLimit-1))).font(.caption.monospacedDigit())
+                Text(L("workbook.nav.rows",.verbatim(model.navigationRangePrefix),.integer(model.rowStart),.integer(model.rowStart+model.rowLimit-1))).font(.caption.monospacedDigit())
                 Button { Task { await model.moveWindow(rows:model.rowLimit) } } label: { Image(systemName:"chevron.down") }.disabled(model.rowStart+model.rowLimit>1048576).accessibilityLabel(L("workbook.nav.nextRows"))
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready)
             if !model.addressFailure.isEmpty { Text(verbatim:model.addressFailure).font(.caption).foregroundStyle(.red).padding(8) }
@@ -821,7 +821,7 @@ struct WorkbookWorkspace: View {
         return VStack(alignment:.leading,spacing:0) {
             HStack { Text(verbatim:(before ? L("workbook.pane.beforePrefix") : L("workbook.pane.afterPrefix")) + model.versionLabel(occurrence)).font(.caption.weight(.semibold)); Spacer(); if sheet["hidden"].bool { Label(L("workbook.sheet.hidden"),systemImage:"eye.slash").font(.caption) } }.padding(8).background(Color(nsColor:.controlBackgroundColor))
             HStack {
-                Text(L("workbook.pane.range",.count(row),.count(row+model.rowLimit-1),.verbatim(WorkbookGrid.columnLabel(column)),.verbatim(WorkbookGrid.columnLabel(column+model.columnLimit-1)))).font(.caption2).foregroundStyle(.secondary)
+                Text(L("workbook.pane.range",.integer(row),.integer(row+model.rowLimit-1),.verbatim(WorkbookGrid.columnLabel(column)),.verbatim(WorkbookGrid.columnLabel(column+model.columnLimit-1)))).font(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 if let coordinate { Text(L("workbook.pane.evidence",.verbatim(WorkbookGrid.address(coordinate.row,coordinate.column)))).font(.system(.caption,design:.monospaced)).foregroundStyle(.blue) }
             }.padding(.horizontal,8).padding(.bottom,5)
@@ -833,7 +833,7 @@ struct WorkbookWorkspace: View {
         VStack(spacing:0) {
             HStack {
                 Text(model.changesMode == "history" ? L("workbook.changes.historyTitle") : L("workbook.changes.netTitle")).font(.headline)
-                Text(L("workbook.changes.page",.count(model.changePageNumber),.count(model.changes.count),.count(model.changeTotal))).font(.caption).foregroundStyle(.secondary)
+                Text(L("workbook.changes.page",.integer(model.changePageNumber),.count(model.changes.count),.count(model.changeTotal))).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button { Task { await model.stepChange(-1) } } label: { Image(systemName:"chevron.up") }.accessibilityLabel(L("workbook.changes.previous"))
                 Button { Task { await model.stepChange(1) } } label: { Image(systemName:"chevron.down") }.accessibilityLabel(L("workbook.changes.next"))
@@ -935,7 +935,7 @@ private struct WorkbookInspector: View {
                         if !model.cellHistoryPreviousCursors.isEmpty { Button(L("workbook.paging.historyPrevious")) { Task { await model.loadCellHistory(previous:true) } } }
                         if !model.cellHistoryCursor.isEmpty { Button(L("workbook.paging.historyNext")) { Task { await model.loadCellHistory(next:true) } } }
                     }.disabled(!model.ready || model.loadingCell || model.loadingHistory)
-                    if !model.cellHistory.isEmpty { Text(L("workbook.history.page",.count(model.cellHistoryPageNumber))).font(.caption2).foregroundStyle(.secondary) }
+                    if !model.cellHistory.isEmpty { Text(L("workbook.history.page",.integer(model.cellHistoryPageNumber))).font(.caption2).foregroundStyle(.secondary) }
                     ForEach(Array(model.cellHistory.enumerated()),id:\.offset) { _, event in
                         VStack(alignment:.leading,spacing:3) {
                             Text(verbatim:model.versionLabel(event["revision_occurrence_id"].string)).lineLimit(2)
@@ -994,7 +994,7 @@ private struct WorkbookCellDetail: View {
         let continuation = cell["text_continuations"][field]
         if continuation["state"].string == "truncated" {
             let start = continuation["offset"].int,end = start+cell[field].string.utf16.count
-            return L("workbook.cell.partialSource",.verbatim(label),.count(start),.count(end),.count(continuation["total_length"].int))
+            return L("workbook.cell.partialSource",.verbatim(label),.integer(start),.integer(end),.integer(continuation["total_length"].int))
         }
         return label
     }
@@ -1033,7 +1033,7 @@ private struct WorkbookSheetMetadata: View {
                 Text(verbatim:sheet["name"].string + (sheet["hidden"].bool ? L("workbook.sheet.hiddenNameSuffix") : "")).font(.caption)
                 Text(L("workbook.sheet.metadataCounts",.count(sheet["merge_count"].int),.count(sheet["row_metadata_count"].int),.count(sheet["column_metadata_count"].int))).font(.caption).foregroundStyle(.secondary)
                 if sheet["blank_style_range_count"].int > 0 { Text(L("workbook.sheet.blankRanges",.count(sheet["blank_style_range_count"].int))).font(.caption).foregroundStyle(.secondary) }
-                ForEach(Array(sheet["row_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text(L("workbook.sheet.hiddenRows",.count(range["start"].int),.count(range["end"].int))).font(.caption) }
+                ForEach(Array(sheet["row_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text(L("workbook.sheet.hiddenRows",.integer(range["start"].int),.integer(range["end"].int))).font(.caption) }
                 ForEach(Array(sheet["column_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text(L("workbook.sheet.hiddenColumns",.verbatim(WorkbookGrid.columnLabel(range["start"].int)),.verbatim(WorkbookGrid.columnLabel(range["end"].int)))).font(.caption) }
                 if !sheet["merges"].array.isEmpty { Text(verbatim:L("workbook.sheet.mergesPrefix") + sheet["merges"].array.map(\.string).joined(separator:", ")).font(.caption).textSelection(.enabled) }
                 if sheet["metadata_truncated"].bool { Text(L("workbook.sheet.metadataTruncated")).font(.caption).foregroundStyle(.secondary) }
@@ -1086,16 +1086,16 @@ private struct WorkbookCoverageView: View {
                 let label = WorkbookLabels.coverage(entry.feature)
                 VStack(alignment:.leading,spacing:3) {
                     Text(verbatim:label.title).font(.caption.weight(.medium))
-                    if let detail = label.detail { Text(verbatim:detail).font(.caption).foregroundStyle(.secondary) }
                     // Stored reason text and feature identifiers are source evidence,
                     // not localization keys. Retain the exact bytes in either UI language.
-                    DisclosureGroup(L("workbook.coverage.sourceEvidence")) {
-                        VStack(alignment:.leading,spacing:3) {
-                            Text(L("workbook.coverage.sourceReason")).font(.caption2).foregroundStyle(.secondary)
-                            Text(verbatim:entry.feature).font(.caption.monospaced())
-                            Text(verbatim:entry.reason).font(.caption).textSelection(.enabled)
-                        }
-                    }.font(.caption)
+                    Text(L("workbook.coverage.sourceReason")).font(.caption2).foregroundStyle(.secondary)
+                    Text(verbatim:entry.reason).font(.caption).textSelection(.enabled)
+                    Text(verbatim:entry.feature).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                    if let detail = label.detail {
+                        DisclosureGroup(L("workbook.coverage.sourceEvidence")) {
+                            Text(verbatim:detail).font(.caption).foregroundStyle(.secondary)
+                        }.font(.caption)
+                    }
                     Text(verbatim:provenance(entry)).font(.caption2).foregroundStyle(.secondary)
                 }
             }
@@ -1140,7 +1140,8 @@ private struct WorkbookImportSheet: View {
     @State private var language = LanguagePreferences.shared
     @ObservedObject var model: WorkbookModel
     @Environment(\.dismiss) private var dismiss
-    @State private var title = L("workbook.import.defaultTitle")
+    @State private var title = ""
+    @State private var titleEdited = false
     @State private var rows: [WorkbookImportRow] = []
     @State private var choosing = false
     @State private var saving = false
@@ -1148,15 +1149,20 @@ private struct WorkbookImportSheet: View {
     private var failure: String { failureContent.text }
     init(model: WorkbookModel, initialTitle: String? = nil, initialRows: [WorkbookImportRow] = []) {
         self.model = model
-        _title = State(initialValue:initialTitle ?? L("workbook.import.defaultTitle"))
+        _title = State(initialValue:initialTitle ?? "")
+        _titleEdited = State(initialValue:initialTitle != nil)
         _rows = State(initialValue:initialRows)
     }
     private var locked: Bool { choosing || saving }
+    // An untouched default follows the display language. Once edited, including
+    // explicitly cleared, the draft is user data and remains verbatim.
+    private var effectiveTitle: String { titleEdited ? title : L("workbook.import.defaultTitle") }
+    private var titleBinding: Binding<String> { Binding(get:{effectiveTitle},set:{titleEdited = true; title = $0}) }
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             HStack { Text(L("workbook.import.title")).font(.title2.weight(.semibold)); Spacer(); Button(L("workbook.action.close")) { dismiss() }.keyboardShortcut(.cancelAction).disabled(locked) }
             Text(L("workbook.import.detail")).font(.callout).foregroundStyle(.secondary)
-            TextField(L("workbook.import.projectName"),text:$title).accessibilityIdentifier("Docver.workbook.import.title").textFieldStyle(.roundedBorder).disabled(locked)
+            TextField(L("workbook.import.projectName"),text:titleBinding).accessibilityIdentifier("Docver.workbook.import.title").textFieldStyle(.roundedBorder).disabled(locked)
             Button(L("workbook.import.choose")) { choose() }.disabled(locked)
             List {
                 ForEach(Array(rows.enumerated()),id:\.element.id) { index, row in
@@ -1171,7 +1177,7 @@ private struct WorkbookImportSheet: View {
             }.frame(minHeight:220,maxHeight:360)
             Text(L("workbook.import.limits")).font(.caption).foregroundStyle(.secondary)
             if !failure.isEmpty { Text(verbatim:failure).font(.caption).foregroundStyle(.red) }
-            HStack { if locked { ProgressView().controlSize(.small); Text(choosing ? L("workbook.import.checkingHash") : L("workbook.import.importing")).font(.caption) }; Spacer(); Button(L("workbook.import.start")) { Task { await create() } }.buttonStyle(.borderedProminent).disabled(locked || rows.isEmpty || rows.count > 100 || title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rows.contains { $0.label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }) }
+            HStack { if locked { ProgressView().controlSize(.small); Text(choosing ? L("workbook.import.checkingHash") : L("workbook.import.importing")).font(.caption) }; Spacer(); Button(L("workbook.import.start")) { Task { await create() } }.buttonStyle(.borderedProminent).disabled(locked || rows.isEmpty || rows.count > 100 || effectiveTitle.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rows.contains { $0.label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }) }
         }.padding(24).frame(width:840)
     }
     private func move(_ index: Int, _ by: Int) { let target = index+by; guard rows.indices.contains(index),rows.indices.contains(target) else { return }; rows.swapAt(index,target) }
@@ -1190,7 +1196,7 @@ private struct WorkbookImportSheet: View {
     }
     private func create() async {
         saving = true; failureContent = .raw("")
-        do { try await model.create(title:title,rows:rows); dismiss() } catch { failureContent = bridgeErrorMessage(error) }
+        do { try await model.create(title:effectiveTitle,rows:rows); dismiss() } catch { failureContent = bridgeErrorMessage(error) }
         saving = false
     }
 }
@@ -1300,7 +1306,7 @@ private struct WorkbookPublishSheet: View {
         switch change["kind"].string {
         case "row_position":
             let before = change["before_address"].string.drop(while:{$0.isLetter}),after = change["after_address"].string.drop(while:{$0.isLetter})
-            if let from = Int(before),let to = Int(after) { return L("workbook.description.rowMove",.count(from),.count(to)) }
+            if let from = Int(before),let to = Int(after) { return L("workbook.description.rowMove",.integer(from),.integer(to)) }
             return L("workbook.description.rowPosition")
         case "formula": return L("workbook.description.formula")
         case "stored_value": return L("workbook.description.storedValue")
@@ -1455,7 +1461,7 @@ struct WorkbookGrid: NSViewRepresentable {
             let text: NSTextField
             if let existing = cell.textField { text = existing } else { text = NSTextField(labelWithString:""); text.translatesAutoresizingMaskIntoConstraints = false; text.lineBreakMode = .byTruncatingTail; cell.addSubview(text); cell.textField = text; NSLayoutConstraint.activate([text.leadingAnchor.constraint(equalTo:cell.leadingAnchor,constant:6),text.trailingAnchor.constraint(equalTo:cell.trailingAnchor,constant:-5),text.centerYAnchor.constraint(equalTo:cell.centerYAnchor)]) }
             let physicalRow = parent.rowStart+row
-            if tableColumn.identifier.rawValue == "row" { text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.row.\(physicalRow)"); text.stringValue = String(physicalRow); text.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular); text.textColor = .secondaryLabelColor; text.setAccessibilityLabel(L("workbook.grid.rowAX",.count(physicalRow))); cell.toolTip = nil }
+            if tableColumn.identifier.rawValue == "row" { text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.row.\(physicalRow)"); text.stringValue = String(physicalRow); text.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular); text.textColor = .secondaryLabelColor; text.setAccessibilityLabel(L("workbook.grid.rowAX",.integer(physicalRow))); cell.toolTip = nil }
             else {
                 let column = Int(tableColumn.identifier.rawValue) ?? 1
                 text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.cell." + WorkbookGrid.address(physicalRow,column))
@@ -1729,17 +1735,60 @@ struct WorkbookGrid: NSViewRepresentable {
         draftWindow.isReleasedWhenClosed = false; draftWindow.isOpaque = true; draftWindow.backgroundColor = .white
         draftWindow.contentView = draftHost; draftWindow.makeKeyAndOrderFront(nil)
         defer { draftWindow.close() }
+        let defaultDraftHost = NSHostingView(rootView:WorkbookImportSheet(model:model,initialRows:[draftRow]).background(Color.white).preferredColorScheme(.light))
+        let defaultDraftWindow = NSWindow(contentRect:NSRect(x:180,y:140,width:840,height:610),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+        defaultDraftWindow.title = "Workbook default-title localization qualification"
+        defaultDraftWindow.isReleasedWhenClosed = false; defaultDraftWindow.isOpaque = true; defaultDraftWindow.backgroundColor = .white
+        defaultDraftWindow.contentView = defaultDraftHost; defaultDraftWindow.orderFront(nil)
+        defer { defaultDraftWindow.close() }
         func fields(_ view: NSView?) -> [NSTextField] {
             guard let view else { return [] }
             return (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap { fields($0) }
         }
         func checkDraft() throws -> [String:Any] {
-            let actual = fields(draftWindow.contentView)
-            let title = actual.first(where:{$0.accessibilityIdentifier() == "Docver.workbook.import.title"})
-            let label = actual.first(where:{$0.accessibilityIdentifier() == "Docver.workbook.import.version." + draftRow.id.uuidString})
-            guard let title,let label else { throw BridgeError(code:"WORKBOOK_SMOKE_LOCALIZATION_DRAFT",message:"The production import draft fields lack their stable accessibility identifiers.") }
+            let actual = fields(draftWindow.contentView).filter(\.isEditable)
+            // SwiftUI's semantic accessibility identifiers are not guaranteed to
+            // propagate to the backing NSTextFields. Their localized placeholders
+            // identify these two production controls without relying on that bridge.
+            let titles = actual.filter { $0.placeholderString == L("workbook.import.projectName") }
+            let labels = actual.filter { $0.placeholderString == L("workbook.import.versionName") }
+            guard actual.count == 2,titles.count == 1,labels.count == 1,let title = titles.first,let label = labels.first,title !== label else {
+                let found = actual.map { ["placeholder":$0.placeholderString ?? "","value":$0.stringValue,"native_ax_id":$0.accessibilityIdentifier()] }
+                throw BridgeError(code:"WORKBOOK_SMOKE_LOCALIZATION_DRAFT",message:"The production import draft did not expose exactly one localized title and version field: \(found)")
+            }
             try require(title.stringValue == draftTitle && label.stringValue == draftRow.label,"The production import draft lost its opaque title or version label.")
-            return ["title":title.stringValue,"version_label":label.stringValue,"title_ax_id":title.accessibilityIdentifier(),"version_ax_id":label.accessibilityIdentifier(),"host_identity_retained":draftWindow.contentView === draftHost,"programmatic_seed_only":true]
+            try require(draftWindow.contentView === draftHost,"A language change replaced the import draft host.")
+            return ["title":title.stringValue,"version_label":label.stringValue,"title_placeholder":title.placeholderString ?? "","version_placeholder":label.placeholderString ?? "","found_native_ax_ids":actual.map { $0.accessibilityIdentifier() }.filter { !$0.isEmpty },"field_identification":"unique localized placeholders on the two editable production NSTextFields; semantic SwiftUI AX identifier propagation is not asserted","host_identity_retained":true,"programmatic_seed_only":true]
+        }
+        func defaultTitleField() throws -> NSTextField {
+            defaultDraftWindow.contentView?.layoutSubtreeIfNeeded()
+            let actual = fields(defaultDraftWindow.contentView).filter { $0.isEditable && $0.placeholderString == L("workbook.import.projectName") }
+            guard actual.count == 1,let field = actual.first else {
+                throw BridgeError(code:"WORKBOOK_SMOKE_LOCALIZATION_DRAFT",message:"The unseeded production import draft did not expose a unique localized title field.")
+            }
+            return field
+        }
+        func checkDefaultTitle(_ expected: String) throws -> String {
+            let field = try defaultTitleField()
+            try require(defaultDraftWindow.contentView === defaultDraftHost && field.stringValue == expected,"The unseeded production import title did not follow its untouched/edited state.")
+            return field.stringValue
+        }
+        func checkTechnicalRow() async throws -> [String:Any] {
+            // Exercise the production grid at a coordinate where quantity
+            // formatting would insert a separator, independent of fixture size.
+            let state = WorkbookGrid(language:preferences.effectiveLanguage,pane:"technical-localization",revealIntent:"technical-row",cells:[],rowStart:1000,columnStart:1,rowCount:2,columnCount:1,selectedRow:1000,selectedColumn:1,onSelect:{_,_ in})
+            let host = NSHostingView(rootView:state)
+            let probe = NSWindow(contentRect:NSRect(x:160,y:120,width:300,height:110),styleMask:[.titled],backing:.buffered,defer:false)
+            probe.isReleasedWhenClosed = false; probe.contentView = host; probe.orderFront(nil)
+            defer { probe.close() }
+            try await Task.sleep(nanoseconds:100_000_000)
+            host.layoutSubtreeIfNeeded()
+            guard let table = grid(host,pane:"technical-localization"),let row = table.view(atColumn:0,row:0,makeIfNecessary:true) as? NSTableCellView,let text = row.textField else {
+                throw BridgeError(code:"WORKBOOK_SMOKE_LOCALIZATION",message:"The production row-1000 grid did not render.")
+            }
+            let expectedAX = L("workbook.grid.rowAX",.integer(1000))
+            try require(text.stringValue == "1000" && text.accessibilityLabel() == expectedAX && expectedAX.contains("1000") && !expectedAX.contains("1,000"),"Technical row digits differ between the visible row header and its accessibility label.")
+            return ["physical_row":1000,"visible_digits":text.stringValue,"row_ax":text.accessibilityLabel() ?? "","ungrouped_digits_match":true,"scope":"separately hosted production WorkbookGrid with an empty sparse coordinate window"]
         }
         struct Pane {
             let table: NSTableView
@@ -1760,8 +1809,9 @@ struct WorkbookGrid: NSViewRepresentable {
         }
         preferences.selection = .en
         try await Task.sleep(nanoseconds:300_000_000)
-        window.contentView?.layoutSubtreeIfNeeded(); draftWindow.contentView?.layoutSubtreeIfNeeded()
-        let englishDraft = try checkDraft()
+        window.contentView?.layoutSubtreeIfNeeded(); draftWindow.contentView?.layoutSubtreeIfNeeded(); defaultDraftWindow.contentView?.layoutSubtreeIfNeeded()
+        let englishDraft = try checkDraft(),englishTechnicalRow = try await checkTechnicalRow()
+        let englishDefaultTitle = try checkDefaultTitle(L("workbook.import.defaultTitle"))
         for name in ["before","after"] {
             guard let table = grid(window.contentView,pane:name),let coordinator = table.dataSource as? WorkbookGrid.Coordinator,let scroll = table.enclosingScrollView else { continue }
             let clip = scroll.contentView; originalOrigins[name] = clip.bounds.origin
@@ -1786,7 +1836,7 @@ struct WorkbookGrid: NSViewRepresentable {
                 let dataCell = actual.view(atColumn:1,row:pane.localRow,makeIfNecessary:true) as? NSTableCellView
                 let expectedGridAX = name == "before" ? L("workbook.grid.beforeAX") : L("workbook.grid.afterAX")
                 try require(actual.accessibilityLabel() == expectedGridAX,"The table accessibility label did not refresh.")
-                try require(rowCell?.textField?.accessibilityLabel() == L("workbook.grid.rowAX",.count(pane.physicalRow)),"The reusable row-cell accessibility label did not refresh.")
+                try require(rowCell?.textField?.accessibilityLabel() == L("workbook.grid.rowAX",.integer(pane.physicalRow)),"The reusable row-cell accessibility label did not refresh.")
                 try require(dataCell?.toolTip?.isEmpty == false,"The actual cell has no source tooltip.")
                 result[name] = ["row_header":actual.tableColumns[0].title,"table_ax":actual.accessibilityLabel() ?? "","row_ax":rowCell?.textField?.accessibilityLabel() ?? "","cell_tooltip":dataCell?.toolTip ?? "","raw_display_value":dataCell?.textField?.stringValue ?? "","selected_local_row":actual.selectedRow,"viewport_x":Double(actual.visibleRect.minX),"viewport_y":Double(actual.visibleRect.minY),"reveal_intent":coordinator.parent.revealIntent,"grid_and_coordinator_identity_retained":true]
             }
@@ -1798,8 +1848,10 @@ struct WorkbookGrid: NSViewRepresentable {
         try Smoke.captureView(draftWindow,folder.appendingPathComponent("native-workbook-import-draft-en.png"))
         preferences.selection = .ko
         try await Task.sleep(nanoseconds:300_000_000)
-        window.contentView?.layoutSubtreeIfNeeded(); draftWindow.contentView?.layoutSubtreeIfNeeded()
-        let koreanDraft = try checkDraft(),koreanPanes = try capturePanes(),koreanWarning = model.addressFailure,koreanStatus = model.status
+        window.contentView?.layoutSubtreeIfNeeded(); draftWindow.contentView?.layoutSubtreeIfNeeded(); defaultDraftWindow.contentView?.layoutSubtreeIfNeeded()
+        let koreanDraft = try checkDraft(),koreanTechnicalRow = try await checkTechnicalRow(),koreanPanes = try capturePanes(),koreanWarning = model.addressFailure,koreanStatus = model.status
+        let koreanDefaultTitle = try checkDefaultTitle(L("workbook.import.defaultTitle"))
+        try require(englishDefaultTitle != koreanDefaultTitle,"An untouched default import title stayed in its opening language.")
         try require(koreanWarning == L("workbook.error.address") && koreanWarning != englishWarning,"A previously stored typed warning did not switch languages.")
         if model.revisions.count > 1 {
             try require(englishStatus != koreanStatus && koreanStatus == L("workbook.status.sortedVersions"),"A previously stored production status did not switch languages.")
@@ -1821,11 +1873,25 @@ struct WorkbookGrid: NSViewRepresentable {
         try require(try ImportFileIdentity.capture(draftRow.url) == draftIdentity,"The unsubmitted draft changed source bytes.")
         try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-localization-ko.png"))
         try Smoke.captureView(draftWindow,folder.appendingPathComponent("native-workbook-import-draft-ko.png"))
+        // Deliver the public text-edit delegate notification to the actual
+        // production NSTextField. This is an explicit programmatic edit, not OS
+        // keyboard input; its SwiftUI Binding must retain the deliberate clear.
+        let clearField = try defaultTitleField()
+        guard let delegate = clearField.delegate,delegate.responds(to:NSSelectorFromString("controlTextDidChange:")) else {
+            throw BridgeError(code:"WORKBOOK_SMOKE_LOCALIZATION_DRAFT",message:"The production title field has no text-edit delegate.")
+        }
+        clearField.stringValue = ""
+        delegate.controlTextDidChange?(Notification(name:NSControl.textDidChangeNotification,object:clearField))
+        try await Task.sleep(nanoseconds:100_000_000)
+        _ = try checkDefaultTitle("")
+        preferences.selection = .en
+        try await Task.sleep(nanoseconds:300_000_000)
+        let returnedEnglishDraft = try checkDraft(),clearedEnglishTitle = try checkDefaultTitle("")
         restorePreference()
         let restored = defaults.persistentDomain(forName:preferenceDomain)?[LanguagePreferences.preferenceKey]
         let storedPreferenceRestored = originalStoredPreference == nil ? restored == nil : (originalStoredPreference as? NSObject)?.isEqual(restored) == true
         try require(storedPreferenceRestored && preferences.selection == originalSelection,"The exact prior language preference was not restored.")
-        return ["en":["panes":englishPanes,"warning":englishWarning,"status":englishStatus,"draft":englishDraft],"ko":["panes":koreanPanes,"warning":koreanWarning,"status":koreanStatus,"draft":koreanDraft],"same_model_grid_selection_viewport_and_reveal_intent":true,"source_cells_changes_project_and_stored_report_unchanged":true,"original_sha_and_size_unchanged":true,"preference_restored_exactly":true,"original_preference_entry_present":originalStoredPreference != nil,"draft_host":"opaque white NSWindow with NSHostingView of production WorkbookImportSheet; seeded @State only, no submitted import or OS input","capture_scope":"actual packaged production main window and import component; programmatic locale/scroll changes, no VoiceOver automation"]
+        return ["en":["panes":englishPanes,"warning":englishWarning,"status":englishStatus,"draft":englishDraft,"technical_row":englishTechnicalRow],"ko":["panes":koreanPanes,"warning":koreanWarning,"status":koreanStatus,"draft":koreanDraft,"technical_row":koreanTechnicalRow],"return_to_en_draft":returnedEnglishDraft,"default_title":["en":englishDefaultTitle,"ko":koreanDefaultTitle,"cleared_then_switched_to_en":clearedEnglishTitle,"same_host_retained":true,"clear_scope":"programmatic NSTextField controlTextDidChange delegate notification; no OS keyboard input or submitted import"],"same_model_grid_selection_viewport_and_reveal_intent":true,"source_cells_changes_project_and_stored_report_unchanged":true,"original_sha_and_size_unchanged":true,"preference_restored_exactly":true,"original_preference_entry_present":originalStoredPreference != nil,"draft_host":"opaque white NSWindows with NSHostingView of production WorkbookImportSheet; seeded and unseeded @State, one programmatic clear, no submitted import or OS input","capture_scope":"actual packaged production main window and import component; programmatic locale/scroll changes, no VoiceOver automation"]
     }
     private static func checkBlankFormattingWarning(_ model: WorkbookModel,request: JSON) throws -> [String:Any] {
         guard model.ready,!model.loadingChanges,model.changesFailure.isEmpty,(!model.blankFormattingWarning.isEmpty) == request["expected_blank_formatting_warning"].bool else { throw BridgeError(code:"WORKBOOK_SMOKE_FORMATTING_WARNING",message:"현재 비교 구간의 빈 셀 서식 판독 한계 안내가 예상과 다릅니다.") }

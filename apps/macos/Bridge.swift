@@ -20,12 +20,14 @@ struct JSON: @unchecked Sendable, Identifiable {
     }
     func data() throws -> Data { try JSONSerialization.data(withJSONObject: raw, options: [.fragmentsAllowed, .sortedKeys]) }
 }
+private let bridgeDiagnosticLocalizer = Localizer(language:"en")
+
 struct BridgeError: LocalizedError, Sendable {
     var code: String
     var message: String
     let uiMessage: UIMessage?
     init(code: String, message: String) { self.code=code; self.message=message; self.uiMessage=nil }
-    init(code: String, message: UIMessage) { self.code=code; self.message=code; self.uiMessage=message }
+    init(code: String, message: UIMessage) { self.code=code; self.message=bridgeDiagnosticLocalizer.render(message); self.uiMessage=message }
     // LocalizedError can be queried off the UI actor. Keep the source detail here;
     // presentation resolves only typed messages or the closed code map below.
     var errorDescription: String? { message }
@@ -36,6 +38,9 @@ struct BridgeError: LocalizedError, Sendable {
     switch error.code {
     case "FILE_LIMIT": return UIMessage("doc.error.fileLimit")
     case "INPUT_NOT_REGULAR": return UIMessage("doc.error.inputNotRegular")
+    case "EXPORT_DESTINATION_NOT_EMPTY": return UIMessage("doc.error.exportFolderNotEmpty")
+    case "INVALID_EXPORT_LANGUAGE": return UIMessage("doc.error.exportLanguage")
+    case "UNKNOWN_ACTION": return UIMessage("doc.error.unsupportedAction")
     default: return UIMessage("doc.error.backendDetail", .verbatim(error.code), .verbatim(error.message))
     }
 }
@@ -168,9 +173,9 @@ final class Bridge: @unchecked Sendable {
                     if process.terminationReason == .uncaughtSignal {
                         let requested=self.lock.withLock {self.cancelled}
                         if analysis && requested {throw BridgeError(code:"CANCELLED",message:UIMessage("doc.analysis.cancelledRetained"))}
-                        throw failure("HELPER_CRASH",UIMessage("doc.tail.engine.terminatedBySignal", .count(Int(process.terminationStatus))))
+                        throw failure("HELPER_CRASH",UIMessage("doc.tail.engine.terminatedBySignal", .integer(Int(process.terminationStatus))))
                     }
-                    guard let object=try? JSONSerialization.jsonObject(with:data) else {throw failure("HELPER_PROTOCOL",UIMessage("doc.tail.engine.responseUnreadableExitCode", .count(Int(process.terminationStatus))))}
+                    guard let object=try? JSONSerialization.jsonObject(with:data) else {throw failure("HELPER_PROTOCOL",UIMessage("doc.tail.engine.responseUnreadableExitCode", .integer(Int(process.terminationStatus))))}
                     let reply = JSON(object)
                     guard reply["protocol_version"].string == "0.1.0" && reply["schema_version"].string == "0.4.0" else { throw BridgeError(code:"PROTOCOL_MISMATCH",message:UIMessage("doc.tail.engine.contractVersionMismatch")) }
                     guard reply["ok"].bool else { throw BridgeError(code: reply["error"]["code"].string, message: reply["error"]["message"].string) }

@@ -34,6 +34,8 @@ import AppKit
             try require(error.localizedDescription=="original diagnostic" && error.code==code && error.message=="original diagnostic","NativeErrorLostRawCodeOrMessage-"+code)
             try require(code=="OTHER_FAILURE" ? rendered.contains(code) && rendered.contains(expected) : rendered==expected,"NativeErrorLocalizationLostCodeOrMessage-"+code)
         }
+        let typedDiagnostic=BridgeError(code:"HELPER_PROTOCOL",message:UIMessage("doc.error.diagnosticLog",.message(UIMessage("doc.tail.engine.responseUnreadableExitCode",.integer(1234))),.verbatim("/tmp/source-{0}-%@.log")))
+        try require(typedDiagnostic.localizedDescription.contains("1234") && typedDiagnostic.localizedDescription.contains("/tmp/source-{0}-%@.log"),"TypedErrorLostOffActorDiagnosticDetail")
         try require(JSON(1.9).int==1 && JSON(-1.9).int == -1,"IntegerTruncationChanged")
         for value in [Double.infinity,-Double.infinity,Double.nan,1e300,-1e300,Double(Int.max)] {
             try require(JSON(value).int==0,"UnrepresentableNumberDidNotFallBack")

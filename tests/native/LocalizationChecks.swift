@@ -13,6 +13,8 @@ import Foundation
         precondition(korean.plural("test.items", 1) == "1개")
         precondition(korean.plural("test.items", 2) == "2개")
         precondition(english.plural("test.items", 1234) == "1,234 items")
+        precondition(english.string("test.wrap", .integer(1234)) == "[1234]")
+        precondition(korean.string("test.wrap", .integer(1234)) == "[1234]")
 
         let literal = #"test.greeting %@ %% {0} {1} \" data"# + "\nمرحبا 한글"
         precondition(english.string("test.wrap", .verbatim(literal)) == "[\(literal)]")
@@ -52,7 +54,13 @@ import Foundation
 
         let shared = LanguagePreferences.shared
         let previous = shared.selection
-        defer { shared.selection = previous }
+        let domain = Bundle.main.bundleIdentifier ?? "org.reviset.localization-checks"
+        let persisted = UserDefaults.standard.persistentDomain(forName:domain)?[LanguagePreferences.preferenceKey]
+        defer {
+            shared.selection = previous
+            if let persisted { UserDefaults.standard.set(persisted,forKey:LanguagePreferences.preferenceKey) }
+            else { UserDefaults.standard.removeObject(forKey:LanguagePreferences.preferenceKey) }
+        }
         let saved = UIMessage.joined([UIMessage("test.greeting", .verbatim(literal)), .plural("test.items", 1)], separator: " · ")
         shared.selection = .en
         precondition(saved.text == "Hello, \(literal) · 1 item")

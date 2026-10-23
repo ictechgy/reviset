@@ -113,7 +113,7 @@ struct BundleSheet: View {
     func pairLabel(_ entry:JSON)->String {
         let source=sources.first{$0["page_id"].string==entry["source_page_id"].string}?["page"].int ?? 0
         let target=pdfs.first{$0["page_id"].string==entry["rendered_page_id"].string}?["page"].int ?? 0
-        return L("doc.tail.slideToPdfPage", .count(source), .count(target))
+        return L("doc.tail.slideToPdfPage", .integer(source), .integer(target))
     }
     func pageList(_ all:[JSON],search:Binding<String>,selection:Binding<String>,title:String)->some View {
         let pages=all.filter{search.wrappedValue.isEmpty || String($0["page"].int).contains(search.wrappedValue) || $0["text"].string.localizedCaseInsensitiveContains(search.wrappedValue)}
@@ -125,7 +125,7 @@ struct BundleSheet: View {
                 List(selection:Binding<String?>(get:{selection.wrappedValue.isEmpty ? nil:selection.wrappedValue},set:{selection.wrappedValue=$0 ?? ""})) {
                     ForEach(pages){page in HStack(alignment:.top){Text("p.\(page["page"].int)").monospacedDigit().frame(width:50,alignment:.leading);Text(page["text"].string.isEmpty ? L("doc.tail.noSummaryRead"):page["text"].string).font(.caption).lineLimit(2);if page["hidden"].bool{Text(L("doc.tail.hidden")).font(.caption2).foregroundStyle(.secondary)}}.tag(page["page_id"].string).id(page["page_id"].string)}
                 }
-                if let selected {Button(L("doc.tail.selectedPageViewInList", .count(selected["page"].int))){search.wrappedValue="";Task{@MainActor in await Task.yield();proxy.scrollTo(selection.wrappedValue,anchor:.center)}}.buttonStyle(.plain).font(.caption).foregroundStyle(.blue)}
+                if let selected {Button(L("doc.tail.selectedPageViewInList", .integer(selected["page"].int))){search.wrappedValue="";Task{@MainActor in await Task.yield();proxy.scrollTo(selection.wrappedValue,anchor:.center)}}.buttonStyle(.plain).font(.caption).foregroundStyle(.blue)}
             }.frame(maxWidth:.infinity).onChange(of:selection.wrappedValue){proxy.scrollTo(selection.wrappedValue,anchor:.center)}
         }
     }
@@ -172,7 +172,7 @@ struct BundleHistorySheet:View {
     func historyRow(_ entry:JSON)->some View {
         let id=entry["decision_id"].string
         return VStack(alignment:.leading,spacing:6){
-            Text(L("doc.bundle.historyEntry", .count(entry["ordinal"].int+1), .count(entry["source_page"].int), .verbatim(entry["action"].string=="unlink" ? L("doc.tail.noPdfLink"):"PDF p.\(entry["rendered_page"].int)"))).font(.headline)
+            Text(L("doc.bundle.historyEntry", .integer(entry["ordinal"].int+1), .integer(entry["source_page"].int), .verbatim(entry["action"].string=="unlink" ? L("doc.tail.noPdfLink"):"PDF p.\(entry["rendered_page"].int)"))).font(.headline)
             if activeDecisionIDs.contains(id) {Label(L("doc.tail.currentAppliedState"),systemImage:"checkmark.circle.fill").font(.caption).foregroundStyle(.blue)}
             Text(L("doc.tail.changeReason")).font(.caption).foregroundStyle(.secondary)
             Text(reasons[id] ?? entry["reason"].string).font(.callout).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)

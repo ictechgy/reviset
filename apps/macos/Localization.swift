@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Combine
 
 /// Display language is independent of document/OCR language and persisted report data.
 enum UILanguage: String, CaseIterable, Identifiable, Sendable {
@@ -17,6 +18,8 @@ enum UILanguage: String, CaseIterable, Identifiable, Sendable {
 indirect enum UIArgument: Sendable, Equatable {
     case verbatim(String)
     case count(Int)
+    /// Technical coordinates and codes retain ungrouped source digits.
+    case integer(Int)
     case message(UIMessage)
 }
 
@@ -53,9 +56,11 @@ struct Localizer: Sendable {
     let language: String
     private let translations: [String: String]
     private let english: [String: String]
+    private let formats: DisplayFormatters
 
     init(language: String, bundle: Bundle = .main) {
         self.language = language == "ko" ? "ko" : "en"
+        formats = DisplayFormatters(language: self.language)
         english = Self.loadTable(language: "en", bundle: bundle)
         translations = self.language == "en" ? english : Self.loadTable(language: self.language, bundle: bundle)
     }
@@ -88,21 +93,7 @@ struct Localizer: Sendable {
         return renderKey("\(base).\(form)", arguments: [.count(count)])
     }
 
-    func isoDate(_ raw: String) -> String {
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = parser.date(from: raw) ?? {
-            parser.formatOptions = [.withInternetDateTime]
-            return parser.date(from: raw)
-        }()
-        guard let date else { return raw }
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.timeZone = .current
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
+    func isoDate(_ raw: String) -> String { formats.isoDate(raw) }
 
     /// This closed mapping labels known codes only; an unknown code remains visible unchanged.
     func ocrLanguageCode(_ code: String) -> String {
@@ -127,12 +118,8 @@ struct Localizer: Sendable {
             switch argument {
             case .verbatim(let value): return value
             case .message(let message): return render(message)
-            case .count(let value):
-                let formatter = NumberFormatter()
-                formatter.locale = locale
-                formatter.numberStyle = .decimal
-                formatter.maximumFractionDigits = 0
-                return formatter.string(from: NSNumber(value: value)) ?? String(value)
+            case .integer(let value): return String(value)
+            case .count(let value): return formats.count(value)
             }
         }
         // Scan the trusted template once. Inserted file names, source text and errors are opaque.
@@ -164,13 +151,40 @@ struct Localizer: Sendable {
     }
 }
 
-@MainActor @Observable final class LanguagePreferences {
+// Formatters are shared by immutable snapshots. Serialize their mutable Foundation
+// internals rather than expose non-Sendable formatter instances across actors.
+private final class DisplayFormatters: @unchecked Sendable {
+    private let lock = NSLock()
+    private let number = NumberFormatter()
+    private let date = DateFormatter()
+    private let fractionalISO = ISO8601DateFormatter()
+    private let ordinaryISO = ISO8601DateFormatter()
+    init(language: String) {
+        let locale = Locale(identifier: language == "ko" ? "ko_KR" : "en_US")
+        number.locale = locale; number.numberStyle = .decimal; number.maximumFractionDigits = 0
+        date.locale = locale; date.timeZone = .autoupdatingCurrent; date.dateStyle = .medium; date.timeStyle = .short
+        fractionalISO.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        ordinaryISO.formatOptions = [.withInternetDateTime]
+    }
+    func count(_ value: Int) -> String { lock.withLock { number.string(from: NSNumber(value: value)) ?? String(value) } }
+    func isoDate(_ raw: String) -> String {
+        lock.withLock {
+            guard let value = fractionalISO.date(from: raw) ?? ordinaryISO.date(from: raw) else { return raw }
+            return date.string(from: value)
+        }
+    }
+}
+
+@MainActor @Observable final class LanguagePreferences: @MainActor ObservableObject {
     static let shared = LanguagePreferences()
     static let preferenceKey = "RevisetUILanguage"
+    // Commands/Scene use Combine invalidation; view bodies also track Observation.
+    @ObservationIgnored let objectWillChange = ObservableObjectPublisher()
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let bundle: Bundle
     var selection: UILanguage {
         didSet {
+            objectWillChange.send()
             defaults.set(selection.rawValue, forKey: Self.preferenceKey)
             localizer = Localizer(language: selection == .system ? Localizer.preferredLanguage() : selection.rawValue, bundle: bundle)
         }

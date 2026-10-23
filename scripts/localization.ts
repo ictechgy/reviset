@@ -155,7 +155,7 @@ function swiftLocalizationCalls(text: string): Array<{name: string; key: string;
       const stringEnd = swiftStringEnd(text, cursor, walk);
       if (stringEnd !== null) { cursor = stringEnd; continue; }
       if (!/[a-zA-Z0-9_]/u.test(text[cursor - 1] ?? '')) {
-        const match = /^(L|LC|UIMessage(?:\.plural)?)\(\s*"([^"\\]*)"/u.exec(text.slice(cursor));
+        const match = /^(L|LC|UIMessage(?:\.plural)?|(?:[a-zA-Z_][a-zA-Z0-9_]*\.)?(?:string|plural))\(\s*"([^"\\]*)"/u.exec(text.slice(cursor));
         if (match) calls.push({name: match[1]!, key: match[2]!, opening: cursor + match[1]!.length});
       }
       cursor++;
@@ -197,20 +197,26 @@ function swiftCallArgumentCount(text: string, opening: number): number {
   return text.slice(opening + 1, cursor - 1).trim() ? commas + 1 : 0;
 }
 
-export async function validateSourceLocalizationKeys(catalog: LocalizationCatalog, sourceDirectory = sourceRoot): Promise<void> {
+export async function validateSourceLocalizationKeys(catalog: LocalizationCatalog, sourceDirectory = sourceRoot): Promise<{referencedKeys: string[]; unreferencedKeys: string[]}> {
+  const referenced = new Set<string>();
   for (const file of (await readdir(sourceDirectory)).filter(file => file.endsWith('.swift')).sort()) {
     const text = withoutSwiftComments(await readFile(join(sourceDirectory, file), 'utf8'));
     for (const call of swiftLocalizationCalls(text)) {
-      const plural = call.name === 'LC' || call.name === 'UIMessage.plural';
+      const plural = call.name === 'LC' || call.name === 'plural' || call.name.endsWith('.plural');
       const keys = plural ? [`${call.key}.one`, `${call.key}.other`] : [call.key];
       try {
         validateLocalizationKeys(catalog, keys);
+        for (const key of keys) {
+          referenced.add(key);
+          if (plural && placeholders(catalog[key]!.en, key, 'en').join(',') !== '0') throw new Error(`${key}: plural templates must use exactly {0}`);
+        }
         const argumentCount = swiftCallArgumentCount(text, call.opening);
         const expected = plural ? 2 : 1 + placeholders(catalog[keys[0]!]!.en, keys[0]!, 'en').length;
         if (argumentCount !== expected) throw new Error(`${call.key}: expected ${expected - 1} argument(s), got ${argumentCount - 1}`);
       } catch (error) { throw new Error(`${file}: ${(error as Error).message}`); }
     }
   }
+  return {referencedKeys: [...referenced].sort(), unreferencedKeys: Object.keys(catalog).filter(key => !referenced.has(key)).sort()};
 }
 
 function stringsEscape(value: string): string {
@@ -234,8 +240,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const command = process.argv[2] ?? 'validate';
   if (command === 'validate') {
     const catalog = await readLocalizationCatalog();
-    await validateSourceLocalizationKeys(catalog);
-    console.log(JSON.stringify({localization: 'valid', languages, keys: Object.keys(catalog).length}));
+    const source = await validateSourceLocalizationKeys(catalog);
+    console.log(JSON.stringify({unreferenced_keys: source.unreferencedKeys, localization: 'valid', languages, keys: Object.keys(catalog).length}));
   } else if (command === 'build' && process.argv[3]) {
     const catalog = await buildLocalizationResources(resolve(process.argv[3]));
     console.log(JSON.stringify({localization: 'built', languages, keys: Object.keys(catalog).length}));

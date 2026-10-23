@@ -6,7 +6,7 @@ import Combine
 
 @main struct RevisetApp: App {
     @StateObject private var model=AppModel()
-    @State private var language=LanguagePreferences.shared
+    @StateObject private var language=LanguagePreferences.shared
     @Environment(\.openWindow) private var openWindow
     var body: some Scene {
         Window("Reviset", id:"main") {MainView().environmentObject(model).environment(\.locale,language.localizer.locale).task {
@@ -21,10 +21,8 @@ import Combine
         }.onReceive(NotificationCenter.default.publisher(for:NSApplication.willTerminateNotification)){_ in model.bridge.terminateAnalysis();model.sidecarRequest=nil;model.bridge.cancelSidecars()}}
         .defaultSize(width:1440,height:960)
         .windowToolbarStyle(.unifiedCompact)
-        .commands {
-            CommandGroup(after:.newItem){Button(L("app.menu.importVersions")){model.importSheet=true}.keyboardShortcut("o").disabled(model.busy || model.loading || !model.libraryAvailable || model.initializing);Button(L("app.menu.workbooks")){openWindow(id:"workbooks")}.keyboardShortcut("o",modifiers:[.command,.shift]).disabled(!model.libraryAvailable || model.initializing)}
-            CommandGroup(after:.sidebar){Button(L("app.menu.focus")){model.focus.toggle()}.keyboardShortcut("f",modifiers:[.command,.option]);Button(L("app.menu.evidence")){model.inspector.toggle()}.keyboardShortcut("i",modifiers:[.command,.option])}
-        }
+        .commands { RevisetCommands(model:model,language:language) }
+
         Window(L("app.window.workbooks"),id:"workbooks") {
             Group {
             if !model.libraryAvailable {
@@ -44,6 +42,24 @@ import Combine
         Settings { LanguageSettingsView().environment(\.locale,language.localizer.locale) }
     }
 }
+@MainActor struct RevisetCommands: Commands {
+    @ObservedObject var model: AppModel
+    @ObservedObject var language: LanguagePreferences
+    @Environment(\.openWindow) private var openWindow
+    var body: some Commands {
+        // Commands cache native menu labels; an observed input explicitly invalidates
+        // this builder when the in-app language changes.
+        let localizer=language.localizer
+        CommandGroup(after:.newItem) {
+            Button(localizer.string("app.menu.importVersions")) { model.importSheet=true }.keyboardShortcut("o").disabled(model.busy || model.loading || !model.libraryAvailable || model.initializing)
+            Button(localizer.string("app.menu.workbooks")) { openWindow(id:"workbooks") }.keyboardShortcut("o",modifiers:[.command,.shift]).disabled(!model.libraryAvailable || model.initializing)
+        }
+        CommandGroup(after:.sidebar) {
+            Button(localizer.string("app.menu.focus")) { model.focus.toggle() }.keyboardShortcut("f",modifiers:[.command,.option])
+            Button(localizer.string("app.menu.evidence")) { model.inspector.toggle() }.keyboardShortcut("i",modifiers:[.command,.option])
+        }
+    }
+}
 struct LanguageSettingsView: View {
     @State private var language=LanguagePreferences.shared
     var body: some View {
@@ -60,6 +76,10 @@ struct LanguageSettingsView: View {
         }.padding(24).frame(width:520).fixedSize(horizontal:false,vertical:true)
         .navigationTitle(L("app.settings.title"))
     }
+}
+private struct SmokeStructureView: View {
+    let page: JSON
+    var body: some View { StructureCanvas(language:LanguagePreferences.shared.effectiveLanguage,page:page,evidence:JSON()) }
 }
 @MainActor enum Smoke {
     private static var started=false
@@ -181,9 +201,9 @@ struct LanguageSettingsView: View {
         let defaults=UserDefaults.standard,domain=Bundle.main.bundleIdentifier ?? "org.docver.native"
         let stored=defaults.persistentDomain(forName:domain)?[LanguagePreferences.preferenceKey]
         let status=model.statusMessage,identity=ObjectIdentifier(model),report=try model.report.data(),project=model.projectID
-        let selected=model.selectedChangeID,left=model.leftPageID,right=model.rightPageID,from=model.from,to=model.to
+        let selected=model.selectedChangeID,left=model.leftPageID,right=model.rightPageID,from=model.from,to=model.to,originalZoom=model.zoom
         defer {
-            preferences.selection=original;model.statusMessage=status
+            preferences.selection=original;model.statusMessage=status;model.zoom=originalZoom
             if let stored { defaults.set(stored,forKey:LanguagePreferences.preferenceKey) }
             else { defaults.removeObject(forKey:LanguagePreferences.preferenceKey) }
         }
@@ -195,7 +215,28 @@ struct LanguageSettingsView: View {
         sheet.contentView=NSHostingView(rootView:ImportView(initialRows:[row],initialTitle:opaque).environmentObject(model).background(Color(nsColor:.windowBackgroundColor)))
         func fields(_ root:NSView)->[NSTextField] { (root as? NSTextField).map{[$0]} ?? [] + root.subviews.flatMap(fields) }
         func menuTitles(_ menu:NSMenu)->[String] { menu.items.flatMap{[$0.title]+($0.submenu.map(menuTitles) ?? [])} }
-        var stages:[[String:Any]]=[]
+        func pdfs(_ root:NSView)->[PDFView] { if let view=root as? PDFView {return [view]};return root.subviews.flatMap(pdfs) }
+        model.zoom=1.6
+        try await Task.sleep(nanoseconds:350_000_000)
+        let pdfViews=parent.contentView.map(pdfs) ?? []
+        guard !pdfViews.isEmpty else {throw BridgeError(code:"L10N_VIEWPORT",message:"No production PDF views to qualify")}
+        for view in pdfViews { if let clip=view.documentView?.enclosingScrollView?.contentView {
+            clip.scroll(to:NSPoint(x:clip.bounds.origin.x+24,y:clip.bounds.origin.y+32));clip.enclosingScrollView?.reflectScrolledClipView(clip)
+        }}
+        try await Task.sleep(nanoseconds:200_000_000)
+        let pdfState=pdfViews.map { view in (ObjectIdentifier(view),view.scaleFactor,view.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero,view.currentPage) }
+        let emptySheet=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:500),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+        emptySheet.isOpaque=true;emptySheet.backgroundColor = .windowBackgroundColor
+        emptySheet.contentView=NSHostingView(rootView:ImportView(initialRows:[row]).environmentObject(model).background(Color(nsColor:.windowBackgroundColor)))
+        let structurePage=JSON(["page_id":"opaque-structure-fixture","elements":[
+            ["kind":"text","text":opaque,"bbox":[0.05,0.05,0.9,0.2]],
+            ["kind":"image","bbox":[0.05,0.35,0.4,0.4]],
+            ["kind":"unsupported","bbox":[0.5,0.35,0.45,0.4]]]])
+        let structure=NSWindow(contentRect:NSRect(x:0,y:0,width:600,height:300),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+        structure.isOpaque=true;structure.backgroundColor = .white
+        structure.contentView=NSHostingView(rootView:SmokeStructureView(page:structurePage))
+        func canvases(_ root:NSView)->[StructureCanvas.Canvas] {if let view=root as? StructureCanvas.Canvas{return [view]};return root.subviews.flatMap(canvases)}
+        var canvasID:ObjectIdentifier?,structureCaptures:[Data]=[],stages:[[String:Any]]=[]
         model.statusMessage=UIMessage("app.settings.description")
         for choice in [UILanguage.en,.ko] {
             preferences.selection=choice
@@ -211,14 +252,32 @@ struct LanguageSettingsView: View {
             guard let content=sheet.contentView,fields(content).filter({$0.stringValue==opaque}).count>=2 else {throw BridgeError(code:"L10N_DRAFT",message:"Import draft title or version label changed")}
             try captureView(sheet,output.appendingPathComponent("native-language-\(choice.rawValue)-import.png"))
             parent.endSheet(sheet);sheet.orderOut(nil)
+            parent.beginSheet(emptySheet,completionHandler:{_ in});try await Task.sleep(nanoseconds:250_000_000)
+            emptySheet.contentView?.layoutSubtreeIfNeeded()
+            let defaultFields=emptySheet.contentView.map(fields) ?? []
+            guard defaultFields.contains(where:{$0.placeholderString==L("doc.import.projectName") && $0.stringValue==L("doc.import.defaultTitle")}) else {throw BridgeError(code:"L10N_DEFAULT_TITLE",message:"Untouched document title did not follow language")}
+            try captureView(emptySheet,output.appendingPathComponent("native-language-\(choice.rawValue)-import-default.png"));parent.endSheet(emptySheet);emptySheet.orderOut(nil)
+            parent.beginSheet(structure,completionHandler:{_ in});try await Task.sleep(nanoseconds:250_000_000)
+            structure.contentView?.layoutSubtreeIfNeeded();structure.contentView?.displayIfNeeded()
+            guard let canvas=structure.contentView.flatMap({canvases($0).first}),try canvas.page.data()==structurePage.data() else {throw BridgeError(code:"L10N_STRUCTURE",message:"Structure source changed")}
+            if let canvasID {guard ObjectIdentifier(canvas)==canvasID else {throw BridgeError(code:"L10N_STRUCTURE",message:"Structure canvas was recreated")}} else {canvasID=ObjectIdentifier(canvas)}
+            let structurePath=output.appendingPathComponent("native-language-\(choice.rawValue)-structure.png")
+            try captureView(structure,structurePath);structureCaptures.append(try Data(contentsOf:structurePath));parent.endSheet(structure);structure.orderOut(nil)
             let settings=NSWindow(contentRect:NSRect(x:0,y:0,width:560,height:340),styleMask:[.titled,.closable],backing:.buffered,defer:false)
             settings.isOpaque=true;settings.backgroundColor = .windowBackgroundColor
             settings.contentView=NSHostingView(rootView:LanguageSettingsView().environment(\.locale,preferences.localizer.locale).background(Color(nsColor:.windowBackgroundColor)))
             parent.beginSheet(settings,completionHandler:{_ in});try await Task.sleep(nanoseconds:350_000_000)
             try captureView(settings,output.appendingPathComponent("native-language-\(choice.rawValue)-settings.png"));parent.endSheet(settings);settings.orderOut(nil)
             guard ObjectIdentifier(model)==identity,model.projectID==project,try model.report.data()==report,model.selectedChangeID==selected,model.leftPageID==left,model.rightPageID==right,model.from==from,model.to==to else {throw BridgeError(code:"L10N_MODEL",message:"Language switch changed document model or selection")}
-            stages.append(["language":choice.rawValue,"custom_menu":label,"status":model.status,"draft_text_unchanged":true,"same_model_report_and_selection":true])
+            let currentPDFs=parent.contentView.map(pdfs) ?? []
+            guard currentPDFs.count==pdfState.count else {throw BridgeError(code:"L10N_VIEWPORT",message:"PDF view count changed")}
+            for (view,state) in zip(currentPDFs,pdfState) {
+                let origin=view.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero
+                guard ObjectIdentifier(view)==state.0,abs(view.scaleFactor-state.1)<0.0001,abs(origin.x-state.2.x)<1,abs(origin.y-state.2.y)<1,view.currentPage===state.3 else {throw BridgeError(code:"L10N_VIEWPORT",message:"PDF identity, scale, viewport or page changed")}
+            }
+            stages.append(["language":choice.rawValue,"custom_menu":label,"status":model.status,"draft_text_unchanged":true,"untouched_default_title_translated":true,"same_structure_canvas_and_source":true,"same_pdf_identity_zoom_viewport_and_page":true,"same_model_report_and_selection":true])
         }
+        guard structureCaptures.count==2,structureCaptures[0] != structureCaptures[1] else {throw BridgeError(code:"L10N_STRUCTURE",message:"Fallback placeholder labels did not redraw")}
         guard stages[0]["status"] as? String != stages[1]["status"] as? String else{throw BridgeError(code:"L10N_STATUS",message:"Stored typed status did not rerender")}
         return ["passed":true,"stages":stages,"draft_opaque_text":opaque,"ocr_language_setting_unchanged":true,"interaction_scope":"actual app, model-driven language setting and production import/settings hosts; no OS keyboard/mouse or full VoiceOver claim"]
     }

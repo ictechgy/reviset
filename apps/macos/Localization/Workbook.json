@@ -1124,16 +1124,16 @@
     "ko": "배열 수식"
   },
   "workbook.coverage.feature.array_formulas.detail": {
-    "en": "Matrix and spill relationships are unresolved. Source formulas and stored observations remain available.",
-    "ko": "행렬·스필 관계가 미확정입니다. 원본 수식과 저장된 관측은 보존됩니다."
+    "en": "Matrix and spill relationships may be unresolved. Consult the source explanation for the observed scope.",
+    "ko": "행렬·스필 관계는 미확정일 수 있습니다. 관측된 범위는 원본 설명을 확인하세요."
   },
   "workbook.coverage.feature.blank_range_formula_interpretation": {
     "en": "Blank-range formula interpretation",
     "ko": "빈 셀 범위의 수식 의미"
   },
   "workbook.coverage.feature.blank_range_formula_interpretation.detail": {
-    "en": "A retained blank formatting range overlaps unresolved formula evidence; absent values are not certified inputs.",
-    "ko": "보존한 빈 셀 서식 범위가 미확정 수식 근거와 겹칩니다. 값이 없다고 직접 입력으로 확정하지 않습니다."
+    "en": "Blank formatting can overlap unresolved formula evidence; absent values do not certify direct inputs.",
+    "ko": "빈 셀 서식이 미확정 수식 근거와 겹칠 수 있습니다. 값이 없다고 직접 입력으로 확정하지 않습니다."
   },
   "workbook.coverage.feature.calculation_metadata": {
     "en": "Calculation metadata",
@@ -1156,8 +1156,8 @@
     "ko": "셀 보호"
   },
   "workbook.coverage.feature.cell_protection.detail": {
-    "en": "Cell protection is not evaluated or compared. Original attributes remain in the retained file.",
-    "ko": "셀 보호는 평가·비교하지 않습니다. 원본 속성은 보존한 파일에 남습니다."
+    "en": "Cell protection is outside the evaluated and compared cell model.",
+    "ko": "셀 보호는 셀 모델의 평가·비교 범위에 포함되지 않습니다."
   },
   "workbook.coverage.feature.charts": {
     "en": "Charts",
@@ -1188,16 +1188,16 @@
     "ko": "병합에 가려진 셀 내용"
   },
   "workbook.coverage.feature.covered_cell_content.detail": {
-    "en": "Covered cells have independent content, so formula interpretation is conservatively unresolved.",
-    "ko": "병합에 가려진 셀에 독립된 내용이 있어 수식 의미를 보수적으로 미확정 처리합니다."
+    "en": "Content hidden by merged cells can leave formula interpretation unresolved.",
+    "ko": "병합에 가려진 셀의 내용으로 수식 의미가 미확정일 수 있습니다."
   },
   "workbook.coverage.feature.cross_format_blank_formatting": {
     "en": "Blank formatting across formats",
     "ko": "서로 다른 형식의 빈 셀 서식"
   },
   "workbook.coverage.feature.cross_format_blank_formatting.detail": {
-    "en": "Blank formatting is retained but is not compared across different file formats. No changes does not establish identical formatting.",
-    "ko": "빈 셀 서식은 보존하지만 서로 다른 파일 형식 사이에서는 비교하지 않습니다. 변경 없음이 같은 서식을 뜻하지 않습니다."
+    "en": "Blank formatting is not compared across different file formats. No changes does not establish identical formatting.",
+    "ko": "빈 셀 서식은 서로 다른 파일 형식 사이에서는 비교하지 않습니다. 변경 없음이 같은 서식을 뜻하지 않습니다."
   },
   "workbook.coverage.feature.cross_format_capabilities": {
     "en": "Cross-format capabilities",
@@ -1212,8 +1212,8 @@
     "ko": "서로 다른 형식의 날짜 표현"
   },
   "workbook.coverage.feature.cross_format_date_representation.detail": {
-    "en": "Date systems, numeric serials, and ISO source values are retained without cross-format normalization.",
-    "ko": "날짜 기준·숫자 일련값·ISO 원문은 서로 다른 형식 사이에서 정규화하지 않고 보존합니다."
+    "en": "Date systems, numeric serials, and ISO source values can differ across formats; cross-format normalization is outside this model.",
+    "ko": "파일 형식마다 날짜 기준·숫자 일련값·ISO 원문의 표현이 다를 수 있습니다. 서로 다른 형식 사이의 정규화는 이 모델의 범위를 벗어납니다."
   },
   "workbook.coverage.feature.data_validation": {
     "en": "Data validation",
@@ -1228,16 +1228,16 @@
     "ko": "날짜 기준일"
   },
   "workbook.coverage.feature.date_epoch.detail": {
-    "en": "Date-epoch interpretation has source-specific limitations. Original date evidence remains available.",
-    "ko": "날짜 기준일 해석에는 원본별 한계가 있습니다. 원본 날짜 근거를 확인할 수 있습니다."
+    "en": "Date-epoch interpretation can have source-specific limitations.",
+    "ko": "날짜 기준일 해석에는 원본별 한계가 있을 수 있습니다."
   },
   "workbook.coverage.feature.defined_names": {
     "en": "Defined names",
     "ko": "정의된 이름"
   },
   "workbook.coverage.feature.defined_names.detail": {
-    "en": "Named ranges and formulas are not independently modeled. Formula source is retained.",
-    "ko": "이름이 지정된 범위·수식은 독립적으로 모델링하지 않습니다. 수식 원문은 보존합니다."
+    "en": "Named ranges and formulas are not independently modeled.",
+    "ko": "이름이 지정된 범위·수식은 독립적으로 모델링하지 않습니다."
   },
   "workbook.coverage.feature.display_layout": {
     "en": "Display layout",
@@ -1260,8 +1260,8 @@
     "ko": "외부 링크"
   },
   "workbook.coverage.feature.external_links.detail": {
-    "en": "External content is never opened or refreshed. Source references remain evidence.",
-    "ko": "외부 내용은 열거나 갱신하지 않습니다. 원본 참조는 근거로 보존합니다."
+    "en": "External content is never opened or refreshed.",
+    "ko": "외부 내용은 열거나 갱신하지 않습니다."
   },
   "workbook.coverage.feature.external_relationships": {
     "en": "External relationships",
@@ -1292,16 +1292,16 @@
     "ko": "저장된 오류 결과 없음"
   },
   "workbook.coverage.feature.missing_error_cache.detail": {
-    "en": "An error type is present but its stored error text is unavailable.",
-    "ko": "오류 유형은 있지만 저장된 오류 문구를 읽을 수 없습니다."
+    "en": "An error type without stored error text limits interpretation.",
+    "ko": "저장된 오류 문구가 없는 오류 유형은 해석에 한계가 있습니다."
   },
   "workbook.coverage.feature.missing_formula_cache": {
     "en": "Missing formula result",
     "ko": "저장된 수식 결과 없음"
   },
   "workbook.coverage.feature.missing_formula_cache.detail": {
-    "en": "A formula has no stored calculation result. Formulas are never recalculated.",
-    "ko": "수식에 저장된 계산 결과가 없습니다. 수식은 재계산하지 않습니다."
+    "en": "A formula without a stored result limits interpretation. Formulas are never recalculated.",
+    "ko": "저장 결과가 없는 수식은 해석에 한계가 있습니다. 수식은 재계산하지 않습니다."
   },
   "workbook.coverage.feature.number_format": {
     "en": "Number format",
@@ -1332,24 +1332,24 @@
     "ko": "서식 있는 텍스트"
   },
   "workbook.coverage.feature.rich_text.detail": {
-    "en": "Primary text is retained; rich-text presentation has limitations.",
-    "ko": "기본 텍스트는 보존하지만 서식 있는 텍스트의 표현에는 한계가 있습니다."
+    "en": "Rich-text presentation is outside the fully modeled cell text.",
+    "ko": "서식 있는 텍스트의 표현은 셀 텍스트 모델에서 완전히 재현하지 않습니다."
   },
   "workbook.coverage.feature.rich_text_extensions": {
     "en": "Rich-text extensions",
     "ko": "서식 있는 텍스트 확장"
   },
   "workbook.coverage.feature.rich_text_extensions.detail": {
-    "en": "Rich-text extensions are not fully modeled. Check the retained original evidence.",
-    "ko": "서식 있는 텍스트 확장은 완전히 모델링하지 않습니다. 보존한 원본 근거를 확인하세요."
+    "en": "Rich-text extensions are not fully modeled. Consult the source explanation for the observed scope.",
+    "ko": "서식 있는 텍스트 확장은 완전히 모델링하지 않습니다. 관측된 범위는 원본 설명을 확인하세요."
   },
   "workbook.coverage.feature.row_column_default_styles": {
     "en": "Default row/column styles",
     "ko": "행·열 기본 스타일"
   },
   "workbook.coverage.feature.row_column_default_styles.detail": {
-    "en": "Default styles covering absent cells are not expanded. Retained explicit blank formatting is described by the source evidence.",
-    "ko": "관측되지 않은 셀에 적용되는 기본 스타일은 펼치지 않습니다. 보존한 명시적 빈 셀 서식은 원본 근거를 확인하세요."
+    "en": "Default styles covering absent cells are not expanded. Consult the source explanation for explicit blank-formatting observations.",
+    "ko": "관측되지 않은 셀에 적용되는 기본 스타일은 펼치지 않습니다. 명시적 빈 셀 서식의 관측은 원본 설명을 확인하세요."
   },
   "workbook.coverage.feature.scripts_events": {
     "en": "Scripts and events",
@@ -1364,8 +1364,8 @@
     "ko": "공유·배열 수식"
   },
   "workbook.coverage.feature.shared_array_formulas.detail": {
-    "en": "Shared, array, spill, and data-table formulas are not expanded. Source text and stored values remain unresolved observations.",
-    "ko": "공유·배열·스필·데이터 표 수식은 펼치지 않습니다. 원문과 저장값은 미확정 관측으로 보존합니다."
+    "en": "Shared, array, spill, and data-table formulas are not expanded. Source text and stored values may be unresolved observations.",
+    "ko": "공유·배열·스필·데이터 표 수식은 펼치지 않습니다. 원문과 저장값은 미확정 관측일 수 있습니다."
   },
   "workbook.coverage.feature.stored_formula_results": {
     "en": "Stored formula results",
@@ -1404,8 +1404,8 @@
     "ko": "완전 숨김 시트"
   },
   "workbook.coverage.feature.very_hidden_sheet.detail": {
-    "en": "An Excel veryHidden sheet is exposed as a source observation for comparison.",
-    "ko": "Excel의 veryHidden 시트를 비교할 수 있도록 원본 관측으로 표시합니다."
+    "en": "An Excel veryHidden sheet can contain observations relevant to comparison.",
+    "ko": "Excel의 veryHidden 시트에 비교와 관련된 관측이 있을 수 있습니다."
   },
   "workbook.coverage.feature.drawings": {
     "en": "Drawings",
@@ -1476,12 +1476,12 @@
     "ko": "알 수 없는 판독 한계 기능: {0}"
   },
   "workbook.coverage.sourceEvidence": {
-    "en": "Original limitation evidence",
-    "ko": "원본 판독 한계 근거"
+    "en": "General feature context",
+    "ko": "기능의 일반적인 설명"
   },
   "workbook.coverage.sourceReason": {
-    "en": "This retained source explanation is shown verbatim.",
-    "ko": "보존된 원본 설명을 그대로 표시합니다."
+    "en": "Source explanation (verbatim)",
+    "ko": "원본 설명 (그대로 표시)"
   },
   "workbook.coverage.moreLocations.one": {
     "en": " and {0} more location",

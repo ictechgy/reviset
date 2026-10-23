@@ -47,6 +47,18 @@ let multiline = L(
 let count = UIMessage.plural("test.count", 2)
 `);
     await assert.doesNotReject(validateSourceLocalizationKeys(sourceCatalog, root));
+    await writeFile(join(root, 'Probe.swift'), 'let label = localizer.string("test.missing")');
+    await assert.rejects(validateSourceLocalizationKeys(sourceCatalog, root), /test.missing/u);
+    await writeFile(join(root, 'Probe.swift'), 'let label = string("test.inner")');
+    await assert.doesNotReject(validateSourceLocalizationKeys(sourceCatalog, root));
+    await writeFile(join(root, 'Probe.swift'), 'let label = localizer.plural("test.count", 2)');
+    const malformedPlural = validateLocalizationCatalog({...sourceCatalog, 'test.count.one': {en: '{0} with {1}', ko: '{0}와 {1}'}});
+    await assert.rejects(validateSourceLocalizationKeys(malformedPlural, root), /plural templates must use exactly \{0\}/u);
+    const missingCount = validateLocalizationCatalog({...sourceCatalog, 'test.count.other': {en: 'many', ko: '여럿'}});
+    await assert.rejects(validateSourceLocalizationKeys(missingCount, root), /plural templates must use exactly \{0\}/u);
+    const references = await validateSourceLocalizationKeys(sourceCatalog, root);
+    assert.ok(references.unreferencedKeys.includes('test.label'));
+
     await writeFile(join(root, 'Probe.swift'), 'let label = L("test.label", .verbatim("only one"))');
     await assert.rejects(validateSourceLocalizationKeys(sourceCatalog, root), /expected 2 argument\(s\), got 1/u);
     await writeFile(join(root, 'Probe.swift'), String.raw`let interpolated = "value \(L("test.inner", .count(2)))"`);

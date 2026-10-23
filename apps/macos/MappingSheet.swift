@@ -80,7 +80,7 @@ struct MappingSheet: View {
                         ForEach(selected) { page in
                             HStack(spacing:4) {
                                 Button("p.\(page["page"].int)") { search.wrappedValue="";Task { @MainActor in await Task.yield();proxy.scrollTo(page["page_id"].string,anchor:.center) } }.buttonStyle(.plain)
-                                Button { selection.wrappedValue.remove(page["page_id"].string) } label: { Image(systemName:"xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).accessibilityLabel(L("doc.tail.deselectPage", .count(page["page"].int)))
+                                Button { selection.wrappedValue.remove(page["page_id"].string) } label: { Image(systemName:"xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).accessibilityLabel(L("doc.tail.deselectPage", .integer(page["page"].int)))
                             }.font(.caption).padding(5).background(Color.blue.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius:4))
                         }
                     }

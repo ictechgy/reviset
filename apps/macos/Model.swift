@@ -436,10 +436,10 @@ struct ReorderConfirmation:Identifiable {
         try await refresh()
     }
     func exportReport() async {
+        let exportLanguage=LanguagePreferences.shared.effectiveLanguage
         let panel = NSOpenPanel(); panel.title = L("doc.tail.report.saveFolderPrompt"); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let exportLanguage=LanguagePreferences.shared.effectiveLanguage
-        let target = url.appendingPathComponent("Reviset-" + report["report_id"].string.dropFirst(4).prefix(12))
+        let target = url.appendingPathComponent("Reviset-" + report["report_id"].string.dropFirst(4).prefix(12) + "." + exportLanguage)
         do { _ = try await bridge.call("export", ["project_id": projectID, "report_id": report["report_id"].string, "folder": target.path, "language":exportLanguage]); NSWorkspace.shared.open(target); statusMessage = UIMessage("doc.tail.report.savedJsonJsonlMarkdown") } catch { fail(error) }
     }
     func loadMCP() async {
@@ -543,13 +543,30 @@ func fittedPageSize(width:Double,height:Double,available:CGSize,inset:CGFloat=0)
     let names=["visible":L("doc.appearance.visible"),"occluded":L("doc.appearance.occluded"),"partially_occluded":L("doc.appearance.partiallyOccluded"),"struck_through":L("doc.appearance.struck"),"struck_inferred":L("doc.appearance.struckInferred"),"partially_struck_through":L("doc.appearance.partiallyStruck"),"hidden_render_mode":L("doc.appearance.hiddenMode"),"uncertain":L("doc.appearance.uncertain"),"unverified":L("doc.appearance.unverified")]
     return names[value] ?? L("doc.appearance.unknownCode", .verbatim(value))
 }
-@MainActor var changeNames:[String:String] { ["text_modified": L("doc.tail.changeKind.textEdit"), "page_moved": L("doc.tail.changeKind.pageMove"), "page_added": L("doc.tail.changeKind.pageAddition"), "page_deleted": L("doc.tail.changeKind.pageDeletion"), "text_struck_through": L("doc.tail.changeKind.strikethroughMarked"), "text_occluded": L("doc.tail.changeKind.textObscured"), "text_revealed": L("doc.tail.changeKind.textRevealedAgain"), "visual_region_changed": L("doc.tail.changeKind.visualChange"), "coverage_gap": L("doc.tail.changeKind.observationGap"), "page_split": L("doc.tail.changeKind.pageSplit"), "page_merged": L("doc.tail.changeKind.pageMerge"), "page_lineage_changed": L("doc.tail.changeKind.pageLineageChange")] }
+let changeKinds = ["coverage_gap", "page_added", "page_deleted", "page_lineage_changed", "page_merged", "page_moved", "page_split", "text_modified", "text_occluded", "text_revealed", "text_struck_through", "visual_region_changed"]
+@MainActor func changeKindName(_ kind:String)->String {
+    switch kind {
+    case "text_modified": return L("doc.tail.changeKind.textEdit")
+    case "page_moved": return L("doc.tail.changeKind.pageMove")
+    case "page_added": return L("doc.tail.changeKind.pageAddition")
+    case "page_deleted": return L("doc.tail.changeKind.pageDeletion")
+    case "text_struck_through": return L("doc.tail.changeKind.strikethroughMarked")
+    case "text_occluded": return L("doc.tail.changeKind.textObscured")
+    case "text_revealed": return L("doc.tail.changeKind.textRevealedAgain")
+    case "visual_region_changed": return L("doc.tail.changeKind.visualChange")
+    case "coverage_gap": return L("doc.tail.changeKind.observationGap")
+    case "page_split": return L("doc.tail.changeKind.pageSplit")
+    case "page_merged": return L("doc.tail.changeKind.pageMerge")
+    case "page_lineage_changed": return L("doc.tail.changeKind.pageLineageChange")
+    default: return L("doc.tail.change.selectPrompt")
+    }
+}
 func isReferenceAppearanceChange(_ change:JSON)->Bool {
     change["kind"].string == "visual_region_changed" && change["evidence"].array.contains { $0["method"].string == "provided_pdf_native_raster" }
 }
 @MainActor func changeDisplayName(_ change:JSON)->String {
     if isReferenceAppearanceChange(change) { return L("doc.tail.changeKind.suppliedPdfVisualDifference") }
-    return changeNames[change["kind"].string] ?? L("doc.tail.change.selectPrompt")
+    return changeKindName(change["kind"].string)
 }
 func versionDisplayName(_ index:Int,_ revision:JSON)->String {
     let prefix="v\(index+1)",label=revision["label"].string
@@ -597,7 +614,7 @@ func changeTextRuns(_ text:String,comparedWith other:String)->[ChangeTextRun] {
     let occurrence=evidence["revision_occurrence_id"].string
     var indices=revisions.indices.filter{!occurrence.isEmpty && revisions[$0]["revision_occurrence_id"].string==occurrence}
     if indices.isEmpty && occurrence.isEmpty {let revision=evidence["revision_id"].string;indices=revisions.indices.filter{!revision.isEmpty && revisions[$0]["revision_id"].string==revision}}
-    guard indices.count==1,let index=indices.first else{return L("doc.tail.version.checkNeededOnPage", .count(evidence["page"].int))}
+    guard indices.count==1,let index=indices.first else{return L("doc.tail.version.checkNeededOnPage", .integer(evidence["page"].int))}
     let id=revisions[index]["revision_occurrence_id"].string
     let side=id==change["from_occurrence"].string ? L("doc.common.before"):id==change["to_occurrence"].string ? L("doc.common.after"):L("doc.tail.version.differentVersion")
     return "\(side) · v\(index+1) · p.\(evidence["page"].int)"

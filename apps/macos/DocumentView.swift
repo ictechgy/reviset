@@ -63,7 +63,7 @@ struct OcrContextEvidence: View {
                         let names=["available":L("doc.tail.ocr.recognitionComplete"),"not_detected":L("doc.tail.ocr.noReading"),"contaminated":L("doc.tail.ocr.surroundingContentMixedIn"),"edge_cut":L("doc.tail.ocr.clippedAtBoundary"),"ambiguous":L("doc.tail.ocr.conflictingAlternatives"),"failed":L("doc.tail.ocr.recognitionFailed"),"budget_exceeded":L("doc.tail.ocr.processingLimitReached")]
                         let languages=context["languages"].array.map{localizedOCRLanguageCode($0.string)}.joined(separator:"+")
                         VStack(alignment:.leading,spacing:3) {
-                            Text(L("doc.ocr.condition", .count(i+1), .verbatim(languages), .count(Int(context["scale"].number)), .verbatim(context["padding"].number>0.5 ? L("doc.tail.ocr.wideSurroundingContext"):L("doc.tail.ocr.narrowSurroundingContext")))).font(.caption2).foregroundStyle(.secondary)
+                            Text(L("doc.ocr.condition", .integer(i+1), .verbatim(languages), .integer(Int(context["scale"].number)), .verbatim(context["padding"].number>0.5 ? L("doc.tail.ocr.wideSurroundingContext"):L("doc.tail.ocr.narrowSurroundingContext")))).font(.caption2).foregroundStyle(.secondary)
                             Text(names[context["status"].string] ?? context["status"].string).font(.caption2).foregroundStyle(.secondary)
                             ForEach(context["observations"].array.indices,id:\.self){n in
                                 Text(context["observations"].array[n]["text"].string).font(.caption).textSelection(.enabled)
@@ -211,6 +211,7 @@ struct OriginalPDFView: NSViewRepresentable {
     }
 }
 struct StructureCanvas: NSViewRepresentable {
+    var language:String=LanguagePreferences.shared.effectiveLanguage
     let page: JSON; let evidence: JSON
     final class Canvas: NSView {
         var page = JSON(); var evidence = JSON()
@@ -290,7 +291,7 @@ struct PageColumn: View {
                 } else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size,inset:8) {
                     ScrollView([.horizontal,.vertical]) {
                         let scale = model.zoom == 0 ? 1 : model.zoom
-                        VStack { Spacer(minLength:0); StructureCanvas(page:payload["page"],evidence:payloadReady ? evidence:JSON()).frame(width:size.width*scale,height:size.height*scale).shadow(color:.black.opacity(0.08),radius:5); Spacer(minLength:0) }.frame(minWidth:geometry.size.width,minHeight:geometry.size.height)
+                        VStack { Spacer(minLength:0); StructureCanvas(language:LanguagePreferences.shared.effectiveLanguage,page:payload["page"],evidence:payloadReady ? evidence:JSON()).frame(width:size.width*scale,height:size.height*scale).shadow(color:.black.opacity(0.08),radius:5); Spacer(minLength:0) }.frame(minWidth:geometry.size.width,minHeight:geometry.size.height)
                     }
                 } else {ContentUnavailableView(L("doc.tail.page.sizeUndeterminable"),systemImage:"exclamationmark.triangle")}
             }.background(Color(nsColor:.windowBackgroundColor).overlay(Color.primary.opacity(0.045))).clipShape(RoundedRectangle(cornerRadius:5))

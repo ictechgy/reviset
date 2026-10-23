@@ -63,13 +63,13 @@ The Node executable used for packaging must link only system dylibs. If the buil
 
 1. Choose **Import Document Versions…** (`⌘O`), or **Compare Spreadsheet Versions…** (`⌘⇧O`) for spreadsheets. Arrange files in version order.
 2. A document version can contain just one PPTX or PDF. Bundling a PPTX with a PDF from the same version is optional.
-3. Select before/after versions and pages or sheets. For documents, switch between the **비교** (comparison) and **전체 이력** (full history) tabs. In the workbook view, choose **두 버전 순변경** (net change between two versions) or **구간 전체 이력** (full history across the range).
+3. Select before/after versions and pages or sheets. For documents, switch between the **Compare** and **Full history** tabs. In the workbook view, choose **Net changes between versions** or **Full interval history**.
 4. Select a change to inspect source evidence and before/after contents. Continue through long cell text; retry a failed read when needed.
-5. Open the AI/export view to export a fixed report or copy the project's MCP configuration.
+5. Open **AI & export** to export a fixed report or copy the project's MCP configuration.
 
-Try the built-in **5버전 합성 데모** (five-version document demo) and **3버전 엑셀 데모** (three-version workbook demo). Document focus mode is `⌘⌥F`; the evidence panel is `⌘⌥I`.
+Try the built-in **Open five-revision synthetic demo** and **Three-version Excel demo**. Document focus mode is `⌘⌥F`; the evidence panel is `⌘⌥I`.
 
-Choose **Reviset → Settings…** (`⌘,`) for **System Default**, **English**, or **한국어**. Reviset follows the supported system-language preference order and falls back to English. The app updates its own interface without clearing import/review drafts or starting a new analysis. Some macOS-owned menu items may follow the system app language after reopening.
+Choose **Reviset → Settings…** (`⌘,`) for **System Default**, **English**, or **한국어**. System Default resolves the supported system-language preference order at launch or when reselected and falls back to English. Reopen Reviset after changing the macOS language order. The app updates its own interface without clearing import/review drafts or starting a new analysis. Some macOS-owned menu items may follow the system app language after reopening.
 
 Interface language and OCR are separate: OCR remains configured for **Korean and English**. Other scripts can be preserved from an available original text layer, with the existing reading-order and extraction limits. See [language support and invariants](docs/LOCALIZATION.md).
 
@@ -115,6 +115,7 @@ A `latest` query resolves to a fixed report ID in the response. Use that ID for 
 
 ```sh
 npm run build   # TypeScript checks
+npm run fixtures # Generate the synthetic inputs required by the integration suite
 npm test        # Integration suite; native checks need the macOS toolchain
 ```
 

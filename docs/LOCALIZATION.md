@@ -1,6 +1,6 @@
 # Interface languages and original document text
 
-Reviset provides English and Korean interface resources. Choose **System Default**, **English**, or **한국어** in **Reviset → Settings…** (`⌘,`). System Default chooses the first supported language in the system preference order and falls back to English. The choice is stored under the app-owned `RevisetUILanguage` preference; the app does not write `AppleLanguages`.
+Reviset provides English and Korean interface resources. Choose **System Default**, **English**, or **한국어** in **Reviset → Settings…** (`⌘,`). System Default chooses the first supported language in the system preference order and falls back to English. It resolves that order at launch or when System Default is reselected. After changing the macOS language order, reopen Reviset or reselect System Default to apply it. The choice is stored under the app-owned `RevisetUILanguage` preference; the app does not write `AppleLanguages`.
 
 The app's own labels, messages, evidence explanations, import/review sheets and workbook accessibility metadata update in place. The existing model, analysis request, source selection and draft values are retained. Some macOS-owned menu items follow the process or system app language and can require reopening. This does not require restarting analysis.
 
@@ -24,7 +24,9 @@ Original PPTX/PDF text layers and workbook strings can preserve Unicode from oth
 
 ## Exports and AI clients
 
-The native app pins its selected display language when starting a human Markdown export. JSON/JSONL, fixed report IDs and all quoted source fields are independent of that language. English and Korean workbook Markdown exports can coexist: the legacy English file is `<export_id>.md`, and Korean uses `<export_id>.ko.md`; their paired JSON/JSONL and export ID stay the same.
+The native app pins its selected display language before opening the export folder picker. JSON/JSONL, fixed report IDs and all quoted source fields are independent of that language. Native document exports use language-suffixed folders, `Reviset-<id12>.en` and `Reviset-<id12>.ko`, inside the chosen destination so both languages can coexist. A document export requires a new or empty report folder: repeating an export into the same nonempty folder fails with `EXPORT_DESTINATION_NOT_EMPTY`; choose a different destination folder to preserve the earlier export.
+
+English and Korean workbook Markdown exports can coexist in one folder: the legacy English file is `<export_id>.md`, and Korean uses `<export_id>.ko.md`; their paired JSON/JSONL, copied originals and export ID stay the same.
 
 CLI export language is explicit:
 
@@ -33,7 +35,7 @@ npm run cli -- export --project PROJECT --out NEW_FOLDER --language en
 npm run cli -- workbook-export --project WORKBOOK_PROJECT --out FOLDER --language ko
 ```
 
-Omitting `--language` preserves prior defaults: Korean for document Markdown and English for workbook Markdown. Only `en` and `ko` are accepted. MCP tool descriptions remain English, its schemas stay unchanged, and original text remains exact evidence. A connected AI client can write its explanation in the user's language; Reviset itself performs no model calls or automatic source translation.
+Omitting `--language` preserves prior defaults: Korean for document Markdown and English for workbook Markdown. Only `en` and `ko` are accepted. Document CLI exports use the exact `--out` path and require it to be new or empty; choose separate folders for each language. MCP tool descriptions remain English, its schemas stay unchanged, and original text remains exact evidence. A connected AI client can write its explanation in the user's language; Reviset itself performs no model calls or automatic source translation.
 
 ## Resources and checks
 

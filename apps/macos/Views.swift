@@ -135,7 +135,7 @@ struct MainView: View {
             ToolbarItemGroup(placement:.primaryAction) {
                 Button{openWindow(id:"workbooks")}label:{Label(L("doc.workspace.spreadsheets"),systemImage:"tablecells")}.help(L("doc.workspace.spreadsheetsHelp")).disabled(!model.libraryAvailable || model.initializing)
                 if !model.report.isNull {
-                    Picker(L("doc.workspace.task"),selection:$model.tab){Text(L("doc.workspace.compare")).tag("compare");Text(L("doc.workspace.history")).tag("history");Text(L("doc.workspace.export")).tag("export")}.pickerStyle(.segmented).frame(width:265)
+                    Picker(L("doc.workspace.task"),selection:$model.tab){Text(L("doc.workspace.compare")).tag("compare");Text(L("doc.workspace.history")).tag("history");Text(L("doc.workspace.export")).tag("export")}.pickerStyle(.segmented).frame(minWidth:265,idealWidth:320,maxWidth:360)
                     Button {Task{await model.exportReport()}} label:{Label(L("doc.common.export"),systemImage:"square.and.arrow.up")}
                 }
             }
@@ -164,7 +164,7 @@ struct SidebarView: View {
                 }
             }
             Spacer(minLength:5)
-            Button{model.importSheet=true}label:{Label(L("doc.import.documents"),systemImage:"plus")}.disabled(model.busy || model.loading).frame(maxWidth:.infinity).padding(14)
+            Button{model.importSheet=true}label:{Label {Text(L("doc.import.documents")).lineLimit(2).fixedSize(horizontal:false,vertical:true)} icon:{Image(systemName:"plus")}}.disabled(model.busy || model.loading).frame(maxWidth:.infinity).padding(14)
         }.background(Color(nsColor:.underPageBackgroundColor))
     }
 }
@@ -228,7 +228,7 @@ struct CompareWorkspace: View {
 }
 struct ChangeListView: View {
     @EnvironmentObject var model: AppModel
-    var body: some View {VStack(spacing:5){HStack{Picker(L("doc.changes.kind"),selection:$model.kind){Text(L("doc.changes.all")).tag("all");ForEach(changeNames.keys.sorted(),id:\.self){Text(changeNames[$0]!).tag($0)}}.frame(width:180);TextField(L("doc.changes.search"),text:$model.search).textFieldStyle(.roundedBorder).frame(maxWidth:250);Spacer();if model.loadingChanges{ProgressView().controlSize(.small)};Text(LC("doc.changes.count", model.filteredChanges.count)).font(.caption).foregroundStyle(.secondary)}.padding(.horizontal,12).padding(.top,8)
+    var body: some View {VStack(spacing:5){HStack{Picker(L("doc.changes.kind"),selection:$model.kind){Text(L("doc.changes.all")).tag("all");ForEach(changeKinds,id:\.self){Text(changeKindName($0)).tag($0)}}.frame(width:180);TextField(L("doc.changes.search"),text:$model.search).textFieldStyle(.roundedBorder).frame(maxWidth:250);Spacer();if model.loadingChanges{ProgressView().controlSize(.small)};Text(LC("doc.changes.count", model.filteredChanges.count)).font(.caption).foregroundStyle(.secondary)}.padding(.horizontal,12).padding(.top,8)
         if model.filteredChanges.isEmpty {Text(model.emptyChangesMessage).font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity).padding(12)}
         else {ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges || !model.changesFailure.isEmpty).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear) } }.padding(6) }}
     }}
@@ -240,7 +240,7 @@ struct ChangeRow: View {
     var kindName: String {changeDisplayName(change)}
     var text: String {(change["after"].isNull ? change["before"].string:change["after"].string).replacingOccurrences(of:"\n",with:" ")}
     var status: String {let value=change["lineage"]["status"].string;return value=="human_confirmed" ? L("doc.matching.humanConfirmed"):value=="needs_review" ? L("doc.matching.needsReview"):L("doc.matching.inferred")}
-    var body: some View {HStack(spacing:10){Text(kindName).font(.caption).foregroundStyle(change["kind"].string=="coverage_gap" ? Color.secondary:Color.blue).frame(width:120,alignment:.leading);VStack(alignment:.leading,spacing:3){Text(text).lineLimit(1).font(.caption);if model.tab=="history"{Text(changeVersionSummary(change,revisions:model.revisions)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)};Text(evidencePageSummary(change)).font(.caption2).foregroundStyle(.secondary)};Spacer();if change["region_pairing_assessment"].string == "inferred"{Text(L("doc.matching.regionInferred")).font(.caption2).foregroundStyle(.orange)};if change["text_assessment"].string == "inferred"{Text(L("doc.ocr.inferredReview")).font(.caption2).foregroundStyle(.orange)};if !change["appearance_assessment"].string.isEmpty{Text(change["appearance_assessment"].string=="observed" ? L("doc.appearance.observed"):L("doc.appearance.inferred")).font(.caption2).foregroundStyle(.orange)};Text(status).font(.caption2).foregroundStyle(.secondary)}.padding(.vertical,3)}
+    var body: some View {HStack(spacing:10){Text(kindName).font(.caption).foregroundStyle(change["kind"].string=="coverage_gap" ? Color.secondary:Color.blue).lineLimit(2).fixedSize(horizontal:false,vertical:true).frame(width:155,alignment:.leading).help(kindName);VStack(alignment:.leading,spacing:3){Text(text).lineLimit(1).font(.caption);if model.tab=="history"{Text(changeVersionSummary(change,revisions:model.revisions)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)};Text(evidencePageSummary(change)).font(.caption2).foregroundStyle(.secondary)};Spacer();if change["region_pairing_assessment"].string == "inferred"{Text(L("doc.matching.regionInferred")).font(.caption2).foregroundStyle(.orange)};if change["text_assessment"].string == "inferred"{Text(L("doc.ocr.inferredReview")).font(.caption2).foregroundStyle(.orange)};if !change["appearance_assessment"].string.isEmpty{Text(change["appearance_assessment"].string=="observed" ? L("doc.appearance.observed"):L("doc.appearance.inferred")).font(.caption2).foregroundStyle(.orange)};Text(status).font(.caption2).foregroundStyle(.secondary)}.padding(.vertical,3)}
 }
 
 struct InspectorView: View {
@@ -353,7 +353,7 @@ struct HistoryGraphView:View {
                             VStack(spacing:4) {
                                 if members.isEmpty { Text("—").font(.caption).foregroundStyle(.secondary).padding(.vertical,7) }
                                 ForEach(members) { page in
-                                    Button { model.openHistoryPage(i,page["page_id"].string) } label: { Text("p.\(page["page"].int)").font(.caption).frame(width:115).padding(.vertical,7).background(Color.green.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain).accessibilityLabel(L("doc.history.openPage", .verbatim(r["label"].string), .count(page["page"].int)))
+                                    Button { model.openHistoryPage(i,page["page_id"].string) } label: { Text("p.\(page["page"].int)").font(.caption).frame(width:115).padding(.vertical,7).background(Color.green.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius:4)) }.buttonStyle(.plain).accessibilityLabel(L("doc.history.openPage", .verbatim(r["label"].string), .integer(page["page"].int)))
                                 }
                             }.frame(width:130)
                         }
@@ -374,19 +374,22 @@ struct ExportView: View {
 struct ImportView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
-    @State private var title=L("doc.import.defaultTitle")
+    @State private var title=""
+    @State private var titleEdited=false
+    private var effectiveTitle:String { titleEdited ? title : L("doc.import.defaultTitle") }
+    private var titleBinding:Binding<String> { Binding(get:{effectiveTitle},set:{title=$0;titleEdited=true}) }
     @State private var rows:[ImportRow]=[]
     @State private var saving=false
     @State private var choosing=false
     @State private var failureMessage=UIMessage.raw("")
     private var failure:String {get{failureMessage.text} nonmutating set{failureMessage = .raw(newValue)}}
-    init(initialRows:[ImportRow]=[],initialTitle:String?=nil){_rows=State(initialValue:initialRows);_title=State(initialValue:initialTitle ?? L("doc.import.defaultTitle"))}
+    init(initialRows:[ImportRow]=[],initialTitle:String?=nil){_rows=State(initialValue:initialRows);_title=State(initialValue:initialTitle ?? "");_titleEdited=State(initialValue:initialTitle != nil)}
     var locked:Bool{saving || choosing}
     var body: some View {
         VStack(alignment:.leading,spacing:17){
             HStack{Text(L("doc.import.documents")).font(.title2.weight(.semibold));Spacer();Button(L("doc.common.close")){dismiss()}.keyboardShortcut(.cancelAction).disabled(locked)}
             Text(L("doc.import.description")).font(.callout).foregroundStyle(.secondary)
-            TextField(L("doc.import.projectName"),text:$title).textFieldStyle(.roundedBorder).disabled(locked).accessibilityIdentifier("Reviset.import.projectTitle")
+            TextField(L("doc.import.projectName"),text:titleBinding).textFieldStyle(.roundedBorder).disabled(locked).accessibilityIdentifier("Reviset.import.projectTitle")
             Button{choose()}label:{Label(L("doc.import.chooseFiles"),systemImage:"plus")}.disabled(locked)
             List{
                 ForEach(Array(rows.enumerated()),id:\.element.id){i,r in
@@ -413,7 +416,7 @@ struct ImportView: View {
                 Text(L("doc.import.integrityHelp")).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if locked{ProgressView().controlSize(.small);Text(choosing ? L("doc.import.checking"):L("doc.import.saving")).font(.caption)}
-                Button(L("doc.import.analyze")){Task{await create()}}.buttonStyle(.borderedProminent).disabled(locked || rows.isEmpty || title.trimmingCharacters(in:.whitespaces).isEmpty || rows.contains{$0.label.trimmingCharacters(in:.whitespaces).isEmpty})
+                Button(L("doc.import.analyze")){Task{await create()}}.buttonStyle(.borderedProminent).disabled(locked || rows.isEmpty || effectiveTitle.trimmingCharacters(in:.whitespaces).isEmpty || rows.contains{$0.label.trimmingCharacters(in:.whitespaces).isEmpty})
             }
         }.padding(25).frame(width:900)
     }
@@ -428,5 +431,5 @@ struct ImportView: View {
             }
         }
     }
-    func create() async {saving=true;do{let p=try await model.create(title:title,rows:rows);model.report=JSON();try await model.refresh();model.projectID=p["project_id"].string;dismiss();await model.run(model.projectID)}catch{failureMessage=bridgeErrorMessage(error)};saving=false}
+    func create() async {saving=true;do{let p=try await model.create(title:effectiveTitle,rows:rows);model.report=JSON();try await model.refresh();model.projectID=p["project_id"].string;dismiss();await model.run(model.projectID)}catch{failureMessage=bridgeErrorMessage(error)};saving=false}
 }

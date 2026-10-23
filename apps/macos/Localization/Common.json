@@ -1,31 +1,54 @@
 {
-  "language.system": {"en": "System Default", "ko": "시스템 기본값"},
-  "language.en": {"en": "English", "ko": "English"},
-  "language.ko": {"en": "한국어", "ko": "한국어"},
-  "common.cancel": {"en": "Cancel", "ko": "취소"},
-  "common.close": {"en": "Close", "ko": "닫기"},
-  "common.done": {"en": "Done", "ko": "완료"},
-  "common.ok": {"en": "OK", "ko": "확인"},
-  "common.save": {"en": "Save", "ko": "저장"},
-  "common.delete": {"en": "Delete", "ko": "삭제"},
-  "common.remove": {"en": "Remove", "ko": "제거"},
-  "common.add": {"en": "Add", "ko": "추가"},
-  "common.continue": {"en": "Continue", "ko": "계속"},
-  "common.back": {"en": "Back", "ko": "뒤로"},
-  "common.next": {"en": "Next", "ko": "다음"},
-  "common.retry": {"en": "Retry", "ko": "다시 시도"},
-  "common.loading": {"en": "Loading…", "ko": "불러오는 중…"},
-  "common.none": {"en": "None", "ko": "없음"},
-  "common.unknown": {"en": "Unknown", "ko": "확인 필요"},
-  "error.title": {"en": "Unable to Complete", "ko": "작업을 완료하지 못했습니다"},
-  "ocr.language.en": {"en": "English", "ko": "영어"},
-  "ocr.language.ko": {"en": "Korean", "ko": "한국어"},
-  "ocr.language.ja": {"en": "Japanese", "ko": "일본어"},
-  "ocr.language.zh_hans": {"en": "Simplified Chinese", "ko": "중국어 간체"},
-  "ocr.language.zh_hant": {"en": "Traditional Chinese", "ko": "중국어 번체"},
-  "ocr.language.fr": {"en": "French", "ko": "프랑스어"},
-  "ocr.language.de": {"en": "German", "ko": "독일어"},
-  "ocr.language.es": {"en": "Spanish", "ko": "스페인어"},
-  "ocr.language.ar": {"en": "Arabic", "ko": "아랍어"},
-  "ocr.language.he": {"en": "Hebrew", "ko": "히브리어"}
+  "language.system": {
+    "en": "System Default",
+    "ko": "시스템 기본값"
+  },
+  "language.en": {
+    "en": "English",
+    "ko": "English"
+  },
+  "language.ko": {
+    "en": "한국어",
+    "ko": "한국어"
+  },
+  "ocr.language.en": {
+    "en": "English",
+    "ko": "영어"
+  },
+  "ocr.language.ko": {
+    "en": "Korean",
+    "ko": "한국어"
+  },
+  "ocr.language.ja": {
+    "en": "Japanese",
+    "ko": "일본어"
+  },
+  "ocr.language.zh_hans": {
+    "en": "Simplified Chinese",
+    "ko": "중국어 간체"
+  },
+  "ocr.language.zh_hant": {
+    "en": "Traditional Chinese",
+    "ko": "중국어 번체"
+  },
+  "ocr.language.fr": {
+    "en": "French",
+    "ko": "프랑스어"
+  },
+  "ocr.language.de": {
+    "en": "German",
+    "ko": "독일어"
+  },
+  "ocr.language.es": {
+    "en": "Spanish",
+    "ko": "스페인어"
+  },
+  "ocr.language.ar": {
+    "en": "Arabic",
+    "ko": "아랍어"
+  },
+  "ocr.language.he": {
+    "en": "Hebrew",
+    "ko": "히브리어"
+  }
 }
