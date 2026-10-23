@@ -390,7 +390,7 @@ internal sealed class MainWindow : Window
         if (!preserveInterval) { intervalFrom = Before.RevisionId; intervalTo = After.RevisionId; } UpdateInterval();
         InvalidateAuthority(true); Before.Invalidate(); After.Invalidate();
         var revisions = currentReport.Get("revisions").Items(); var from = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalFrom); var to = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalTo);
-        if (from < 0 || to < 0 || from > to) { ComparisonState = "invalid"; detail.Text = Copy["reverse"]; status.Text = Copy["reverse"]; return; }
+        if (from < 0 || to < 0 || from > to) { ComparisonState = "invalid"; Before.Invalidate("invalid"); After.Invalidate("invalid"); detail.Text = Copy["reverse"]; status.Text = Copy["reverse"]; return; }
         try { await Before.Load(ticket, reads.Token); if (ticket != generation) return; await After.Load(ticket, reads.Token); if (ticket != generation) return; await LoadChanges(false, ticket, reads.Token); }
         catch { if (IsCurrent(ticket) && !reads.IsCancellationRequested) FailComparison(); throw; }
     }
@@ -493,10 +493,11 @@ internal sealed class MainWindow : Window
         // the application an exact descriptor; fixed reports remain untouched.
         await Bridge.Call("recover", token: token); await Bridge.Call("workbookRecover", token: token);
     }
-    private async Task Reorder()
+    private Task Reorder() => ReorderCore(null);
+    private async Task ReorderCore(Action<ImportWindow>? prepareForSmoke)
     {
         if (busy || IsWorkbook || projectId.Length == 0) return;
-        var selectedProject = projectId; var ticket = generation; var projects = await Bridge.Call("projects", token: reads.Token); if (!IsCurrent(ticket) || busy || IsWorkbook || projectId != selectedProject) return; var project = projects.Items().Find(v => v.Get("project_id").Text() == selectedProject); var dialog = new ImportWindow(Copy, false, project.Get("revisions").Items()) { Owner = this }; if (dialog.ShowDialog() != true || busy || projectId != selectedProject) return;
+        var selectedProject = projectId; var ticket = generation; var projects = await Bridge.Call("projects", token: reads.Token); if (!IsCurrent(ticket) || busy || IsWorkbook || projectId != selectedProject) return; var project = projects.Items().Find(v => v.Get("project_id").Text() == selectedProject); var dialog = new ImportWindow(Copy, false, project.Get("revisions").Items()) { Owner = this }; prepareForSmoke?.Invoke(dialog); if (dialog.ShowDialog() != true || busy || projectId != selectedProject) return;
         var owned = new CancellationTokenSource(); operation = owned; var previous = AdmitMutation(); var completed = false;
         try { await RecoverBeforeMutation(owned.Token); currentProject = await Bridge.Call("reorder", new { project_id = selectedProject, order = dialog.Rows.Select(v => v.OriginalIndex).ToArray(), draft_hash = project.Get("draft_hash").Text() }, owned.Token); await OpenProjectCore(currentProject); await RefreshProjects(); completed = true; } finally { await FinishMutation(owned, previous, completed); }
     }
@@ -893,10 +894,34 @@ internal sealed class MainWindow : Window
     {
         var versions = currentReport.Get("revisions").Items(); Before.SetEvidenceRevision(versions[before].Get("revision_occurrence_id").Text()); After.SetEvidenceRevision(versions[after].Get("revision_occurrence_id").Text()); Before.RestoreDefaultSelection(); After.RestoreDefaultSelection(); await ReloadComparison();
     }
+    internal async Task<object> CheckReorderForSmoke(Func<Task<string>> fixedReportDigest)
+    {
+        if (IsWorkbook || reportId.Length == 0) throw new InvalidOperationException("Draft reorder control requires a pinned document report.");
+        var project = projectId; var pinned = reportId; var snapshotLabels = currentReport.Get("revisions").Items().Select(item => item.Get("label").Text()).ToArray();
+        var before = (await Bridge.Call("projects")).Items().First(item => item.Get("project_id").Text() == project); var original = before.Get("revisions").Items().Select(item => item.Get("label").Text()).ToArray(); if (original.Length < 2 || !Regex.IsMatch(before.Get("draft_hash").Text(), "^[a-f0-9]{64}$", RegexOptions.CultureInvariant)) throw new InvalidOperationException("Production projects response lacks the current reorder draft identity.");
+        var expected = original.ToArray(); (expected[0], expected[1]) = (expected[1], expected[0]); var originalDigest = await fixedReportDigest(); var reportsBefore = (await Bridge.Call("reports", new { project_id = project })).GetRawText(); Exception? dialogFailure = null;
+        static IEnumerable<DependencyObject> Visit(DependencyObject parent) { for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++) { var child = VisualTreeHelper.GetChild(parent, index); yield return child; foreach (var nested in Visit(child)) yield return nested; } }
+        await ReorderCore(dialog => dialog.Loaded += (_, _) => dialog.Dispatcher.BeginInvoke(() =>
+        {
+            try
+            {
+                var table = Visit(dialog).OfType<DataGrid>().Single(); var buttons = Visit(dialog).OfType<Button>().ToArray(); table.SelectedIndex = 0;
+                buttons.Single(button => button.Content as string == Copy["down"]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                if (!dialog.Rows.Select(item => item.Label).SequenceEqual(expected) || !dialog.Rows.Select(item => item.OriginalIndex).Take(2).SequenceEqual(new[] { 1, 0 })) throw new InvalidOperationException("Native reorder Move down did not change the actual labelled input order.");
+                buttons.Single(button => button.Content as string == Copy["save"]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            }
+            catch (Exception error) { dialogFailure = error; dialog.DialogResult = false; }
+        }));
+        if (dialogFailure is not null) throw new InvalidOperationException("Native production reorder dialog failed.", dialogFailure);
+        var after = (await Bridge.Call("projects")).Items().First(item => item.Get("project_id").Text() == project); var afterDigest = await fixedReportDigest(); var reportsAfter = (await Bridge.Call("reports", new { project_id = project })).GetRawText();
+        if (!after.Get("revisions").Items().Select(item => item.Get("label").Text()).SequenceEqual(expected) || !after.Get("dirty").Flag() || after.Get("draft_hash").Text() == before.Get("draft_hash").Text() || !Regex.IsMatch(after.Get("draft_hash").Text(), "^[a-f0-9]{64}$", RegexOptions.CultureInvariant) || projectId != project || reportId != pinned || ComparisonState != "ready" || !currentReport.Get("revisions").Items().Select(item => item.Get("label").Text()).SequenceEqual(snapshotLabels) || reportsBefore != reportsAfter || afterDigest != originalDigest) throw new InvalidOperationException("Production native reorder failed to update only the dirty draft while preserving the exact pinned report.");
+        return new { project_id = project, report_id = pinned, draft_order_before = original, draft_order_after = expected, dirty = true, draft_hash_before = before.Get("draft_hash").Text(), draft_hash_after = after.Get("draft_hash").Text(), fixed_report_body_sha256 = originalDigest, fixed_report_bytes_unchanged = true, dialog_route = "actual native Move down and Save controls through the production Reorder action" };
+    }
     internal async Task CheckOrderAndAbsenceForSmoke()
     {
         var versions = currentReport.Get("revisions").Items(); var first = versions.First().Get("revision_occurrence_id").Text(); var last = versions.Last().Get("revision_occurrence_id").Text();
-        Before.SetEvidenceRevision(last); After.SetEvidenceRevision(first); await ReloadComparison(); if (ComparisonState != "invalid" || ActionableChanges != 0 || detail.Text != Copy["reverse"]) throw new InvalidOperationException("Reverse interval was presented as an empty success.");
+        Before.SetEvidenceRevision(last); After.SetEvidenceRevision(first); await ReloadComparison(); if (ComparisonState != "invalid" || ActionableChanges != 0 || detail.Text != Copy["reverse"] || Before.ReadState != "invalid" || After.ReadState != "invalid" || Before.PresentedFallback != Copy["reverse"] || After.PresentedFallback != Copy["reverse"] || Before.Cells.Items.Count != 0 || After.Cells.Items.Count != 0 || Before.PageImage.Source is not null || After.PageImage.Source is not null) throw new InvalidOperationException("Reverse interval retained source data or false loading instead of explicit invalid guidance.");
+        var invalidTicket = generation; var invalidReport = reportId; foreach (var language in new[] { "ko", "en" }) { SetLanguage(language); if (generation != invalidTicket || reportId != invalidReport || Before.ReadState != "invalid" || After.ReadState != "invalid" || Before.PresentedFallback != Copy["reverse"] || After.PresentedFallback != Copy["reverse"]) throw new InvalidOperationException("Invalid interval locale update lost explicit guidance or changed source scope."); }
         Before.SetEvidenceRevision(first); After.SetEvidenceRevision(last); Before.RestoreDefaultSelection(); After.RestoreDefaultSelection(); await ReloadComparison();
         if (IsWorkbook)
         {

@@ -138,7 +138,7 @@ internal sealed class ComparePane
     {
         ++gridGeneration; ++pageGeneration; pageRead.Cancel(); ReadState = state; loadedGridScope = null; gridValue = default; previewScope = null; previewSource = ""; previewReason = ""; previewText = "";
         var previous = binding; binding = true; Cells.SelectedCells.Clear(); Cells.ItemsSource = null; binding = previous; Cells.IsEnabled = false; showFormula.IsEnabled = false;
-        PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; fallback.Text = owner.Copy[state == "failed" ? "failed" : "loading"]; source.Text = ""; retry.Visibility = state == "failed" ? Visibility.Visible : Visibility.Collapsed;
+        PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; fallback.Text = owner.Copy[state == "invalid" ? "reverse" : state == "failed" ? "failed" : "loading"]; source.Text = ""; retry.Visibility = state == "failed" ? Visibility.Visible : Visibility.Collapsed;
     }
     internal bool AuthorizesCell(int requestedRow, int requestedColumn) => ReadState == "ready" && loadedGridScope is { } scope && scope.Project == owner.ProjectId && scope.Report == owner.ReportId && scope.Revision == RevisionId && scope.Sheet == SheetId && scope.Row == row && scope.Column == column && requestedRow >= row && requestedRow < row + 50 && requestedColumn >= column && requestedColumn < Math.Min(16385, column + 8);
     internal void SetRevisions(List<JsonElement> items, int index)
@@ -383,6 +383,7 @@ internal sealed class ComparePane
     }
     private void RerenderPresentation()
     {
+        if (ReadState == "invalid") { fallback.Text = owner.Copy["reverse"]; return; }
         if (ReadState == "failed") { fallback.Text = owner.Copy["failed"]; return; }
         if (ReadState == "loading") { fallback.Text = owner.Copy["loading"]; return; }
         if (ReadState == "empty") { fallback.Text = owner.Copy["selectPage"]; return; }

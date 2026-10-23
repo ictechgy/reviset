@@ -58,7 +58,7 @@ internal sealed class AppPreferences
             using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 16 });
             // Probe the schema envelope before decoding any version-specific fields.
             // Future schemas may change the type of every currently known field.
-            if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("Version", out var version) && (version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var number) || number != 1)) return new() { IsReadOnly = true };
+            if (document.RootElement.ValueKind != JsonValueKind.Object || !document.RootElement.TryGetProperty("Version", out var version) || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var number) || number != 1) return new() { IsReadOnly = true };
             var prefs = JsonSerializer.Deserialize<AppPreferences>(bytes, new JsonSerializerOptions { MaxDepth = 16 });
             if (prefs is null) return new();
             if (prefs.Version != 1) return new() { IsReadOnly = true };

@@ -15,6 +15,19 @@ try
     await File.WriteAllTextAsync(path, "{\"Version\":99,\"future\":\"preserve me\"}"); var futureBytes = await File.ReadAllBytesAsync(path); var future = AppPreferences.Load(path); future.Language = "ko"; future.Save(path); var afterFuture = await File.ReadAllBytesAsync(path); Require(future.IsReadOnly && futureBytes.SequenceEqual(afterFuture), "future schema retained without overwrite");
     foreach (var shape in new[] { "{\"Version\":2,\"Document\":[],\"Workbook\":false,\"Language\":{}}", "{\"Version\":\"next\",\"Document\":12}" }) { await File.WriteAllTextAsync(path, shape); var next = AppPreferences.Load(path); next.Save(path); Require(next.IsReadOnly && await File.ReadAllTextAsync(path) == shape, "future schema with changed known field types retained"); }
     var deepFuture = "{\"Version\":2,\"Document\":" + new string('[', 20) + "0" + new string(']', 20) + "}"; await File.WriteAllTextAsync(path, deepFuture); var deep = AppPreferences.Load(path); deep.Save(path); Require(deep.IsReadOnly && await File.ReadAllTextAsync(path) == deepFuture, "deep valid future schema retained read-only before bounded decode");
+    foreach (var marker in new[]
+    {
+        (Name: "missing", Json: "{\"Document\":{},\"opaque\":\"한글 {0}%\"}"),
+        (Name: "null", Json: "{\"Version\":null,\"Document\":{}}"),
+        (Name: "boolean", Json: "{\"Version\":true,\"Document\":{}}"),
+        (Name: "numeric string", Json: "{\"Version\":\"1\",\"Document\":{}}"),
+        (Name: "noninteger", Json: "{\"Version\":1.5,\"Document\":{}}"),
+        (Name: "null envelope", Json: "null")
+    })
+    {
+        await File.WriteAllTextAsync(path, marker.Json); var original = await File.ReadAllBytesAsync(path); var unknown = AppPreferences.Load(path); unknown.Language = "ko"; unknown.Document.Named["session only"] = new(); unknown.Save(path); var preserved = await File.ReadAllBytesAsync(path);
+        Require(unknown.IsReadOnly && original.SequenceEqual(preserved), marker.Name + " schema marker preserves existing preference bytes read-only");
+    }
     await File.WriteAllTextAsync(path, "{\"Version\":1,\"Document\":null,\"Workbook\":{\"Current\":null,\"Named\":null}}"); var nulls = AppPreferences.Load(path); Require(nulls.Document.Current == new WorkspaceLayout() && nulls.Workbook.Named.Count == 0, "null nested settings recovered");
     await File.WriteAllTextAsync(path, "bad json"); Require(AppPreferences.Load(path).Language == "en", "corrupt JSON recovered");
     var tooMany = new AppPreferences(); for (var index = 0; index < 30; index++) tooMany.Document.Named[index.ToString()] = new(); tooMany.Save(path); Require(AppPreferences.Load(path).Document.Named.Count == 12, "named presets bounded at twelve");
