@@ -261,7 +261,7 @@ struct InspectorView: View {
     }
     var editable: Bool { mappingUnavailableReason == nil }
     var structural: Bool { !model.selected["topology"].isNull }
-    var neutralText:Bool {structural || ["coverage_gap","text_occluded","text_struck_through","text_revealed"].contains(model.selected["kind"].string) || isReferenceAppearanceChange(model.selected)}
+    var neutralText:Bool {structural || ["coverage_gap","text_occluded","text_struck_through","text_revealed"].contains(model.selected["kind"].string) || isReferenceAppearanceChange(model.selected) || (model.selected["kind"].string == "visual_region_changed" && model.selected["coverage_gaps"].array.contains(where:{$0["reason"].string == "pdf_visual_difference_without_text_change"}))}
     func sourceText(_ value:JSON,other:JSON,before:Bool)->Text {
         if value.isNull{return Text("해당 버전에서 원문 없음").foregroundColor(.secondary)}
         if neutralText{return Text(value.string).foregroundColor(.primary)}
