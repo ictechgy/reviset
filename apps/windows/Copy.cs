@@ -29,6 +29,7 @@ internal sealed class Copy
         ["sparseShort"] = ("— = not materialized · stored values, no recalculation", "— = 관측 없음 · 저장된 값, 재계산 안 함"),
         ["formula"] = ("Formula", "수식"), ["cached"] = ("Stored value", "저장된 값"), ["showFormula"] = ("Show formulas in grid", "표에 수식 표시"), ["noChanges"] = ("No observed changes in this range. Coverage limits still apply.", "이 범위에서 관측된 변경이 없습니다. 관측 한계는 유지됩니다."),
         ["styleDetail"] = ("Read full source style fields", "전체 원본 스타일 필드 읽기"),
+        ["preferencesReadOnly"] = ("Saved preferences were preserved read-only. Layout changes apply to this session.", "저장된 설정을 읽기 전용으로 보존했습니다. 배치 변경은 이번 실행에 적용됩니다."),
         ["title"] = ("Project title", "프로젝트 이름"), ["label"] = ("Version label", "버전 이름"), ["files"] = ("Source files", "원본 파일"), ["add"] = ("Add version…", "버전 추가…"), ["up"] = ("Move up", "위로"), ["down"] = ("Move down", "아래로"), ["remove"] = ("Remove", "제거"), ["start"] = ("Import and analyze", "가져오기 및 분석"),
         ["documentHint"] = ("Add versions in chronological order. Each version accepts one PDF, one PPTX, or a PDF + PPTX pair. Source files are copied after SHA-256 verification.", "버전을 시간순으로 추가하세요. 각 버전은 PDF, PPTX 하나 또는 PDF + PPTX 묶음을 받습니다. SHA-256 검증 후 원본을 복사합니다."),
         ["workbookHint"] = ("Add one XLSX, ODS or UTF-8 comma-delimited CSV per version, in chronological order. Formulas and macros are never executed.", "각 버전에 XLSX, ODS 또는 UTF-8 쉼표 구분 CSV 하나를 시간순으로 추가하세요. 수식과 매크로를 실행하지 않습니다."),

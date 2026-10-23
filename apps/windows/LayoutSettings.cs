@@ -65,7 +65,7 @@ internal sealed class AppPreferences
             prefs.Language = prefs.Language == "ko" ? "ko" : "en";
             prefs.Document = Clean(prefs.Document); prefs.Workbook = Clean(prefs.Workbook); return prefs;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { return new(); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException) { return new() { IsReadOnly = true }; }
     }
     private static WorkspacePreferences Clean(WorkspacePreferences? value)
     {

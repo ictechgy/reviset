@@ -34,6 +34,7 @@ internal sealed class MainWindow : Window
     private readonly ComboBox reports = new() { MinWidth = 180, MaxWidth = 390, Margin = new Thickness(6, 2, 12, 2) };
     private readonly TextBox detail = SourceText();
     private readonly TextBlock detailRange = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8) };
+    private readonly StackPanel detailPaging = new();
     private readonly TextBox detailMetadata = SourceText();
     private Button firstDetail = new();
     private Button nextDetail = new();
@@ -63,6 +64,8 @@ internal sealed class MainWindow : Window
     private bool binding;
     private bool closed;
     private bool busy;
+    private bool restoringOperation;
+    private sealed record ComparisonSelection(string Project, string Report, bool Workbook, JsonElement Draft, JsonElement Snapshot, PaneSelection Before, PaneSelection After, string IntervalFrom, string IntervalTo);
     private string projectId = "";
     private string reportId = "";
     private JsonElement currentProject;
@@ -140,7 +143,7 @@ internal sealed class MainWindow : Window
         changeList.ItemsSource = changes; changeDock.Children.Add(changeList); ChangesPane.Child = changeDock;
         changeList.SelectionChanged += async (_, _) => { if (!binding && changeList.SelectedItem is Choice choice) await Guard(() => SelectChange(choice.Value)); };
         var inspector = new DockPanel(); var caption = Caption("evidence"); DockPanel.SetDock(caption, Dock.Top); inspector.Children.Add(caption);
-        var paging = new StackPanel(); var pagingButtons = new WrapPanel(); firstDetail = Command("firstText", FirstDetail); nextDetail = Command("nextText", NextDetail); pagingButtons.Children.Add(firstDetail); pagingButtons.Children.Add(nextDetail); paging.Children.Add(pagingButtons); BindText(detailStyle, "styleDetail"); paging.Children.Add(detailStyle); detailStyle.Click += async (_, _) => await Guard(FirstDetail); paging.Children.Add(detailRange); DockPanel.SetDock(paging, Dock.Top); inspector.Children.Add(paging);
+        var pagingButtons = new WrapPanel(); firstDetail = Command("firstText", FirstDetail); nextDetail = Command("nextText", NextDetail); pagingButtons.Children.Add(firstDetail); pagingButtons.Children.Add(nextDetail); detailPaging.Children.Add(pagingButtons); BindText(detailStyle, "styleDetail"); detailPaging.Children.Add(detailStyle); detailStyle.Click += async (_, _) => await Guard(FirstDetail); detailPaging.Children.Add(detailRange); DockPanel.SetDock(detailPaging, Dock.Top); inspector.Children.Add(detailPaging);
         var metadata = new Expander { Header = "Source metadata / 원본 메타데이터", IsExpanded = false, Content = detailMetadata, MaxHeight = 180 }; DockPanel.SetDock(metadata, Dock.Bottom); inspector.Children.Add(metadata); inspector.Children.Add(detail); InspectorPane.Child = inspector;
         root.Children.Add(workspace); ClearDetail(); SetBusy(false);
     }
@@ -169,8 +172,9 @@ internal sealed class MainWindow : Window
     private void Localize()
     {
         foreach (var action in relocalize) action(); Before.Localize(); After.Localize();
+        detailPaging.Visibility = IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
         foreach (var splitter in NativeSplitters()) if (splitter.Tag is string key) { AutomationProperties.SetName(splitter, Copy[key]); splitter.ToolTip = Copy[key]; }
-        if (!busy) status.Text = Copy["ready"]; UpdateContext(); UpdateInterval();
+        if (!busy) status.Text = Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"]; UpdateContext(); UpdateInterval();
     }
     internal void SavePreferences()
     {
@@ -194,6 +198,7 @@ internal sealed class MainWindow : Window
     }
     private void SaveNamedLayout()
     {
+        if (Preferences.IsReadOnly) { MessageBox.Show(this, Copy["preferencesReadOnly"], Copy["saveLayout"]); return; }
         var dialog = new Window { Owner = this, Title = Copy["saveLayout"], Width = 420, Height = 180, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         var stack = new StackPanel { Margin = new Thickness(16) }; var field = new TextBox { MaxLength = 48, Margin = new Thickness(0, 8, 0, 8) }; stack.Children.Add(new TextBlock { Text = Copy["layoutName"] }); stack.Children.Add(field);
         var save = new Button { Content = Copy["save"], IsDefault = true, Padding = new Thickness(12, 5, 12, 5), HorizontalAlignment = HorizontalAlignment.Right }; stack.Children.Add(save); dialog.Content = stack;
@@ -218,7 +223,8 @@ internal sealed class MainWindow : Window
         }
         else { center.Children.Add(comparison); Grid.SetRow(comparison, 0); Grid.SetColumn(comparison, 0); }
         var columns = new List<(UIElement Element, double Width, string Role)>();
-        if (layout.Sidebar) columns.Add((SidebarPane, layout.SidebarWidth, "sidebar"));
+        // Narrow displays temporarily prioritize the source panes; preference is retained.
+        if (layout.Sidebar && (workspace.ActualWidth <= 0 || workspace.ActualWidth >= 1150)) columns.Add((SidebarPane, layout.SidebarWidth, "sidebar"));
         if (layout.Inspector && layout.InspectorSide == "left") columns.Add((InspectorPane, layout.InspectorWidth, "inspector"));
         if (layout.ChangesVisible && layout.Changes == "left") columns.Add((ChangesPane, layout.ChangesWidth, "changes"));
         columns.Add((center, 0, "main"));
@@ -254,7 +260,7 @@ internal sealed class MainWindow : Window
     }
     private GridSplitter Splitter(bool vertical, string name, Action persist)
     {
-        var splitter = new GridSplitter { Background = new SolidColorBrush(Color.FromRgb(233, 236, 241)), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, ResizeDirection = vertical ? GridResizeDirection.Columns : GridResizeDirection.Rows, ResizeBehavior = GridResizeBehavior.PreviousAndNext, ShowsPreview = true, Focusable = true, KeyboardIncrement = 10 };
+        var splitter = new NativeSplitter { Persist = persist, Background = new SolidColorBrush(Color.FromRgb(233, 236, 241)), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, ResizeDirection = vertical ? GridResizeDirection.Columns : GridResizeDirection.Rows, ResizeBehavior = GridResizeBehavior.PreviousAndNext, ShowsPreview = true, Focusable = true, KeyboardIncrement = 10 };
         AutomationProperties.SetName(splitter, Copy[name]); splitter.ToolTip = Copy[name]; splitter.Tag = name;
         splitter.DragCompleted += (_, _) => persist();
         splitter.AddHandler(Keyboard.KeyUpEvent, new KeyEventHandler((_, args) => { if (args.Key is Key.Left or Key.Right or Key.Up or Key.Down) persist(); }), true); return splitter;
@@ -305,7 +311,7 @@ internal sealed class MainWindow : Window
     }
     internal async Task ReloadComparison()
     {
-        if (binding || reportId.Length == 0) return; var ticket = BeginScope();
+        if (binding || reportId.Length == 0 || busy && !restoringOperation) return; var ticket = BeginScope();
         intervalFrom = Before.RevisionId; intervalTo = After.RevisionId; UpdateInterval();
         InvalidateAuthority(true); Before.Invalidate(); After.Invalidate();
         var revisions = currentReport.Get("revisions").Items(); var from = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalFrom); var to = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalTo);
@@ -336,6 +342,26 @@ internal sealed class MainWindow : Window
     private void SetBusy(bool value)
     {
         busy = value; progress.Visibility = value ? Visibility.Visible : Visibility.Collapsed; cancelButton.IsEnabled = value; importButton.IsEnabled = !value; analyzeButton.IsEnabled = !value && projectId.Length > 0; reorderButton.IsEnabled = !value && !IsWorkbook && projectId.Length > 0; exportButton.IsEnabled = !value && reportId.Length > 0; mcpButton.IsEnabled = !value && reportId.Length > 0; documents.IsEnabled = !value; workbooks.IsEnabled = !value; projectList.IsEnabled = !value; reports.IsEnabled = !value; Before.NavigationEnabled(!value); After.NavigationEnabled(!value);
+        changeList.IsEnabled = !value && changesReady; more.IsEnabled = !value && changesReady && nextChanges.Length > 0; Before.Cells.IsEnabled = !value && Before.ReadState == "ready"; After.Cells.IsEnabled = !value && After.ReadState == "ready"; firstDetail.IsEnabled = !value && detailLoader is not null && (detailOffset > 0 || detailCursor.Length > 0); nextDetail.IsEnabled = !value && detailLoader is not null && (detailNext is not null || detailItemNext.Length > 0);
+    }
+    private ComparisonSelection AdmitMutation()
+    {
+        var saved = new ComparisonSelection(projectId, reportId, IsWorkbook, currentProject, currentReport, Before.CaptureSelection(), After.CaptureSelection(), intervalFrom, intervalTo);
+        BeginScope(); InvalidateAuthority(true); Before.Invalidate(); After.Invalidate(); SetBusy(true); return saved;
+    }
+    private async Task RestoreAfterMutation(ComparisonSelection saved)
+    {
+        if (closed) return;
+        if (saved.Project.Length == 0 || saved.Report.Length == 0 || saved.Snapshot.ValueKind != JsonValueKind.Object) { FailComparison(); return; }
+        restoringOperation = true;
+        try
+        {
+            projectId = saved.Project; reportId = saved.Report; IsWorkbook = saved.Workbook; currentProject = saved.Draft; currentReport = saved.Snapshot;
+            var revisions = currentReport.Get("revisions").Items(); Before.SetRevisions(revisions, 0); After.SetRevisions(revisions, Math.Max(0, revisions.Count - 1)); Before.RestoreSelection(saved.Before); After.RestoreSelection(saved.After); intervalFrom = saved.IntervalFrom; intervalTo = saved.IntervalTo; UpdateInterval(); UpdateContext();
+            var ticket = BeginScope(); InvalidateAuthority(true); await Before.Load(ticket, reads.Token); await After.Load(ticket, reads.Token); await LoadChanges(false, ticket, reads.Token);
+        }
+        catch { FailComparison(); }
+        finally { restoringOperation = false; }
     }
     private async Task Import()
     {
@@ -344,7 +370,7 @@ internal sealed class MainWindow : Window
     }
     internal async Task ImportAndAnalyze(string title, IReadOnlyList<ImportRow> rows)
     {
-        if (busy) return; operation = new(); SetBusy(true); status.Text = Copy["importing"];
+        if (busy) return; operation = new(); var previous = AdmitMutation(); var completed = false; status.Text = Copy["importing"];
         try
         {
             var input = new List<object>(); foreach (var row in rows)
@@ -355,18 +381,20 @@ internal sealed class MainWindow : Window
             var project = await Bridge.Call(IsWorkbook ? "workbookCreate" : "create", new { title, revisions = input }, operation.Token);
             currentProject = project; projectId = project.Get("project_id").Text(); reportId = ""; BeginScope(); ClearReport();
             await AnalyzeCore(operation.Token);
+            completed = true;
         }
-        finally { operation.Dispose(); operation = null; SetBusy(false); await RefreshProjects(); }
+        finally { if (!completed) await RestoreAfterMutation(previous); operation.Dispose(); operation = null; SetBusy(false); await RefreshProjects(); }
     }
-    private async Task Analyze()
+    private Task Analyze() => AnalyzeWithStarted(null);
+    private async Task AnalyzeWithStarted(Action<int>? startedForSmoke)
     {
-        if (busy || projectId.Length == 0) return; operation = new(); SetBusy(true); BeginScope();
-        try { await AnalyzeCore(operation.Token); }
-        finally { operation.Dispose(); operation = null; SetBusy(false); }
+        if (busy || projectId.Length == 0) return; operation = new(); var previous = AdmitMutation(); var completed = false;
+        try { await AnalyzeCore(operation.Token, startedForSmoke); completed = true; }
+        finally { if (!completed) await RestoreAfterMutation(previous); operation.Dispose(); operation = null; SetBusy(false); }
     }
-    private async Task AnalyzeCore(CancellationToken token)
+    private async Task AnalyzeCore(CancellationToken token, Action<int>? startedForSmoke = null)
     {
-        var project = projectId; var workbook = IsWorkbook; status.Text = Copy["analyzing"]; var stage = await Bridge.Call(workbook ? "workbookAnalyze" : "analyze", new { project_id = project }, token, progress: value => Dispatcher.BeginInvoke(() => { if (!closed && busy) status.Text = Copy["analyzing"] + " " + value.Pretty(); }));
+        var project = projectId; var workbook = IsWorkbook; status.Text = Copy["analyzing"]; var stage = await Bridge.Call(workbook ? "workbookAnalyze" : "analyze", new { project_id = project }, token, progress: value => Dispatcher.BeginInvoke(() => { if (!closed && busy) status.Text = Copy["analyzing"] + " " + value.Pretty(); }), startedForSmoke: startedForSmoke);
         status.Text = Copy["committing"];
         var saved = await AnalysisCommit.Save(project, workbook, stage, token, (action, args, cancel) => Bridge.Call(action, args, cancel));
         SetBusy(false); await OpenProject(currentProject); var fixedId = saved.Get("report_id").Text(); if (projectId == project && IsWorkbook == workbook && fixedId.Length > 0 && reportId != fixedId) await OpenReport(fixedId); status.Text = Copy["ready"];
@@ -418,7 +446,7 @@ internal sealed class MainWindow : Window
     }
     private async Task SelectChange(JsonElement change)
     {
-        if (!changesReady || !changes.Any(c => c.Id == change.Get("change_id").Text())) return;
+        if (busy || !changesReady || !changes.Any(c => c.Id == change.Get("change_id").Text())) return;
         var ticket = BeginScope(); var token = reads.Token;
         InvalidateAuthority(false); Before.Invalidate(); After.Invalidate();
         try {
@@ -439,7 +467,7 @@ internal sealed class MainWindow : Window
             var evidence = change.Get("evidence").Items();
             var beforePage = evidence.Select(v => v.Get("page_id").Text()).FirstOrDefault(id => Before.HasPage(id)); var afterPage = evidence.Select(v => v.Get("page_id").Text()).FirstOrDefault(id => After.HasPage(id)); Before.SetEventPage(beforePage); After.SetEventPage(afterPage);
             await Before.Load(ticket, token); await After.Load(ticket, token); if (!IsCurrent(ticket)) return;
-            detail.Text = Copy["event"] + ": " + VersionLabel(Before.RevisionId) + " → " + VersionLabel(After.RevisionId) + "\n\n" + Copy["before"] + "\n" + change.Get("before").Text() + "\n\n" + Copy["after"] + "\n" + change.Get("after").Text() + "\n\n" + Copy["evidence"] + "\n" + change.Get("evidence").Pretty() + "\n\n" + Copy["coverage"] + "\n" + change.Get("coverage_gaps").Pretty();
+            detail.Text = Copy["event"] + ": " + VersionLabel(Before.RevisionId) + " → " + VersionLabel(After.RevisionId) + "\n\n" + Copy["before"] + "\n" + change.Get("before").Text() + "\n\n" + Copy["after"] + "\n" + change.Get("after").Text(); detailMetadata.Text = change.Pretty();
         }
         if (IsCurrent(ticket)) { changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = true; more.IsEnabled = nextChanges.Length > 0; }
         } catch { if (IsCurrent(ticket) && !token.IsCancellationRequested) FailComparison(); throw; }
@@ -454,7 +482,7 @@ internal sealed class MainWindow : Window
     }
     internal async Task SelectCell(ComparePane pane, int row, int column)
     {
-        if (!IsWorkbook || ComparisonState != "ready" || !pane.AuthorizesCell(row, column)) return;
+        if (busy || !IsWorkbook || ComparisonState != "ready" || !pane.AuthorizesCell(row, column)) return;
         var args = new Dictionary<string, object?> { ["revision_occurrence_id"] = pane.RevisionId, ["sheet_id"] = pane.SheetId, ["row"] = row, ["column"] = column, ["text_length"] = 4096 };
         var project = projectId; var report = reportId; ClearDetail(); detailStyle.IsEnabled = true; detailLoader = (offset, cancel) => { var request = new Dictionary<string, object?>(args) { ["text_offset"] = offset, ["component"] = detailStyle.IsChecked == true ? "style" : "cell", ["limit"] = 1 }; if (detailStyle.IsChecked == true && detailCursor.Length > 0) request["cursor"] = detailCursor; return QueryFixed("get_workbook_cell", request, project, report, cancel); }; await LoadDetail(0);
     }
@@ -486,6 +514,18 @@ internal sealed class MainWindow : Window
     }
     internal int ActionableChanges => changesReady && changeList.IsEnabled ? changes.Count : 0;
     internal string DetailText => detail.Text;
+    internal Task AnalyzeForSmoke() => Analyze();
+    internal async Task CheckAnalysisCancellationForSmoke()
+    {
+        var fixedReport = reportId; var before = Before.CaptureSelection(); var after = After.CaptureSelection(); var oldChange = changes.FirstOrDefault()?.Value ?? default;
+        var pending = ReloadComparison(); var startedPid = 0; var analysis = AnalyzeWithStarted(pid => { startedPid = pid; operation?.Cancel(); });
+        if (!busy || ActionableChanges != 0 || Before.Cells.IsEnabled || After.Cells.IsEnabled || nextDetail.IsEnabled) throw new InvalidOperationException("Mutation admission retained actionable evidence.");
+        var admitted = generation; await SelectCell(Before, before.Row, before.Column); await SelectChange(oldChange);
+        if (generation != admitted || ActionableChanges != 0) throw new InvalidOperationException("Busy evidence interaction started a new request scope.");
+        try { await analysis; throw new InvalidOperationException("Actual analysis cancellation unexpectedly completed."); } catch (OperationCanceledException) { }
+        try { await pending; } catch (OperationCanceledException) { }
+        if (startedPid <= 0 || busy || reportId != fixedReport || Before.CaptureSelection() != before || After.CaptureSelection() != after || ComparisonState != "ready") throw new InvalidOperationException("Cancelled analysis did not restore the exact comparison after a pending read.");
+    }
     internal async Task CheckFailedGridForSmoke(Func<Task> corrupt, Func<Task> restore)
     {
         await corrupt();

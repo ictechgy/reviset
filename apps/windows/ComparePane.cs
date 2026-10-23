@@ -15,6 +15,7 @@ internal sealed record GridRow(int Row, string[] Values)
 {
     public string Number => Row.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
+internal sealed record PaneSelection(string Revision, string Sheet, string Page, int Row, int Column, double Zoom, string Absence);
 
 internal sealed class ComparePane
 {
@@ -103,6 +104,14 @@ internal sealed class ComparePane
         docControls.Visibility = owner.IsWorkbook ? Visibility.Collapsed : Visibility.Visible; workbookControls.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed; sparse.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
     }
     internal void NavigationEnabled(bool enabled) { foreach (var control in navigation) control.IsEnabled = enabled; }
+    internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence);
+    internal void RestoreSelection(PaneSelection saved)
+    {
+        if (saved.Revision.Length == 0) { Clear(); return; } SetEvidenceRevision(saved.Revision); binding = true;
+        if (sheet.ItemsSource is List<Choice> sheets) sheet.SelectedItem = sheets.Find(value => value.Id == saved.Sheet);
+        if (page.ItemsSource is List<Choice> pages) page.SelectedItem = pages.Find(value => value.Id == saved.Page);
+        row = saved.Row; column = saved.Column; Zoom = saved.Zoom; evidenceAbsence = saved.Absence; binding = false;
+    }
     internal void Clear()
     {
         pageRead.Cancel(); ++pageGeneration; ++gridGeneration;
