@@ -42,8 +42,23 @@ try {
       }else{
         const report=workbooks.report(project,reportId);
         for(const revision of report.revisions)for(const sheet of revision.sheets)for(const cell of sheet.cells.slice(0,50)){
-          const result=await invoke('get_workbook_cell',{revision_occurrence_id:revision.revision_occurrence_id,sheet_id:sheet.sheet_id,row:cell.row,column:cell.column,text_length:4096});
-          assert.equal(result.report_id,reportId);assert.equal(result.items[0].value,cell.value);assert.equal(result.items[0].formula,cell.formula);rawItems++;
+          const args={revision_occurrence_id:revision.revision_occurrence_id,sheet_id:sheet.sheet_id,row:cell.row,column:cell.column,text_length:4096};
+          for(const field of ['value','formula'] as const){
+            let offset=0,reconstructed='';const seen=new Set<number>();
+            while(true){
+              assert.ok(!seen.has(offset),'MCP continuation must advance');seen.add(offset);
+              const result=await invoke('get_workbook_cell',{...args,text_offset:offset});assert.equal(result.report_id,reportId);
+              const item=result.items[0],part=item[field],continuation=item.text_continuations[field];
+              if(cell[field]===null){assert.equal(part,null);break;}
+              assert.equal(part,cell[field]!.slice(continuation.offset,continuation.offset+part.length));
+              assert.ok(continuation.offset<=reconstructed.length,'MCP source continuation skipped a range');
+              reconstructed=reconstructed.slice(0,continuation.offset)+part;
+              if(continuation.next_offset===null)break;
+              assert.ok(continuation.next_offset>offset);offset=continuation.next_offset;
+            }
+            if(cell[field]!==null)assert.equal(reconstructed,cell[field]);
+          }
+          rawItems++;
         }
       }
       const denied=await client.callTool({name:kind==='document'?'get_report':'get_workbook_report',arguments:{project_id:'foreign_project',report_id:reportId,max_output_tokens:8000}});assert.equal(denied.isError,true);assert.match(JSON.stringify(denied),/PROJECT_SCOPE/u);
