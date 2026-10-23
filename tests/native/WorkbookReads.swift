@@ -11,6 +11,7 @@ import AppKit
 
 @main struct WorkbookReadProbe {
     @MainActor static func main() async throws {
+        configureLegacyNativeLocalization()
         let root=URL(fileURLWithPath:ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"]!)
         let resources=Bundle.main.resourceURL!
         let model=WorkbookModel(bridge:Bridge(resources:resources,library:root))

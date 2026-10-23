@@ -7,6 +7,8 @@ import { generateFixtures } from './generate-fixtures.js';
 import {preparePdfjs} from './prepare-pdfjs.js';
 import {optionalSidecarBuild} from './onlyoffice-build-policy.js';
 import {generateWorkbookDemo} from './generate-workbook-demo.js';
+import {buildLocalizationResources} from './localization.js';
+import {nativeSwiftSources} from './native-swift-sources.js';
 import {appBuildName} from './app-build-name.js';
 if(process.platform!=='darwin'||process.arch!=='arm64')throw new Error('This local build currently targets macOS arm64.');
 const appName=appBuildName(process.env);
@@ -16,6 +18,7 @@ const app=resolve('release',appName),contents=join(app,'Contents'),resources=joi
 await import('./build-native-helpers.js');await import('./build-renderer-guard.js');await import('./prepare-office.js');
 // Only this generated bundle is replaced; never reuse stale runtimes or dependencies.
 await rm(app,{recursive:true,force:true});
+await buildLocalizationResources(resources);
 await mkdir(join(contents,'MacOS'),{recursive:true});await mkdir(join(resources,'backend'),{recursive:true});await mkdir(join(contents,'Helpers'),{recursive:true});
 await build({entryPoints:{bridge:'apps/bridge/main.ts',mcp:'apps/mcp/main.ts','office-input':'apps/helpers/OfficeInput.ts'},outdir:join(resources,'backend'),bundle:true,format:'esm',platform:'node',packages:'external',outExtension:{'.js':'.mjs'},target:'node24'});
 await cp('package.json',join(resources,'package.json'));
@@ -45,8 +48,8 @@ const canvas=createCanvas(1024,1024),ctx=canvas.getContext('2d');ctx.fillStyle='
 await mkdir('dist/native-icon.iconset',{recursive:true});await writeFile('dist/native-icon.png',canvas.toBuffer('image/png'));
 for(const size of [16,32,128,256,512])for(const scale of [1,2])execFileSync('sips',['-z',String(size*scale),String(size*scale),'dist/native-icon.png','--out',`dist/native-icon.iconset/icon_${size}x${size}${scale===2?'@2x':''}.png`],{stdio:'ignore'});
 execFileSync('iconutil',['-c','icns','dist/native-icon.iconset','-o',join(resources,'Reviset.icns')]);
-await writeFile(join(contents,'Info.plist'),`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleName</key><string>Reviset</string><key>CFBundleDisplayName</key><string>Reviset</string><key>CFBundleIdentifier</key><string>org.docver.native</string><key>CFBundleExecutable</key><string>Reviset</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>0.5.0</string><key>CFBundleVersion</key><string>1</string><key>CFBundleIconFile</key><string>Reviset.icns</string><key>LSMinimumSystemVersion</key><string>14.0</string><key>NSHighResolutionCapable</key><true/><key>NSPrincipalClass</key><string>NSApplication</string><key>LSApplicationCategoryType</key><string>public.app-category.productivity</string></dict></plist>`);
-execFileSync('swiftc',['-swift-version','5','-O','-parse-as-library','-target','arm64-apple-macos14.0','apps/macos/Bridge.swift','apps/macos/Model.swift','apps/macos/DocumentView.swift','apps/macos/SidecarSheet.swift','apps/macos/Views.swift','apps/macos/MappingSheet.swift','apps/macos/BundleSheet.swift','apps/macos/WorkspaceSplit.swift','apps/macos/WorkbookView.swift','apps/macos/App.swift','-o',join(contents,'MacOS/Reviset'),'-framework','SwiftUI','-framework','AppKit','-framework','PDFKit'],{stdio:'inherit'});
+await writeFile(join(contents,'Info.plist'),`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleDevelopmentRegion</key><string>en</string><key>CFBundleLocalizations</key><array><string>en</string><string>ko</string></array><key>CFBundleName</key><string>Reviset</string><key>CFBundleDisplayName</key><string>Reviset</string><key>CFBundleIdentifier</key><string>org.docver.native</string><key>CFBundleExecutable</key><string>Reviset</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>0.5.0</string><key>CFBundleVersion</key><string>1</string><key>CFBundleIconFile</key><string>Reviset.icns</string><key>LSMinimumSystemVersion</key><string>14.0</string><key>NSHighResolutionCapable</key><true/><key>NSPrincipalClass</key><string>NSApplication</string><key>LSApplicationCategoryType</key><string>public.app-category.productivity</string></dict></plist>`);
+execFileSync('swiftc',['-swift-version','5','-O','-parse-as-library','-target','arm64-apple-macos14.0',...nativeSwiftSources,'-o',join(contents,'MacOS/Reviset'),'-framework','SwiftUI','-framework','AppKit','-framework','PDFKit'],{stdio:'inherit'});
 execFileSync('codesign',['--force','--sign','-',join(contents,'Helpers/node')],{stdio:'inherit'});
 // Preserve TDF's already-verified nested vendor signature; sign the containing app only.
 execFileSync('codesign',['--force','--sign','-',app],{stdio:'inherit'});

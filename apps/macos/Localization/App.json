@@ -1,0 +1,54 @@
+{
+  "app.menu.importVersions": {
+    "en": "Import Document Versions…",
+    "ko": "문서 버전 가져오기…"
+  },
+  "app.menu.workbooks": {
+    "en": "Compare Spreadsheet Versions…",
+    "ko": "스프레드시트 버전 비교…"
+  },
+  "app.menu.focus": {
+    "en": "Focus on Document",
+    "ko": "문서 크게 보기"
+  },
+  "app.menu.evidence": {
+    "en": "Evidence Panel",
+    "ko": "근거 패널"
+  },
+  "app.window.workbooks": {
+    "en": "Reviset · Spreadsheets",
+    "ko": "Reviset · 스프레드시트"
+  },
+  "app.library.locked": {
+    "en": "Another Reviset or Docver app is using this library.",
+    "ko": "다른 Reviset 또는 Docver가 이 보관소를 사용하고 있습니다."
+  },
+  "app.library.reopen": {
+    "en": "Close that app, then reopen this one.",
+    "ko": "해당 앱을 종료한 뒤 다시 여세요."
+  },
+  "app.library.preparing": {
+    "en": "Preparing library…",
+    "ko": "보관소를 준비하는 중…"
+  },
+  "app.settings.title": {
+    "en": "Language",
+    "ko": "언어"
+  },
+  "app.settings.language": {
+    "en": "Interface language",
+    "ko": "화면 표시 언어"
+  },
+  "app.settings.description": {
+    "en": "Language changes keep your document contents, drafts and analysis in place.",
+    "ko": "언어를 바꿔도 문서 내용, 작성 중인 입력과 분석은 유지됩니다."
+  },
+  "app.settings.ocrScope": {
+    "en": "OCR currently recognizes Korean and English. Changing the interface language does not change recognition languages.",
+    "ko": "현재 OCR은 한국어와 영어를 인식합니다. 화면 표시 언어를 바꿔도 인식 언어는 바뀌지 않습니다."
+  },
+  "app.settings.systemMenuNote": {
+    "en": "Some macOS menu items follow the app language selected in System Settings after reopening.",
+    "ko": "일부 macOS 메뉴는 앱을 다시 열면 시스템 설정에서 선택한 앱 언어를 따릅니다."
+  }
+}

@@ -71,6 +71,10 @@ open release/Reviset-Local.app
 
 앱의 **5버전 합성 데모**와 **3버전 엑셀 데모**로 직접 확인할 수 있습니다. 문서 집중 모드는 `⌘⌥F`, 근거 패널은 `⌘⌥I`입니다.
 
+**Reviset → 설정…**(`⌘,`)에서 **시스템 기본**, **English**, **한국어**를 고릅니다. 지원하는 시스템 언어의 선호 순서를 따르고 해당 언어가 없으면 영어로 표시합니다. 앱 자체의 문구는 작성 중인 가져오기·검토 초안을 유지하면서 바뀝니다. 일부 macOS 메뉴는 앱을 다시 열면 시스템 앱 언어를 따를 수 있습니다.
+
+화면 언어와 OCR은 별도입니다. OCR은 현재 **한국어·영어**로 설정되며 다른 언어의 OCR 정확도를 새로 보장하지 않습니다. [언어 지원 범위와 원문 보존 계약](docs/LOCALIZATION.md)을 참고하세요.
+
 리네이밍 후에도 기존 저장 위치를 유지합니다. 가져온 원본은 `~/Library/Application Support/Docver/library/`에 복사하며 사용자가 선택한 원본을 덮어쓰지 않습니다. 분석을 다시 해도 과거 고정 보고서는 별도로 보존합니다.
 
 ## CLI와 MCP
@@ -82,7 +86,7 @@ open release/Reviset-Local.app
 npm run fixtures
 npm run cli -- analyze --manifest tests/fixtures/generated/forward/manifest.json
 npm run cli -- query --project prj_forward --tool list_changes --args '{"kind":"text_modified","max_output_tokens":8000}'
-npm run cli -- export --project prj_forward --out artifacts/forward
+npm run cli -- export --project prj_forward --out artifacts/forward --language ko
 ```
 
 CLI 저장소 기본값은 `.docver/`이고 `--store PATH`로 바꿀 수 있습니다. 문서 manifest의 `revisions` 배열 순서가 버전 순서입니다. 스프레드시트 CLI는 `workbook-analyze`, `workbook-query`, `workbook-export`를 제공합니다. [스프레드시트 계약](docs/SPREADSHEETS.md)을 참고하세요.

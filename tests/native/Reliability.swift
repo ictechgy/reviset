@@ -11,6 +11,7 @@ import AppKit
 
 @main struct ReliabilityProbe {
     @MainActor static func main() async throws {
+        configureLegacyNativeLocalization()
         let model=AppModel(),root=model.bridge.library
         func require(_ condition:Bool,_ message:String) throws { if !condition { throw NSError(domain:message,code:1) } }
         func control(_ mode:String,_ extra:[String:Any]=[:]) throws {
@@ -29,7 +30,9 @@ import AppKit
         }
         for (code,expected) in [("FILE_LIMIT","파일당 512 MiB 이하를 지원합니다."),("INPUT_NOT_REGULAR","일반 파일만 가져올 수 있습니다. 링크·폴더·특수 파일은 지원하지 않습니다."),("OTHER_FAILURE","original diagnostic")] {
             let error=BridgeError(code:code,message:"original diagnostic")
-            try require(error.localizedDescription==expected && error.code==code && error.message=="original diagnostic","NativeErrorLocalizationLostCodeOrMessage-"+code)
+            let rendered=bridgeErrorMessage(error).text
+            try require(error.localizedDescription=="original diagnostic" && error.code==code && error.message=="original diagnostic","NativeErrorLostRawCodeOrMessage-"+code)
+            try require(code=="OTHER_FAILURE" ? rendered.contains(code) && rendered.contains(expected) : rendered==expected,"NativeErrorLocalizationLostCodeOrMessage-"+code)
         }
         try require(JSON(1.9).int==1 && JSON(-1.9).int == -1,"IntegerTruncationChanged")
         for value in [Double.infinity,-Double.infinity,Double.nan,1e300,-1e300,Double(Int.max)] {
@@ -135,7 +138,7 @@ import AppKit
         try require(!workbook.ready && !workbook.loadingReport && !workbook.busy && events().count==afterClose,"ClosedWindowRestartedReadsAfterFailedCreate")
 
         _ = NSApplication.shared;NSApp.setActivationPolicy(.prohibited)
-        let grid=WorkbookGrid(pane:"before",revealIntent:"probe",cells:[],rowStart:1,columnStart:1,rowCount:100,columnCount:12,selectedRow:0,selectedColumn:0,onSelect:{_,_ in})
+        let grid=WorkbookGrid(language:LanguagePreferences.shared.effectiveLanguage,pane:"before",revealIntent:"probe",cells:[],rowStart:1,columnStart:1,rowCount:100,columnCount:12,selectedRow:0,selectedColumn:0,onSelect:{_,_ in})
         let coordinator=grid.makeCoordinator(),table=ReusedReliabilityTable()
         coordinator.sparse=["7:2":JSON(["row":7,"column":2,"value":"other data"])]
         let dataColumn=NSTableColumn(identifier:NSUserInterfaceItemIdentifier("2")),rowColumn=NSTableColumn(identifier:NSUserInterfaceItemIdentifier("row"))

@@ -2,6 +2,7 @@ import Foundation
 
 @main struct HistoryPageIndexRegression {
     @MainActor static func main() throws {
+        configureLegacyNativeLocalization()
         let model=AppModel()
         func page(_ id:String,_ asset:String,_ number:Int,_ text:String,hidden:Bool=false)->[String:Any] {
             ["page_id":id,"asset_id":asset,"page":number,"text":text,"hidden":hidden]

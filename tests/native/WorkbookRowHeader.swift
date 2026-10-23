@@ -17,6 +17,7 @@ import Darwin
 }
 @main struct WorkbookRowHeaderProbe {
     @MainActor static func main() {
+        configureLegacyNativeLocalization()
         do { try check();print("PASS actual WorkbookGrid.Coordinator clicked: row headers retain/clamp physical column; data cells, keyboard, bounds, duplicate and update suppression") }
         catch { print("FAIL",error.localizedDescription);Darwin.exit(1) }
     }
@@ -27,7 +28,7 @@ import Darwin
             let value=ClickedTable();for name in ["row","10","11","12","13","14"] { value.addTableColumn(NSTableColumn(identifier:NSUserInterfaceItemIdentifier(name))) };return value
         }
         var selections:[[Int]]=[]
-        func grid(_ selectedColumn:Int)->WorkbookGrid { WorkbookGrid(pane:"before",revealIntent:"test",cells:[],rowStart:101,columnStart:10,rowCount:6,columnCount:5,selectedRow:101,selectedColumn:selectedColumn,onSelect:{selections.append([$0,$1])}) }
+        func grid(_ selectedColumn:Int)->WorkbookGrid { WorkbookGrid(language:LanguagePreferences.shared.effectiveLanguage,pane:"before",revealIntent:"test",cells:[],rowStart:101,columnStart:10,rowCount:6,columnCount:5,selectedRow:101,selectedColumn:selectedColumn,onSelect:{selections.append([$0,$1])}) }
         let coordinator=grid(13).makeCoordinator(),view=table()
         view.simulatedClickedRow=2;view.simulatedClickedColumn=0;coordinator.clicked(view)
         print("row_header_action",selections)

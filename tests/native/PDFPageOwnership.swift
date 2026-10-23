@@ -5,6 +5,7 @@ import PDFKit
 
 @main struct PDFPageOwnership {
     @MainActor static func main() throws {
+        configureLegacyNativeLocalization()
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         let folder = URL(fileURLWithPath: ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"]!)

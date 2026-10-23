@@ -1,6 +1,7 @@
 import Foundation
 @main struct CancellationProbe {
  @MainActor static func main() async throws {
+        configureLegacyNativeLocalization()
   let root=URL(fileURLWithPath:CommandLine.arguments[1]),resources=root.appendingPathComponent("Resources"),library=root.appendingPathComponent("library"),fm=FileManager.default
   try fm.createDirectory(at:resources.appendingPathComponent("backend"),withIntermediateDirectories:true);try fm.createDirectory(at:root.appendingPathComponent("Helpers"),withIntermediateDirectories:true);try fm.createDirectory(at:library,withIntermediateDirectories:true)
   try fm.createSymbolicLink(atPath:root.appendingPathComponent("Helpers/node").path,withDestinationPath:CommandLine.arguments[2]);try fm.copyItem(atPath:CommandLine.arguments[3],toPath:resources.appendingPathComponent("backend/bridge.mjs").path)

@@ -10,7 +10,7 @@ Reviset compares versions of PPTX/PDF documents and XLSX/ODS/CSV workbooks. Peop
 
 For example, follow `draft.pptx → review.pdf → final.pptx` as revenue changes from `100억 → 120억 → 110억` (억 denotes 100 million). Inspect the source in each version. Beyond the first-to-last difference, the history also keeps content that was added and later removed in intermediate versions.
 
-> **Under development and validation.** This repository provides source build instructions. The validated local app targets Apple Silicon Macs; public installer distribution, notarization, and installation on other Macs remain outstanding. A project license has not been selected. The app UI and most detailed project notes are currently in Korean.
+> **Under development and validation.** This repository provides source build instructions. The validated local app targets Apple Silicon Macs; public installer distribution, notarization, and installation on other Macs remain outstanding. A project license has not been selected. The interface supports English and Korean; most detailed project notes are in Korean.
 
 ## Screenshots
 
@@ -61,13 +61,17 @@ The Node executable used for packaging must link only system dylibs. If the buil
 
 ### Use the app
 
-1. Import documents with **문서 버전 가져오기** (`⌘O`), or open **스프레드시트 버전 비교…** (`⌘⇧O`) for spreadsheets. Arrange files in version order.
+1. Choose **Import Document Versions…** (`⌘O`), or **Compare Spreadsheet Versions…** (`⌘⇧O`) for spreadsheets. Arrange files in version order.
 2. A document version can contain just one PPTX or PDF. Bundling a PPTX with a PDF from the same version is optional.
 3. Select before/after versions and pages or sheets. For documents, switch between the **비교** (comparison) and **전체 이력** (full history) tabs. In the workbook view, choose **두 버전 순변경** (net change between two versions) or **구간 전체 이력** (full history across the range).
 4. Select a change to inspect source evidence and before/after contents. Continue through long cell text; retry a failed read when needed.
-5. Open **AI·내보내기** to export a fixed report or copy the project's MCP configuration.
+5. Open the AI/export view to export a fixed report or copy the project's MCP configuration.
 
 Try the built-in **5버전 합성 데모** (five-version document demo) and **3버전 엑셀 데모** (three-version workbook demo). Document focus mode is `⌘⌥F`; the evidence panel is `⌘⌥I`.
+
+Choose **Reviset → Settings…** (`⌘,`) for **System Default**, **English**, or **한국어**. Reviset follows the supported system-language preference order and falls back to English. The app updates its own interface without clearing import/review drafts or starting a new analysis. Some macOS-owned menu items may follow the system app language after reopening.
+
+Interface language and OCR are separate: OCR remains configured for **Korean and English**. Other scripts can be preserved from an available original text layer, with the existing reading-order and extraction limits. See [language support and invariants](docs/LOCALIZATION.md).
 
 The existing storage location is retained across the rename. Imported originals are copied into `~/Library/Application Support/Docver/library/`. The selected source files are not overwritten. Reanalysis preserves earlier fixed reports separately.
 
@@ -80,7 +84,7 @@ Run these commands from the source checkout after completing the app build above
 npm run fixtures
 npm run cli -- analyze --manifest tests/fixtures/generated/forward/manifest.json
 npm run cli -- query --project prj_forward --tool list_changes --args '{"kind":"text_modified","max_output_tokens":8000}'
-npm run cli -- export --project prj_forward --out artifacts/forward
+npm run cli -- export --project prj_forward --out artifacts/forward --language en
 ```
 
 The CLI store defaults to `.docver/`; override it with `--store PATH`. The order of `revisions` in a document manifest defines version order. Spreadsheet commands are `workbook-analyze`, `workbook-query`, and `workbook-export`; see the [spreadsheet contract](docs/SPREADSHEETS.md).

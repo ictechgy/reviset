@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 @main struct EvidenceNavigationRegression {
  @MainActor static func main() async {
+        configureLegacyNativeLocalization()
   do {try await exercise()}catch {fputs("FAIL \(error.localizedDescription)\n",stderr);exit(1)}
  }
  @MainActor static func exercise() async throws {

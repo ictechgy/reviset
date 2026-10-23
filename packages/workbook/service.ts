@@ -5,6 +5,7 @@ import { basename, extname, join, resolve } from 'node:path';
 import { z } from 'zod';
 import { Store } from '../storage/index.js';
 import { canonical, byteHash, hash, DocverError } from '../schema/index.js';
+import {exportLanguage,type ExportLanguage} from '../export/language.js';
 import { publishContent } from '../runtime/atomic-content.js';
 import { WorkbookFormat, WorkbookObservation, WorkbookCell, workbookID, WORKBOOK_SCHEMA_VERSION, WORKBOOK_ENGINE_VERSION } from './types.js';
 import { blankCellsInViewport, validateBlankRangeLayout } from './sparse.js';
@@ -260,19 +261,25 @@ export class WorkbookService {
     this.store.db.prepare('INSERT INTO workbook_releases_v1 VALUES (?,?,?,?,?)').run(data.release_id, projectId, report.report_id, data.recorded_at, canonical(data)); return data;
   }
   releases(projectId: string) { this.requireProject(projectId); return this.store.db.prepare('SELECT body FROM workbook_releases_v1 WHERE project_id=? ORDER BY rowid DESC').all(projectId).map(row => JSON.parse(String(row.body))); }
-  async export(projectId: string, reportId: string, folder: string) {
+  async export(projectId: string, reportId: string, folder: string, requestedLanguage:ExportLanguage='en') {
+    const language=exportLanguage(requestedLanguage,'en');
+    const copy=language==='en'?{
+      title:'Workbook version comparison',warning:'Formulas were not executed or recalculated. Saved values may be missing or stale. Associations are inferred; ambiguous correspondence is not confirmed deletion.',releases:'Local release records',recorded:'local recorded time, not true edit time',revisions:'Source revisions',occurrence:'Occurrence',original:'Original',source:'source',styles:`Style references resolve in the source revision's style_definitions in [the paired JSON report]`,legacyStyles:'Inline legacy styles remain in each cell.',changes:'Change observations',noCell:'(no cell observation)',before:'Before',after:'After',gaps:'Coverage gaps'
+    }:{
+      title:'스프레드시트 버전 비교',warning:'수식을 실행하거나 재계산하지 않았습니다. 저장된 값은 없거나 오래되었을 수 있습니다. 대응은 추정이며 모호한 대응을 삭제로 확정하지 않습니다.',releases:'로컬 배포 기록',recorded:'로컬 기록 시각이며 실제 편집 시각이 아님',revisions:'원본 버전',occurrence:'버전 항목',original:'원본',source:'원본',styles:'스타일 참조는 [함께 저장한 JSON 보고서]의 원본 버전 style_definitions에서 확인할 수 있습니다.',legacyStyles:'기존 인라인 스타일은 각 셀에 보존됩니다.',changes:'변경 관측',noCell:'(셀 관측 없음)',before:'이전',after:'이후',gaps:'관측 한계'
+    };
     this.writable(); const report = this.report(projectId, reportId), releases = this.releases(projectId).filter(v => v.report_id === report.report_id), exportId = workbookID('wexport', { export_schema_version:'workbook-export.1',report_id: report.report_id, release_ids: releases.map(v => v.release_id) });
     folder = resolve(folder); mkdirSync(folder, { recursive: true }); const quoted = (v: unknown) => { const value = String(v).replace(/\r\n?/g, '\n');let longest=2;for(const match of value.matchAll(/`+/g))longest=Math.max(longest,match[0].length);const fence = '`'.repeat(longest + 1); return '> ' + [fence + 'text', value, fence].join('\n').replace(/\n/g, '\n> '); };
     const json = Buffer.from(canonical({ export_schema_version:'workbook-export.1',export_id: exportId, report, releases, provenance: 'Stored source observations; user labels/reasons and recorded timestamps do not authenticate actual editing authorship' }));
-    const lines = [ '# Workbook version comparison', '', quoted(report.title), '', `Report: \`${report.report_id}\``, '', '> Formulas were not executed or recalculated. Saved values may be missing or stale. Associations are inferred; ambiguous correspondence is not confirmed deletion.', '', '## Local release records', ...releases.flatMap(v => ['', quoted(v.label), quoted(v.reason), quoted(v.recorded_at + ' · local recorded time, not true edit time')]), '', '## Source revisions' ];
-    for (const r of report.revisions) { const source = await regularFile(join(this.store.root, 'assets', r.asset_id.slice(7)), r.asset_id.slice(7)); const file = `${r.asset_id.slice(7)}.${r.format}`; await publishContent(join(folder, file), source, r.asset_id.slice(7)); lines.push('', quoted(r.label), `- Occurrence: \`${r.revision_occurrence_id}\``, `- Original: [${r.format.toUpperCase()} source](${file})`); }
-    lines.push('',`Style references resolve in the source revision's style_definitions in [the paired JSON report](${exportId}.json). Inline legacy styles remain in each cell.`, '','## Change observations'); for (const c of report.changes) lines.push('', `### ${c.kind} · ${c.change_id}`, quoted(c.description), quoted(`${c.association} · ${c.alignment_method}`), quoted(`${c.before_address ?? '(no cell observation)'} → ${c.after_address ?? '(no cell observation)'}`), quoted('Before: ' + canonical(c.before)), quoted('After: ' + canonical(c.after)));
-    lines.push('', '## Coverage gaps'); for (const g of report.coverage_gaps) lines.push('', quoted(g.feature + ': ' + g.reason));
+    const lines = [ '# '+copy.title, '', quoted(report.title), '', `Report: \`${report.report_id}\``, '', '> '+copy.warning, '', '## '+copy.releases, ...releases.flatMap(v => ['', quoted(v.label), quoted(v.reason), quoted(v.recorded_at+' · '+copy.recorded)]), '', '## '+copy.revisions ];
+    for (const r of report.revisions) { const source = await regularFile(join(this.store.root, 'assets', r.asset_id.slice(7)), r.asset_id.slice(7)); const file = `${r.asset_id.slice(7)}.${r.format}`; await publishContent(join(folder, file), source, r.asset_id.slice(7)); lines.push('', quoted(r.label), `- ${copy.occurrence}: \`${r.revision_occurrence_id}\``, `- ${copy.original}: [${r.format.toUpperCase()} ${copy.source}](${file})`); }
+    lines.push('',language==='en'?`${copy.styles}(${exportId}.json). ${copy.legacyStyles}`:`${copy.styles.replace('[함께 저장한 JSON 보고서]',`[함께 저장한 JSON 보고서](${exportId}.json)`)} ${copy.legacyStyles}`, '','## '+copy.changes); for (const c of report.changes) lines.push('', `### ${c.kind} · ${c.change_id}`, quoted(c.description), quoted(`${c.association} · ${c.alignment_method}`), quoted(`${c.before_address ?? copy.noCell} → ${c.after_address ?? copy.noCell}`), quoted(copy.before+': '+canonical(c.before)), quoted(copy.after+': '+canonical(c.after)));
+    lines.push('', '## '+copy.gaps); for (const g of report.coverage_gaps) lines.push('', quoted(g.feature + ': ' + g.reason));
     const manifest=canonical({record_type:'workbook_manifest',export_schema_version:'workbook-export.1',export_id:exportId,project_id:projectId,report_id:report.report_id,schema_version:report.schema_version,engine_version:report.engine_version,revisions:report.revisions.map(r=>({revision_occurrence_id:r.revision_occurrence_id,style_definitions:r.style_definitions??{},...(report.engine_version==='workbook.1.1'?{sheets:r.sheets.map(s=>({sheet_id:s.sheet_id,blank_style_ranges:s.blank_style_ranges??[]}))}:{})}))});
     if(Buffer.byteLength(manifest)>MAX_WORKBOOK_REPORT_BYTES)throw new DocverError('WORKBOOK_EXPORT_LIMIT','Workbook style manifest exceeds the bounded report size');
     const markdown = Buffer.from(lines.join('\n') + '\n'), jsonl = Buffer.from(manifest+'\n'+report.changes.map(c => canonical({ record_type:'workbook_change',project_id: projectId, report_id: report.report_id, ...c })).join('\n') + (report.changes.length ? '\n' : ''));
-    for (const [ext, bytes] of [['json', json], ['md', markdown], ['jsonl', jsonl]] as const) await publishContent(join(folder, exportId + '.' + ext), bytes, byteHash(bytes));
-    return { project_id: projectId, report_id: report.report_id, export_id: exportId, files: ['json', 'md', 'jsonl'].map(ext => join(folder, exportId + '.' + ext)), release_count: releases.length };
+    for (const [ext, bytes] of [['json', json], ['md', markdown], ['jsonl', jsonl]] as const) await publishContent(join(folder, exportId + (ext==='md'&&language==='ko'?'.ko':'') + '.' + ext), bytes, byteHash(bytes));
+    return { project_id: projectId, report_id: report.report_id, export_id: exportId, files: ['json', 'md', 'jsonl'].map(ext => join(folder, exportId + (ext==='md'&&language==='ko'?'.ko':'') + '.' + ext)), release_count: releases.length };
   }
 }
 

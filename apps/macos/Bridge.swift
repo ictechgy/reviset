@@ -20,14 +20,23 @@ struct JSON: @unchecked Sendable, Identifiable {
     }
     func data() throws -> Data { try JSONSerialization.data(withJSONObject: raw, options: [.fragmentsAllowed, .sortedKeys]) }
 }
-struct BridgeError: LocalizedError {
-    var code: String; var message: String
-    var errorDescription: String? {
-        switch code {
-        case "FILE_LIMIT": return "파일당 512 MiB 이하를 지원합니다."
-        case "INPUT_NOT_REGULAR": return "일반 파일만 가져올 수 있습니다. 링크·폴더·특수 파일은 지원하지 않습니다."
-        default: return message
-        }
+struct BridgeError: LocalizedError, Sendable {
+    var code: String
+    var message: String
+    let uiMessage: UIMessage?
+    init(code: String, message: String) { self.code=code; self.message=message; self.uiMessage=nil }
+    init(code: String, message: UIMessage) { self.code=code; self.message=code; self.uiMessage=message }
+    // LocalizedError can be queried off the UI actor. Keep the source detail here;
+    // presentation resolves only typed messages or the closed code map below.
+    var errorDescription: String? { message }
+}
+@MainActor func bridgeErrorMessage(_ error: Error) -> UIMessage {
+    guard let error=error as? BridgeError else { return .raw(error.localizedDescription) }
+    if let message=error.uiMessage { return message }
+    switch error.code {
+    case "FILE_LIMIT": return UIMessage("doc.error.fileLimit")
+    case "INPUT_NOT_REGULAR": return UIMessage("doc.error.inputNotRegular")
+    default: return UIMessage("doc.error.backendDetail", .verbatim(error.code), .verbatim(error.message))
     }
 }
 // Read-only range/page queries can be superseded by another selection. Each request
@@ -98,7 +107,7 @@ final class Bridge: @unchecked Sendable {
     func call(_ action: String, _ args: [String: Any] = [:], analysis: Bool = false, progress: (@Sendable (JSON) -> Void)? = nil, owner:BridgeRequestCancellation? = nil, analysisOwner:UUID? = nil, holdAnalysis:Bool = false) async throws -> JSON {
         let request = try JSON(["action": action, "args": args]).data()
         if analysis {try lock.withLock {
-            guard !analysisReserved else{throw BridgeError(code:"ANALYSIS_BUSY",message:"다른 창에서 분석 중입니다. 해당 분석이 끝난 뒤 다시 시도하세요.")}
+            guard !analysisReserved else{throw BridgeError(code:"ANALYSIS_BUSY",message:UIMessage("doc.tail.engine.busyInAnotherWindow"))}
             analysisReserved=true;currentAnalysisOwner=analysisOwner;cancelled=false
         }}
         let cancellation=["changes","page","sidecarCreate","workbookQuery","workbookGrid","workbookProjects","workbookReports","workbookView","workbookReleases","workbookMcpConfig"].contains(action) && !analysis ? (owner ?? BridgeRequestCancellation()):nil
@@ -133,13 +142,13 @@ final class Bridge: @unchecked Sendable {
                     }
                     stderrDone.leave()
                 }
-                func failure(_ code:String,_ message:String) -> BridgeError {
+                func failure(_ code:String,_ message:UIMessage) -> BridgeError {
                     let stderr=stderrData.snapshot()
                     let folder=self.library.appendingPathComponent("logs")
                     try? FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
                     let log=folder.appendingPathComponent("helper-"+UUID().uuidString+".log")
-                    do {try stderr.write(to:log);return BridgeError(code:code,message:message+" 진단 로그: "+log.path)}
-                    catch {return BridgeError(code:code,message:message+" "+String(decoding:stderr.suffix(1000),as:UTF8.self))}
+                    do {try stderr.write(to:log);return BridgeError(code:code,message:UIMessage("doc.error.diagnosticLog", .message(message), .verbatim(log.path)))}
+                    catch {return BridgeError(code:code,message:UIMessage("doc.error.diagnosticDetail", .message(message), .verbatim(String(decoding:stderr.suffix(1000),as:UTF8.self))))}
                 }
                 func finishAnalysis(success:Bool = false) {
                     if analysis {self.lock.withLock {
@@ -148,7 +157,7 @@ final class Bridge: @unchecked Sendable {
                     }}
                 }
                 do {
-                    if analysis { self.lock.lock(); let stopped = self.cancelled; self.lock.unlock(); if stopped { throw BridgeError(code:"CANCELLED",message:"분석을 취소했습니다.") } }
+                    if analysis { self.lock.lock(); let stopped = self.cancelled; self.lock.unlock(); if stopped { throw BridgeError(code:"CANCELLED",message:UIMessage("doc.analysis.cancelled")) } }
                     if let cancellation { try cancellation.run(process) } else { try process.run() }
                     if analysis { self.lock.lock(); self.analysisProcess = process; let stopped = self.cancelled; self.lock.unlock(); if stopped { process.terminate() } }
                     try input.fileHandleForWriting.write(contentsOf: request); try input.fileHandleForWriting.close()
@@ -158,12 +167,12 @@ final class Bridge: @unchecked Sendable {
                     if analysis { self.lock.lock(); if self.analysisProcess === process { self.analysisProcess = nil }; self.lock.unlock() }
                     if process.terminationReason == .uncaughtSignal {
                         let requested=self.lock.withLock {self.cancelled}
-                        if analysis && requested {throw BridgeError(code:"CANCELLED",message:"분석을 취소했습니다. 이전 보고서는 유지됩니다.")}
-                        throw failure("HELPER_CRASH","분석 엔진이 예기치 않게 종료되었습니다 (signal \(process.terminationStatus)).")
+                        if analysis && requested {throw BridgeError(code:"CANCELLED",message:UIMessage("doc.analysis.cancelledRetained"))}
+                        throw failure("HELPER_CRASH",UIMessage("doc.tail.engine.terminatedBySignal", .count(Int(process.terminationStatus))))
                     }
-                    guard let object=try? JSONSerialization.jsonObject(with:data) else {throw failure("HELPER_PROTOCOL","분석 엔진 응답을 읽지 못했습니다 (exit \(process.terminationStatus)).")}
+                    guard let object=try? JSONSerialization.jsonObject(with:data) else {throw failure("HELPER_PROTOCOL",UIMessage("doc.tail.engine.responseUnreadableExitCode", .count(Int(process.terminationStatus))))}
                     let reply = JSON(object)
-                    guard reply["protocol_version"].string == "0.1.0" && reply["schema_version"].string == "0.4.0" else { throw BridgeError(code:"PROTOCOL_MISMATCH",message:"앱과 분석 엔진의 계약 버전이 다릅니다.") }
+                    guard reply["protocol_version"].string == "0.1.0" && reply["schema_version"].string == "0.4.0" else { throw BridgeError(code:"PROTOCOL_MISMATCH",message:UIMessage("doc.tail.engine.contractVersionMismatch")) }
                     guard reply["ok"].bool else { throw BridgeError(code: reply["error"]["code"].string, message: reply["error"]["message"].string) }
                     finishAnalysis(success:true);continuation.resume(returning: reply["value"])
                 } catch {

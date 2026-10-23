@@ -4,6 +4,7 @@ import SwiftUI
 
 @main struct SidecarLifetimeProbe {
     @MainActor static func main()async throws {
+        configureLegacyNativeLocalization()
         let model=AppModel(),fm=FileManager.default,events=model.bridge.library.appendingPathComponent("sidecar-events.jsonl")
         guard model.bridge.resources.path.hasPrefix(CommandLine.arguments[1]) else{throw NSError(domain:"FixtureBundleResources",code:1)}
         func records()->[JSON]{guard let s=try? String(contentsOf:events,encoding:.utf8)else{return []};return s.split(separator:"\n").compactMap{try? JSONSerialization.jsonObject(with:Data($0.utf8))}.map(JSON.init)}

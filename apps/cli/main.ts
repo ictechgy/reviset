@@ -5,11 +5,11 @@ import { Store } from '../../packages/storage/index.js';
 import { Manifest, DocverError } from '../../packages/schema/index.js';
 import { analyze } from '../../packages/engine/index.js';
 import { QueryService, querySchemas, type QueryName } from '../../packages/query/index.js';
-import { exportReport } from '../../packages/export/index.js';
+import { exportReport,exportLanguage } from '../../packages/export/index.js';
 import { renderPdf, convertPptx } from '../../packages/render/index.js';
 import { readRegularFile } from '../../packages/runtime/regular-file.js';
 import { handleWorkbookAction } from '../bridge/workbook.js';
-const {positionals,values}=parseArgs({allowPositionals:true,strict:true,options:{store:{type:'string',default:'.docver'},manifest:{type:'string'},project:{type:'string'},report:{type:'string',default:'latest'},out:{type:'string'},tool:{type:'string'},args:{type:'string',default:'{}'},file:{type:'string'},page:{type:'string',default:'1'},converter:{type:'string'}}});
+const {positionals,values}=parseArgs({allowPositionals:true,strict:true,options:{store:{type:'string',default:'.docver'},manifest:{type:'string'},project:{type:'string'},report:{type:'string',default:'latest'},out:{type:'string'},tool:{type:'string'},args:{type:'string',default:'{}'},file:{type:'string'},page:{type:'string',default:'1'},converter:{type:'string'},language:{type:'string'}}});
 const command=positionals[0];
 let store:Store|undefined;
 try {
@@ -27,7 +27,7 @@ try {
     if(command==='workbook-export'&&!values.out)throw new Error('--out is required');
     store=new Store(values.store,command==='workbook-query');
     const result=command==='workbook-query'?await handleWorkbookAction(store,'workbookQuery',{name:values.tool??'get_workbook_report',args:{...JSON.parse(values.args),project_id:values.project,report_id:values.report}}):
-      await handleWorkbookAction(store,'workbookExport',{project_id:values.project,report_id:values.report,folder:values.out?resolve(values.out):undefined});
+      await handleWorkbookAction(store,'workbookExport',{project_id:values.project,report_id:values.report,folder:values.out?resolve(values.out):undefined,language:exportLanguage(values.language,'en')});
     console.log(JSON.stringify(result,null,2));
   }else if(command==='analyze') {
     if(!values.manifest)throw new Error('--manifest is required');
@@ -40,7 +40,7 @@ try {
     if(!values.project)throw new Error('--project is required');
     store=new Store(values.store,true);const service=new QueryService(store,new Set([values.project]));
     if(command==='export') {
-      if(!values.out)throw new Error('--out is required');console.log(JSON.stringify({report_id:await exportReport(service,values.project,values.report,resolve(values.out)),output:resolve(values.out)}));
+      if(!values.out)throw new Error('--out is required');console.log(JSON.stringify({report_id:await exportReport(service,values.project,values.report,resolve(values.out),exportLanguage(values.language)),output:resolve(values.out)}));
     } else {
       const tool=values.tool??'get_report';if(!(tool in querySchemas))throw new Error('Unknown query tool');
       const args=JSON.parse(values.args);

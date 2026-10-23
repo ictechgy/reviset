@@ -2,13 +2,13 @@
 
 ## Source of truth
 - Status: Active — 사용자가 A(고요한 스튜디오)를 선택. 중앙 문서 영역 확대와 수백 페이지 처리 요구 반영.
-- Last refreshed: 2026-10-19
+- Last refreshed: 2026-10-23
 - Primary product surfaces: macOS 데스크톱 앱의 프로젝트·버전 입력, 타임라인, 원문 비교, 대응 검토, 내보내기.
 - Evidence reviewed: PLAN.md §5~9, PROGRESS.md, packages/schema 및 query. 기존 UI/브랜드/컴포넌트/시각 기준은 없다.
 
 ## Brand
 - Product name: **Reviset / 리비셋** — 사용자가 2026-10-22 확정. 이전 이름 Docver. 표시 브랜드와 호환성 식별자의 경계는 [리네이밍 기록](docs/RENAMING.md)을 따른다.
-- Personality: 차분하고 정확한 문서 작업 도구. 한국어 우선.
+- Personality: 차분하고 정확한 문서 작업 도구. 영어·한국어 UI를 지원하고 시스템 언어를 기본으로 따른다.
 - Trust signals: 고정 보고서, 원문 페이지·인용, 추정/사용자 확정·관측 한계 구분.
 - Avoid: 마케팅형 hero, 과장된 정확도, 의미 없는 장식, 미지원 기능의 완료 표시.
 
@@ -67,7 +67,7 @@
 - Offline/slow network: 앱 자체는 로컬에서 동작. 외부 네트워크 불필요.
 
 ## Content voice
-- Tone: 간결하고 구체적인 한국어.
+- Tone: 간결하고 구체적인 영어·한국어. 영어 문구를 기준으로 번역의 의미와 불확실성 표현을 대조한다.
 - Terminology: 버전, 페이지, 변경, 대응, 관측 한계, 고정 보고서.
 - Microcopy rules: 구조 보기는 원본 렌더와 구분, 추정 점수를 확률이라고 하지 않는다.
 - OCR 근거: 최초 판독과 문맥 재판독을 따로 표시한다. 재판독이 비교에 쓰여도 최초 문자열·점수와 각 조건의 결과를 열어 볼 수 있다. 보류한 재판독을 숨은 원문으로 표시하지 않는다. 수많은 추출 행은 지연 생성한다. 조건별 언어·확대 배율·문맥 범위·판독 점수와 상태를 함께 표시하며, 최초 판독 연결이 검증되지 않은 기록은 명시한다.
@@ -168,3 +168,14 @@ Actual48fivecaptureClaude review confirms largerdocumentcanvas/pageedges/compact
 - While comparing moved rows with different visible windows and a valid after-side address, the shared navigation range explicitly identifies the after side; each pane retains its own actual coordinates. Shared windows and before-only evidence retain a neutral range label. Range movement still returns to shared physical coordinates.
 - Empty, unavailable and already-read fragment notices use secondary system text, separate from selectable monospaced source. Empty later fragments do not repeat a source-end marker. Verbatim strings and UTF-16 offsets remain unchanged.
 - Label the change list's fixed query interval explicitly. Selecting one event may show its adjacent evidence pair above while retaining the wider list interval; explain both scopes together. Paged lists name the next/previous action rather than implying that the visible rows are all changes.
+
+
+## English and Korean interface — 2026-10-23
+- Scope: native document and workbook windows, menus/settings, errors/progress, evidence/coverage labels, accessibility, counts and displayed dates. Preference is System Default / English / 한국어, stored in an app-owned preference. Unsupported system languages fall back to English through the supported preference order.
+- Use stable semantic keys in the named native `Reviset.strings` table with explicit arguments. Both locale resources ship in the bundle; build validates key and placeholder parity. Interpolated user arguments are formatted once and never interpreted as localization keys or format instructions.
+- An immutable localizer snapshot formats messages. UI-generated transient messages retain key/arguments and resolve at display time; background errors retain code and raw detail. Unknown error details and user-authored reasons remain verbatim.
+- Live language changes retain the existing model, import/review drafts, selections, analysis requests and document viewports. Do not rebuild the workspace using `.id(language)`. SwiftUI observes the preference; AppKit grid caches/accessibility explicitly refresh for a language change. System-owned menu items may follow the process/macOS app language until reopening.
+- Document text, project/version/sheet names, formulas, file paths, human reasons, IDs and machine reason codes remain exact source data. UI preferences do not enter canonical report identities. OCR recognition and document-table recognition remain configured for Korean/English; UI selection does not change them or claim new language accuracy.
+- Human Markdown exports accept an explicit en/ko display language, pinned at export start; legacy callers retain the Korean default. JSON/JSONL, evidence source text and report IDs stay unchanged. MCP instructions/tool descriptions remain English and its read-only schemas stay unchanged.
+- Qualification includes fallback/persistence, zero/one/many, placeholders containing braces/percent/key-like data, raw text and report identity invariants, language switch with draft/selection retained, refreshed grid accessibility, and actual packaged-app English/Korean captures. RTL/vertical writing, additional OCR models and general script accuracy are outside this interface-localization scope.
+- Claude and Grok design discussions at base `a70974d` both requested stable semantic keys, typed stored messages and explicit bundle packaging. Adopt named resources and single-pass argument formatting; use app-owned preference instead of writing AppleLanguages. Code and visual reviews are separately snapshot-bound and are not implied by design consultation.

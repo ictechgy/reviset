@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { Store } from '../storage/index.js';
 import { QueryService } from '../query/index.js';
 import { analyze, type AnalyzeProgress } from '../engine/index.js';
-import { exportReport } from '../export/index.js';
+import { exportReport,type ExportLanguage } from '../export/index.js';
 import { renderPdf } from '../render/index.js';
 import { byteHash, DocverError, Decision, StoredDecision, MappingRelation,hash,canonical,BundleDecision,type BundleSelectionData,type RelationSelectionData, type InputManifest, type ReportData } from '../schema/index.js';
 import { readRegularFile } from '../runtime/regular-file.js';
@@ -154,6 +154,6 @@ export class DesktopService {
     }
     return {kind:'structure' as const,data_url:null};
   }
-  async export(projectId:string,reportId:string,folder:string){return exportReport(this.queryService(projectId),projectId,reportId,folder);}
+  async export(projectId:string,reportId:string,folder:string,language:ExportLanguage='ko'){return exportReport(this.queryService(projectId),projectId,reportId,folder,language);}
   close(){this.store.close();}
 }

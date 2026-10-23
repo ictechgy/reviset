@@ -110,7 +110,7 @@ try{
         value={page,display_page:{...page,width:page.preview.width,height:page.preview.height,source_transform:page.preview.source_transform},source:{kind:'pdf',origin:'pptx_converted',path:previewPath,renderer:page.preview.renderer,warnings:page.preview.warnings}};
       }else value={page,display_page:page,source:{kind:asset.format,path:await verifiedSource(asset.asset_id),origin:'original'}};break;
     }
-    case 'export':{const d=scope.extend({folder:z.string().min(1)}).parse(args);value=await service.export(d.project_id,d.report_id,resolve(d.folder));break;}
+    case 'export':{const d=scope.extend({folder:z.string().min(1),language:z.enum(['en','ko']).default('ko')}).parse(args);value=await service.export(d.project_id,d.report_id,resolve(d.folder),d.language);break;}
     case 'mcpConfig':{const {project_id}=z.object({project_id:key}).parse(args);service.reports(project_id);value=JSON.stringify({mcpServers:{reviset:{command:process.execPath,args:[join(dirname(fileURLToPath(import.meta.url)),'mcp.mjs'),'--store',root,'--project',project_id]}}},null,2);break;}
     default:throw new DocverError('UNKNOWN_ACTION','지원하지 않는 작업입니다.');
   }

@@ -1,3 +1,4 @@
+import {nativeLocalizationTestSources,prepareLegacyNativeLocalization} from '../../scripts/native-swift-sources.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,writeFile,readFile,stat,utimes,readdir} from 'node:fs/promises';
@@ -9,7 +10,8 @@ import {byteHash,DocverError} from '../../packages/schema/index.js';
 
 test('actual native import group/ungroup preserves IDs, labels, order, fingerprints and legacy create shape',{skip:process.platform!=='darwin'},async()=>{
  const root=await mkdtemp(join(tmpdir(),'docver-import-draft-'));try{
-  const binary=join(root,'probe'),build=spawnSync('swiftc',['-warnings-as-errors','-swift-version','5','-parse-as-library','-target','arm64-apple-macos14.0','apps/macos/Bridge.swift','apps/macos/Model.swift','tests/native/ImportDraft.swift','-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:30000});assert.equal(build.status,0,build.stderr);assert.ifError(build.error);
+  await prepareLegacyNativeLocalization(root);
+  const binary=join(root,'probe'),build=spawnSync('swiftc',['-warnings-as-errors','-swift-version','5','-parse-as-library','-target','arm64-apple-macos14.0',...nativeLocalizationTestSources,'apps/macos/Bridge.swift','apps/macos/Model.swift','tests/native/ImportDraft.swift','-o',binary,'-framework','SwiftUI','-framework','AppKit'],{encoding:'utf8',timeout:30000});assert.equal(build.status,0,build.stderr);assert.ifError(build.error);
   const run=spawnSync(binary,[join(root,'inputs')],{cwd:'/',encoding:'utf8',timeout:15000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata')}});assert.equal(run.status,0,run.stderr);assert.ifError(run.error);assert.match(run.stdout,/PASS actual import draft identities/);
  }finally{await rm(root,{recursive:true,force:true});}
 });

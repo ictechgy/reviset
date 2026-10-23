@@ -3,6 +3,7 @@ import Darwin
 
 @main struct BridgeBrokenPipeProbe {
     static func main() async throws {
+        configureLegacyNativeLocalization()
         // Reset the inherited disposition so this really exercises the native
         // host's broken-pipe protection, even when launched by Node.
         _ = Darwin.signal(SIGPIPE,SIG_DFL)

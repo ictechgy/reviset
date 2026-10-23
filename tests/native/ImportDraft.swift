@@ -7,6 +7,7 @@ import SwiftUI
   if !condition{throw NSError(domain:"ImportDraft",code:1,userInfo:[NSLocalizedDescriptionKey:message])}
  }
  static func main() {
+        configureLegacyNativeLocalization()
   do{try exercise();print("PASS actual import draft identities, labels, group/ungroup/reorder and selected SHA payload")}
   catch{fputs("FAIL \(error.localizedDescription)\n",stderr);exit(1)}
  }

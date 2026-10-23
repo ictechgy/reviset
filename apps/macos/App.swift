@@ -6,9 +6,10 @@ import Combine
 
 @main struct RevisetApp: App {
     @StateObject private var model=AppModel()
+    @State private var language=LanguagePreferences.shared
     @Environment(\.openWindow) private var openWindow
     var body: some Scene {
-        Window("Reviset", id:"main") {MainView().environmentObject(model).task {
+        Window("Reviset", id:"main") {MainView().environmentObject(model).environment(\.locale,language.localizer.locale).task {
             await Smoke.runIfRequested(model)
             if ProcessInfo.processInfo.environment["DOCVER_WORKBOOK_SMOKE_REQUEST"] != nil {
                 for _ in 0..<400 { if !model.initializing { break }; try? await Task.sleep(nanoseconds:50_000_000) }
@@ -21,15 +22,15 @@ import Combine
         .defaultSize(width:1440,height:960)
         .windowToolbarStyle(.unifiedCompact)
         .commands {
-            CommandGroup(after:.newItem){Button("문서 버전 가져오기…"){model.importSheet=true}.keyboardShortcut("o").disabled(model.busy || model.loading || !model.libraryAvailable || model.initializing);Button("스프레드시트 버전 비교…"){openWindow(id:"workbooks")}.keyboardShortcut("o",modifiers:[.command,.shift]).disabled(!model.libraryAvailable || model.initializing)}
-            CommandGroup(after:.sidebar){Button("문서 크게 보기"){model.focus.toggle()}.keyboardShortcut("f",modifiers:[.command,.option]);Button("근거 패널"){model.inspector.toggle()}.keyboardShortcut("i",modifiers:[.command,.option])}
+            CommandGroup(after:.newItem){Button(L("app.menu.importVersions")){model.importSheet=true}.keyboardShortcut("o").disabled(model.busy || model.loading || !model.libraryAvailable || model.initializing);Button(L("app.menu.workbooks")){openWindow(id:"workbooks")}.keyboardShortcut("o",modifiers:[.command,.shift]).disabled(!model.libraryAvailable || model.initializing)}
+            CommandGroup(after:.sidebar){Button(L("app.menu.focus")){model.focus.toggle()}.keyboardShortcut("f",modifiers:[.command,.option]);Button(L("app.menu.evidence")){model.inspector.toggle()}.keyboardShortcut("i",modifiers:[.command,.option])}
         }
-        Window("Reviset · 스프레드시트",id:"workbooks") {
+        Window(L("app.window.workbooks"),id:"workbooks") {
             Group {
             if !model.libraryAvailable {
-                VStack(spacing:12) { Image(systemName:"lock.fill").font(.largeTitle); Text("다른 Reviset 또는 Docver가 이 보관소를 사용하고 있습니다."); Text("해당 앱을 종료한 뒤 다시 여세요.").foregroundStyle(.secondary) }.frame(minWidth:640,minHeight:420)
+                VStack(spacing:12) { Image(systemName:"lock.fill").font(.largeTitle); Text(L("app.library.locked")); Text(L("app.library.reopen")).foregroundStyle(.secondary) }.frame(minWidth:640,minHeight:420)
             } else if model.initializing {
-                ProgressView("보관소를 준비하는 중…").frame(minWidth:640,minHeight:420)
+                ProgressView(L("app.library.preparing")).frame(minWidth:640,minHeight:420)
             } else {
                 VStack(spacing:0) {
                     if !model.workbookRecoveryWarning.isEmpty { Label(model.workbookRecoveryWarning,systemImage:"info.circle").font(.caption).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(.orange.opacity(0.1)) }
@@ -37,7 +38,27 @@ import Combine
                 }
             }
             }.task { await model.start() }
+            .environment(\.locale,language.localizer.locale)
+            .navigationTitle(L("app.window.workbooks"))
         }.defaultSize(width:1440,height:960).windowToolbarStyle(.unifiedCompact)
+        Settings { LanguageSettingsView().environment(\.locale,language.localizer.locale) }
+    }
+}
+struct LanguageSettingsView: View {
+    @State private var language=LanguagePreferences.shared
+    var body: some View {
+        @Bindable var preference=language
+        Form {
+            Picker(L("app.settings.language"),selection:$preference.selection) {
+                Text(L("language.system")).tag(UILanguage.system)
+                Text("English").tag(UILanguage.en)
+                Text("한국어").tag(UILanguage.ko)
+            }
+            Text(L("app.settings.description")).font(.callout).foregroundStyle(.secondary)
+            Text(L("app.settings.ocrScope")).font(.callout).foregroundStyle(.secondary)
+            Text(L("app.settings.systemMenuNote")).font(.caption).foregroundStyle(.secondary)
+        }.padding(24).frame(width:520).fixedSize(horizontal:false,vertical:true)
+        .navigationTitle(L("app.settings.title"))
     }
 }
 @MainActor enum Smoke {
@@ -151,8 +172,55 @@ import Combine
             complete["source_assets_unchanged"]=assetFacts.map{["name":$0.url.lastPathComponent,"sha256":$0.sha]}
             complete["history_change_check"]=historyChangeCheck
             complete["sidecar_checks"]=sidecarChecks
+            complete["language_checks"]=request["language_checks"].bool ? try await exerciseLanguageSwitch(model,output):[:]
             try JSON(complete).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
         }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Reviset native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
+    }
+    static func exerciseLanguageSwitch(_ model:AppModel,_ output:URL) async throws->[String:Any] {
+        let preferences=LanguagePreferences.shared,original=preferences.selection
+        let defaults=UserDefaults.standard,domain=Bundle.main.bundleIdentifier ?? "org.docver.native"
+        let stored=defaults.persistentDomain(forName:domain)?[LanguagePreferences.preferenceKey]
+        let status=model.statusMessage,identity=ObjectIdentifier(model),report=try model.report.data(),project=model.projectID
+        let selected=model.selectedChangeID,left=model.leftPageID,right=model.rightPageID,from=model.from,to=model.to
+        defer {
+            preferences.selection=original;model.statusMessage=status
+            if let stored { defaults.set(stored,forKey:LanguagePreferences.preferenceKey) }
+            else { defaults.removeObject(forKey:LanguagePreferences.preferenceKey) }
+        }
+        guard let parent=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}) else {throw BridgeError(code:"L10N_WINDOW",message:"No document window")}
+        let opaque="language.system {0} %@ %% 한글 العربية"
+        let row=ImportRow(label:opaque,urls:[URL(fileURLWithPath:"/not-opened/"+opaque+".pdf")])
+        let sheet=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:500),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+        sheet.isOpaque=true;sheet.backgroundColor = .windowBackgroundColor
+        sheet.contentView=NSHostingView(rootView:ImportView(initialRows:[row],initialTitle:opaque).environmentObject(model).background(Color(nsColor:.windowBackgroundColor)))
+        func fields(_ root:NSView)->[NSTextField] { (root as? NSTextField).map{[$0]} ?? [] + root.subviews.flatMap(fields) }
+        func menuTitles(_ menu:NSMenu)->[String] { menu.items.flatMap{[$0.title]+($0.submenu.map(menuTitles) ?? [])} }
+        var stages:[[String:Any]]=[]
+        model.statusMessage=UIMessage("app.settings.description")
+        for choice in [UILanguage.en,.ko] {
+            preferences.selection=choice
+            try await Task.sleep(nanoseconds:650_000_000)
+            parent.contentView?.layoutSubtreeIfNeeded();parent.contentView?.displayIfNeeded()
+            NSApp.mainMenu?.update()
+            let label=L("app.menu.importVersions"),menus=NSApp.mainMenu.map(menuTitles) ?? []
+            guard menus.contains(label) else {throw BridgeError(code:"L10N_MENU",message:"Custom menu did not update: \(label)")}
+            try captureView(parent,output.appendingPathComponent("native-language-\(choice.rawValue)-document.png"))
+            if sheet.sheetParent == nil { parent.beginSheet(sheet,completionHandler:{_ in}) }
+            try await Task.sleep(nanoseconds:350_000_000)
+            sheet.contentView?.layoutSubtreeIfNeeded();sheet.contentView?.displayIfNeeded()
+            guard let content=sheet.contentView,fields(content).filter({$0.stringValue==opaque}).count>=2 else {throw BridgeError(code:"L10N_DRAFT",message:"Import draft title or version label changed")}
+            try captureView(sheet,output.appendingPathComponent("native-language-\(choice.rawValue)-import.png"))
+            parent.endSheet(sheet);sheet.orderOut(nil)
+            let settings=NSWindow(contentRect:NSRect(x:0,y:0,width:560,height:340),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+            settings.isOpaque=true;settings.backgroundColor = .windowBackgroundColor
+            settings.contentView=NSHostingView(rootView:LanguageSettingsView().environment(\.locale,preferences.localizer.locale).background(Color(nsColor:.windowBackgroundColor)))
+            parent.beginSheet(settings,completionHandler:{_ in});try await Task.sleep(nanoseconds:350_000_000)
+            try captureView(settings,output.appendingPathComponent("native-language-\(choice.rawValue)-settings.png"));parent.endSheet(settings);settings.orderOut(nil)
+            guard ObjectIdentifier(model)==identity,model.projectID==project,try model.report.data()==report,model.selectedChangeID==selected,model.leftPageID==left,model.rightPageID==right,model.from==from,model.to==to else {throw BridgeError(code:"L10N_MODEL",message:"Language switch changed document model or selection")}
+            stages.append(["language":choice.rawValue,"custom_menu":label,"status":model.status,"draft_text_unchanged":true,"same_model_report_and_selection":true])
+        }
+        guard stages[0]["status"] as? String != stages[1]["status"] as? String else{throw BridgeError(code:"L10N_STATUS",message:"Stored typed status did not rerender")}
+        return ["passed":true,"stages":stages,"draft_opaque_text":opaque,"ocr_language_setting_unchanged":true,"interaction_scope":"actual app, model-driven language setting and production import/settings hosts; no OS keyboard/mouse or full VoiceOver claim"]
     }
     static func captureSelectedPages(_ model:AppModel,_ output:URL,selectionReady:()->Bool) async throws->[String:Any] {
         let report=model.report["report_id"].string,mode=model.pageMode,left=model.leftPageID,right=model.rightPageID,started=Date()

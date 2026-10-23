@@ -53,14 +53,16 @@ private extension JSON {
     @Published var changesFromID = ""
     @Published var changesToID = ""
     @Published var changesMode = "range_net"
-    @Published var cellHistoryMessage = ""
+    @Published private var cellHistoryMessageContent = UIMessage.raw("")
+    var cellHistoryMessage: String { get { cellHistoryMessageContent.text } set { cellHistoryMessageContent = .raw(newValue) } }
     @Published var cellHistoryCursor = ""
     @Published var cellHistoryPreviousCursors: [String] = []
     @Published var cellHistoryPageNumber = 1
     private var cellHistoryPageCursor = ""
     private var cellHistoryCursorAnchor: HistoryAnchor?
     @Published var loadingHistory = false
-    @Published var cellHistoryFailure = ""
+    @Published private var cellHistoryFailureContent = UIMessage.raw("")
+    var cellHistoryFailure: String { get { cellHistoryFailureContent.text } set { cellHistoryFailureContent = .raw(newValue) } }
     @Published var cellHistoryTotal = 0
     var pagingOutputBudget = 8000
     private let cursorHistoryLimit = 128
@@ -71,18 +73,26 @@ private extension JSON {
     @Published var loadingChanges = false
     @Published var loadingCell = false
     @Published var loadingMCP = false
-    @Published var status = ""
-    @Published var failure = ""
-    @Published private var recoveryWarnings: [String:String] = [:]
+    @Published private var statusContent = UIMessage.raw("")
+    var status: String { get { statusContent.text } set { statusContent = .raw(newValue) } }
+    @Published private var failureContent = UIMessage.raw("")
+    var failure: String { get { failureContent.text } set { failureContent = .raw(newValue) } }
+    @Published private var recoveryWarnings: [String:UIMessage] = [:]
     private var recoveryWarningRuns: [String:String] = [:]
-    var recoveryWarning: String { recoveryWarnings[projectID] ?? "" }
-    @Published var rangeFailure = ""
-    @Published var addressFailure = ""
-    @Published var changesFailure = ""
-    @Published var comparisonNotice = ""
+    var recoveryWarning: String { recoveryWarnings[projectID]?.text ?? "" }
+    @Published private var rangeFailureContent = UIMessage.raw("")
+    var rangeFailure: String { get { rangeFailureContent.text } set { rangeFailureContent = .raw(newValue) } }
+    @Published private var addressFailureContent = UIMessage.raw("")
+    var addressFailure: String { get { addressFailureContent.text } set { addressFailureContent = .raw(newValue) } }
+    @Published private var changesFailureContent = UIMessage.raw("")
+    var changesFailure: String { get { changesFailureContent.text } set { changesFailureContent = .raw(newValue) } }
+    @Published private var comparisonNoticeContent = UIMessage.raw("")
+    var comparisonNotice: String { get { comparisonNoticeContent.text } set { comparisonNoticeContent = .raw(newValue) } }
     @Published private var blankFormattingWarningScope = ""
-    @Published var cellFailure = ""
-    @Published var mcpFailure = ""
+    @Published private var cellFailureContent = UIMessage.raw("")
+    var cellFailure: String { get { cellFailureContent.text } set { cellFailureContent = .raw(newValue) } }
+    @Published private var mcpFailureContent = UIMessage.raw("")
+    var mcpFailure: String { get { mcpFailureContent.text } set { mcpFailureContent = .raw(newValue) } }
     @Published var mcp = ""
     @Published var importPresented = false
     @Published var publishPresented = false
@@ -118,12 +128,12 @@ private extension JSON {
     var comparisonScope: String { [scope,changesFromID,changesToID,changesMode].joined(separator:"|") }
     var blankFormattingWarning: String {
         guard ready,!loadingChanges,changesFailure.isEmpty,blankFormattingWarningScope == comparisonScope else { return "" }
-        return "서로 다른 파일 형식에서는 빈 셀의 서식을 비교할 수 없습니다. 변경 목록이 비어 있어도 서식이 같다는 뜻은 아닙니다. 원본의 빈 셀 서식을 확인하세요."
+        return L("workbook.warning.blankFormatting")
     }
     var independentPaneCoordinates: Bool { beforeRowStart != afterRowStart || beforeColumnStart != afterColumnStart || beforeAddress != afterAddress }
     var navigationRangePrefix: String {
         let differentRanges = beforeRowStart != afterRowStart || beforeColumnStart != afterColumnStart
-        return differentRanges && paneCoordinate(before:false) != nil && rowStart == afterRowStart && columnStart == afterColumnStart ? "이후 버전 " : ""
+        return differentRanges && paneCoordinate(before:false) != nil && rowStart == afterRowStart && columnStart == afterColumnStart ? L("workbook.nav.afterPrefix") : ""
     }
     var ready: Bool { active && !reportID.isEmpty && report["report_id"].string == reportID && !loadingReport && !busy && !loadingDemo }
     var project: JSON { projects.first { $0["project_id"].string == projectID } ?? JSON() }
@@ -144,7 +154,7 @@ private extension JSON {
     }
     func versionLabel(_ id: String) -> String {
         let r = revision(id)
-        return r.isNull ? "선택 없음" : "v\(r["index"].int + 1) · \(r["label"].string)"
+        return r.isNull ? L("workbook.selection.none") : "v\(r["index"].int + 1) · \(r["label"].string)"
     }
     func begin(_ channel: String) -> Ticket {
         owners[channel]?.cancel()
@@ -201,7 +211,7 @@ private extension JSON {
             if selectFirst, projectID.isEmpty, let first = projects.first { await selectProject(first["project_id"].string) }
         } catch {
             guard current(ticket), projectID == selection else { return }
-            failure = error.localizedDescription
+            failureContent = bridgeErrorMessage(error)
         }
     }
     func selectProject(_ id: String, snapshot: String = "") async {
@@ -216,10 +226,10 @@ private extension JSON {
             loadingReport = false
             let target = snapshot.isEmpty ? reports.first?["report_id"].string ?? "" : snapshot
             if !target.isEmpty { await selectReport(target) }
-            else { status = "아직 고정 보고서가 없습니다. 분석을 시작하세요." }
+            else { statusContent = UIMessage("workbook.status.noReport") }
         } catch {
             guard current(ticket), projectID == id else { return }
-            loadingReport = false; failure = error.localizedDescription
+            loadingReport = false; failureContent = bridgeErrorMessage(error)
         }
     }
     func selectReport(_ id: String) async {
@@ -229,7 +239,7 @@ private extension JSON {
         do {
             let value = try await bridge.call("workbookView",["project_id":project,"report_id":id],owner:ticket.owner)
             guard current(ticket), projectID == project, reportID == id else { return }
-            guard value["project_id"].string == project, value["report_id"].string == id else { throw BridgeError(code:"WORKBOOK_SCOPE",message:"통합 문서 보고서의 범위가 다릅니다.") }
+            guard value["project_id"].string == project, value["report_id"].string == id else { throw BridgeError(code:"WORKBOOK_SCOPE",message:UIMessage("workbook.error.reportScope")) }
             report = value; loadingReport = false
             beforeID = revisions.first?["revision_occurrence_id"].string ?? ""
             afterID = revisions.last?["revision_occurrence_id"].string ?? ""
@@ -242,7 +252,7 @@ private extension JSON {
             await loadReleases()
         } catch {
             guard current(ticket), projectID == project, reportID == id else { return }
-            report = JSON(); loadingReport = false; failure = error.localizedDescription
+            report = JSON(); loadingReport = false; failureContent = bridgeErrorMessage(error)
         }
     }
     func selectInitialSheets() {
@@ -257,7 +267,7 @@ private extension JSON {
         revealGeneration += 1
         var left = before ?? beforeID,right = after ?? afterID
         guard let leftIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == left}),let rightIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == right}) else { return }
-        if leftIndex > rightIndex { swap(&left,&right); status = "저장된 버전 순서에 맞게 이전·이후를 자동으로 정렬했습니다." }
+        if leftIndex > rightIndex { swap(&left,&right); statusContent = UIMessage("workbook.status.sortedVersions") }
         clearCells(); invalidate("changes")
         beforeID = left; afterID = right; comparisonNotice = ""; blankFormattingWarningScope = ""
         changes = []; resetChangePaging(); changeTotal = 0
@@ -284,7 +294,7 @@ private extension JSON {
         let value = try await bridge.call("workbookGrid",args,owner:ticket.owner)
         guard current(ticket), rangeScope == identity else { throw CancellationError() }
         let cells = value["items"].array
-        guard value["project_id"].string == project,value["report_id"].string == snapshot,value["revision_occurrence_id"].string == occurrence,value["sheet_id"].string == sheet,cells.count <= rowLimit*columnLimit,cells.allSatisfy({$0["row"].int >= row && $0["row"].int < row+rowLimit && $0["column"].int >= column && $0["column"].int < column+columnLimit}) else { throw BridgeError(code:"WORKBOOK_RANGE_SCOPE",message:"셀 범위 응답의 버전·시트·주소를 확인하지 못했습니다.") }
+        guard value["project_id"].string == project,value["report_id"].string == snapshot,value["revision_occurrence_id"].string == occurrence,value["sheet_id"].string == sheet,cells.count <= rowLimit*columnLimit,cells.allSatisfy({$0["row"].int >= row && $0["row"].int < row+rowLimit && $0["column"].int >= column && $0["column"].int < column+columnLimit}) else { throw BridgeError(code:"WORKBOOK_RANGE_SCOPE",message:UIMessage("workbook.error.rangeScope")) }
         return cells
     }
     func loadRange() async {
@@ -303,7 +313,7 @@ private extension JSON {
             beforeCells = a; afterCells = b; loadingRange = false
         } catch {
             guard current(ticket), rangeScope == identity else { return }
-            beforeCells = []; afterCells = []; loadingRange = false; rangeFailure = error.localizedDescription
+            beforeCells = []; afterCells = []; loadingRange = false; rangeFailureContent = bridgeErrorMessage(error)
         }
     }
     func loadChanges(next: Bool = false,previous: Bool = false,preserveEndpoints: Bool = false) async {
@@ -326,7 +336,7 @@ private extension JSON {
         do {
             let value = try await query("list_workbook_changes",args,ticket:ticket)
             guard current(ticket), comparisonScope == identity else { return }
-            guard value["project_id"].string == projectID,value["report_id"].string == reportID,value["from_revision_occurrence_id"].string == changesFromID,value["to_revision_occurrence_id"].string == changesToID,value["mode"].string == changesMode else { throw BridgeError(code:"WORKBOOK_CHANGES_SCOPE",message:"변경 목록 응답의 프로젝트·보고서·비교 구간을 확인하지 못했습니다.") }
+            guard value["project_id"].string == projectID,value["report_id"].string == reportID,value["from_revision_occurrence_id"].string == changesFromID,value["to_revision_occurrence_id"].string == changesToID,value["mode"].string == changesMode else { throw BridgeError(code:"WORKBOOK_CHANGES_SCOPE",message:UIMessage("workbook.error.changesScope")) }
             if value["blank_formatting_comparison"].string == "unsupported_across_formats" { blankFormattingWarningScope = identity }
             changes = value["items"].array; changeCursor = value["next_cursor"].string
             changePageCursor = targetCursor; changePreviousCursors = back; changePageNumber = targetPage
@@ -335,10 +345,10 @@ private extension JSON {
             guard current(ticket), comparisonScope == identity else { return }
             if changesMode == "range_net",(error as? BridgeError)?.code == "WORKBOOK_DIFF_LIMIT" {
                 loadingChanges = false; mode = "history"
-                comparisonNotice = "양끝 차이 계산 한도에 도달하여 구간 전체 이력으로 표시합니다. 두 버전 사이의 순변경과는 다릅니다."
+                comparisonNoticeContent = UIMessage("workbook.warning.historyFallback")
                 await loadChanges(preserveEndpoints:true); return
             }
-            selectedChangeID = ""; loadingChanges = false; changesFailure = error.localizedDescription
+            selectedChangeID = ""; loadingChanges = false; changesFailureContent = bridgeErrorMessage(error)
         }
     }
     func changeMode(_ value: String) async {
@@ -357,7 +367,7 @@ private extension JSON {
     }
     func goToAddress() async {
         guard ready else { return }
-        guard let (row,column) = WorkbookGrid.parseAddress(addressInput) else { addressFailure = "A1–XFD1048576 형식의 물리 셀 주소를 입력하세요."; return }
+        guard let (row,column) = WorkbookGrid.parseAddress(addressInput) else { addressFailureContent = UIMessage("workbook.error.address"); return }
         rowStart = max(1,min(row,1_048_576-rowLimit+1)); columnStart = max(1,min(column,16_384-columnLimit+1))
         clearCells(); addressInput = WorkbookGrid.address(row,column); let identity = rangeScope
         await loadRange(); guard ready, rangeScope == identity else { return }; await selectCell(row,column)
@@ -405,17 +415,17 @@ private extension JSON {
             cellTextNext = [a,b].flatMap { cell in ["value","formula","number_format"].compactMap { key -> Int? in let cursor = cell["text_continuations"][key]["next_offset"]; return cursor.isNull ? nil : cursor.int } }.filter { $0 > offset }.min()
         } catch {
             guard current(ticket), rangeScope == identity, beforeAddress == oldAddress, afterAddress == newAddress else { return }
-            beforeCell = JSON(); afterCell = JSON(); loadingCell = false; cellFailure = error.localizedDescription
+            beforeCell = JSON(); afterCell = JSON(); loadingCell = false; cellFailureContent = bridgeErrorMessage(error)
         }
     }
     private func scopedCellResult(_ value: JSON,occurrence: String,sheet: String,address: String) throws -> JSON {
         let items = value["items"].array
         guard value["project_id"].string == projectID,value["report_id"].string == reportID,value["revision_occurrence_id"].string == occurrence,value["sheet_id"].string == sheet,value["items"].raw is [Any] else {
-            throw BridgeError(code:"WORKBOOK_CELL_SCOPE",message:"셀 원문 응답의 버전·시트·주소를 확인하지 못했습니다.")
+            throw BridgeError(code:"WORKBOOK_CELL_SCOPE",message:UIMessage("workbook.error.cellScope"))
         }
         if value["availability"].string == "not_materialized",items.isEmpty { return JSON() }
         guard value["availability"].string == "available",items.count == 1,let (row,column) = WorkbookGrid.parseAddress(address),items[0]["address"].string == address,items[0]["row"].number == Double(row),items[0]["column"].number == Double(column) else {
-            throw BridgeError(code:"WORKBOOK_CELL_SCOPE",message:"셀 원문 응답의 버전·시트·주소를 확인하지 못했습니다.")
+            throw BridgeError(code:"WORKBOOK_CELL_SCOPE",message:UIMessage("workbook.error.cellScope"))
         }
         return items[0]
     }
@@ -427,7 +437,7 @@ private extension JSON {
         let a = change["from_revision_occurrence_id"].string, b = change["to_revision_occurrence_id"].string
         guard revisions.contains(where:{$0["revision_occurrence_id"].string == a}), revisions.contains(where:{$0["revision_occurrence_id"].string == b}) else {
             beforeAddress = ""; afterAddress = ""; selectedChangeID = ""; selectedRow = 0; selectedColumn = 0; cellTextOffset = 0; cellTextNext = nil
-            loadingCell = false; cellFailure = "변경의 버전 근거를 찾지 못했습니다."; return
+            loadingCell = false; cellFailureContent = UIMessage("workbook.error.changeVersion"); return
         }
         beforeID = a; afterID = b
         beforeSheetID = change["from_sheet_id"].string; afterSheetID = change["to_sheet_id"].string
@@ -477,10 +487,10 @@ private extension JSON {
             cellHistory = value["items"].array
             cellHistoryCursor = value["next_cursor"].string; cellHistoryTotal = value["total"].int
             cellHistoryPageCursor = cursor; cellHistoryCursorAnchor = anchor; cellHistoryPreviousCursors = back; cellHistoryPageNumber = targetPage; loadingHistory = false
-            cellHistoryMessage = cellHistory.isEmpty ? "기록된 셀 이력이 없습니다." : "이번 페이지 \(cellHistory.count)개 / 총 \(cellHistoryTotal)개 · 첫 열 고유 키로 추정한 이력이며 대응 미확정 위치는 명시합니다."
+            cellHistoryMessageContent = cellHistory.isEmpty ? UIMessage("workbook.history.empty") : UIMessage("workbook.history.pageSummary",.count(cellHistory.count),.count(cellHistoryTotal))
         } catch {
             guard current(ticket), rangeScope == identity, cellHistoryAnchor == anchor else { return }
-            loadingHistory = false; cellHistoryFailure = error.localizedDescription
+            loadingHistory = false; cellHistoryFailureContent = bridgeErrorMessage(error)
         }
     }
     func loadReleases() async {
@@ -489,9 +499,9 @@ private extension JSON {
             let value = try await bridge.call("workbookReleases",["project_id":projectID],owner:ticket.owner)
             guard current(ticket), scope == identity else { return }
             releases = value.raw is [Any] ? value.array : value["items"].array
-        } catch { guard current(ticket), scope == identity else { return }; failure = error.localizedDescription }
+        } catch { guard current(ticket), scope == identity else { return }; failureContent = bridgeErrorMessage(error) }
     }
-    private func noteRecovery(_ message: String,project: String,run: String) { recoveryWarningRuns[project] = run; recoveryWarnings[project] = message }
+    private func noteRecovery(_ message: UIMessage,project: String,run: String) { recoveryWarningRuns[project] = run; recoveryWarnings[project] = message }
     private func clearRecovery(project: String,run: String) {
         if recoveryWarningRuns[project] == run { recoveryWarningRuns.removeValue(forKey:project); recoveryWarnings.removeValue(forKey:project) }
     }
@@ -502,45 +512,45 @@ private extension JSON {
         var stagedRunID = ""
         var commitAttempted = false
         analysisToken = token; committing = false
-        invalidateReads(); busy = true; cancelRequested = false; failure = ""; status = "원본 통합 문서를 읽고 버전 차이를 분석하는 중…"
+        invalidateReads(); busy = true; cancelRequested = false; failure = ""; statusContent = UIMessage("workbook.status.analyzing")
         do {
             let staged = try await bridge.call("workbookAnalyze",["project_id":project],analysis:true,analysisOwner:token,holdAnalysis:true)
             stagedRunID = staged["analysis_run_id"].string
             guard active, !cancelRequested, projectID == project else { throw CancellationError() }
-            committing = true; commitAttempted = true; status = "고정 보고서를 저장하는 중…"
+            committing = true; commitAttempted = true; statusContent = UIMessage("workbook.status.saving")
             let committed = try await bridge.call("workbookCommit",["project_id":project,"result":staged.raw])
-            if committed["cleanup_pending"].bool { noteRecovery("분석 결과는 저장됐으며 임시 파일 정리를 확인해야 합니다.",project:project,run:stagedRunID) }
+            if committed["cleanup_pending"].bool { noteRecovery(UIMessage("workbook.warning.cleanupPending"),project:project,run:stagedRunID) }
             else { clearRecovery(project:project,run:stagedRunID) }
             stagedRunID = ""
             bridge.releaseAnalysis(owner:token)
             guard projectID == project else { throw CancellationError() }
-            analysisToken = nil; committing = false; busy = false; status = "분석 완료 · 원본과 보고서를 고정했습니다."
+            analysisToken = nil; committing = false; busy = false; statusContent = UIMessage("workbook.status.complete")
             let completion = begin("analysis-completion")
             await refreshProjects()
             guard active, current(completion), projectID == project else { return }
             await selectProject(project,snapshot:committed["report_id"].string)
-            if active,projectID == project,reportID == committed["report_id"].string { status = "분석 완료 · 원본과 보고서를 고정했습니다." }
+            if active,projectID == project,reportID == committed["report_id"].string { statusContent = UIMessage("workbook.status.complete") }
         } catch {
-            var recoveryReport = "",cleanupFailure = "",saveUncertain = false
+            var recoveryReport = "",cleanupFailure = UIMessage.raw(""),saveUncertain = false
             if !stagedRunID.isEmpty {
                 // A lost commit reply does not establish a failed commit. Check
                 // this exact owned run before considering its staged-file cleanup.
-                committing = true; status = "이번 분석의 저장 상태를 확인하는 중…"
+                committing = true; statusContent = UIMessage("workbook.status.checkingSave")
                 do {
                     let run = try await bridge.call("workbookRunStatus",["project_id":project,"analysis_run_id":stagedRunID])
-                    guard run["project_id"].string == project,run["analysis_run_id"].string == stagedRunID else { throw BridgeError(code:"WORKBOOK_RUN_SCOPE",message:"이번 분석의 저장 상태 범위를 확인하지 못했습니다.") }
+                    guard run["project_id"].string == project,run["analysis_run_id"].string == stagedRunID else { throw BridgeError(code:"WORKBOOK_RUN_SCOPE",message:UIMessage("workbook.error.runScope")) }
                     if run["status"].string == "success",!run["report_id"].string.isEmpty {
                         recoveryReport = run["report_id"].string; clearRecovery(project:project,run:stagedRunID)
                     } else if run["status"].string == "staged" {
-                        status = "이번 분석의 임시 결과를 정리하는 중…"
+                        statusContent = UIMessage("workbook.status.cleaning")
                         do { _ = try await bridge.call("workbookDiscard",["project_id":project,"analysis_run_id":stagedRunID]); clearRecovery(project:project,run:stagedRunID) }
-                        catch { cleanupFailure = "임시 분석 정리를 확인하지 못했습니다: " + error.localizedDescription }
+                        catch { cleanupFailure = UIMessage("workbook.error.cleanupDetail",.message(bridgeErrorMessage(error))) }
                     } else if run["status"].string != "failed" {
-                        saveUncertain = commitAttempted; cleanupFailure = "이번 분석의 저장·정리 상태를 다시 확인해야 합니다."
+                        saveUncertain = commitAttempted; cleanupFailure = UIMessage("workbook.warning.saveCleanup")
                     }
                 } catch {
                     saveUncertain = commitAttempted
-                    cleanupFailure = (saveUncertain ? "저장 여부 확인 필요: " : "임시 분석 상태 확인 필요: ") + error.localizedDescription
+                    cleanupFailure = saveUncertain ? UIMessage("workbook.error.saveDetail",.message(bridgeErrorMessage(error))) : UIMessage("workbook.error.stagedDetail",.message(bridgeErrorMessage(error)))
                 }
                 if !cleanupFailure.isEmpty { noteRecovery(cleanupFailure,project:project,run:stagedRunID) }
             }
@@ -553,21 +563,21 @@ private extension JSON {
                 await refreshProjects()
                 guard active,current(completion),projectID == project else { return }
                 await selectProject(project,snapshot:recoveryReport)
-                if active,projectID == project,reportID == recoveryReport { status = ready ? "저장된 분석 결과를 확인해 다시 열었습니다." : "저장된 분석 결과를 확인했습니다. 화면을 다시 불러와주세요." }
+                if active,projectID == project,reportID == recoveryReport { statusContent = ready ? UIMessage("workbook.status.reopened") : UIMessage("workbook.status.savedReload") }
                 return
             }
             let cancelled = cancelRequested || error is CancellationError || (error as? BridgeError)?.code == "CANCELLED"
-            let outcome = saveUncertain ? "저장 여부 확인 필요 · 마지막으로 확인한 보고서를 표시합니다." : cancelled ? "분석을 취소했습니다. 이전 고정 보고서를 유지합니다." : "분석하지 못했습니다. 이전 고정 보고서를 유지합니다."
-            let message = error.localizedDescription
+            let outcome = saveUncertain ? UIMessage("workbook.status.saveUncertain") : cancelled ? UIMessage("workbook.status.cancelled") : UIMessage("workbook.status.failed")
+            let message = bridgeErrorMessage(error)
             if active, projectID == project, !oldReport.isEmpty { await selectProject(project,snapshot:oldReport) }
             guard projectID == project else { return }
-            failure = cancelled || saveUncertain ? "" : message
-            status = outcome
+            failureContent = cancelled || saveUncertain ? .raw("") : message
+            statusContent = outcome
         }
     }
-    func cancelAnalysis() { guard canCancelAnalysis,let token = analysisToken else { return }; cancelRequested = true; status = "취소 중… 이전 고정 보고서를 유지합니다."; bridge.cancel(owner:token) }
+    func cancelAnalysis() { guard canCancelAnalysis,let token = analysisToken else { return }; cancelRequested = true; statusContent = UIMessage("workbook.status.cancelling"); bridge.cancel(owner:token) }
     func create(title: String, rows: [WorkbookImportRow]) async throws {
-        guard active, !busy, !loadingDemo else { throw BridgeError(code:"WORKBOOK_BUSY",message:"현재 작업이 끝난 뒤 가져오세요.") }
+        guard active, !busy, !loadingDemo else { throw BridgeError(code:"WORKBOOK_BUSY",message:UIMessage("workbook.error.busy")) }
         let retainedProject = projectID, retainedReport = reportID, retainedRange = rangeScope
         let interruptedReport = loadingReport || report.isNull
         let interruptedRange = loadingRange, interruptedChanges = loadingChanges, interruptedCell = loadingCell, interruptedHistory = loadingHistory
@@ -606,39 +616,40 @@ private extension JSON {
     func useDemo() async {
         guard active, !busy, !loadingDemo, !loadingReport else { return }
         let ticket = begin("demo"), identity = scope, resources = bridge.resources
-        loadingDemo = true; failure = ""; status = "합성 엑셀 3버전의 원본을 확인하는 중…"
+        loadingDemo = true; failure = ""; statusContent = UIMessage("workbook.status.checkingDemo")
         defer { if current(ticket) { loadingDemo = false } }
         do {
             let demo = try await Task.detached(priority:.userInitiated) { try WorkbookImportRow.bundledDemo(resources:resources) }.value
             guard active, current(ticket), scope == identity else { return }
             loadingDemo = false
             do { try await create(title:demo.title,rows:demo.rows) }
-            catch { if active,scope == identity { failure = error.localizedDescription; status = "데모를 가져오지 못했습니다." } }
+            catch { if active,scope == identity { failureContent = bridgeErrorMessage(error); statusContent = UIMessage("workbook.status.demoFailed") } }
         } catch {
             guard active, current(ticket), scope == identity else { return }
-            failure = error.localizedDescription; status = "데모를 가져오지 못했습니다."
+            failureContent = bridgeErrorMessage(error); statusContent = UIMessage("workbook.status.demoFailed")
         }
     }
     func publish(label: String, reason: String) async throws {
-        guard ready else { throw BridgeError(code:"WORKBOOK_NOT_READY",message:"고정 보고서를 먼저 선택하세요.") }
+        guard ready else { throw BridgeError(code:"WORKBOOK_NOT_READY",message:UIMessage("workbook.error.notReady")) }
         let project = projectID, snapshot = reportID; busy = true
         do {
             _ = try await bridge.call("workbookPublish",["project_id":project,"report_id":snapshot,"label":label,"reason":reason])
             guard projectID == project, reportID == snapshot else { busy = false; return }
-            busy = false; publishPresented = false; status = "현재 보고서를 로컬 배포본으로 고정했습니다."; await loadReleases()
+            busy = false; publishPresented = false; statusContent = UIMessage("workbook.status.published"); await loadReleases()
         } catch { busy = false; throw error }
     }
     func export() async {
         guard ready else { return }
+        let language = LanguagePreferences.shared.effectiveLanguage
         let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
-        panel.prompt = "내보내기"; panel.message = "고정 보고서의 JSON·Markdown을 저장할 폴더를 선택하세요."
+        panel.prompt = L("workbook.action.export"); panel.message = L("workbook.export.folderPrompt")
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         let project = projectID, snapshot = reportID; busy = true; failure = ""
         do {
-            _ = try await bridge.call("workbookExport",["project_id":project,"report_id":snapshot,"folder":folder.path])
+            _ = try await bridge.call("workbookExport",["project_id":project,"report_id":snapshot,"folder":folder.path,"language":language])
             guard projectID == project, reportID == snapshot else { busy = false; return }
-            busy = false; status = "고정 보고서를 내보냈습니다: " + folder.path
-        } catch { busy = false; if projectID == project, reportID == snapshot { failure = error.localizedDescription } }
+            busy = false; statusContent = UIMessage("workbook.status.exported",.verbatim(folder.path))
+        } catch { busy = false; if projectID == project, reportID == snapshot { failureContent = bridgeErrorMessage(error) } }
     }
     func loadMCP() async {
         guard ready else { return }
@@ -648,15 +659,16 @@ private extension JSON {
             guard current(ticket), ready, scope == identity else { return }
             mcp = value["config"].string.isEmpty ? value.string : value["config"].string
             if mcp.isEmpty, !value.dictionary.isEmpty { mcp = String(decoding:try value.data(),as:UTF8.self) }
-            guard !mcp.isEmpty else { throw BridgeError(code:"WORKBOOK_MCP_EMPTY",message:"MCP 설정을 받지 못했습니다.") }
+            guard !mcp.isEmpty else { throw BridgeError(code:"WORKBOOK_MCP_EMPTY",message:UIMessage("workbook.error.mcpEmpty")) }
             mcpScope = identity; loadingMCP = false
-        } catch { guard current(ticket), scope == identity else { return }; mcp = ""; mcpScope = ""; loadingMCP = false; mcpFailure = error.localizedDescription }
+        } catch { guard current(ticket), scope == identity else { return }; mcp = ""; mcpScope = ""; loadingMCP = false; mcpFailureContent = bridgeErrorMessage(error) }
     }
     var canCopyMCP: Bool { ready && !mcp.isEmpty && mcpScope == scope && !loadingMCP }
     func copyMCP() { guard canCopyMCP else { return }; NSPasteboard.general.clearContents(); NSPasteboard.general.setString(mcp,forType:.string) }
 }
 
 struct WorkbookWorkspace: View {
+    @State private var language = LanguagePreferences.shared
     @StateObject var model: WorkbookModel
     init(bridge: Bridge) { _model = StateObject(wrappedValue:WorkbookModel(bridge:bridge)) }
     var body: some View {
@@ -665,7 +677,7 @@ struct WorkbookWorkspace: View {
                 sidebar.frame(minWidth:205,idealWidth:225,maxWidth:290)
                 VStack(spacing:0) {
                     reportBar
-                    if model.loadingReport { WorkbookStatus(title:"고정 보고서를 불러오는 중…",detail:"다른 버전의 셀을 섞어 표시하지 않습니다.",loading:true) }
+                    if model.loadingReport { WorkbookStatus(title:L("workbook.status.loadingReport"),detail:L("workbook.status.loadingReportDetail"),loading:true) }
                     else if model.report.isNull { emptyWorkspace }
                     else if model.tab == "compare" { comparison }
                     else { aiAndReleases }
@@ -675,16 +687,16 @@ struct WorkbookWorkspace: View {
             Divider()
             HStack(spacing:8) {
                 if model.busy || model.loadingDemo { ProgressView().controlSize(.small) }
-                Text(verbatim:model.status.isEmpty ? "수식·매크로·외부 연결을 실행하지 않습니다. 저장된 결과는 재계산값이 아닙니다." : model.status).lineLimit(2)
-                Spacer(); Text("읽기 전용 · workbook.1")
+                Text(verbatim:model.status.isEmpty ? L("workbook.status.readOnlyDetail") : model.status).lineLimit(2)
+                Spacer(); Text(L("workbook.status.readOnly"))
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)
         }.frame(minWidth:1180,minHeight:760).background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light)
         .toolbar {
-            ToolbarItem { Text("스프레드시트 버전 비교").font(.headline) }
+            ToolbarItem { Text(L("workbook.window.title")).font(.headline) }
             ToolbarItemGroup(placement:.primaryAction) {
-                Picker("작업",selection:$model.tab) { Text("셀 비교").tag("compare"); Text("AI·배포본").tag("ai") }.pickerStyle(.segmented).frame(width:200)
-                Button { model.inspectorVisible.toggle() } label: { Label("셀 근거",systemImage:"sidebar.right") }
-                Button { model.importPresented = true } label: { Label("버전 가져오기",systemImage:"plus") }.disabled(model.busy || model.loadingDemo)
+                Picker(L("workbook.tab.label"),selection:$model.tab) { Text(L("workbook.tab.compare")).tag("compare"); Text(L("workbook.tab.ai")).tag("ai") }.pickerStyle(.segmented).frame(width:270)
+                Button { model.inspectorVisible.toggle() } label: { Label(L("workbook.inspector.title"),systemImage:"sidebar.right") }
+                Button { model.importPresented = true } label: { Label(L("workbook.action.importVersions"),systemImage:"plus") }.disabled(model.busy || model.loadingDemo)
             }
         }
         .sheet(isPresented:$model.importPresented) { WorkbookImportSheet(model:model) }
@@ -694,41 +706,41 @@ struct WorkbookWorkspace: View {
     }
     private var sidebar: some View {
         VStack(alignment:.leading,spacing:10) {
-            HStack { Text("통합 문서").font(.headline); Spacer(); Button { Task { await model.refreshProjects() } } label: { Image(systemName:"arrow.clockwise") }.disabled(model.busy) }
+            HStack { Text(L("workbook.sidebar.title")).font(.headline); Spacer(); Button { Task { await model.refreshProjects() } } label: { Image(systemName:"arrow.clockwise") }.disabled(model.busy) }
             List(selection:Binding<String?>(get:{model.projectID.isEmpty ? nil : model.projectID},set:{if let id = $0 { Task { await model.selectProject(id) } }})) {
                 ForEach(model.projects,id:\.id) { project in
-                    VStack(alignment:.leading,spacing:3) { Text(verbatim:project["title"].string).lineLimit(2); Text("버전 \(project["revision_count"].int)개").font(.caption).foregroundStyle(.secondary) }.tag(project["project_id"].string)
+                    VStack(alignment:.leading,spacing:3) { Text(verbatim:project["title"].string).lineLimit(2); Text(LC("workbook.count.versions",project["revision_count"].int)).font(.caption).foregroundStyle(.secondary) }.tag(project["project_id"].string)
                 }
             }.disabled(model.busy || model.loadingDemo).frame(minHeight:130,maxHeight:260)
-            Button { model.importPresented = true } label: { Label("XLSX·ODS·CSV 가져오기",systemImage:"plus.circle") }.disabled(model.busy || model.loadingDemo)
-            Button("3버전 엑셀 데모") { Task { await model.useDemo() } }.disabled(model.busy || model.loadingDemo || model.loadingReport)
+            Button { model.importPresented = true } label: { Label(L("workbook.action.importFormats"),systemImage:"plus.circle") }.disabled(model.busy || model.loadingDemo)
+            Button(L("workbook.action.demo")) { Task { await model.useDemo() } }.disabled(model.busy || model.loadingDemo || model.loadingReport)
             Divider()
-            Text("버전 · 저장된 순서").font(.headline)
+            Text(L("workbook.sidebar.versions")).font(.headline)
             ScrollView {
                 VStack(alignment:.leading,spacing:9) {
                     ForEach(model.revisions,id:\.id) { r in
                         VStack(alignment:.leading,spacing:3) {
                             Text(verbatim:"v\(r["index"].int+1) · \(r["label"].string)").font(.callout.weight(.medium)).lineLimit(2)
-                            HStack { Text(r["format"].string.uppercased()); Text("\(r["sheets"].array.count)개 시트"); if r["revision_occurrence_id"].string == model.beforeID { Text("이전").foregroundStyle(.orange) }; if r["revision_occurrence_id"].string == model.afterID { Text("이후").foregroundStyle(.blue) } }.font(.caption).foregroundStyle(.secondary)
+                            HStack { Text(r["format"].string.uppercased()); Text(LC("workbook.count.sheets",r["sheets"].array.count)); if r["revision_occurrence_id"].string == model.beforeID { Text(L("workbook.before")).foregroundStyle(.orange) }; if r["revision_occurrence_id"].string == model.afterID { Text(L("workbook.after")).foregroundStyle(.blue) } }.font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth:.infinity,alignment:.leading)
                     }
                 }.padding(.horizontal,3)
             }
             if !model.projectID.isEmpty {
-                if model.busy { Button("분석 취소") { model.cancelAnalysis() }.disabled(!model.canCancelAnalysis) }
-                else { Button("이 프로젝트 다시 분석") { Task { await model.run() } }.disabled(model.loadingReport || model.loadingDemo) }
+                if model.busy { Button(L("workbook.action.cancelAnalysis")) { model.cancelAnalysis() }.disabled(!model.canCancelAnalysis) }
+                else { Button(L("workbook.action.reanalyze")) { Task { await model.run() } }.disabled(model.loadingReport || model.loadingDemo) }
             }
-            Text("파일 하나가 버전 하나입니다. 같은 파일이 다시 등장해도 버전의 위치는 구별합니다.").font(.caption).foregroundStyle(.secondary)
+            Text(L("workbook.sidebar.versionExplanation")).font(.caption).foregroundStyle(.secondary)
         }.padding(12)
     }
     private var reportBar: some View {
         VStack(alignment:.leading,spacing:7) {
             HStack {
-                Text(verbatim:model.project["title"].string.isEmpty ? "스프레드시트" : model.project["title"].string).font(.title3.weight(.semibold)).lineLimit(1)
+                Text(verbatim:model.project["title"].string.isEmpty ? L("workbook.project.fallback") : model.project["title"].string).font(.title3.weight(.semibold)).lineLimit(1)
                 Spacer()
                 if !model.reports.isEmpty {
-                    Picker("고정 보고서",selection:Binding(get:{model.reportID},set:{id in Task { await model.selectReport(id) }})) {
-                        ForEach(model.reports,id:\.id) { r in Text(verbatim:r["created_at"].string + " · " + String(r["report_id"].string.suffix(8))).tag(r["report_id"].string) }
+                    Picker(L("workbook.report.picker"),selection:Binding(get:{model.reportID},set:{id in Task { await model.selectReport(id) }})) {
+                        ForEach(model.reports,id:\.id) { r in Text(verbatim:localizedISODate(r["created_at"].string) + " · " + String(r["report_id"].string.suffix(8))).tag(r["report_id"].string) }
                     }.frame(maxWidth:340).disabled(model.busy || model.loadingReport || model.loadingDemo)
                 }
             }
@@ -738,8 +750,8 @@ struct WorkbookWorkspace: View {
     }
     private var emptyWorkspace: some View {
         VStack(spacing:0) {
-            WorkbookStatus(title:model.projects.isEmpty ? "업무 파일의 버전별 변경을 확인하세요" : "분석한 통합 문서가 없습니다",detail:"XLSX·ODS·UTF-8 CSV 원본을 순서대로 가져오세요. 수식 원문, 입력값, 저장된 계산 결과를 분리해서 비교합니다.",loading:model.loadingDemo)
-            Button("3버전 엑셀 데모") { Task { await model.useDemo() } }.buttonStyle(.borderedProminent).disabled(model.busy || model.loadingDemo || model.loadingReport).padding(.bottom,24)
+            WorkbookStatus(title:model.projects.isEmpty ? L("workbook.empty.title") : L("workbook.empty.noAnalysis"),detail:L("workbook.empty.detail"),loading:model.loadingDemo)
+            Button(L("workbook.action.demo")) { Task { await model.useDemo() } }.buttonStyle(.borderedProminent).disabled(model.busy || model.loadingDemo || model.loadingReport).padding(.bottom,24)
         }
     }
     private var comparison: some View {
@@ -747,29 +759,29 @@ struct WorkbookWorkspace: View {
             versionBar
             Divider()
             HStack {
-                TextField("셀 주소 · A1",text:$model.addressInput).textFieldStyle(.roundedBorder).frame(width:130).onSubmit { Task { await model.goToAddress() } }
-                Button("이동") { Task { await model.goToAddress() } }
+                TextField(L("workbook.nav.address"),text:$model.addressInput).accessibilityIdentifier("Docver.workbook.addressInput").textFieldStyle(.roundedBorder).frame(width:130).onSubmit { Task { await model.goToAddress() } }
+                Button(L("workbook.action.go")) { Task { await model.goToAddress() } }
                 Spacer()
-                Button { Task { await model.moveWindow(columns:-model.columnLimit) } } label: { Image(systemName:"chevron.left") }.disabled(model.columnStart == 1).accessibilityLabel("이전 12열")
-                Text("\(model.navigationRangePrefix)\(WorkbookGrid.columnLabel(model.columnStart))–\(WorkbookGrid.columnLabel(model.columnStart+model.columnLimit-1))열").font(.caption.monospacedDigit())
-                Button { Task { await model.moveWindow(columns:model.columnLimit) } } label: { Image(systemName:"chevron.right") }.disabled(model.columnStart+model.columnLimit>16384).accessibilityLabel("다음 12열")
-                Button { Task { await model.moveWindow(rows:-model.rowLimit) } } label: { Image(systemName:"chevron.up") }.disabled(model.rowStart == 1).accessibilityLabel("이전 100행")
-                Text("\(model.navigationRangePrefix)\(model.rowStart)–\(model.rowStart+model.rowLimit-1)행").font(.caption.monospacedDigit())
-                Button { Task { await model.moveWindow(rows:model.rowLimit) } } label: { Image(systemName:"chevron.down") }.disabled(model.rowStart+model.rowLimit>1048576).accessibilityLabel("다음 100행")
+                Button { Task { await model.moveWindow(columns:-model.columnLimit) } } label: { Image(systemName:"chevron.left") }.disabled(model.columnStart == 1).accessibilityLabel(L("workbook.nav.previousColumns"))
+                Text(L("workbook.nav.columns",.verbatim(model.navigationRangePrefix),.verbatim(WorkbookGrid.columnLabel(model.columnStart)),.verbatim(WorkbookGrid.columnLabel(model.columnStart+model.columnLimit-1)))).font(.caption.monospacedDigit())
+                Button { Task { await model.moveWindow(columns:model.columnLimit) } } label: { Image(systemName:"chevron.right") }.disabled(model.columnStart+model.columnLimit>16384).accessibilityLabel(L("workbook.nav.nextColumns"))
+                Button { Task { await model.moveWindow(rows:-model.rowLimit) } } label: { Image(systemName:"chevron.up") }.disabled(model.rowStart == 1).accessibilityLabel(L("workbook.nav.previousRows"))
+                Text(L("workbook.nav.rows",.verbatim(model.navigationRangePrefix),.count(model.rowStart),.count(model.rowStart+model.rowLimit-1))).font(.caption.monospacedDigit())
+                Button { Task { await model.moveWindow(rows:model.rowLimit) } } label: { Image(systemName:"chevron.down") }.disabled(model.rowStart+model.rowLimit>1048576).accessibilityLabel(L("workbook.nav.nextRows"))
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready)
             if !model.addressFailure.isEmpty { Text(verbatim:model.addressFailure).font(.caption).foregroundStyle(.red).padding(8) }
             if !model.rangeFailure.isEmpty {
                 HStack {
                     Text(verbatim:model.rangeFailure).font(.caption).foregroundStyle(.red).textSelection(.enabled)
-                    Button("셀 범위 다시 읽기") { Task { await model.loadRange() } }.disabled(!model.ready || model.loadingRange)
+                    Button(L("workbook.action.reloadRange")) { Task { await model.loadRange() } }.disabled(!model.ready || model.loadingRange)
                 }.padding(8)
             }
             HSplitView {
                 gridPane(before:true)
                 gridPane(before:false)
-            }.frame(minHeight:240,maxHeight:.infinity).overlay { if model.loadingRange { ZStack { Color(nsColor:.windowBackgroundColor).opacity(0.94); ProgressView("셀 범위를 읽는 중…") } } }
-            Text(model.independentPaneCoordinates ? "이전·이후 근거의 주소를 각각 표시합니다. 범위 이동·셀 선택을 하면 같은 물리 주소 탐색으로 돌아갑니다." : "같은 물리 주소로 나란히 탐색합니다. 빈 칸은 저장된 관측이 없는 위치이며 삭제를 뜻하지 않습니다.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)
-            Text("ƒ 수식 · ∅ 저장 결과 없음 · ?ƒ 수식 의미 미확정 · … 원문 일부").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).padding(.bottom,5)
+            }.frame(minHeight:240,maxHeight:.infinity).overlay { if model.loadingRange { ZStack { Color(nsColor:.windowBackgroundColor).opacity(0.94); ProgressView(L("workbook.status.loadingRange")) } } }
+            Text(model.independentPaneCoordinates ? L("workbook.nav.independentDetail") : L("workbook.nav.sameAddressDetail")).font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)
+            Text(L("workbook.grid.legend")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).padding(.bottom,5)
             Divider()
             changesPane.frame(minHeight:150,idealHeight:200,maxHeight:240)
         }
@@ -777,10 +789,10 @@ struct WorkbookWorkspace: View {
     private var versionBar: some View {
         VStack(spacing:8) {
             HStack {
-                versionPicker(title:"이전",selection:model.beforeID,before:true)
+                versionPicker(title:L("workbook.before"),selection:model.beforeID,before:true)
                 Image(systemName:"arrow.right").foregroundStyle(.secondary)
-                versionPicker(title:"이후",selection:model.afterID,before:false)
-                Picker("차이 범위",selection:Binding(get:{model.mode},set:{value in Task { await model.changeMode(value) }})) { Text("두 버전 순변경").tag("range_net"); Text("구간 전체 이력").tag("history") }.frame(width:210)
+                versionPicker(title:L("workbook.after"),selection:model.afterID,before:false)
+                Picker(L("workbook.comparison.mode"),selection:Binding(get:{model.mode},set:{value in Task { await model.changeMode(value) }})) { Text(L("workbook.comparison.net")).tag("range_net"); Text(L("workbook.comparison.history")).tag("history") }.frame(width:270)
             }
             HStack { sheetPicker(before:true); sheetPicker(before:false) }
         }.padding(.horizontal,12).padding(.bottom,10).disabled(!model.ready)
@@ -793,9 +805,9 @@ struct WorkbookWorkspace: View {
     private func sheetPicker(before: Bool) -> some View {
         let occurrence = before ? model.beforeID : model.afterID
         let current = before ? model.beforeSheetID : model.afterSheetID
-        return Picker(before ? "이전 시트" : "이후 시트",selection:Binding(get:{current},set:{id in Task { if before { await model.changeSheet(before:id) } else { await model.changeSheet(after:id) } }})) {
-            if current.isEmpty { Text("시트 없음").tag("") }
-            ForEach(model.sheets(occurrence),id:\.workbookSheetID) { s in Text(verbatim:s["name"].string + (s["hidden"].bool ? " · 숨김" : "") + " (\(s["row_count"].int)×\(s["column_count"].int))").tag(s["sheet_id"].string) }
+        return Picker(before ? L("workbook.sheet.before") : L("workbook.sheet.after"),selection:Binding(get:{current},set:{id in Task { if before { await model.changeSheet(before:id) } else { await model.changeSheet(after:id) } }})) {
+            if current.isEmpty { Text(L("workbook.sheet.none")).tag("") }
+            ForEach(model.sheets(occurrence),id:\.workbookSheetID) { s in Text(verbatim:s["name"].string + (s["hidden"].bool ? L("workbook.sheet.hiddenSuffix") : "") + " (\(s["row_count"].int)×\(s["column_count"].int))").tag(s["sheet_id"].string) }
         }.frame(maxWidth:.infinity)
     }
     private func gridPane(before: Bool) -> some View {
@@ -807,40 +819,40 @@ struct WorkbookWorkspace: View {
         let column = before ? model.beforeColumnStart : model.afterColumnStart
         let coordinate = model.paneCoordinate(before:before)
         return VStack(alignment:.leading,spacing:0) {
-            HStack { Text(verbatim:(before ? "이전 · " : "이후 · ") + model.versionLabel(occurrence)).font(.caption.weight(.semibold)); Spacer(); if sheet["hidden"].bool { Label("숨김 시트",systemImage:"eye.slash").font(.caption) } }.padding(8).background(Color(nsColor:.controlBackgroundColor))
+            HStack { Text(verbatim:(before ? L("workbook.pane.beforePrefix") : L("workbook.pane.afterPrefix")) + model.versionLabel(occurrence)).font(.caption.weight(.semibold)); Spacer(); if sheet["hidden"].bool { Label(L("workbook.sheet.hidden"),systemImage:"eye.slash").font(.caption) } }.padding(8).background(Color(nsColor:.controlBackgroundColor))
             HStack {
-                Text("\(row)–\(row+model.rowLimit-1)행 · \(WorkbookGrid.columnLabel(column))–\(WorkbookGrid.columnLabel(column+model.columnLimit-1))열").font(.caption2).foregroundStyle(.secondary)
+                Text(L("workbook.pane.range",.count(row),.count(row+model.rowLimit-1),.verbatim(WorkbookGrid.columnLabel(column)),.verbatim(WorkbookGrid.columnLabel(column+model.columnLimit-1)))).font(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                if let coordinate { Text("근거 \(WorkbookGrid.address(coordinate.row,coordinate.column))").font(.system(.caption,design:.monospaced)).foregroundStyle(.blue) }
+                if let coordinate { Text(L("workbook.pane.evidence",.verbatim(WorkbookGrid.address(coordinate.row,coordinate.column)))).font(.system(.caption,design:.monospaced)).foregroundStyle(.blue) }
             }.padding(.horizontal,8).padding(.bottom,5)
-            if id.isEmpty { WorkbookStatus(title:"대응 시트 없음",detail:"다른 시트를 선택하거나 변경 근거에서 추가·삭제 여부를 확인하세요.",loading:false) }
-            else { WorkbookGrid(pane:before ? "before" : "after",revealIntent:[model.scope,occurrence,id,String(model.revealGeneration)].joined(separator:"|"),cells:cells,rowStart:row,columnStart:column,rowCount:model.rowLimit,columnCount:model.columnLimit,selectedRow:coordinate?.row ?? 0,selectedColumn:coordinate?.column ?? 0,onSelect:{row,column in Task { await model.selectCell(row,column) }}).disabled(!model.ready || model.loadingRange) }
+            if id.isEmpty { WorkbookStatus(title:L("workbook.sheet.unmatched"),detail:L("workbook.sheet.unmatchedDetail"),loading:false) }
+            else { WorkbookGrid(language:language.effectiveLanguage,pane:before ? "before" : "after",revealIntent:[model.scope,occurrence,id,String(model.revealGeneration)].joined(separator:"|"),cells:cells,rowStart:row,columnStart:column,rowCount:model.rowLimit,columnCount:model.columnLimit,selectedRow:coordinate?.row ?? 0,selectedColumn:coordinate?.column ?? 0,onSelect:{row,column in Task { await model.selectCell(row,column) }}).disabled(!model.ready || model.loadingRange) }
         }.frame(minWidth:280,maxWidth:.infinity,maxHeight:.infinity)
     }
     private var changesPane: some View {
         VStack(spacing:0) {
             HStack {
-                Text(model.changesMode == "history" ? "구간의 중간 변경 이력" : "두 버전 사이의 순변경").font(.headline)
-                Text("\(model.changePageNumber)페이지 · 표시 \(model.changes.count)개 / 총 \(model.changeTotal)개").font(.caption).foregroundStyle(.secondary)
+                Text(model.changesMode == "history" ? L("workbook.changes.historyTitle") : L("workbook.changes.netTitle")).font(.headline)
+                Text(L("workbook.changes.page",.count(model.changePageNumber),.count(model.changes.count),.count(model.changeTotal))).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button { Task { await model.stepChange(-1) } } label: { Image(systemName:"chevron.up") }.accessibilityLabel("이전 변경")
-                Button { Task { await model.stepChange(1) } } label: { Image(systemName:"chevron.down") }.accessibilityLabel("다음 변경")
-                if model.changePageNumber > 1 { Button("처음") { Task { await model.loadChanges(preserveEndpoints:true) } } }
-                if !model.changePreviousCursors.isEmpty { Button("이전 페이지") { Task { await model.loadChanges(previous:true) } } }
-                if !model.changeCursor.isEmpty { Button("다음 페이지") { Task { await model.loadChanges(next:true) } } }
+                Button { Task { await model.stepChange(-1) } } label: { Image(systemName:"chevron.up") }.accessibilityLabel(L("workbook.changes.previous"))
+                Button { Task { await model.stepChange(1) } } label: { Image(systemName:"chevron.down") }.accessibilityLabel(L("workbook.changes.next"))
+                if model.changePageNumber > 1 { Button(L("workbook.paging.first")) { Task { await model.loadChanges(preserveEndpoints:true) } } }
+                if !model.changePreviousCursors.isEmpty { Button(L("workbook.paging.previous")) { Task { await model.loadChanges(previous:true) } } }
+                if !model.changeCursor.isEmpty { Button(L("workbook.paging.next")) { Task { await model.loadChanges(next:true) } } }
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready || model.loadingChanges)
-            Text(verbatim:"조회 구간 · " + model.versionLabel(model.changesFromID) + " → " + model.versionLabel(model.changesToID)).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
-            if !model.changesFromID.isEmpty,!model.changesToID.isEmpty,(model.changesFromID != model.beforeID || model.changesToID != model.afterID) { Text("위 비교의 두 버전과 목록의 조회 구간은 다릅니다.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
-            if !model.changeCursor.isEmpty { Text("응답 크기로 나누어 표시합니다. ‘다음 페이지’에서 변경을 계속 확인하세요.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
-            else if !model.changePreviousCursors.isEmpty { Text("마지막 페이지입니다. 앞선 변경은 ‘이전 페이지’에서 확인하세요.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            Text(verbatim:L("workbook.changes.intervalPrefix") + model.versionLabel(model.changesFromID) + " → " + model.versionLabel(model.changesToID)).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
+            if !model.changesFromID.isEmpty,!model.changesToID.isEmpty,(model.changesFromID != model.beforeID || model.changesToID != model.afterID) { Text(L("workbook.changes.intervalDifference")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            if !model.changeCursor.isEmpty { Text(L("workbook.paging.more")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            else if !model.changePreviousCursors.isEmpty { Text(L("workbook.paging.last")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.comparisonNotice.isEmpty { Text(verbatim:model.comparisonNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
             if !model.blankFormattingWarning.isEmpty {
                 Label(model.blankFormattingWarning,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,12).padding(.vertical,3).accessibilityIdentifier("Docver.workbook.blankFormattingWarning")
             }
-            if model.changePageNumber > model.changePreviousCursors.count+1 { Text("최근 128개 페이지까지 되돌아갈 수 있습니다. 구간을 다시 선택하면 처음부터 조회합니다.").font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12) }
-            if model.loadingChanges { ProgressView("변경을 읽는 중…").frame(maxWidth:.infinity,maxHeight:.infinity) }
+            if model.changePageNumber > model.changePreviousCursors.count+1 { Text(L("workbook.paging.historyLimit")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12) }
+            if model.loadingChanges { ProgressView(L("workbook.status.loadingChanges")).frame(maxWidth:.infinity,maxHeight:.infinity) }
             else if !model.changesFailure.isEmpty { Text(verbatim:model.changesFailure).font(.caption).foregroundStyle(.red).padding(12).frame(maxWidth:.infinity,maxHeight:.infinity) }
-            else if model.changes.isEmpty { Text("선택한 구간에서 기록된 변경이 없습니다. 판독 범위의 한계는 셀 근거에서 확인하세요.").font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
+            else if model.changes.isEmpty { Text(L("workbook.changes.empty")).font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
             else {
                 List(selection:Binding<String?>(get:{model.selectedChangeID.isEmpty ? nil : model.selectedChangeID},set:{if let id = $0 { Task { await model.chooseChange(id) } }})) {
                     ForEach(model.changes,id:\.workbookChangeID) { change in
@@ -859,21 +871,21 @@ struct WorkbookWorkspace: View {
     private var aiAndReleases: some View {
         ScrollView {
             VStack(alignment:.leading,spacing:18) {
-                Text("AI가 고정된 버전·시트·셀 근거를 읽습니다").font(.title2.weight(.semibold))
-                Text("MCP는 현재 프로젝트를 범위로 읽기 전용 도구를 제공합니다. 셀 주소와 버전 occurrence ID, 수식 원문과 저장된 값을 함께 인용하도록 요청하세요. 수식 계산과 외부 링크 갱신은 수행하지 않습니다.").foregroundStyle(.secondary)
-                HStack { Button("MCP 설정 불러오기") { Task { await model.loadMCP() } }.disabled(!model.ready || model.loadingMCP); Button("설정 복사") { model.copyMCP() }.disabled(!model.canCopyMCP); if model.loadingMCP { ProgressView().controlSize(.small) } }
+                Text(L("workbook.ai.title")).font(.title2.weight(.semibold))
+                Text(L("workbook.ai.detail")).foregroundStyle(.secondary)
+                HStack { Button(L("workbook.action.loadMCP")) { Task { await model.loadMCP() } }.disabled(!model.ready || model.loadingMCP); Button(L("workbook.action.copyConfig")) { model.copyMCP() }.disabled(!model.canCopyMCP); if model.loadingMCP { ProgressView().controlSize(.small) } }
                 if !model.mcpFailure.isEmpty { Text(verbatim:model.mcpFailure).foregroundStyle(.red).font(.caption) }
                 if model.canCopyMCP { Text(verbatim:model.mcp).font(.system(.caption,design:.monospaced)).textSelection(.enabled).padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:6)) }
                 Divider()
-                HStack { Text("로컬 배포본").font(.headline); Spacer(); Button("현재 보고서 배포본 고정…") { model.publishPresented = true }.disabled(!model.ready); Button("보고서 내보내기…") { Task { await model.export() } }.disabled(!model.ready) }
-                Text("이름·이유와 원본/보고서 식별자를 보존합니다. 로컬 기록이며 외부 전송이나 편집자 인증을 의미하지 않습니다.").font(.caption).foregroundStyle(.secondary)
-                if model.releases.isEmpty { Text("고정한 배포본이 없습니다.").foregroundStyle(.secondary) }
-                if model.releases.count > 100 { Text("배포본 중 최근 100개를 표시합니다.").font(.caption).foregroundStyle(.secondary) }
+                HStack { Text(L("workbook.release.title")).font(.headline); Spacer(); Button(L("workbook.action.pinRelease")) { model.publishPresented = true }.disabled(!model.ready); Button(L("workbook.action.exportReport")) { Task { await model.export() } }.disabled(!model.ready) }
+                Text(L("workbook.release.detail")).font(.caption).foregroundStyle(.secondary)
+                if model.releases.isEmpty { Text(L("workbook.release.empty")).foregroundStyle(.secondary) }
+                if model.releases.count > 100 { Text(L("workbook.release.limit")).font(.caption).foregroundStyle(.secondary) }
                 ForEach(Array(model.releases.prefix(100).enumerated()),id:\.offset) { _, release in
                     VStack(alignment:.leading,spacing:5) {
                         Text(verbatim:release["label"].string).font(.headline)
                         Text(verbatim:release["reason"].string).textSelection(.enabled)
-                        Text(verbatim:release["recorded_at"].string + " · " + release["report_id"].string).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        Text(verbatim:localizedISODate(release["recorded_at"].string) + " · " + release["report_id"].string).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:6))
                 }
                 Divider()
@@ -891,38 +903,39 @@ private struct WorkbookStatus: View {
 }
 
 private struct WorkbookInspector: View {
+    @State private var language = LanguagePreferences.shared
     @ObservedObject var model: WorkbookModel
     var body: some View {
         ScrollView {
             VStack(alignment:.leading,spacing:15) {
-                HStack { Text("셀 근거").font(.headline); Spacer(); if model.selectedRow > 0 { Text(WorkbookGrid.address(model.selectedRow,model.selectedColumn)).font(.system(.headline,design:.monospaced)) } }
-                Text("수식은 재계산하지 않음 · 저장값 기준").font(.caption.weight(.medium)).foregroundStyle(.orange)
-                Text(verbatim:"날짜 기준: 이전 " + model.revision(model.beforeID)["date_system"].string + " / 이후 " + model.revision(model.afterID)["date_system"].string).font(.caption).foregroundStyle(.secondary)
-                if model.loadingCell { ProgressView("셀을 읽는 중…") }
+                HStack { Text(L("workbook.inspector.title")).font(.headline); Spacer(); if model.selectedRow > 0 { Text(WorkbookGrid.address(model.selectedRow,model.selectedColumn)).font(.system(.headline,design:.monospaced)) } }
+                Text(L("workbook.cell.storedOnly")).font(.caption.weight(.medium)).foregroundStyle(.orange)
+                Text(verbatim:L("workbook.cell.dateBeforePrefix") + WorkbookLabels.dateSystem(model.revision(model.beforeID)["date_system"].string) + L("workbook.cell.dateAfterPrefix") + WorkbookLabels.dateSystem(model.revision(model.afterID)["date_system"].string)).font(.caption).foregroundStyle(.secondary)
+                if model.loadingCell { ProgressView(L("workbook.status.loadingCell")) }
                 else if !model.cellFailure.isEmpty {
                     Text(verbatim:model.cellFailure).font(.caption).foregroundStyle(.red)
-                    if model.cellHistoryAnchor != nil { Button(model.cellTextOffset > 0 ? "원문 처음부터 다시 읽기" : "셀 원문 다시 읽기") { Task { await model.loadSelectedCells() } }.disabled(!model.ready) }
+                    if model.cellHistoryAnchor != nil { Button(model.cellTextOffset > 0 ? L("workbook.action.reloadSourceStart") : L("workbook.action.reloadCellSource")) { Task { await model.loadSelectedCells() } }.disabled(!model.ready) }
                 }
-                else if model.selectedRow == 0, model.selectedChangeID.isEmpty { Text("셀 또는 변경 항목을 선택하면 수식 원문·저장된 값·유형을 확인할 수 있습니다.").foregroundStyle(.secondary) }
-                else { cellSection("이전 · " + model.versionLabel(model.beforeID),cell:model.beforeCell); Divider(); cellSection("이후 · " + model.versionLabel(model.afterID),cell:model.afterCell) }
+                else if model.selectedRow == 0, model.selectedChangeID.isEmpty { Text(L("workbook.cell.selectPrompt")).foregroundStyle(.secondary) }
+                else { cellSection(L("workbook.pane.beforePrefix") + model.versionLabel(model.beforeID),cell:model.beforeCell); Divider(); cellSection(L("workbook.pane.afterPrefix") + model.versionLabel(model.afterID),cell:model.afterCell) }
                 if !model.selectedChange.isNull {
-                    Divider(); Text("변경과 대응 방법").font(.headline)
+                    Divider(); Text(L("workbook.cell.changeMethod")).font(.headline)
                     Text(verbatim:WorkbookLabels.kind(model.selectedChange["kind"].string)).font(.callout)
                     Text(verbatim:WorkbookLabels.association(model.selectedChange["association"].string)).font(.caption.weight(.medium))
                     Text(verbatim:WorkbookLabels.method(model.selectedChange["alignment_method"].string)).font(.caption).textSelection(.enabled)
                     Text(verbatim:WorkbookLabels.description(model.selectedChange)).font(.caption)
-                    Text("추정 대응은 같은 업무 레코드임을 확정하지 않습니다. 모호한 대응을 삭제로 해석하지 마세요.").font(.caption).foregroundStyle(.secondary)
+                    Text(L("workbook.cell.inferenceWarning")).font(.caption).foregroundStyle(.secondary)
                 }
                 if model.selectedRow > 0 {
-                    Button("선택 셀 이력 읽기") { Task { await model.loadCellHistory() } }.disabled(!model.ready || model.loadingCell || model.loadingHistory)
-                    if model.loadingHistory { ProgressView("셀 이력 페이지를 읽는 중…").controlSize(.small) }
+                    Button(L("workbook.action.cellHistory")) { Task { await model.loadCellHistory() } }.disabled(!model.ready || model.loadingCell || model.loadingHistory)
+                    if model.loadingHistory { ProgressView(L("workbook.status.loadingHistory")).controlSize(.small) }
                     if !model.cellHistoryFailure.isEmpty { Text(verbatim:model.cellHistoryFailure).font(.caption).foregroundStyle(.red) }
                     if !model.cellHistoryMessage.isEmpty { Text(verbatim:model.cellHistoryMessage).font(.caption).foregroundStyle(.secondary) }
                     HStack {
-                        if !model.cellHistoryPreviousCursors.isEmpty { Button("이전 이력 페이지") { Task { await model.loadCellHistory(previous:true) } } }
-                        if !model.cellHistoryCursor.isEmpty { Button("다음 이력 페이지") { Task { await model.loadCellHistory(next:true) } } }
+                        if !model.cellHistoryPreviousCursors.isEmpty { Button(L("workbook.paging.historyPrevious")) { Task { await model.loadCellHistory(previous:true) } } }
+                        if !model.cellHistoryCursor.isEmpty { Button(L("workbook.paging.historyNext")) { Task { await model.loadCellHistory(next:true) } } }
                     }.disabled(!model.ready || model.loadingCell || model.loadingHistory)
-                    if !model.cellHistory.isEmpty { Text("\(model.cellHistoryPageNumber)페이지 · 최대 최근 128페이지 되돌리기").font(.caption2).foregroundStyle(.secondary) }
+                    if !model.cellHistory.isEmpty { Text(L("workbook.history.page",.count(model.cellHistoryPageNumber))).font(.caption2).foregroundStyle(.secondary) }
                     ForEach(Array(model.cellHistory.enumerated()),id:\.offset) { _, event in
                         VStack(alignment:.leading,spacing:3) {
                             Text(verbatim:model.versionLabel(event["revision_occurrence_id"].string)).lineLimit(2)
@@ -933,8 +946,8 @@ private struct WorkbookInspector: View {
                     }
                 }
                 Divider()
-                WorkbookSheetMetadata(title:"이전 시트 메타데이터",sheet:model.sheet(model.beforeID,model.beforeSheetID))
-                WorkbookSheetMetadata(title:"이후 시트 메타데이터",sheet:model.sheet(model.afterID,model.afterSheetID))
+                WorkbookSheetMetadata(title:L("workbook.sheet.beforeMetadata"),sheet:model.sheet(model.beforeID,model.beforeSheetID))
+                WorkbookSheetMetadata(title:L("workbook.sheet.afterMetadata"),sheet:model.sheet(model.afterID,model.afterSheetID))
                 WorkbookCoverageView(gaps:model.coverage,total:model.report["coverage_gap_count"].int,truncated:model.report["coverage_truncated"].bool,revisions:model.revisions)
             }.padding(14).frame(maxWidth:.infinity,alignment:.leading)
         }.background(Color(nsColor:.controlBackgroundColor))
@@ -944,6 +957,7 @@ private struct WorkbookInspector: View {
     }
 }
 private struct WorkbookCellDetail: View {
+    @State private var language = LanguagePreferences.shared
     let title: String
     let cell: JSON
     let textOffset: Int
@@ -953,26 +967,26 @@ private struct WorkbookCellDetail: View {
     var body: some View {
         VStack(alignment:.leading,spacing:7) {
             Text(verbatim:title).font(.headline).lineLimit(2)
-            if cell.isNull { Text("저장된 셀 관측 없음 · 삭제를 확정하지 않음").font(.caption).foregroundStyle(.secondary) }
+            if cell.isNull { Text(L("workbook.cell.noObservation")).font(.caption).foregroundStyle(.secondary) }
             else {
-                Text(verbatim:cell["address"].string + " · " + cell["value_type"].string).font(.system(.caption,design:.monospaced))
-                if !cell["source_range"].string.isEmpty { Text(verbatim:"원본 빈 셀 서식 범위: " + cell["source_range"].string).font(.caption).textSelection(.enabled) }
-                if !cell["difference_range"].string.isEmpty { Text(verbatim:"차이가 관측된 구간: " + cell["difference_range"].string).font(.caption).textSelection(.enabled) }
-                if cell["formula_interpretation"].string == "unresolved" { Text("공유·배열 수식의 셀별 의미 확인 필요").font(.caption.weight(.medium)).foregroundStyle(.orange) }
-                if !cell["formula"].isNull { rawDetail("수식 원문",field:"formula"); Text("수식은 실행하지 않았습니다.").font(.caption2).foregroundStyle(.secondary) }
-                rawDetail(cell["formula_interpretation"].string == "unresolved" ? "저장된 관측값 · 입력/계산 결과 미확정" : cell["formula"].isNull ? "저장된 입력값" : "저장된 계산 결과",field:"value")
+                Text(verbatim:cell["address"].string + " · " + WorkbookLabels.valueType(cell["value_type"].string)).font(.system(.caption,design:.monospaced))
+                if !cell["source_range"].string.isEmpty { Text(verbatim:L("workbook.cell.blankRangePrefix") + cell["source_range"].string).font(.caption).textSelection(.enabled) }
+                if !cell["difference_range"].string.isEmpty { Text(verbatim:L("workbook.cell.differenceRangePrefix") + cell["difference_range"].string).font(.caption).textSelection(.enabled) }
+                if cell["formula_interpretation"].string == "unresolved" { Text(L("workbook.cell.unresolvedFormula")).font(.caption.weight(.medium)).foregroundStyle(.orange) }
+                if !cell["formula"].isNull { rawDetail(L("workbook.cell.formula"),field:"formula"); Text(L("workbook.cell.formulaNotExecuted")).font(.caption2).foregroundStyle(.secondary) }
+                rawDetail(cell["formula_interpretation"].string == "unresolved" ? L("workbook.cell.unresolvedValue") : cell["formula"].isNull ? L("workbook.cell.input") : L("workbook.cell.result"),field:"value")
                 if textOffset > 0 || ["value","formula","number_format"].contains(where:{cell["text_continuations"][$0]["state"].string == "truncated"}) {
                     HStack {
-                        if textOffset > 0 { Button("양쪽 처음부터") { onTextPage(0) } }
-                        if let nextTextOffset { Button("양쪽 원문 이어 읽기") { onTextPage(nextTextOffset) } }
+                        if textOffset > 0 { Button(L("workbook.action.sourceStartBoth")) { onTextPage(0) } }
+                        if let nextTextOffset { Button(L("workbook.action.sourceNextBoth")) { onTextPage(nextTextOffset) } }
                     }.disabled(!canPage)
-                    Text("이전·이후 원문을 같은 UTF-16 위치로 함께 이동합니다.").font(.caption2).foregroundStyle(.secondary)
+                    Text(L("workbook.cell.sourcePaging")).font(.caption2).foregroundStyle(.secondary)
                 }
-                if !cell["number_format"].isNull { rawDetail("원본 숫자 형식",field:"number_format") }
-                if cell["hidden_row"].bool || cell["hidden_column"].bool { Label((cell["hidden_row"].bool ? "숨김 행 " : "") + (cell["hidden_column"].bool ? "숨김 열" : ""),systemImage:"eye.slash").font(.caption).foregroundStyle(.orange) }
-                if !cell["style"].dictionary.isEmpty { detail("원본 기본 스타일",cell["style"].dictionary.keys.sorted().map { $0 + ": " + cell["style"][$0].string }.joined(separator:"\n")) }
-                if cell["style_truncated"].bool { Text("기본 스타일의 일부만 표시합니다.").font(.caption).foregroundStyle(.orange) }
-                detail("원본 근거",cell["source_ref"].string)
+                if !cell["number_format"].isNull { rawDetail(L("workbook.cell.numberFormat"),field:"number_format") }
+                if cell["hidden_row"].bool || cell["hidden_column"].bool { Label((cell["hidden_row"].bool ? L("workbook.cell.hiddenRowPrefix") : "") + (cell["hidden_column"].bool ? L("workbook.cell.hiddenColumn") : ""),systemImage:"eye.slash").font(.caption).foregroundStyle(.orange) }
+                if !cell["style"].dictionary.isEmpty { detail(L("workbook.cell.style"),cell["style"].dictionary.keys.sorted().map { $0 + ": " + cell["style"][$0].string }.joined(separator:"\n")) }
+                if cell["style_truncated"].bool { Text(L("workbook.cell.styleTruncated")).font(.caption).foregroundStyle(.orange) }
+                detail(L("workbook.cell.sourceRef"),cell["source_ref"].string)
             }
         }
     }
@@ -980,7 +994,7 @@ private struct WorkbookCellDetail: View {
         let continuation = cell["text_continuations"][field]
         if continuation["state"].string == "truncated" {
             let start = continuation["offset"].int,end = start+cell[field].string.utf16.count
-            return label + " · 원문 일부\nUTF-16 \(start)–\(end) / \(continuation["total_length"].int) · 0부터, 끝 제외"
+            return L("workbook.cell.partialSource",.verbatim(label),.count(start),.count(end),.count(continuation["total_length"].int))
         }
         return label
     }
@@ -993,40 +1007,42 @@ private struct WorkbookCellDetail: View {
                 Text(verbatim:cell[field].string).font(.system(.caption,design:.monospaced)).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
             }
             if cell["text_continuations"][field]["state"].string == "truncated",!cell[field].string.isEmpty {
-                Text(cell["text_continuations"][field]["next_offset"].isNull ? "— 원문 마지막 조각 끝 · 앞부분은 처음부터 확인할 수 있습니다." : "… 현재 조각 끝 · 뒤에 원문이 더 있습니다.").font(.caption2.weight(.medium)).foregroundStyle(.orange)
+                Text(cell["text_continuations"][field]["next_offset"].isNull ? L("workbook.cell.sourceLastChunk") : L("workbook.cell.sourceMoreChunks")).font(.caption2.weight(.medium)).foregroundStyle(.orange)
             }
         }
     }
     private func sourceStatus(_ field: String) -> String? {
         let raw = cell[field],continuation = cell["text_continuations"][field]
-        if raw.isNull { return "값 관측 없음 · 빈 문자열/0과 다름" }
+        if raw.isNull { return L("workbook.cell.valueAbsent") }
         if raw.string.isEmpty {
-            if continuation["total_length"].int > 0 { return "앞부분에서 읽은 값 · 현재 조각 없음" }
-            return "빈 문자열"
+            if continuation["total_length"].int > 0 { return L("workbook.cell.valueEarlier") }
+            return L("workbook.cell.emptyString")
         }
         return nil
     }
     private func detail(_ label: String, _ value: String) -> some View { VStack(alignment:.leading,spacing:3) { Text(verbatim:label).font(.caption.weight(.medium)).foregroundStyle(.secondary); Text(verbatim:value).font(.system(.caption,design:.monospaced)).textSelection(.enabled).fixedSize(horizontal:false,vertical:true) } }
 }
 private struct WorkbookSheetMetadata: View {
+    @State private var language = LanguagePreferences.shared
     let title: String
     let sheet: JSON
     var body: some View {
         if !sheet.isNull {
             VStack(alignment:.leading,spacing:5) {
                 Text(verbatim:title).font(.caption.weight(.semibold))
-                Text(verbatim:sheet["name"].string + (sheet["hidden"].bool ? " · 숨김 시트" : "")).font(.caption)
-                Text("병합 \(sheet["merge_count"].int)개 · 행 메타 \(sheet["row_metadata_count"].int)개 · 열 메타 \(sheet["column_metadata_count"].int)개").font(.caption).foregroundStyle(.secondary)
-                if sheet["blank_style_range_count"].int > 0 { Text("빈 셀 서식 범위 \(sheet["blank_style_range_count"].int)개 · 화면 밖의 서식도 보존됩니다. 전체 범위는 고정 보고서/MCP에서 확인하세요.").font(.caption).foregroundStyle(.secondary) }
-                ForEach(Array(sheet["row_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text("숨김 행 \(range["start"].int)–\(range["end"].int)").font(.caption) }
-                ForEach(Array(sheet["column_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text("숨김 열 \(WorkbookGrid.columnLabel(range["start"].int))–\(WorkbookGrid.columnLabel(range["end"].int))").font(.caption) }
-                if !sheet["merges"].array.isEmpty { Text(verbatim:"병합 범위: " + sheet["merges"].array.map(\.string).joined(separator:", ")).font(.caption).textSelection(.enabled) }
-                if sheet["metadata_truncated"].bool { Text("행·열·병합 메타데이터 일부만 표시합니다. 전체 요약은 고정 보고서/MCP에서 확인하세요.").font(.caption).foregroundStyle(.secondary) }
+                Text(verbatim:sheet["name"].string + (sheet["hidden"].bool ? L("workbook.sheet.hiddenNameSuffix") : "")).font(.caption)
+                Text(L("workbook.sheet.metadataCounts",.count(sheet["merge_count"].int),.count(sheet["row_metadata_count"].int),.count(sheet["column_metadata_count"].int))).font(.caption).foregroundStyle(.secondary)
+                if sheet["blank_style_range_count"].int > 0 { Text(L("workbook.sheet.blankRanges",.count(sheet["blank_style_range_count"].int))).font(.caption).foregroundStyle(.secondary) }
+                ForEach(Array(sheet["row_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text(L("workbook.sheet.hiddenRows",.count(range["start"].int),.count(range["end"].int))).font(.caption) }
+                ForEach(Array(sheet["column_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text(L("workbook.sheet.hiddenColumns",.verbatim(WorkbookGrid.columnLabel(range["start"].int)),.verbatim(WorkbookGrid.columnLabel(range["end"].int)))).font(.caption) }
+                if !sheet["merges"].array.isEmpty { Text(verbatim:L("workbook.sheet.mergesPrefix") + sheet["merges"].array.map(\.string).joined(separator:", ")).font(.caption).textSelection(.enabled) }
+                if sheet["metadata_truncated"].bool { Text(L("workbook.sheet.metadataTruncated")).font(.caption).foregroundStyle(.secondary) }
             }
         }
     }
 }
 private struct WorkbookCoverageView: View {
+    @State private var language = LanguagePreferences.shared
     let gaps: [JSON]
     let total: Int
     let truncated: Bool
@@ -1044,29 +1060,45 @@ private struct WorkbookCoverageView: View {
     }
     private func provenance(_ entry: Entry) -> String {
         let occurrences = Set(entry.observations.map { $0["revision_occurrence_id"].string }.filter { !$0.isEmpty })
-        if revisions.count > 1,occurrences == Set(revisions.map { $0["revision_occurrence_id"].string }),entry.observations.allSatisfy({$0["sheet_id"].string.isEmpty && $0["address"].string.isEmpty}) { return "전체 \(revisions.count)개 버전에 공통 적용" }
+        if revisions.count > 1,occurrences == Set(revisions.map { $0["revision_occurrence_id"].string }),entry.observations.allSatisfy({$0["sheet_id"].string.isEmpty && $0["address"].string.isEmpty}) { return L("workbook.coverage.allVersions",.count(revisions.count)) }
         var labels: [String] = [],seen = Set<String>()
         for observation in entry.observations {
             let occurrence = observation["revision_occurrence_id"].string,sheetID = observation["sheet_id"].string,address = observation["address"].string
             let revision = revisions.first { $0["revision_occurrence_id"].string == occurrence }
             var parts: [String] = []
             if let revision { parts.append("v\(revision["index"].int+1)") }
-            else if !occurrence.isEmpty { parts.append("버전 " + String(occurrence.suffix(8))) }
-            if !sheetID.isEmpty { parts.append(revision?["sheets"].array.first(where:{$0["sheet_id"].string == sheetID})?["name"].string ?? "시트 " + String(sheetID.suffix(8))) }
+            else if !occurrence.isEmpty { parts.append(L("workbook.coverage.versionPrefix") + String(occurrence.suffix(8))) }
+            if !sheetID.isEmpty { parts.append(revision?["sheets"].array.first(where:{$0["sheet_id"].string == sheetID})?["name"].string ?? L("workbook.coverage.sheetPrefix") + String(sheetID.suffix(8))) }
             if !address.isEmpty { parts.append(address) }
-            let label = parts.isEmpty ? "보고서 공통" : parts.joined(separator:" · ")
+            let label = parts.isEmpty ? L("workbook.coverage.common") : parts.joined(separator:" · ")
             if seen.insert(label).inserted { labels.append(label) }
         }
-        return "적용: " + labels.prefix(8).joined(separator:", ") + (labels.count > 8 ? " 외 \(labels.count-8)개 위치" : "")
+        return L("workbook.coverage.appliesPrefix") + labels.prefix(8).joined(separator:", ") + (labels.count > 8 ? LC("workbook.coverage.moreLocations",labels.count-8) : "")
     }
     var body: some View {
         VStack(alignment:.leading,spacing:7) {
-            Text("판독 범위와 한계").font(.headline)
-            Text("Excel·Calc의 계산/화면을 완전히 재현하지 않습니다. 차트, 피벗, 매크로, 외부 데이터 등은 원본 기능별 제한을 확인하세요.").font(.caption).foregroundStyle(.secondary)
-            if truncated || gaps.count > 50 { Text("판독 한계 기록 \(total)개 중 \(min(50,gaps.count))개를 표시합니다. 전체 항목은 MCP로 이어 읽을 수 있습니다.").font(.caption).foregroundStyle(.orange) }
-            if gaps.isEmpty { Text("보고된 추가 판독 한계 없음 · 완전 호환을 의미하지 않음").font(.caption).foregroundStyle(.secondary) }
-            if !gaps.isEmpty { Text("같은 내용은 한 번 표시합니다 · \(min(50,gaps.count))개 기록을 \(entries.count)개 항목으로 묶음").font(.caption).foregroundStyle(.secondary) }
-            ForEach(entries) { entry in VStack(alignment:.leading,spacing:3) { Text(verbatim:entry.feature).font(.caption.weight(.medium)); Text(verbatim:entry.reason).font(.caption).foregroundStyle(.secondary); Text(verbatim:provenance(entry)).font(.caption2).foregroundStyle(.secondary) } }
+            Text(L("workbook.coverage.title")).font(.headline)
+            Text(L("workbook.coverage.detail")).font(.caption).foregroundStyle(.secondary)
+            if truncated || gaps.count > 50 { Text(L("workbook.coverage.shown",.count(min(50,gaps.count)),.count(total))).font(.caption).foregroundStyle(.orange) }
+            if gaps.isEmpty { Text(L("workbook.coverage.none")).font(.caption).foregroundStyle(.secondary) }
+            if !gaps.isEmpty { Text(L("workbook.coverage.grouped",.count(min(50,gaps.count)),.count(entries.count))).font(.caption).foregroundStyle(.secondary) }
+            ForEach(entries) { entry in
+                let label = WorkbookLabels.coverage(entry.feature)
+                VStack(alignment:.leading,spacing:3) {
+                    Text(verbatim:label.title).font(.caption.weight(.medium))
+                    if let detail = label.detail { Text(verbatim:detail).font(.caption).foregroundStyle(.secondary) }
+                    // Stored reason text and feature identifiers are source evidence,
+                    // not localization keys. Retain the exact bytes in either UI language.
+                    DisclosureGroup(L("workbook.coverage.sourceEvidence")) {
+                        VStack(alignment:.leading,spacing:3) {
+                            Text(L("workbook.coverage.sourceReason")).font(.caption2).foregroundStyle(.secondary)
+                            Text(verbatim:entry.feature).font(.caption.monospaced())
+                            Text(verbatim:entry.reason).font(.caption).textSelection(.enabled)
+                        }
+                    }.font(.caption)
+                    Text(verbatim:provenance(entry)).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }
@@ -1080,59 +1112,66 @@ struct WorkbookImportRow: Identifiable {
         let resourceRoot = resources.resolvingSymlinksInPath().standardizedFileURL
         let folder = resources.appendingPathComponent("demo/workbooks",isDirectory:true).resolvingSymlinksInPath().standardizedFileURL
         let manifest = folder.appendingPathComponent("manifest.json")
-        guard folder.path.hasPrefix(resourceRoot.path + "/"),manifest.resolvingSymlinksInPath().deletingLastPathComponent() == folder else { throw BridgeError(code:"WORKBOOK_DEMO_PATH",message:"앱에 포함된 데모 경로를 확인하지 못했습니다.") }
+        guard folder.path.hasPrefix(resourceRoot.path + "/"),manifest.resolvingSymlinksInPath().deletingLastPathComponent() == folder else { throw BridgeError(code:"WORKBOOK_DEMO_PATH",message:UIMessage("workbook.error.demoPath")) }
         let attributes = try FileManager.default.attributesOfItem(atPath:manifest.path)
-        guard attributes[.type] as? FileAttributeType == .typeRegular,((attributes[.size] as? NSNumber)?.intValue ?? 65_537) <= 65_536 else { throw BridgeError(code:"WORKBOOK_DEMO_MANIFEST",message:"앱의 데모 목록을 읽을 수 없습니다.") }
+        guard attributes[.type] as? FileAttributeType == .typeRegular,((attributes[.size] as? NSNumber)?.intValue ?? 65_537) <= 65_536 else { throw BridgeError(code:"WORKBOOK_DEMO_MANIFEST",message:UIMessage("workbook.error.demoRead")) }
         let value = JSON(try JSONSerialization.jsonObject(with:Data(contentsOf:manifest)))
         let title = value["title"].string, revisions = value["revisions"].array
-        guard !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,title.count <= 200,revisions.count == 3,Set(revisions.map { $0["path"].string }).count == 3 else { throw BridgeError(code:"WORKBOOK_DEMO_MANIFEST",message:"앱의 합성 3버전 데모 목록이 올바르지 않습니다.") }
+        guard !title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,title.count <= 200,revisions.count == 3,Set(revisions.map { $0["path"].string }).count == 3 else { throw BridgeError(code:"WORKBOOK_DEMO_MANIFEST",message:UIMessage("workbook.error.demoManifest")) }
         let rows = try revisions.map { revision -> WorkbookImportRow in
             let name = revision["path"].string,label = revision["label"].string
-            guard name.range(of:"^v[1-3]\\.xlsx$",options:.regularExpression) != nil,!label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,label.count <= 200 else { throw BridgeError(code:"WORKBOOK_DEMO_MANIFEST",message:"앱의 데모 파일 이름·버전 이름을 확인하지 못했습니다.") }
+            guard name.range(of:"^v[1-3]\\.xlsx$",options:.regularExpression) != nil,!label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,label.count <= 200 else { throw BridgeError(code:"WORKBOOK_DEMO_MANIFEST",message:UIMessage("workbook.error.demoNames")) }
             let url = folder.appendingPathComponent(name)
-            guard url.resolvingSymlinksInPath().deletingLastPathComponent() == folder else { throw BridgeError(code:"WORKBOOK_DEMO_PATH",message:"앱에 포함된 데모 경로를 확인하지 못했습니다.") }
+            guard url.resolvingSymlinksInPath().deletingLastPathComponent() == folder else { throw BridgeError(code:"WORKBOOK_DEMO_PATH",message:UIMessage("workbook.error.demoPath")) }
             var row = try selected(url); row.label = label; return row
         }
         return (title,rows)
     }
     static func selected(_ url: URL) throws -> WorkbookImportRow {
-        guard ["xlsx","ods","csv"].contains(url.pathExtension.lowercased()) else { throw BridgeError(code:"WORKBOOK_FORMAT",message:"XLSX·ODS·UTF-8 CSV만 지원합니다.") }
+        guard ["xlsx","ods","csv"].contains(url.pathExtension.lowercased()) else { throw BridgeError(code:"WORKBOOK_FORMAT",message:UIMessage("workbook.error.format")) }
         let size = (try FileManager.default.attributesOfItem(atPath:url.path)[.size] as? NSNumber)?.intValue ?? 0
-        guard size <= 64*1024*1024 else { throw BridgeError(code:"WORKBOOK_LIMIT",message:"통합 문서는 파일당 64 MiB 이하를 지원합니다.") }
+        guard size <= 64*1024*1024 else { throw BridgeError(code:"WORKBOOK_LIMIT",message:UIMessage("workbook.error.fileLimit")) }
         let identity = try ImportFileIdentity.capture(url)
-        guard identity.bytes <= 64*1024*1024 else { throw BridgeError(code:"WORKBOOK_LIMIT",message:"통합 문서는 파일당 64 MiB 이하를 지원합니다.") }
+        guard identity.bytes <= 64*1024*1024 else { throw BridgeError(code:"WORKBOOK_LIMIT",message:UIMessage("workbook.error.fileLimit")) }
         return WorkbookImportRow(label:url.deletingPathExtension().lastPathComponent,url:url,identity:identity)
     }
 }
 private struct WorkbookImportSheet: View {
+    @State private var language = LanguagePreferences.shared
     @ObservedObject var model: WorkbookModel
     @Environment(\.dismiss) private var dismiss
-    @State private var title = "새 통합 문서 프로젝트"
+    @State private var title = L("workbook.import.defaultTitle")
     @State private var rows: [WorkbookImportRow] = []
     @State private var choosing = false
     @State private var saving = false
-    @State private var failure = ""
+    @State private var failureContent = UIMessage.raw("")
+    private var failure: String { failureContent.text }
+    init(model: WorkbookModel, initialTitle: String? = nil, initialRows: [WorkbookImportRow] = []) {
+        self.model = model
+        _title = State(initialValue:initialTitle ?? L("workbook.import.defaultTitle"))
+        _rows = State(initialValue:initialRows)
+    }
     private var locked: Bool { choosing || saving }
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
-            HStack { Text("스프레드시트 버전 가져오기").font(.title2.weight(.semibold)); Spacer(); Button("닫기") { dismiss() }.keyboardShortcut(.cancelAction).disabled(locked) }
-            Text("오래된 버전부터 순서대로 정렬하세요. 파일 하나가 버전 하나입니다. 저장된 수식·값만 읽으며 수식·매크로·외부 연결을 실행하지 않습니다.").font(.callout).foregroundStyle(.secondary)
-            TextField("프로젝트 이름",text:$title).textFieldStyle(.roundedBorder).disabled(locked)
-            Button("XLSX·ODS·CSV 파일 선택…") { choose() }.disabled(locked)
+            HStack { Text(L("workbook.import.title")).font(.title2.weight(.semibold)); Spacer(); Button(L("workbook.action.close")) { dismiss() }.keyboardShortcut(.cancelAction).disabled(locked) }
+            Text(L("workbook.import.detail")).font(.callout).foregroundStyle(.secondary)
+            TextField(L("workbook.import.projectName"),text:$title).accessibilityIdentifier("Docver.workbook.import.title").textFieldStyle(.roundedBorder).disabled(locked)
+            Button(L("workbook.import.choose")) { choose() }.disabled(locked)
             List {
                 ForEach(Array(rows.enumerated()),id:\.element.id) { index, row in
                     HStack {
                         Text("v\(index+1)").font(.caption).foregroundStyle(.secondary)
-                        VStack(alignment:.leading,spacing:3) { TextField("버전 이름",text:Binding(get:{rows.indices.contains(index) ? rows[index].label : ""},set:{if rows.indices.contains(index) { rows[index].label = $0 }})); Text(verbatim:row.url.lastPathComponent + " · \(row.identity.bytes) bytes").font(.caption).foregroundStyle(.secondary) }
-                        Button { move(index,-1) } label: { Image(systemName:"chevron.up") }.disabled(index == 0 || locked).accessibilityLabel("버전 위로 이동")
-                        Button { move(index,1) } label: { Image(systemName:"chevron.down") }.disabled(index == rows.count-1 || locked).accessibilityLabel("버전 아래로 이동")
-                        Button { if rows.indices.contains(index) { rows.remove(at:index) } } label: { Image(systemName:"xmark") }.disabled(locked).accessibilityLabel("버전 제거")
+                        VStack(alignment:.leading,spacing:3) { TextField(L("workbook.import.versionName"),text:Binding(get:{rows.indices.contains(index) ? rows[index].label : ""},set:{if rows.indices.contains(index) { rows[index].label = $0 }})).accessibilityIdentifier("Docver.workbook.import.version." + row.id.uuidString); Text(verbatim:row.url.lastPathComponent + " · " + LC("workbook.import.bytes",row.identity.bytes)).font(.caption).foregroundStyle(.secondary) }
+                        Button { move(index,-1) } label: { Image(systemName:"chevron.up") }.disabled(index == 0 || locked).accessibilityLabel(L("workbook.import.moveUp"))
+                        Button { move(index,1) } label: { Image(systemName:"chevron.down") }.disabled(index == rows.count-1 || locked).accessibilityLabel(L("workbook.import.moveDown"))
+                        Button { if rows.indices.contains(index) { rows.remove(at:index) } } label: { Image(systemName:"xmark") }.disabled(locked).accessibilityLabel(L("workbook.import.remove"))
                     }.disabled(locked)
                 }
             }.frame(minHeight:220,maxHeight:360)
-            Text("파일당 64 MiB · 최대 100개 버전. ODP·XLS·XLSM·암호화 파일은 지원하지 않습니다. CSV는 UTF-8, 쉼표 구분 형식입니다.").font(.caption).foregroundStyle(.secondary)
+            Text(L("workbook.import.limits")).font(.caption).foregroundStyle(.secondary)
             if !failure.isEmpty { Text(verbatim:failure).font(.caption).foregroundStyle(.red) }
-            HStack { if locked { ProgressView().controlSize(.small); Text(choosing ? "원본 SHA-256 확인 중…" : "가져오는 중…").font(.caption) }; Spacer(); Button("이 순서로 분석 시작") { Task { await create() } }.buttonStyle(.borderedProminent).disabled(locked || rows.isEmpty || rows.count > 100 || title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rows.contains { $0.label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }) }
+            HStack { if locked { ProgressView().controlSize(.small); Text(choosing ? L("workbook.import.checkingHash") : L("workbook.import.importing")).font(.caption) }; Spacer(); Button(L("workbook.import.start")) { Task { await create() } }.buttonStyle(.borderedProminent).disabled(locked || rows.isEmpty || rows.count > 100 || title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rows.contains { $0.label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }) }
         }.padding(24).frame(width:840)
     }
     private func move(_ index: Int, _ by: Int) { let target = index+by; guard rows.indices.contains(index),rows.indices.contains(target) else { return }; rows.swapAt(index,target) }
@@ -1141,85 +1180,164 @@ private struct WorkbookImportSheet: View {
         panel.allowedContentTypes = ["xlsx","ods","csv"].compactMap { UTType(filenameExtension:$0) }
         guard panel.runModal() == .OK else { return }
         let urls = panel.urls
-        guard rows.count+urls.count <= 100 else { failure = "버전은 최대 100개까지 가져올 수 있습니다."; return }
-        choosing = true; failure = ""
+        guard rows.count+urls.count <= 100 else { failureContent = UIMessage("workbook.error.versionLimit"); return }
+        choosing = true; failureContent = .raw("")
         Task {
             do { let selected = try await Task.detached(priority:.userInitiated) { try urls.map { try WorkbookImportRow.selected($0) } }.value; rows += selected }
-            catch { failure = error.localizedDescription }
+            catch { failureContent = bridgeErrorMessage(error) }
             choosing = false
         }
     }
     private func create() async {
-        saving = true; failure = ""
-        do { try await model.create(title:title,rows:rows); dismiss() } catch { failure = error.localizedDescription }
+        saving = true; failureContent = .raw("")
+        do { try await model.create(title:title,rows:rows); dismiss() } catch { failureContent = bridgeErrorMessage(error) }
         saving = false
     }
 }
 private struct WorkbookPublishSheet: View {
+    @State private var language = LanguagePreferences.shared
     @ObservedObject var model: WorkbookModel
     @Environment(\.dismiss) private var dismiss
     @State private var label = ""
     @State private var reason = ""
-    @State private var failure = ""
+    @State private var failureContent = UIMessage.raw("")
+    private var failure: String { failureContent.text }
     @State private var saving = false
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
-            Text("현재 보고서를 로컬 배포본으로 고정").font(.title2.weight(.semibold))
-            Text("고정된 보고서·원본 버전 식별자와 아래 설명을 함께 보존합니다. 외부로 전송하지 않습니다.").foregroundStyle(.secondary)
+            Text(L("workbook.release.pinTitle")).font(.title2.weight(.semibold))
+            Text(L("workbook.release.pinDetail")).foregroundStyle(.secondary)
             Text(verbatim:model.reportID).font(.system(.caption,design:.monospaced)).textSelection(.enabled)
-            TextField("배포본 이름 · 예: 2026년 10월 승인본",text:$label).textFieldStyle(.roundedBorder)
-            Text("고정 이유").font(.headline)
+            TextField(L("workbook.release.namePlaceholder"),text:$label).textFieldStyle(.roundedBorder)
+            Text(L("workbook.release.reason")).font(.headline)
             TextEditor(text:$reason).frame(height:100).border(Color.secondary.opacity(0.3))
             if !failure.isEmpty { Text(verbatim:failure).font(.caption).foregroundStyle(.red) }
-            HStack { Button("취소") { dismiss() }.keyboardShortcut(.cancelAction); Spacer(); if saving { ProgressView().controlSize(.small) }; Button("로컬 배포본 고정") { Task { saving = true; do { try await model.publish(label:label,reason:reason); dismiss() } catch { failure = error.localizedDescription }; saving = false } }.buttonStyle(.borderedProminent).disabled(saving || label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || reason.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) }
+            HStack { Button(L("workbook.action.cancel")) { dismiss() }.keyboardShortcut(.cancelAction); Spacer(); if saving { ProgressView().controlSize(.small) }; Button(L("workbook.release.pinAction")) { Task { saving = true; do { try await model.publish(label:label,reason:reason); dismiss() } catch { failureContent = bridgeErrorMessage(error) }; saving = false } }.buttonStyle(.borderedProminent).disabled(saving || label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || reason.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) }
         }.padding(24).frame(width:620).disabled(saving)
     }
 }
 
-private enum WorkbookLabels {
+@MainActor private enum WorkbookLabels {
+    static func valueType(_ value: String) -> String {
+        let label: String
+        switch value {
+        case "blank": label = L("workbook.valueType.blank")
+        case "string": label = L("workbook.valueType.string")
+        case "number": label = L("workbook.valueType.number")
+        case "boolean": label = L("workbook.valueType.boolean")
+        case "date": label = L("workbook.valueType.date")
+        case "time": label = L("workbook.valueType.time")
+        case "error": label = L("workbook.valueType.error")
+        default: return value.isEmpty ? "" : L("workbook.code.unknown",.verbatim(value))
+        }
+        return L("workbook.code.label",.verbatim(label),.verbatim(value))
+    }
+    static func dateSystem(_ value: String) -> String {
+        let label: String
+        switch value {
+        case "1900": label = L("workbook.dateSystem.1900")
+        case "1904": label = L("workbook.dateSystem.1904")
+        case "iso8601": label = L("workbook.dateSystem.iso8601")
+        case "unknown": label = L("workbook.dateSystem.unknown")
+        default: return value.isEmpty ? "" : L("workbook.code.unknown",.verbatim(value))
+        }
+        return L("workbook.code.label",.verbatim(label),.verbatim(value))
+    }
+
+    static func coverage(_ feature: String) -> (title: String,detail: String?) {
+        switch feature {
+        case "advanced_styles": return (L("workbook.coverage.feature.advanced_styles"),L("workbook.coverage.feature.advanced_styles.detail"))
+        case "array_formulas": return (L("workbook.coverage.feature.array_formulas"),L("workbook.coverage.feature.array_formulas.detail"))
+        case "blank_range_formula_interpretation": return (L("workbook.coverage.feature.blank_range_formula_interpretation"),L("workbook.coverage.feature.blank_range_formula_interpretation.detail"))
+        case "calculation_metadata": return (L("workbook.coverage.feature.calculation_metadata"),L("workbook.coverage.feature.calculation_metadata.detail"))
+        case "cell_metadata": return (L("workbook.coverage.feature.cell_metadata"),L("workbook.coverage.feature.cell_metadata.detail"))
+        case "cell_protection": return (L("workbook.coverage.feature.cell_protection"),L("workbook.coverage.feature.cell_protection.detail"))
+        case "charts": return (L("workbook.coverage.feature.charts"),L("workbook.coverage.feature.charts.detail"))
+        case "comments": return (L("workbook.coverage.feature.comments"),L("workbook.coverage.feature.comments.detail"))
+        case "conditional_formatting": return (L("workbook.coverage.feature.conditional_formatting"),L("workbook.coverage.feature.conditional_formatting.detail"))
+        case "covered_cell_content": return (L("workbook.coverage.feature.covered_cell_content"),L("workbook.coverage.feature.covered_cell_content.detail"))
+        case "cross_format_blank_formatting": return (L("workbook.coverage.feature.cross_format_blank_formatting"),L("workbook.coverage.feature.cross_format_blank_formatting.detail"))
+        case "cross_format_capabilities": return (L("workbook.coverage.feature.cross_format_capabilities"),L("workbook.coverage.feature.cross_format_capabilities.detail"))
+        case "cross_format_date_representation": return (L("workbook.coverage.feature.cross_format_date_representation"),L("workbook.coverage.feature.cross_format_date_representation.detail"))
+        case "data_validation": return (L("workbook.coverage.feature.data_validation"),L("workbook.coverage.feature.data_validation.detail"))
+        case "date_epoch": return (L("workbook.coverage.feature.date_epoch"),L("workbook.coverage.feature.date_epoch.detail"))
+        case "defined_names": return (L("workbook.coverage.feature.defined_names"),L("workbook.coverage.feature.defined_names.detail"))
+        case "display_layout": return (L("workbook.coverage.feature.display_layout"),L("workbook.coverage.feature.display_layout.detail"))
+        case "embedded_objects": return (L("workbook.coverage.feature.embedded_objects"),L("workbook.coverage.feature.embedded_objects.detail"))
+        case "external_links": return (L("workbook.coverage.feature.external_links"),L("workbook.coverage.feature.external_links.detail"))
+        case "external_relationships": return (L("workbook.coverage.feature.external_relationships"),L("workbook.coverage.feature.external_relationships.detail"))
+        case "formula_interpretation": return (L("workbook.coverage.feature.formula_interpretation"),L("workbook.coverage.feature.formula_interpretation.detail"))
+        case "inferred_correspondence": return (L("workbook.coverage.feature.inferred_correspondence"),L("workbook.coverage.feature.inferred_correspondence.detail"))
+        case "missing_error_cache": return (L("workbook.coverage.feature.missing_error_cache"),L("workbook.coverage.feature.missing_error_cache.detail"))
+        case "missing_formula_cache": return (L("workbook.coverage.feature.missing_formula_cache"),L("workbook.coverage.feature.missing_formula_cache.detail"))
+        case "number_format": return (L("workbook.coverage.feature.number_format"),L("workbook.coverage.feature.number_format.detail"))
+        case "ods_style_family": return (L("workbook.coverage.feature.ods_style_family"),L("workbook.coverage.feature.ods_style_family.detail"))
+        case "phonetic_guides": return (L("workbook.coverage.feature.phonetic_guides"),L("workbook.coverage.feature.phonetic_guides.detail"))
+        case "rich_text": return (L("workbook.coverage.feature.rich_text"),L("workbook.coverage.feature.rich_text.detail"))
+        case "rich_text_extensions": return (L("workbook.coverage.feature.rich_text_extensions"),L("workbook.coverage.feature.rich_text_extensions.detail"))
+        case "row_column_default_styles": return (L("workbook.coverage.feature.row_column_default_styles"),L("workbook.coverage.feature.row_column_default_styles.detail"))
+        case "scripts_events": return (L("workbook.coverage.feature.scripts_events"),L("workbook.coverage.feature.scripts_events.detail"))
+        case "shared_array_formulas": return (L("workbook.coverage.feature.shared_array_formulas"),L("workbook.coverage.feature.shared_array_formulas.detail"))
+        case "stored_formula_results": return (L("workbook.coverage.feature.stored_formula_results"),L("workbook.coverage.feature.stored_formula_results.detail"))
+        case "style_application": return (L("workbook.coverage.feature.style_application"),L("workbook.coverage.feature.style_application.detail"))
+        case "unknown_calc_value_type": return (L("workbook.coverage.feature.unknown_calc_value_type"),L("workbook.coverage.feature.unknown_calc_value_type.detail"))
+        case "untyped_csv": return (L("workbook.coverage.feature.untyped_csv"),L("workbook.coverage.feature.untyped_csv.detail"))
+        case "very_hidden_sheet": return (L("workbook.coverage.feature.very_hidden_sheet"),L("workbook.coverage.feature.very_hidden_sheet.detail"))
+        case "drawings": return (L("workbook.coverage.feature.drawings"),L("workbook.coverage.feature.drawings.detail"))
+        case "pivots": return (L("workbook.coverage.feature.pivots"),L("workbook.coverage.feature.pivots.detail"))
+        case "structured_tables": return (L("workbook.coverage.feature.structured_tables"),L("workbook.coverage.feature.structured_tables.detail"))
+        case "connections": return (L("workbook.coverage.feature.connections"),L("workbook.coverage.feature.connections.detail"))
+        case "query_tables": return (L("workbook.coverage.feature.query_tables"),L("workbook.coverage.feature.query_tables.detail"))
+        case "extension_features": return (L("workbook.coverage.feature.extension_features"),L("workbook.coverage.feature.extension_features.detail"))
+        case "filters": return (L("workbook.coverage.feature.filters"),L("workbook.coverage.feature.filters.detail"))
+        case "protection": return (L("workbook.coverage.feature.protection"),L("workbook.coverage.feature.protection.detail"))
+        default: return (L("workbook.coverage.unknownFeature",.verbatim(feature)),nil)
+        }
+    }
+
     static func description(_ change: JSON) -> String {
         let raw = change["description"].string
         switch change["kind"].string {
         case "row_position":
             let before = change["before_address"].string.drop(while:{$0.isLetter}),after = change["after_address"].string.drop(while:{$0.isLetter})
-            if let from = Int(before),let to = Int(after) { return "대응을 추정한 행이 \(from)행에서 \(to)행으로 이동했습니다." }
-            return "대응을 추정한 행의 물리 위치가 바뀌었습니다."
-        case "formula": return "수식 원문이 바뀌었습니다. 수식은 재계산하지 않았습니다."
-        case "stored_value": return "저장된 값이 바뀌었습니다. 수식 결과는 이전 계산값일 수 있습니다."
-        case "value_type": return "저장된 값의 유형이 바뀌었습니다."
-        case "cache_availability": return "수식의 저장 결과 유무가 바뀌었습니다. 결과가 없다고 셀이 삭제된 것은 아닙니다."
-        case "calculation_settings": return "지원하는 저장된 계산 설정이 바뀌었습니다. 재계산을 수행하거나 결과의 최신성을 확인한 것은 아닙니다."
-        case "number_format": return "원본 숫자 형식이 바뀌었습니다."
-        case "style": return "지원하는 기본 서식이 바뀌었습니다."
+            if let from = Int(before),let to = Int(after) { return L("workbook.description.rowMove",.count(from),.count(to)) }
+            return L("workbook.description.rowPosition")
+        case "formula": return L("workbook.description.formula")
+        case "stored_value": return L("workbook.description.storedValue")
+        case "value_type": return L("workbook.description.valueType")
+        case "cache_availability": return L("workbook.description.cache")
+        case "calculation_settings": return L("workbook.description.calculationSettings")
+        case "number_format": return L("workbook.description.numberFormat")
+        case "style": return L("workbook.description.style")
         case "formatting_range":
             let before = change["before_blank_style_range"]["address"].string,after = change["after_blank_style_range"]["address"].string
-            return "빈 셀 서식 범위의 관측 차이: " + (before.isEmpty ? "관측 없음" : before) + " → " + (after.isEmpty ? "관측 없음" : after) + ". 물리 좌표 비교이며 행의 이동·삭제를 확정하지 않습니다."
-        case "visibility": return "관측된 행·열의 숨김 상태가 바뀌었습니다."
-        case "row_correspondence": return "대응되지 않은 행에서 셀이 관측되었습니다. 실제 추가·삭제로 단정하지 않습니다."
+            return L("workbook.description.blankRangePrefix") + (before.isEmpty ? L("workbook.observation.none") : before) + " → " + (after.isEmpty ? L("workbook.observation.none") : after) + L("workbook.description.blankRangeSuffix")
+        case "visibility": return L("workbook.description.visibility")
+        case "row_correspondence": return L("workbook.description.rowCorrespondence")
         case "cell_observation":
-            if change["alignment_method"].string == "physical_blank_content_coordinate" { return "같은 좌표에서 명시적인 빈 셀과 내용이 있는 셀의 관측이 다릅니다. 양쪽 원본을 보존했으며 행의 대응과 변경 원인은 확인이 필요합니다." }
-            if change["alignment_method"].string == "cross_format_date_representation" { return "서로 다른 형식의 날짜·시간 표현을 같은 값으로 확인할 수 없습니다. 실제 값·유형 변경으로 단정하지 않습니다." }
-            if change["alignment_method"].string == "unresolved_formula_interpretation" { return "셀·수식·저장 결과의 관측이 바뀌었습니다. 공유·배열 수식의 의미가 미확정이므로 수식 삭제·직접 입력·재계산 결과로 단정하지 않습니다." }
-            return "한쪽에서만 셀이 관측되었습니다. 관측 없음은 명시된 빈 셀·0과 다릅니다."
-        case "sheet_observation": return "한쪽 버전에서만 시트가 관측되었습니다. 대응 확인이 필요하며 실제 추가·삭제로 단정하지 않습니다."
-        case "sheet_dimensions": return "지원하는 행·열 크기 또는 숨김 구간이 바뀌었습니다. 셀 관측이 없는 빈 위치의 메타데이터도 포함합니다."
-        case "merges": return "관측된 셀 병합 범위가 바뀌었습니다."
-        case "sheet_name": return raw.hasPrefix("Sheet name: ") ? "시트 이름: " + raw.dropFirst("Sheet name: ".count) : raw
-        case "sheet_position": return raw.hasPrefix("Sheet index: ") ? "시트 순서(0부터): " + raw.dropFirst("Sheet index: ".count) : raw
-        case "sheet_visibility": return raw.hasPrefix("Sheet hidden: ") ? "시트 숨김 상태: " + raw.dropFirst("Sheet hidden: ".count).replacingOccurrences(of:"true",with:"숨김").replacingOccurrences(of:"false",with:"표시") : raw
+            if change["alignment_method"].string == "physical_blank_content_coordinate" { return L("workbook.description.blankContent") }
+            if change["alignment_method"].string == "cross_format_date_representation" { return L("workbook.description.crossFormatDate") }
+            if change["alignment_method"].string == "unresolved_formula_interpretation" { return L("workbook.description.unresolvedFormula") }
+            return L("workbook.description.cellObservation")
+        case "sheet_observation": return L("workbook.description.sheetObservation")
+        case "sheet_dimensions": return L("workbook.description.dimensions")
+        case "merges": return L("workbook.description.merges")
+        case "sheet_name": return raw.hasPrefix("Sheet name: ") ? L("workbook.description.sheetNamePrefix") + raw.dropFirst("Sheet name: ".count) : raw
+        case "sheet_position": return raw.hasPrefix("Sheet index: ") ? L("workbook.description.sheetPositionPrefix") + raw.dropFirst("Sheet index: ".count) : raw
+        case "sheet_visibility": return raw.hasPrefix("Sheet hidden: ") ? L("workbook.description.sheetVisibilityPrefix") + raw.dropFirst("Sheet hidden: ".count).replacingOccurrences(of:"true",with:L("workbook.visibility.hidden")).replacingOccurrences(of:"false",with:L("workbook.visibility.visible")) : raw
         case "date_system":
             if raw.hasPrefix("Date system changed from "),let end = raw.firstIndex(of:";") {
                 let transition = raw[raw.index(raw.startIndex,offsetBy:"Date system changed from ".count)..<end].replacingOccurrences(of:" to ",with:" → ")
-                return "날짜 기준이 바뀌었습니다 (\(transition)). 숫자 날짜값을 변환하거나 같은 값으로 단정하지 않습니다."
+                return L("workbook.description.dateTransition",.verbatim(transition))
             }
-            return "날짜 기준이 바뀌었습니다. 숫자 날짜값을 변환하거나 같은 값으로 단정하지 않습니다."
+            return L("workbook.description.dateSystem")
         default: return raw
         }
     }
-    static func availability(_ value: String) -> String { switch value { case "not_materialized": return "저장된 셀 관측 없음 · 빈 셀·삭제로 단정하지 않음"; case "correspondence_unresolved": return "대응 미확정 · 다른 셀로 건너뛰지 않음"; case "available": return "저장된 관측 있음"; default: return value } }
-    static func association(_ value: String) -> String { switch value { case "exact": return "원문 일치"; case "inferred": return "추정 대응"; case "needs_review": return "대응 확인 필요"; default: return value.isEmpty ? "대응 미확정" : value } }
-    static func method(_ value: String) -> String { switch value { case "unique_nonempty_first_column_key": return "첫 열의 중복 없는 값으로 추정"; case "unique_exact_row_content": return "중복 없는 행 내용의 일치로 추정"; case "unique_exact_sheet_name": return "중복 없는 시트 이름으로 추정"; case "unique_exact_sheet_content": return "중복 없는 시트 내용으로 추정"; case "physical_blank_content_coordinate": return "같은 물리 좌표의 빈 셀·내용 비교 · 행 대응 확인 필요"; case "physical_blank_formatting_range": return "같은 물리 좌표의 빈 셀 서식 범위 · 행 대응 추정 없음"; case "physical_row_fallback": return "같은 물리 행 번호 · 대응 확인 필요"; case "unmatched_row_observation": return "행 대응을 찾지 못함"; case "unmatched_sheet_observation": return "시트 대응을 찾지 못함"; case "selected_physical_cell": return "직접 선택한 물리 셀"; case "no_unambiguous_cell_lineage": return "모호하지 않은 셀 이력을 찾지 못함"; default: return value } }
-    static func kind(_ value: String) -> String { switch value { case "formula": return "수식 변경"; case "cache_availability": return "저장 결과 유무 변경"; case "calculation_settings": return "저장된 계산 설정 변경"; case "stored_value": return "저장값 변경"; case "value_type": return "값 유형 변경"; case "number_format": return "숫자 형식 변경"; case "style": return "기본 서식 변경"; case "formatting_range": return "빈 셀 서식 범위"; case "visibility": return "숨김 상태 변경"; case "cell_observation": return "셀 관측 차이"; case "row_position": return "행 위치 변경"; case "row_correspondence": return "행 대응 확인"; case "sheet_name": return "시트 이름 변경"; case "sheet_position": return "시트 순서 변경"; case "sheet_visibility": return "시트 숨김 변경"; case "sheet_dimensions": return "행·열 메타 변경"; case "sheet_observation": return "시트 관측 차이"; case "merges": return "병합 범위 변경"; case "date_system": return "날짜 기준 변경"; default: return value } }
+    static func availability(_ value: String) -> String { switch value { case "not_materialized": return L("workbook.availability.absent"); case "correspondence_unresolved": return L("workbook.availability.unresolved"); case "available": return L("workbook.availability.available"); default: return value.isEmpty ? "" : L("workbook.code.unknown",.verbatim(value)) } }
+    static func association(_ value: String) -> String { switch value { case "exact": return L("workbook.association.exact"); case "inferred": return L("workbook.association.inferred"); case "needs_review": return L("workbook.association.review"); default: return value.isEmpty ? L("workbook.association.unresolved") : L("workbook.code.unknown",.verbatim(value)) } }
+    static func method(_ value: String) -> String { switch value { case "unique_nonempty_first_column_key": return L("workbook.method.firstColumn"); case "unique_exact_row_content": return L("workbook.method.rowContent"); case "unique_exact_sheet_name": return L("workbook.method.sheetName"); case "unique_exact_sheet_content": return L("workbook.method.sheetContent"); case "physical_blank_content_coordinate": return L("workbook.method.blankContent"); case "physical_blank_formatting_range": return L("workbook.method.blankFormatting"); case "physical_row_fallback": return L("workbook.method.physicalRow"); case "unmatched_row_observation": return L("workbook.method.unmatchedRow"); case "unmatched_sheet_observation": return L("workbook.method.unmatchedSheet"); case "selected_physical_cell": return L("workbook.method.selectedCell"); case "no_unambiguous_cell_lineage": return L("workbook.method.noLineage"); default: return value.isEmpty ? "" : L("workbook.code.unknown",.verbatim(value)) } }
+    static func kind(_ value: String) -> String { switch value { case "formula": return L("workbook.kind.formula"); case "cache_availability": return L("workbook.kind.cache"); case "calculation_settings": return L("workbook.kind.calculationSettings"); case "stored_value": return L("workbook.kind.storedValue"); case "value_type": return L("workbook.kind.valueType"); case "number_format": return L("workbook.kind.numberFormat"); case "style": return L("workbook.kind.style"); case "formatting_range": return L("workbook.kind.formattingRange"); case "visibility": return L("workbook.kind.visibility"); case "cell_observation": return L("workbook.kind.cellObservation"); case "row_position": return L("workbook.kind.rowPosition"); case "row_correspondence": return L("workbook.kind.rowCorrespondence"); case "sheet_name": return L("workbook.kind.sheetName"); case "sheet_position": return L("workbook.kind.sheetPosition"); case "sheet_visibility": return L("workbook.kind.sheetVisibility"); case "sheet_dimensions": return L("workbook.kind.dimensions"); case "sheet_observation": return L("workbook.kind.sheetObservation"); case "merges": return L("workbook.kind.merges"); case "date_system": return L("workbook.kind.dateSystem"); default: return value.isEmpty ? "" : L("workbook.code.unknown",.verbatim(value)) } }
 }
 
 // AppKit creates reusable cells only for visible rows. The data source is a
@@ -1253,6 +1371,7 @@ private enum WorkbookLabels {
 }
 
 struct WorkbookGrid: NSViewRepresentable {
+    let language: String
     let pane: String
     let revealIntent: String
     let cells: [JSON]
@@ -1267,7 +1386,7 @@ struct WorkbookGrid: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = WorkbookTableScrollView(); scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = false
         let table = NSTableView(); table.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.grid." + pane); table.usesAlternatingRowBackgroundColors = true; table.gridStyleMask = [.solidHorizontalGridLineMask,.solidVerticalGridLineMask]; table.rowHeight = 27; table.headerView = NSTableHeaderView(); table.allowsMultipleSelection = false; table.allowsColumnReordering = false; table.columnAutoresizingStyle = .noColumnAutoresizing
-        table.dataSource = context.coordinator; table.delegate = context.coordinator; table.target = context.coordinator; table.action = #selector(Coordinator.clicked(_:)); table.setAccessibilityLabel((pane == "before" ? "이전" : "이후") + " 통합 문서 셀 그리드 · 물리 주소")
+        table.dataSource = context.coordinator; table.delegate = context.coordinator; table.target = context.coordinator; table.action = #selector(Coordinator.clicked(_:)); table.setAccessibilityLabel((pane == "before" ? L("workbook.grid.beforeAX") : L("workbook.grid.afterAX")))
         scroll.documentView = table; context.coordinator.table = table; context.coordinator.update(self)
         return scroll
     }
@@ -1300,10 +1419,13 @@ struct WorkbookGrid: NSViewRepresentable {
             let key = "\(value.columnStart):\(value.columnCount)"
             if columnsKey != key {
                 for column in table.tableColumns { table.removeTableColumn(column) }
-                let row = NSTableColumn(identifier:NSUserInterfaceItemIdentifier("row")); row.title = "행"; row.width = 58; row.minWidth = 58; table.addTableColumn(row)
+                let row = NSTableColumn(identifier:NSUserInterfaceItemIdentifier("row")); row.title = L("workbook.grid.rowHeader"); row.width = 58; row.minWidth = 58; table.addTableColumn(row)
                 for offset in 0..<value.columnCount { let n = value.columnStart+offset; let column = NSTableColumn(identifier:NSUserInterfaceItemIdentifier(String(n))); column.title = WorkbookGrid.columnLabel(n); column.width = 130; column.minWidth = 75; table.addTableColumn(column) }
                 columnsKey = key
             }
+            table.tableColumns.first?.title = L("workbook.grid.rowHeader")
+            table.setAccessibilityLabel(value.pane == "before" ? L("workbook.grid.beforeAX") : L("workbook.grid.afterAX"))
+            table.headerView?.needsDisplay = true
             table.reloadData()
             if value.selectedRow >= value.rowStart,value.selectedRow < value.rowStart+value.rowCount,value.selectedColumn >= value.columnStart,value.selectedColumn < value.columnStart+value.columnCount {
                 let row = value.selectedRow-value.rowStart,column = value.selectedColumn-value.columnStart+1
@@ -1333,7 +1455,7 @@ struct WorkbookGrid: NSViewRepresentable {
             let text: NSTextField
             if let existing = cell.textField { text = existing } else { text = NSTextField(labelWithString:""); text.translatesAutoresizingMaskIntoConstraints = false; text.lineBreakMode = .byTruncatingTail; cell.addSubview(text); cell.textField = text; NSLayoutConstraint.activate([text.leadingAnchor.constraint(equalTo:cell.leadingAnchor,constant:6),text.trailingAnchor.constraint(equalTo:cell.trailingAnchor,constant:-5),text.centerYAnchor.constraint(equalTo:cell.centerYAnchor)]) }
             let physicalRow = parent.rowStart+row
-            if tableColumn.identifier.rawValue == "row" { text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.row.\(physicalRow)"); text.stringValue = String(physicalRow); text.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular); text.textColor = .secondaryLabelColor; text.setAccessibilityLabel("\(physicalRow)행"); cell.toolTip = nil }
+            if tableColumn.identifier.rawValue == "row" { text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.row.\(physicalRow)"); text.stringValue = String(physicalRow); text.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular); text.textColor = .secondaryLabelColor; text.setAccessibilityLabel(L("workbook.grid.rowAX",.count(physicalRow))); cell.toolTip = nil }
             else {
                 let column = Int(tableColumn.identifier.rawValue) ?? 1
                 text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.cell." + WorkbookGrid.address(physicalRow,column))
@@ -1346,9 +1468,9 @@ struct WorkbookGrid: NSViewRepresentable {
                 let valueTruncated = value["source_lengths"]["value"].int > raw.utf16.count
                 if value["text_truncated"].bool,!valueTruncated { flags += "…" }
                 text.stringValue = (flags.isEmpty ? "" : flags + " ") + String(raw.prefix(400)) + (valueTruncated ? "…" : ""); text.font = .systemFont(ofSize:12); text.textColor = value["hidden_row"].bool || value["hidden_column"].bool ? .secondaryLabelColor : .labelColor
-                let formula = value["formula"].isNull ? "" : " · 수식 원문: " + String(value["formula"].string.prefix(600))
-                let interpretation = value["formula_interpretation"].string == "unresolved" ? " · 공유·배열 수식의 셀별 의미 확인 필요 · 저장된 관측값, 입력/계산 결과 미확정" : value["formula"].isNull ? "" : " · 저장된 수식 결과, 재계산하지 않음"
-                cell.toolTip = WorkbookGrid.address(physicalRow,column) + (value.isNull ? " · 저장된 관측 없음" : " · " + value["value_type"].string + formula + interpretation)
+                let formula = value["formula"].isNull ? "" : L("workbook.grid.formulaPrefix") + String(value["formula"].string.prefix(600))
+                let interpretation = value["formula_interpretation"].string == "unresolved" ? L("workbook.grid.unresolvedSuffix") : value["formula"].isNull ? "" : L("workbook.grid.resultSuffix")
+                cell.toolTip = WorkbookGrid.address(physicalRow,column) + (value.isNull ? L("workbook.grid.absentSuffix") : " · " + WorkbookLabels.valueType(value["value_type"].string) + formula + interpretation)
                 text.setAccessibilityLabel(WorkbookGrid.address(physicalRow,column) + " " + text.stringValue + interpretation)
             }
             return cell
@@ -1468,6 +1590,9 @@ struct WorkbookGrid: NSViewRepresentable {
             guard let window = NSApp.windows.first(where:{$0.isVisible && containsGrid($0.contentView)}) else { throw BridgeError(code:"WORKBOOK_SMOKE_WINDOW",message:"실제 네이티브 통합 문서 그리드 창이 없습니다.") }
             checks["pane_evidence"] = try assertPanes(model,window:window)
             checks["header_scroll_geometry"] = try await exerciseHeaderScrollGeometry(model,window:window)
+            if request["language_switch_check"].bool {
+                checks["language_switch"] = try await exerciseLanguageSwitch(model,window:window,folder:folder,originals:originals)
+            }
             if request.dictionary.keys.contains("expected_blank_formatting_warning") { checks["rendered_blank_formatting_warning"] = try checkBlankFormattingWarning(model,request:request) }
             try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-compare.png"))
             if request["require_dense_raw_proof"].bool {
@@ -1555,6 +1680,151 @@ struct WorkbookGrid: NSViewRepresentable {
             if let output { try? JSON(["completed":false,"error":error.localizedDescription]).data().write(to:output.appendingPathComponent("validation.json")) }
         }
         NSApp.terminate(nil)
+    }
+    // Optional shipped-app qualification. The locale mutation, seeded draft,
+    // AppKit scroll, and captures are explicit programmatic operations. This is
+    // not an OS input/VoiceOver automation claim and does not submit the draft.
+    private static func exerciseLanguageSwitch(_ model: WorkbookModel,window: NSWindow,folder: URL,originals: [WorkbookImportRow]) async throws -> [String:Any] {
+        let preferences = LanguagePreferences.shared,defaults = UserDefaults.standard
+        let originalSelection = preferences.selection
+        let originalStoredPreference = defaults.object(forKey:LanguagePreferences.preferenceKey)
+        var preferenceRestored = false
+        func restorePreference() {
+            preferences.selection = originalSelection
+            if let originalStoredPreference { defaults.set(originalStoredPreference,forKey:LanguagePreferences.preferenceKey) }
+            else { defaults.removeObject(forKey:LanguagePreferences.preferenceKey) }
+            preferenceRestored = true
+        }
+        defer { if !preferenceRestored { restorePreference() } }
+        func require(_ condition: Bool,_ message: String) throws {
+            guard condition else { throw BridgeError(code:"WORKBOOK_SMOKE_LOCALIZATION",message:message) }
+        }
+        guard let first = model.revisions.first,let last = model.revisions.last else {
+            throw BridgeError(code:"WORKBOOK_SMOKE_LOCALIZATION_FIXTURE",message:"A pinned workbook with source revisions is required.")
+        }
+        // Exercise real production status and validation-message creation before
+        // changing the language. No localized string is injected into the model.
+        await model.changeVersions(before:last["revision_occurrence_id"].string,after:first["revision_occurrence_id"].string)
+        let observed = model.afterCells.first(where:{!$0["value"].isNull}) ?? model.beforeCells.first(where:{!$0["value"].isNull})
+        if let observed { await model.selectCell(observed["row"].int,observed["column"].int) }
+        else { await model.selectCell(1,1) }
+        let previousInput = model.addressInput
+        defer { model.addressInput = previousInput; model.addressFailure = "" }
+        let opaqueInput = "Draft {0} 원문 🙂"
+        model.addressInput = opaqueInput
+        await model.goToAddress()
+        try require(!model.addressFailure.isEmpty,"The production address-validation warning was not created.")
+        let selected = [model.projectID,model.reportID,model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress,model.selectedChangeID,String(model.selectedRow),String(model.selectedColumn),String(model.revealGeneration),model.rangeScope,model.comparisonScope]
+        let reportBytes = try model.report.data(),projectBytes = try model.project.data()
+        let sourceCells = try JSON(["before":model.beforeCells.map(\.raw),"after":model.afterCells.map(\.raw),"before_cell":model.beforeCell.raw,"after_cell":model.afterCell.raw,"changes":model.changes.map(\.raw)]).data()
+        let modelIdentity = ObjectIdentifier(model)
+        var draftRow = try originals.first ?? WorkbookImportRow.bundledDemo(resources:model.bridge.resources).rows[0]
+        draftRow.label = "Version {1} 원문 🙂"
+        let draftTitle = "Opaque {0} 프로젝트 🙂",draftIdentity = draftRow.identity
+        let draftView = WorkbookImportSheet(model:model,initialTitle:draftTitle,initialRows:[draftRow])
+        let draftHost = NSHostingView(rootView:draftView.background(Color.white).preferredColorScheme(.light))
+        let draftWindow = NSWindow(contentRect:NSRect(x:140,y:100,width:840,height:610),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+        draftWindow.title = "Workbook import localization qualification"
+        draftWindow.isReleasedWhenClosed = false; draftWindow.isOpaque = true; draftWindow.backgroundColor = .white
+        draftWindow.contentView = draftHost; draftWindow.makeKeyAndOrderFront(nil)
+        defer { draftWindow.close() }
+        func fields(_ view: NSView?) -> [NSTextField] {
+            guard let view else { return [] }
+            return (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap { fields($0) }
+        }
+        func checkDraft() throws -> [String:Any] {
+            let actual = fields(draftWindow.contentView)
+            let title = actual.first(where:{$0.accessibilityIdentifier() == "Docver.workbook.import.title"})
+            let label = actual.first(where:{$0.accessibilityIdentifier() == "Docver.workbook.import.version." + draftRow.id.uuidString})
+            guard let title,let label else { throw BridgeError(code:"WORKBOOK_SMOKE_LOCALIZATION_DRAFT",message:"The production import draft fields lack their stable accessibility identifiers.") }
+            try require(title.stringValue == draftTitle && label.stringValue == draftRow.label,"The production import draft lost its opaque title or version label.")
+            return ["title":title.stringValue,"version_label":label.stringValue,"title_ax_id":title.accessibilityIdentifier(),"version_ax_id":label.accessibilityIdentifier(),"host_identity_retained":draftWindow.contentView === draftHost,"programmatic_seed_only":true]
+        }
+        struct Pane {
+            let table: NSTableView
+            let coordinator: WorkbookGrid.Coordinator
+            let origin: NSPoint
+            let reveal: String
+            let lastRequested: String
+            let lastRevealed: String
+            let localRow: Int
+            let physicalRow: Int
+        }
+        var panes: [String:Pane] = [:],originalOrigins: [String:NSPoint] = [:]
+        defer {
+            for (name,origin) in originalOrigins {
+                guard let table = grid(window.contentView,pane:name),let scroll = table.enclosingScrollView else { continue }
+                scroll.contentView.scroll(to:origin); scroll.reflectScrolledClipView(scroll.contentView)
+            }
+        }
+        preferences.selection = .en
+        try await Task.sleep(nanoseconds:300_000_000)
+        window.contentView?.layoutSubtreeIfNeeded(); draftWindow.contentView?.layoutSubtreeIfNeeded()
+        let englishDraft = try checkDraft()
+        for name in ["before","after"] {
+            guard let table = grid(window.contentView,pane:name),let coordinator = table.dataSource as? WorkbookGrid.Coordinator,let scroll = table.enclosingScrollView else { continue }
+            let clip = scroll.contentView; originalOrigins[name] = clip.bounds.origin
+            // Leave the selected physical cell unchanged while placing the
+            // viewport at a non-default position. Locale updates must not reveal it.
+            let y = min(max(0,clip.documentRect.height-clip.bounds.height),clip.bounds.origin.y+54)
+            clip.scroll(to:NSPoint(x:clip.bounds.origin.x,y:y)); scroll.reflectScrolledClipView(clip)
+            let visibleRows = table.rows(in:table.visibleRect),localRow = max(0,min(coordinator.parent.rowCount-1,visibleRows.location))
+            panes[name] = Pane(table:table,coordinator:coordinator,origin:clip.bounds.origin,reveal:coordinator.parent.revealIntent,lastRequested:coordinator.lastRequested,lastRevealed:coordinator.lastRevealed,localRow:localRow,physicalRow:coordinator.parent.rowStart+localRow)
+        }
+        try require(!panes.isEmpty,"No actual production workbook grid is visible.")
+        func capturePanes() throws -> [String:[String:Any]] {
+            var result: [String:[String:Any]] = [:]
+            for (name,pane) in panes {
+                guard let actual = grid(window.contentView,pane:name),let coordinator = actual.dataSource as? WorkbookGrid.Coordinator else { throw BridgeError(code:"WORKBOOK_SMOKE_LOCALIZATION",message:"The production grid disappeared.") }
+                try require(actual === pane.table && coordinator === pane.coordinator,"A language change replaced the grid or its coordinator.")
+                try require(coordinator.parent.language == preferences.effectiveLanguage,"The actual NSViewRepresentable did not receive the current display language.")
+                try require(abs(actual.visibleRect.minX-pane.origin.x) <= 0.75 && abs(actual.visibleRect.minY-pane.origin.y) <= 0.75,"A language change moved the viewport.")
+                try require(coordinator.parent.revealIntent == pane.reveal && coordinator.lastRequested == pane.lastRequested && coordinator.lastRevealed == pane.lastRevealed,"A language change altered selection/reveal authority.")
+                try require(actual.tableColumns[0].title == L("workbook.grid.rowHeader"),"The cached row header did not refresh.")
+                let rowCell = actual.view(atColumn:0,row:pane.localRow,makeIfNecessary:true) as? NSTableCellView
+                let dataCell = actual.view(atColumn:1,row:pane.localRow,makeIfNecessary:true) as? NSTableCellView
+                let expectedGridAX = name == "before" ? L("workbook.grid.beforeAX") : L("workbook.grid.afterAX")
+                try require(actual.accessibilityLabel() == expectedGridAX,"The table accessibility label did not refresh.")
+                try require(rowCell?.textField?.accessibilityLabel() == L("workbook.grid.rowAX",.count(pane.physicalRow)),"The reusable row-cell accessibility label did not refresh.")
+                try require(dataCell?.toolTip?.isEmpty == false,"The actual cell has no source tooltip.")
+                result[name] = ["row_header":actual.tableColumns[0].title,"table_ax":actual.accessibilityLabel() ?? "","row_ax":rowCell?.textField?.accessibilityLabel() ?? "","cell_tooltip":dataCell?.toolTip ?? "","raw_display_value":dataCell?.textField?.stringValue ?? "","selected_local_row":actual.selectedRow,"viewport_x":Double(actual.visibleRect.minX),"viewport_y":Double(actual.visibleRect.minY),"reveal_intent":coordinator.parent.revealIntent,"grid_and_coordinator_identity_retained":true]
+            }
+            return result
+        }
+        let englishPanes = try capturePanes(),englishWarning = model.addressFailure,englishStatus = model.status
+        try require(englishWarning == L("workbook.error.address"),"The typed English validation warning did not render.")
+        try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-localization-en.png"))
+        try Smoke.captureView(draftWindow,folder.appendingPathComponent("native-workbook-import-draft-en.png"))
+        preferences.selection = .ko
+        try await Task.sleep(nanoseconds:300_000_000)
+        window.contentView?.layoutSubtreeIfNeeded(); draftWindow.contentView?.layoutSubtreeIfNeeded()
+        let koreanDraft = try checkDraft(),koreanPanes = try capturePanes(),koreanWarning = model.addressFailure,koreanStatus = model.status
+        try require(koreanWarning == L("workbook.error.address") && koreanWarning != englishWarning,"A previously stored typed warning did not switch languages.")
+        if model.revisions.count > 1 {
+            try require(englishStatus != koreanStatus && koreanStatus == L("workbook.status.sortedVersions"),"A previously stored production status did not switch languages.")
+        }
+        for name in panes.keys {
+            try require(englishPanes[name]?["cell_tooltip"] as? String != koreanPanes[name]?["cell_tooltip"] as? String,"A cached cell tooltip did not switch languages.")
+            try require(englishPanes[name]?["raw_display_value"] as? String == koreanPanes[name]?["raw_display_value"] as? String,"Changing display language changed raw cell display text.")
+            try require(englishPanes[name]?["selected_local_row"] as? Int == koreanPanes[name]?["selected_local_row"] as? Int,"Changing display language changed the native selection.")
+        }
+        try require(model.addressInput == opaqueInput && ObjectIdentifier(model) == modelIdentity,"A language change replaced the model or changed a user draft.")
+        let currentSelection = [model.projectID,model.reportID,model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress,model.selectedChangeID,String(model.selectedRow),String(model.selectedColumn),String(model.revealGeneration),model.rangeScope,model.comparisonScope]
+        try require(currentSelection == selected,"A language change altered physical coordinates, scope, or reveal intent.")
+        try require(try model.report.data() == reportBytes && model.project.data() == projectBytes,"A language change altered report/project metadata.")
+        let currentCells = try JSON(["before":model.beforeCells.map(\.raw),"after":model.afterCells.map(\.raw),"before_cell":model.beforeCell.raw,"after_cell":model.afterCell.raw,"changes":model.changes.map(\.raw)]).data()
+        try require(currentCells == sourceCells,"A language change altered source observations or change evidence.")
+        let reread = try await model.bridge.call("workbookView",["project_id":model.projectID,"report_id":model.reportID])
+        try require(try reread.data() == reportBytes,"A language change altered the stored pinned report.")
+        for original in originals { try require(try ImportFileIdentity.capture(original.url) == original.identity,"A language change altered original workbook bytes.") }
+        try require(try ImportFileIdentity.capture(draftRow.url) == draftIdentity,"The unsubmitted draft changed source bytes.")
+        try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-localization-ko.png"))
+        try Smoke.captureView(draftWindow,folder.appendingPathComponent("native-workbook-import-draft-ko.png"))
+        restorePreference()
+        let restored = defaults.object(forKey:LanguagePreferences.preferenceKey)
+        let storedPreferenceRestored = originalStoredPreference == nil ? restored == nil : (originalStoredPreference as? NSObject)?.isEqual(restored) == true
+        try require(storedPreferenceRestored && preferences.selection == originalSelection,"The exact prior language preference was not restored.")
+        return ["en":["panes":englishPanes,"warning":englishWarning,"status":englishStatus,"draft":englishDraft],"ko":["panes":koreanPanes,"warning":koreanWarning,"status":koreanStatus,"draft":koreanDraft],"same_model_grid_selection_viewport_and_reveal_intent":true,"source_cells_changes_project_and_stored_report_unchanged":true,"original_sha_and_size_unchanged":true,"preference_restored_exactly":true,"original_preference_entry_present":originalStoredPreference != nil,"draft_host":"opaque white NSWindow with NSHostingView of production WorkbookImportSheet; seeded @State only, no submitted import or OS input","capture_scope":"actual packaged production main window and import component; programmatic locale/scroll changes, no VoiceOver automation"]
     }
     private static func checkBlankFormattingWarning(_ model: WorkbookModel,request: JSON) throws -> [String:Any] {
         guard model.ready,!model.loadingChanges,model.changesFailure.isEmpty,(!model.blankFormattingWarning.isEmpty) == request["expected_blank_formatting_warning"].bool else { throw BridgeError(code:"WORKBOOK_SMOKE_FORMATTING_WARNING",message:"현재 비교 구간의 빈 셀 서식 판독 한계 안내가 예상과 다릅니다.") }
@@ -1802,7 +2072,7 @@ struct WorkbookGrid: NSViewRepresentable {
             let body = table.convert(table.rect(ofColumn:index),to:nil)
             if index != 0,body.maxX <= visible.minX || body.minX >= visible.maxX { continue }
             let title = header.convert(header.headerRect(ofColumn:index),to:nil)
-            let physicalColumn = state.columnStart+index-1,expectedID = index == 0 ? "row" : String(physicalColumn),expectedTitle = index == 0 ? "행" : WorkbookGrid.columnLabel(physicalColumn)
+            let physicalColumn = state.columnStart+index-1,expectedID = index == 0 ? "row" : String(physicalColumn),expectedTitle = index == 0 ? L("workbook.grid.rowHeader") : WorkbookGrid.columnLabel(physicalColumn)
             guard table.tableColumns[index].identifier.rawValue == expectedID,table.tableColumns[index].headerCell.stringValue == expectedTitle else { throw BridgeError(code:"WORKBOOK_SMOKE_HEADER_IDENTITY",message:"물리 열의 헤더·식별자가 다릅니다: " + pane + " · " + expectedTitle) }
             guard abs(title.minX-body.minX) <= 0.75,abs(title.maxX-body.maxX) <= 0.75 else { throw BridgeError(code:"WORKBOOK_SMOKE_HEADER_ALIGNMENT",message:"실제 헤더와 셀 열의 화면 좌표가 다릅니다: \(pane) \(expectedTitle), header=\(title.minX)…\(title.maxX), body=\(body.minX)…\(body.maxX)") }
             var item: [String:Any] = ["column_id":expectedID,"title":expectedTitle,"header_min_x":title.minX,"header_max_x":title.maxX,"body_min_x":body.minX,"body_max_x":body.maxX,"aligned":true]

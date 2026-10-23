@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 @main struct ReviewWorkflowProbe {
  @MainActor static func main() async throws {
+        configureLegacyNativeLocalization()
   let previous="매출 전망\n예상 매출 120억",next="매출 전망\n예상 매출 110억"
   let old=changeTextRuns(previous,comparedWith:next),new=changeTextRuns(next,comparedWith:previous)
   guard old.map(\.text).joined()==previous,new.map(\.text).joined()==next,old.filter(\.changed).map(\.text).joined()=="120",new.filter(\.changed).map(\.text).joined()=="110" else{throw NSError(domain:"InlineDiffChangedUnchangedTitle",code:1)}

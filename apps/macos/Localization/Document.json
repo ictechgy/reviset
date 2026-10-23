@@ -1,0 +1,2282 @@
+{
+  "doc.appearance.visible": {
+    "en": "Visible",
+    "ko": "보임"
+  },
+  "doc.appearance.occluded": {
+    "en": "Occluded",
+    "ko": "가림"
+  },
+  "doc.appearance.partiallyOccluded": {
+    "en": "Partially occluded",
+    "ko": "일부 가림"
+  },
+  "doc.appearance.struck": {
+    "en": "Struck through",
+    "ko": "취소선"
+  },
+  "doc.appearance.struckInferred": {
+    "en": "Inferred strikethrough",
+    "ko": "취소선 추정"
+  },
+  "doc.appearance.partiallyStruck": {
+    "en": "Partially struck through",
+    "ko": "일부 취소선"
+  },
+  "doc.appearance.hiddenMode": {
+    "en": "Hidden rendering mode",
+    "ko": "비표시 모드"
+  },
+  "doc.appearance.uncertain": {
+    "en": "Uncertain",
+    "ko": "미확정"
+  },
+  "doc.appearance.unverified": {
+    "en": "Unverified",
+    "ko": "미검증"
+  },
+  "doc.appearance.unknown": {
+    "en": "Unknown appearance state",
+    "ko": "알 수 없는 표시 상태"
+  },
+  "doc.matching.appearanceChangePrefix": {
+    "en": "Appearance change: ",
+    "ko": "표시 상태 변화: "
+  },
+  "doc.matching.exactSource": {
+    "en": "Same source page",
+    "ko": "같은 원본 페이지"
+  },
+  "doc.matching.exactRaster": {
+    "en": "Same observed image",
+    "ko": "같은 화면 관측"
+  },
+  "doc.matching.textSimilarity": {
+    "en": "Inferred from text similarity",
+    "ko": "문구 유사성으로 추정한 대응"
+  },
+  "doc.matching.competingCandidates": {
+    "en": "Review duplicate, split, or merge candidates",
+    "ko": "중복·분할·병합 후보 검토 필요"
+  },
+  "doc.matching.limitedCandidates": {
+    "en": "Only top candidates reviewed",
+    "ko": "상위 후보만 검토한 대응"
+  },
+  "doc.matching.intervalGap": {
+    "en": "Observation gap across both revisions",
+    "ko": "두 버전 전체에 적용되는 관측 공백"
+  },
+  "doc.matching.unmatched": {
+    "en": "No corresponding page found",
+    "ko": "대응 페이지를 찾지 못함"
+  },
+  "doc.matching.directedLineage": {
+    "en": "Revision history along actual links",
+    "ko": "실제 연결 경로를 따른 버전 이력"
+  },
+  "doc.matching.noTextConfirmation": {
+    "en": "Page association does not confirm text edits",
+    "ko": "페이지 대응은 문구 변경의 확정이 아닙니다"
+  },
+  "doc.matching.snapshotLineage": {
+    "en": "Page history between selected revisions",
+    "ko": "선택한 두 버전의 페이지 이력"
+  },
+  "doc.matching.other": {
+    "en": "Other evidence",
+    "ko": "기타 근거"
+  },
+  "doc.evidence.pdfText": {
+    "en": "PDF source text",
+    "ko": "PDF 원문 텍스트"
+  },
+  "doc.evidence.ocr": {
+    "en": "Image OCR",
+    "ko": "화면 OCR"
+  },
+  "doc.evidence.raster": {
+    "en": "Rendered image",
+    "ko": "렌더 화면"
+  },
+  "doc.evidence.page": {
+    "en": "Page evidence",
+    "ko": "페이지 근거"
+  },
+  "doc.evidence.annotation": {
+    "en": "PDF annotation metadata",
+    "ko": "PDF 주석 정보"
+  },
+  "doc.evidence.pptxStructure": {
+    "en": "PPTX source structure",
+    "ko": "PPTX 원본 구조"
+  },
+  "doc.evidence.document": {
+    "en": "Document evidence",
+    "ko": "문서 근거"
+  },
+  "doc.evidence.inferredSuffix": {
+    "en": " · inferred",
+    "ko": " · 추정"
+  },
+  "doc.evidence.observedSuffix": {
+    "en": " · observed",
+    "ko": " · 관측"
+  },
+  "doc.evidence.unknownSuffix": {
+    "en": " · evidence level unknown",
+    "ko": " · 근거 수준 미상"
+  },
+  "doc.coverage.splitMerge": {
+    "en": "Split or merge associations were recorded. Text deletion or edits were not confirmed; review each source page.",
+    "ko": "분할·병합의 페이지 대응을 기록했습니다. 문구의 삭제·수정은 확정하지 않았으므로 각 원문 페이지를 확인하세요."
+  },
+  "doc.coverage.ocrReflow": {
+    "en": "An edit judgment was withheld because words may continue on a different line or region.",
+    "ko": "단어가 다른 줄이나 영역으로 이어졌을 가능성이 있어 이 문구의 수정 판정을 보류했습니다."
+  },
+  "doc.coverage.otherRegions": {
+    "en": "Other regions remain unresolved. Only the displayed text was compared region by region.",
+    "ko": "페이지의 다른 영역은 판독을 보류했습니다. 표시된 문구만 영역별로 비교했습니다."
+  },
+  "doc.coverage.ocrReview": {
+    "en": "This text was inferred by OCR. Review the source image.",
+    "ko": "OCR로 추정한 문구입니다. 원문 화면을 확인하세요."
+  },
+  "doc.coverage.visibilityUnresolved": {
+    "en": "Full-page text comparison was withheld because occlusion or reading uncertainty remains.",
+    "ko": "가림이나 판독 불확실성이 있어 페이지 전체의 텍스트 비교를 보류했습니다."
+  },
+  "doc.coverage.contextDisagreement": {
+    "en": "Readings of the same region disagree. The initial OCR was retained and comparison was withheld.",
+    "ko": "같은 영역의 판독 결과가 서로 달라 최초 OCR을 보존하고 비교를 보류했습니다."
+  },
+  "doc.coverage.contextIncomplete": {
+    "en": "Contextual reading was not completed. The initial OCR was retained and comparison was withheld.",
+    "ko": "문맥 판독을 완료하지 못해 최초 OCR을 보존하고 비교를 보류했습니다."
+  },
+  "doc.coverage.annotation": {
+    "en": "A PDF annotation may affect this region, so an OCR edit judgment was withheld.",
+    "ko": "PDF 주석이 이 영역에 영향을 줄 수 있어 OCR 수정 판정을 보류했습니다."
+  },
+  "doc.coverage.identicalImageDisagreement": {
+    "en": "Text readings differ for the same image; this was not classified as an actual edit.",
+    "ko": "같은 화면에서 텍스트 판독이 달라 실제 수정으로 판정하지 않았습니다."
+  },
+  "doc.coverage.numericAmbiguity": {
+    "en": "Text comparison was withheld because a corresponding region is missing or numeric reading is uncertain.",
+    "ko": "대응 영역이 누락되거나 숫자 판독이 불확실해 텍스트 비교를 보류했습니다."
+  },
+  "doc.coverage.ocrOrder": {
+    "en": "Text regions are unchanged, but OCR reading order differs; an edit judgment was withheld.",
+    "ko": "문구 영역은 같지만 OCR의 읽기 순서가 달라 수정 판정을 보류했습니다."
+  },
+  "doc.coverage.unlocalizedDisagreement": {
+    "en": "OCR differs from source text with uncertain positions. Review is needed.",
+    "ko": "OCR과 위치가 불확실한 원문 텍스트가 달라 확인이 필요합니다."
+  },
+  "doc.coverage.estimatedGeometry": {
+    "en": "Source text positions are uncertain. Regions read from the image were used for association.",
+    "ko": "원문 텍스트의 위치가 불확실해 화면에서 판독한 영역을 기준으로 대응했습니다."
+  },
+  "doc.coverage.sourceBudget": {
+    "en": "Not all source text with uncertain positions could be reviewed; comparison was withheld.",
+    "ko": "위치가 불확실한 원문 텍스트를 모두 검토하지 못해 비교를 보류했습니다."
+  },
+  "doc.coverage.incomparableRender": {
+    "en": "Different formats or rendering environments prevent direct image comparison.",
+    "ko": "두 버전의 형식이나 렌더링 환경이 달라 화면 차이를 직접 비교할 수 없습니다."
+  },
+  "doc.coverage.referenceChanged": {
+    "en": "The PPTX source is unchanged, but the provided PDF image differs. Confirm that the PDF was exported from this revision.",
+    "ko": "PPTX 원본은 같지만 제공된 PDF 화면이 다릅니다. PDF가 해당 버전에서 내보낸 파일인지 확인하세요."
+  },
+  "doc.coverage.sourceChanged": {
+    "en": "The PPTX source changed, but the provided PDF image is identical. Check whether the PDF reflects the source changes.",
+    "ko": "PPTX 원본은 바뀌었지만 제공된 PDF 화면은 같습니다. 원본의 변경이 PDF에 반영됐는지 확인하세요."
+  },
+  "doc.coverage.referenceUnavailable": {
+    "en": "Image evidence could not be verified on both sides of this page. Image comparison was withheld for this page; other pages remain comparable.",
+    "ko": "이 페이지의 화면 근거를 양쪽 모두 확인하지 못해 화면 비교를 보류했습니다. 다른 페이지의 비교는 유지합니다."
+  },
+  "doc.coverage.inferredReferenceDifference": {
+    "en": "The provided PDF images differ. PDF-to-PPTX page association is inferred and does not guarantee source-image fidelity.",
+    "ko": "제공된 PDF 화면의 차이입니다. PDF와 PPTX 페이지의 대응은 추정이며 원본 화면의 충실도를 보증하지 않습니다."
+  },
+  "doc.coverage.sourceRunLayout": {
+    "en": "Matching PDF characters and spacing in corresponding regions indicates differences in run splitting or recorded order. This was not classified as a text edit. Review the source text and image differences separately.",
+    "ko": "PDF 글자와 간격을 대응 영역에서 대조한 결과, 글자가 나뉘거나 기록된 순서의 차이로 판단했습니다. 문구 수정으로 판정하지 않았습니다. 원문과 화면 차이는 별도로 확인하세요."
+  },
+  "doc.coverage.visualWithoutText": {
+    "en": "The PDF images differ, but no text edit was confirmed. Causes may include exporter, font or layout differences, actual graphics or formatting edits, or unresolved text edits. Review the accompanying observation limits and sources.",
+    "ko": "PDF 화면은 다르지만 문구 변경은 확인되지 않았습니다. 내보내기 도구·글꼴·배치 차이, 실제 그림·서식 편집, 판독을 보류한 문구 변경 모두 원인일 수 있습니다. 함께 표시된 관측 한계와 원문을 확인하세요."
+  },
+  "doc.coverage.inferredReference": {
+    "en": "Showing the provided PDF image. Association with the PPTX page is inferred; confirm that this PDF was exported from this revision.",
+    "ko": "제공된 PDF 화면을 표시합니다. PPTX 페이지와의 대응은 추정이므로 해당 버전에서 내보낸 PDF인지 확인하세요."
+  },
+  "doc.coverage.reusedReference": {
+    "en": "Automatic image association was withheld because one PDF is bundled with different PPTX sources.",
+    "ko": "하나의 PDF가 서로 다른 PPTX 원본에 묶여 있어 자동 화면 대응을 보류했습니다."
+  },
+  "doc.coverage.referenceRotation": {
+    "en": "Automatic association of a rotated PDF was withheld. Review the source orientation.",
+    "ko": "회전된 PDF의 자동 화면 대응을 보류했습니다. 원문 방향을 확인하세요."
+  },
+  "doc.coverage.referenceGeometry": {
+    "en": "Automatic association was withheld because PPTX and provided-PDF page proportions differ.",
+    "ko": "PPTX와 제공된 PDF의 페이지 비율이 달라 자동 화면 대응을 보류했습니다."
+  },
+  "doc.coverage.manualReference": {
+    "en": "This PDF image was linked by a user. Linking does not guarantee fidelity to the original PowerPoint image.",
+    "ko": "사용자가 연결한 PDF 화면입니다. 연결은 PowerPoint 원본 화면의 충실도를 보증하지 않습니다."
+  },
+  "doc.coverage.manualText": {
+    "en": "The linked PPTX and PDF text differs or remains unresolved. Review the sources.",
+    "ko": "연결한 PPTX와 PDF의 문구가 다르거나 판독이 불확실합니다. 원문을 확인하세요."
+  },
+  "doc.coverage.manualGeometry": {
+    "en": "The linked PPTX and PDF page proportions differ.",
+    "ko": "연결한 PPTX와 PDF의 페이지 비율이 다릅니다."
+  },
+  "doc.coverage.manualReused": {
+    "en": "This PDF is also used for another PPTX source. Confirm that the linked revision is correct.",
+    "ko": "이 PDF는 다른 PPTX 원본에도 사용되었습니다. 연결한 버전이 맞는지 확인하세요."
+  },
+  "doc.coverage.hiddenSlide": {
+    "en": "A PDF page is linked to a hidden slide. Review the export range.",
+    "ko": "숨김 슬라이드에 PDF 페이지를 연결했습니다. 내보내기 범위를 확인하세요."
+  },
+  "doc.coverage.manualRaster": {
+    "en": "Image comparison evidence was not obtained for the linked PDF.",
+    "ko": "연결한 PDF의 화면 비교 근거를 확보하지 못했습니다."
+  },
+  "doc.coverage.manualTransform": {
+    "en": "The linked image was not used because the PDF page coordinate transform could not be verified.",
+    "ko": "PDF 페이지의 좌표 변환을 확인하지 못해 연결 화면을 사용하지 않았습니다."
+  },
+  "doc.coverage.manualUnlink": {
+    "en": "A user unlinked this slide's PDF page and blocked automatic linking.",
+    "ko": "사용자가 이 슬라이드의 PDF 연결을 해제하고 자동 연결을 차단했습니다."
+  },
+  "doc.coverage.manualDisplaced": {
+    "en": "The existing link was removed because another slide was linked to the same PDF page.",
+    "ko": "다른 슬라이드가 같은 PDF 페이지를 사용하도록 연결되어 기존 연결이 해제되었습니다."
+  },
+  "doc.coverage.noSemanticDeletion": {
+    "en": "Image differences were observed, but content deletion was not confirmed.",
+    "ko": "화면 차이는 관측했지만 내용의 삭제 여부는 확정하지 않았습니다."
+  },
+  "doc.coverage.rendererSubstitution": {
+    "en": "Image differences may include substituted fonts or converter output.",
+    "ko": "화면 차이에 글꼴이나 변환기의 대체 결과가 포함될 수 있습니다."
+  },
+  "doc.coverage.failedRevision": {
+    "en": "Comparison could not run because revision processing failed.",
+    "ko": "버전 처리에 실패해 비교하지 못했습니다."
+  },
+  "doc.coverage.suppressedTextChanged": {
+    "en": "A difference was found in a text layer that is not displayed.",
+    "ko": "표시되지 않는 텍스트 계층에서 차이가 발견됐습니다."
+  },
+  "doc.coverage.unknown": {
+    "en": "The observation scope is insufficient. Review the source and exported detailed evidence.",
+    "ko": "이 정보의 관측 범위가 충분하지 않습니다. 원문과 내보낸 상세 근거를 확인하세요."
+  },
+  "doc.coverage.heading": {
+    "en": "Observation gaps · reasons for withholding",
+    "ko": "관측 공백 · 판독 보류 사유"
+  },
+  "doc.common.close": {
+    "en": "Close",
+    "ko": "닫기"
+  },
+  "doc.recovery.temporaryFolder": {
+    "en": "Temporary work folder",
+    "ko": "임시 작업 폴더"
+  },
+  "doc.analysis.saving": {
+    "en": "Saving",
+    "ko": "저장 중"
+  },
+  "doc.analysis.cancel": {
+    "en": "Cancel analysis",
+    "ko": "분석 취소"
+  },
+  "doc.privacy.localMac": {
+    "en": "Stored only on this Mac",
+    "ko": "내 Mac에만 저장"
+  },
+  "doc.evidence.footer": {
+    "en": "Evidence, inference, and observation gaps stay distinct",
+    "ko": "근거 · 추정 · 관측 공백을 구분합니다"
+  },
+  "doc.workspace.standard": {
+    "en": "Standard workspace",
+    "ko": "기본 화면"
+  },
+  "doc.workspace.focus": {
+    "en": "Expand documents",
+    "ko": "문서 크게 보기"
+  },
+  "doc.workspace.spreadsheets": {
+    "en": "Spreadsheets",
+    "ko": "스프레드시트"
+  },
+  "doc.workspace.spreadsheetsHelp": {
+    "en": "Compare XLSX, ODS, and CSV revisions",
+    "ko": "XLSX·ODS·CSV 버전 비교"
+  },
+  "doc.workspace.task": {
+    "en": "Workspace",
+    "ko": "작업"
+  },
+  "doc.workspace.compare": {
+    "en": "Compare",
+    "ko": "비교"
+  },
+  "doc.workspace.history": {
+    "en": "Full history",
+    "ko": "전체 이력"
+  },
+  "doc.workspace.export": {
+    "en": "AI & export",
+    "ko": "AI·내보내기"
+  },
+  "doc.common.export": {
+    "en": "Export",
+    "ko": "내보내기"
+  },
+  "doc.reorder.title": {
+    "en": "Change revision order?",
+    "ko": "버전 순서를 바꿀까요?"
+  },
+  "doc.reorder.confirm": {
+    "en": "Change order",
+    "ko": "순서 변경"
+  },
+  "doc.common.cancel": {
+    "en": "Cancel",
+    "ko": "취소"
+  },
+  "doc.project.heading": {
+    "en": "Projects",
+    "ko": "프로젝트"
+  },
+  "doc.project.unreadableBadge": {
+    "en": "Input damaged · existing data preserved",
+    "ko": "입력 손상 · 기존 자료 보존"
+  },
+  "doc.project.revisionCount": {
+    "en": "{0} revisions",
+    "ko": "{0}개 버전"
+  },
+  "doc.project.pendingSuffix": {
+    "en": " · awaiting analysis",
+    "ko": " · 분석 대기"
+  },
+  "doc.project.unreadableHelp": {
+    "en": "Input history could not be read. Existing sources and reports were preserved.",
+    "ko": "입력 기록을 읽지 못했습니다. 기존 원문과 보고서는 보존했습니다."
+  },
+  "doc.project.readOnly": {
+    "en": "Saved reports are read-only",
+    "ko": "고정 보고서 읽기 전용"
+  },
+  "doc.project.unreadableDescription": {
+    "en": "Input history could not be read. Existing reports and sources can still be opened. Import into a new project to analyze again.",
+    "ko": "입력 기록을 읽지 못했습니다. 기존 보고서와 원문은 계속 열 수 있습니다. 다시 분석하려면 새 프로젝트로 가져오세요."
+  },
+  "doc.project.importOrder": {
+    "en": "Import order",
+    "ko": "가져오기 순서"
+  },
+  "doc.analysis.changedInputs": {
+    "en": "Analyze input & association changes",
+    "ko": "입력·대응 변경 분석"
+  },
+  "doc.analysis.rerun": {
+    "en": "Analyze again",
+    "ko": "다시 분석"
+  },
+  "doc.import.documents": {
+    "en": "Import document revisions",
+    "ko": "문서 버전 가져오기"
+  },
+  "doc.empty.headline": {
+    "en": "Follow every document change\nat a glance.",
+    "ko": "문서가 바뀐 모든 순간을\n한눈에 따라가세요."
+  },
+  "doc.empty.description": {
+    "en": "Collect PPTX and PDF revisions in order to review numeric edits\nand pages that appeared or disappeared alongside their sources.",
+    "ko": "PPTX와 PDF를 순서대로 모으면 숫자 수정부터\n중간에 사라진 페이지까지 원문과 함께 확인할 수 있습니다."
+  },
+  "doc.empty.demo": {
+    "en": "Open five-revision synthetic demo",
+    "ko": "5버전 합성 데모 열기"
+  },
+  "doc.empty.privacy": {
+    "en": "No account · no upload · native macOS app",
+    "ko": "계정 없이 · 업로드 없이 · 네이티브 macOS 앱"
+  },
+  "doc.report.saved": {
+    "en": "Saved report",
+    "ko": "고정 보고서"
+  },
+  "doc.report.label": {
+    "en": "Report",
+    "ko": "보고서"
+  },
+  "doc.report.pending": {
+    "en": "Input or association changed · previous report below",
+    "ko": "입력/대응 변경 · 아래는 이전 보고서"
+  },
+  "doc.revision.pageCountPrefix": {
+    "en": "{0} pages · ",
+    "ko": "{0}쪽 · "
+  },
+  "doc.revision.partial": {
+    "en": "Partial failure · review required",
+    "ko": "부분 실패 · 확인 필요"
+  },
+  "doc.common.source": {
+    "en": "Source",
+    "ko": "원문"
+  },
+  "doc.common.before": {
+    "en": "Before",
+    "ko": "이전"
+  },
+  "doc.common.after": {
+    "en": "After",
+    "ko": "이후"
+  },
+  "doc.compare.adjacent": {
+    "en": "Adjacent comparison",
+    "ko": "인접 비교"
+  },
+  "doc.compare.range": {
+    "en": "Net changes in selected range",
+    "ko": "선택 구간의 순변경"
+  },
+  "doc.compare.sourcePrefix": {
+    "en": "Source view · ",
+    "ko": "원문 보기 · "
+  },
+  "doc.compare.evidence": {
+    "en": "Evidence",
+    "ko": "근거"
+  },
+  "doc.compare.documentView": {
+    "en": "Document view",
+    "ko": "문서 보기"
+  },
+  "doc.compare.both": {
+    "en": "Both pages",
+    "ko": "두 페이지"
+  },
+  "doc.compare.beforeOnly": {
+    "en": "Expand before",
+    "ko": "이전만 크게"
+  },
+  "doc.compare.afterOnly": {
+    "en": "Expand after",
+    "ko": "이후만 크게"
+  },
+  "doc.common.zoom": {
+    "en": "Zoom",
+    "ko": "확대"
+  },
+  "doc.common.fit": {
+    "en": "Fit to window",
+    "ko": "화면 맞춤"
+  },
+  "doc.changes.collapse": {
+    "en": "Hide changes",
+    "ko": "변경 목록 접기"
+  },
+  "doc.changes.expand": {
+    "en": "Show changes",
+    "ko": "변경 목록 열기"
+  },
+  "doc.changes.kind": {
+    "en": "Type",
+    "ko": "유형"
+  },
+  "doc.changes.all": {
+    "en": "All changes",
+    "ko": "전체 변경"
+  },
+  "doc.changes.search": {
+    "en": "Search source text",
+    "ko": "원문에서 검색"
+  },
+  "doc.changes.count": {
+    "en": "{0} changes",
+    "ko": "{0}개"
+  },
+  "doc.matching.humanConfirmed": {
+    "en": "User confirmed",
+    "ko": "사용자 확정"
+  },
+  "doc.matching.needsReview": {
+    "en": "Review required",
+    "ko": "검토 필요"
+  },
+  "doc.matching.inferred": {
+    "en": "Inferred association",
+    "ko": "추정 대응"
+  },
+  "doc.matching.regionInferred": {
+    "en": "Region association inferred",
+    "ko": "영역 대응 추정"
+  },
+  "doc.ocr.inferredReview": {
+    "en": "OCR inference · review source",
+    "ko": "OCR 추정 · 원문 확인"
+  },
+  "doc.appearance.observed": {
+    "en": "Appearance observed",
+    "ko": "표시 관측"
+  },
+  "doc.appearance.inferred": {
+    "en": "Appearance inferred",
+    "ko": "표시 추정"
+  },
+  "doc.project.readOnlyReason": {
+    "en": "Input history is damaged. Saved reports are read-only.",
+    "ko": "입력 기록 손상 · 고정 보고서 읽기 전용입니다."
+  },
+  "doc.mapping.waitAnalysis": {
+    "en": "Associations can be edited after analysis finishes.",
+    "ko": "분석이 끝난 뒤 대응을 수정할 수 있습니다."
+  },
+  "doc.changes.loading": {
+    "en": "Loading changes.",
+    "ko": "변경 목록을 불러오고 있습니다."
+  },
+  "doc.mapping.analyzePending": {
+    "en": "Analyze pending edits before changing associations.",
+    "ko": "대기 중인 수정을 재분석한 뒤 대응을 수정하세요."
+  },
+  "doc.mapping.chooseLatest": {
+    "en": "Select the latest report.",
+    "ko": "최신 보고서를 선택하세요."
+  },
+  "doc.mapping.needRevisions": {
+    "en": "Import another revision to review page associations.",
+    "ko": "다른 버전을 가져오면 페이지 대응을 검토할 수 있습니다."
+  },
+  "doc.mapping.chooseAdjacent": {
+    "en": "Select two adjacent revisions.",
+    "ko": "서로 인접한 두 버전을 선택하세요."
+  },
+  "doc.mapping.selectBoth": {
+    "en": "Select one source page on each side.",
+    "ko": "양쪽 원문 페이지를 하나씩 선택하세요."
+  },
+  "doc.inspector.noSource": {
+    "en": "No source text in this revision",
+    "ko": "해당 버전에서 원문 없음"
+  },
+  "doc.inspector.selectedChange": {
+    "en": "Selected change",
+    "ko": "선택한 변경"
+  },
+  "doc.inspector.beforeStructure": {
+    "en": "Before structure",
+    "ko": "이전 구성"
+  },
+  "doc.inspector.beforeText": {
+    "en": "Before source text",
+    "ko": "이전 원문"
+  },
+  "doc.inspector.afterStructure": {
+    "en": "After structure",
+    "ko": "이후 구성"
+  },
+  "doc.inspector.afterText": {
+    "en": "After source text",
+    "ko": "이후 원문"
+  },
+  "doc.inspector.highlightHelp": {
+    "en": "Color and underlining mark text differences. Highlighting may be omitted for long source text.",
+    "ko": "색과 밑줄은 비교에서 달라진 문구입니다. 긴 원문은 강조를 생략할 수 있습니다."
+  },
+  "doc.inspector.lineageHelp": {
+    "en": "Select a page below to review its source. Pages in the same lineage group are not necessarily directly linked to every other page.",
+    "ko": "아래의 각 페이지를 눌러 원문을 확인하세요. 계보의 같은 묶음에 있어도 모든 페이지가 서로 직접 연결되는 것은 아닙니다."
+  },
+  "doc.inspector.sourceEvidence": {
+    "en": "Source evidence",
+    "ko": "원문 근거"
+  },
+  "doc.appearance.stateObserved": {
+    "en": "Appearance state: observed",
+    "ko": "표시 상태: 관측"
+  },
+  "doc.appearance.stateInferred": {
+    "en": "Appearance state: inferred",
+    "ko": "표시 상태: 추정"
+  },
+  "doc.mapping.reviewHeading": {
+    "en": "Review page associations",
+    "ko": "페이지 대응 검토"
+  },
+  "doc.mapping.reviewDescription": {
+    "en": "Link, unlink, split, or merge pages between adjacent revisions. Record a reason and analyze a new report.",
+    "ko": "인접 버전의 페이지를 연결·해제하거나 분할·병합 관계로 묶습니다. 이유를 남기면 새 보고서로 분석합니다."
+  },
+  "doc.mapping.edit": {
+    "en": "Edit links, splits, and merges…",
+    "ko": "연결·분할·병합 수정…"
+  },
+  "doc.mapping.editHint": {
+    "en": "Edit page associations",
+    "ko": "페이지 대응을 수정합니다"
+  },
+  "doc.limitations.heading": {
+    "en": "Observation limits",
+    "ko": "관측 한계"
+  },
+  "doc.limitations.appearance": {
+    "en": "Occluded and struck-through text retain their appearance states. Review visual evidence to decide whether a box or line expresses deletion intent. Inferred PDF table structure is not guaranteed to match the original PPTX table.",
+    "ko": "가려진 텍스트와 취소선은 표시 상태로 보존합니다. 박스나 선이 삭제 의도인지는 시각 근거와 함께 검토하세요. PDF에서 추정한 표 구조는 PPTX의 원래 표와 동일하다고 보장하지 않습니다."
+  },
+  "doc.limitations.ocr": {
+    "en": "Compare OCR inferences with the source image. Notes and hidden information absent from a PDF are not counted as deletions. PPTX images use a provided PDF or LibreOffice conversion. Review the source labels above pages and the association and conversion warnings in the evidence panel.",
+    "ko": "OCR 추정 값은 원본 화면과 대조하세요. PDF에 없는 노트·숨김 정보는 삭제로 집계하지 않습니다. PPTX 화면에는 제공된 PDF 또는 LibreOffice 변환본을 사용합니다. 페이지 위의 출처와 근거 패널의 대응·변환 경고를 확인하세요."
+  },
+  "doc.history.heading": {
+    "en": "Full revision history",
+    "ko": "전체 버전 이력"
+  },
+  "doc.history.description": {
+    "en": "Pages that appeared and later disappeared are preserved alongside observation gaps.",
+    "ko": "중간에 생겼다가 사라진 페이지와 관측 공백을 함께 보존합니다."
+  },
+  "doc.history.absenceHelp": {
+    "en": "— No observation · review change events and source evidence to determine actual deletion.",
+    "ko": "— 관측 없음 · 실제 삭제 여부는 변경 이벤트와 원문 근거에서 확인하세요."
+  },
+  "doc.history.lineage": {
+    "en": "Page lineage",
+    "ko": "페이지 계보"
+  },
+  "doc.common.page": {
+    "en": "Page",
+    "ko": "페이지"
+  },
+  "doc.history.openPage": {
+    "en": "Open {0}, page {1}",
+    "ko": "{0} 페이지 {1} 열기"
+  },
+  "doc.export.heading": {
+    "en": "Share source text and history together.",
+    "ko": "원문과 이력을 함께 전달하세요."
+  },
+  "doc.export.description": {
+    "en": "Query the same saved report through files and read-only MCP.",
+    "ko": "같은 고정 보고서를 파일과 읽기 전용 MCP에서 조회합니다."
+  },
+  "doc.export.filesHeading": {
+    "en": "Save report files",
+    "ko": "보고서 파일 저장"
+  },
+  "doc.export.filesDescription": {
+    "en": "Saves the full report, change JSONL, page and element source text, revisions and lineages, per-page Markdown, and evidence links.",
+    "ko": "전체 report, 변경 JSONL, 페이지·요소 원문, 버전·계보, 페이지별 Markdown과 근거 링크를 저장합니다."
+  },
+  "doc.export.files": {
+    "en": "Export JSON & Markdown",
+    "ko": "JSON·Markdown 내보내기"
+  },
+  "doc.export.mcpHeading": {
+    "en": "Read-only MCP connection",
+    "ko": "읽기 전용 MCP 연결"
+  },
+  "doc.export.mcpDescription": {
+    "en": "Uses the bundled Node runtime and the current project's library. Copy the configuration again after moving the app.",
+    "ko": "앱에 포함된 Node 런타임과 현재 프로젝트의 보관소를 사용합니다. 앱 위치를 옮기면 설정을 다시 복사하세요."
+  },
+  "doc.export.mcpLoading": {
+    "en": "Preparing the current project's configuration…",
+    "ko": "현재 프로젝트의 설정을 준비하고 있습니다…"
+  },
+  "doc.export.mcpFailurePrefix": {
+    "en": "Could not load the configuration. ",
+    "ko": "설정을 불러오지 못했습니다. "
+  },
+  "doc.export.copyConfig": {
+    "en": "Copy configuration",
+    "ko": "설정 복사"
+  },
+  "doc.export.configCopied": {
+    "en": "Copied the current project's MCP configuration",
+    "ko": "현재 프로젝트의 MCP 설정을 복사했습니다"
+  },
+  "doc.export.reloadConfig": {
+    "en": "Reload configuration",
+    "ko": "설정 다시 불러오기"
+  },
+  "doc.export.limitsHeading": {
+    "en": "Appearance and table-structure limits",
+    "ko": "표시 상태와 표 구조의 한계"
+  },
+  "doc.export.limitsDescription": {
+    "en": "Strikethrough annotations are recorded as observations; flattened lines and box occlusions are inferences based on geometry and paint order. Partial occlusion, masks, rotation, and images retain uncertainty. PDF grids are inferred structures and do not establish the original PPTX cell semantics. Scan OCR and image tables retain inferred evidence; low scores, conflicting alternatives, and missing regions remain unresolved. Review the source image.",
+    "ko": "취소선 주석은 관측 사실로, 납작해진 선·박스 가림은 기하·그림 순서에 기반한 추정으로 구분합니다. 부분 가림·마스크·회전·이미지는 불확실성을 남깁니다. PDF 격자는 추정된 구조이며 원래 PPTX 표의 셀 의미를 복원했다고 단정하지 않습니다. 스캔 OCR과 화면 표는 추정 근거로 보존하며 낮은 점수·대안 충돌·누락 영역은 보류합니다. 원문 화면에서 확인하세요."
+  },
+  "doc.import.defaultTitle": {
+    "en": "New document project",
+    "ko": "새 문서 프로젝트"
+  },
+  "doc.import.description": {
+    "en": "Start with a single PPTX or PDF, or bundle a PPTX and PDF from the same revision. Documents with hundreds of pages load the selected page on demand.",
+    "ko": "PPTX 또는 PDF 하나로 시작하고, 같은 버전의 PPTX + PDF를 묶을 수도 있습니다. 수백 페이지 문서는 선택한 페이지부터 지연 표시합니다."
+  },
+  "doc.import.projectName": {
+    "en": "Project name",
+    "ko": "프로젝트 이름"
+  },
+  "doc.import.chooseFiles": {
+    "en": "Choose PPTX & PDF files",
+    "ko": "PPTX·PDF 파일 선택"
+  },
+  "doc.import.revisionName": {
+    "en": "Revision name",
+    "ko": "버전 이름"
+  },
+  "doc.import.bundleBadge": {
+    "en": "Same revision · PPTX + PDF",
+    "ko": "같은 버전 · PPTX + PDF"
+  },
+  "doc.import.moveUp": {
+    "en": "Move revision up",
+    "ko": "버전 위로 이동"
+  },
+  "doc.import.moveDown": {
+    "en": "Move revision down",
+    "ko": "버전 아래로 이동"
+  },
+  "doc.import.ungroup": {
+    "en": "Unbundle",
+    "ko": "묶음 해제"
+  },
+  "doc.import.ungroupHelp": {
+    "en": "Split the files into two consecutive revisions. The edited bundle name stays with the first file.",
+    "ko": "파일을 바로 아래 두 버전으로 나눕니다. 수정한 묶음 이름은 첫 파일에 남습니다."
+  },
+  "doc.import.group": {
+    "en": "Bundle with previous",
+    "ko": "위와 묶기"
+  },
+  "doc.import.groupHelp": {
+    "en": "Bundle both files as one revision. File names and order are preserved.",
+    "ko": "두 파일을 같은 버전으로 묶습니다. 파일별 이름과 순서를 보존합니다."
+  },
+  "doc.import.remove": {
+    "en": "Remove revision",
+    "ko": "버전 제거"
+  },
+  "doc.import.integrityHelp": {
+    "en": "Verifies that selected files have not changed before copying them to the app's library.",
+    "ko": "선택한 파일의 내용이 바뀌지 않았는지 확인한 뒤 앱 전용 보관소에 복사합니다."
+  },
+  "doc.import.checking": {
+    "en": "Checking files…",
+    "ko": "파일 확인 중…"
+  },
+  "doc.import.saving": {
+    "en": "Importing…",
+    "ko": "가져오는 중…"
+  },
+  "doc.import.analyze": {
+    "en": "Analyze in this order",
+    "ko": "이 순서로 분석 시작"
+  },
+  "doc.recovery.sidecarFailurePrefix": {
+    "en": "Could not clean up reference work. Review the temporary work folder. ",
+    "ko": "참고 작업을 정리하지 못했습니다. 임시 작업 폴더를 확인하세요. "
+  },
+  "doc.library.alreadyOpen": {
+    "en": "Another Reviset or Docver app is already using this library.",
+    "ko": "이 보관소를 사용하는 Reviset 또는 Docver 앱이 이미 실행 중입니다."
+  },
+  "doc.changes.analysisPending": {
+    "en": "Analysis is running. Changes will reload when it finishes.",
+    "ko": "분석 중입니다. 완료 후 변경 목록을 다시 불러옵니다."
+  },
+  "doc.changes.loadingEllipsis": {
+    "en": "Loading changes…",
+    "ko": "변경 목록을 불러오고 있습니다…"
+  },
+  "doc.changes.interrupted": {
+    "en": "Loading changes stopped because new input is being processed.",
+    "ko": "새 입력 처리로 변경 목록 조회를 중단했습니다."
+  },
+  "doc.changes.failed": {
+    "en": "Could not load changes. Select the range again or reopen the report.",
+    "ko": "변경 목록을 불러오지 못했습니다. 구간을 다시 선택하거나 보고서를 다시 여세요."
+  },
+  "doc.changes.needRevisions": {
+    "en": "Import at least two revisions to compare changes.",
+    "ko": "두 버전 이상을 가져오면 변경을 비교할 수 있습니다."
+  },
+  "doc.changes.none": {
+    "en": "No changes were detected in this range. Review source evidence for withheld readings and observation limits.",
+    "ko": "선택한 구간에서 감지된 변경이 없습니다. 판독 보류와 관측 한계는 원문 근거에서 확인하세요."
+  },
+  "doc.changes.filteredNone": {
+    "en": "No changes match the filter or search. Try a different type or search term.",
+    "ko": "필터·검색과 일치하는 변경이 없습니다. 유형이나 검색어를 바꿔 보세요."
+  },
+  "doc.recovery.documentFailurePrefix": {
+    "en": "Could not clean up previous temporary document work. Saved reports can still be opened. ",
+    "ko": "이전 문서 임시 작업을 정리하지 못했습니다. 저장된 보고서는 계속 열 수 있습니다. "
+  },
+  "doc.recovery.workbookFailurePrefix": {
+    "en": "Could not clean up previous temporary spreadsheet work. Document comparison remains available. ",
+    "ko": "이전 스프레드시트 임시 작업을 정리하지 못했습니다. 문서 비교는 계속 사용할 수 있습니다. "
+  },
+  "doc.recovery.skippedSidecars": {
+    "en": "Could not automatically clean up {0} previous reference tasks. Sources and change history remain available.",
+    "ko": "이전 참고 작업 {0}개를 자동 정리하지 못했습니다. 원문과 변경 이력은 계속 사용할 수 있습니다."
+  },
+  "doc.evidence.pageUnavailable": {
+    "en": "The source page corresponding to this evidence could not be verified.",
+    "ko": "이 근거에 대응하는 원문 페이지를 확인할 수 없습니다."
+  },
+  "doc.evidence.selectionUnavailable": {
+    "en": "The selected source page could not be verified.",
+    "ko": "선택한 원문 페이지를 확인할 수 없습니다."
+  },
+  "doc.analysis.preparing": {
+    "en": "Preparing documents",
+    "ko": "문서를 준비하고 있습니다"
+  },
+  "doc.analysis.matching": {
+    "en": "Computing page associations and changes",
+    "ko": "페이지 대응과 변경을 계산합니다"
+  },
+  "doc.analysis.renderingSuffix": {
+    "en": " Preparing image",
+    "ko": " 화면 준비 중"
+  },
+  "doc.analysis.extracting": {
+    "en": "Extracting sources",
+    "ko": "원본을 추출합니다"
+  },
+  "doc.analysis.extractingSuffix": {
+    "en": " Extracting",
+    "ko": " 추출 중"
+  },
+  "doc.analysis.cancelled": {
+    "en": "Analysis cancelled.",
+    "ko": "분석을 취소했습니다."
+  },
+  "doc.analysis.committing": {
+    "en": "Saving the report",
+    "ko": "고정 보고서를 저장합니다"
+  },
+  "doc.error.commitReply": {
+    "en": "Could not verify the analysis-save response.",
+    "ko": "분석 저장 응답을 확인하지 못했습니다."
+  },
+  "doc.recovery.cleanupPending": {
+    "en": "Analysis results were saved. Temporary-file cleanup needs verification.",
+    "ko": "분석 결과는 저장됐으며 임시 파일 정리를 확인해야 합니다."
+  },
+  "doc.analysis.checkingSave": {
+    "en": "Checking whether this analysis was saved",
+    "ko": "이번 분석의 저장 상태를 확인합니다"
+  },
+  "doc.error.runScope": {
+    "en": "Could not verify the save-status scope of this analysis.",
+    "ko": "이번 분석의 저장 상태 범위를 확인하지 못했습니다."
+  },
+  "doc.recovery.saveUnknown": {
+    "en": "Could not verify whether this analysis was saved.",
+    "ko": "이번 분석의 저장 여부를 확인하지 못했습니다."
+  },
+  "doc.recovery.saveFailurePrefix": {
+    "en": "Analysis save status needs verification: ",
+    "ko": "이번 분석의 저장 여부 확인 필요: "
+  },
+  "doc.recovery.runCleanupFailurePrefix": {
+    "en": "Could not verify temporary-file cleanup for this document analysis. ",
+    "ko": "이번 문서 분석의 임시 파일 정리를 확인하지 못했습니다. "
+  },
+  "doc.recovery.recheckSave": {
+    "en": "Could not verify whether this analysis was saved. Recheck the save status.",
+    "ko": "이번 분석의 저장 여부를 확인하지 못했습니다. 저장 상태를 다시 확인해야 합니다."
+  },
+  "doc.analysis.saveUncertain": {
+    "en": "Save status needs verification · keeping the last verified state.",
+    "ko": "저장 여부 확인 필요 · 마지막으로 확인한 상태를 유지합니다."
+  },
+  "doc.analysis.cancelledRetained": {
+    "en": "Analysis was cancelled. Previous reports are preserved.",
+    "ko": "분석을 취소했습니다. 이전 보고서는 유지됩니다."
+  },
+  "doc.analysis.failedRetained": {
+    "en": "Analysis failed. Previous reports are preserved.",
+    "ko": "분석하지 못했습니다. 이전 보고서는 유지됩니다."
+  },
+  "doc.analysis.savedReload": {
+    "en": "Saved analysis results were verified. Reload the report.",
+    "ko": "저장된 분석 결과를 확인했습니다. 보고서를 다시 불러와주세요."
+  },
+  "doc.analysis.recovered": {
+    "en": "Verified and reopened saved analysis results.",
+    "ko": "저장된 분석 결과를 확인해 다시 열었습니다."
+  },
+  "doc.analysis.saved": {
+    "en": "Saved a new report",
+    "ko": "새 고정 보고서 저장"
+  },
+  "doc.analysis.ocrInferredPages": {
+    "en": "OCR inferred: {0} pages",
+    "ko": "OCR 추정 {0}쪽"
+  },
+  "doc.analysis.ocrFailedPages": {
+    "en": "OCR failed: {0} pages",
+    "ko": "OCR 실패 {0}쪽"
+  },
+  "doc.analysis.unresolvedPages": {
+    "en": "Unresolved: {0} pages",
+    "ko": "판독 보류 {0}쪽"
+  },
+  "doc.analysis.noRenderPages": {
+    "en": "No PPTX rendering: {0} pages",
+    "ko": "PPTX 렌더 없음 {0}쪽"
+  },
+  "doc.analysis.referencePages": {
+    "en": "Provided PDF: {0} pages · user linked: {1} pages · inferred: {2} pages",
+    "ko": "제공 PDF 화면 {0}쪽 · 사용자 연결 {1}쪽 · 자동 추정 {2}쪽"
+  },
+  "doc.analysis.cancelling": {
+    "en": "Cancelling analysis",
+    "ko": "분석을 취소하고 있습니다"
+  },
+  "doc.reorder.analyzePending": {
+    "en": "Analyze pending page-association and provided-PDF link changes before changing the order.",
+    "ko": "대기 중인 페이지 대응·제공 PDF 연결 변경을 먼저 분석한 뒤 순서를 바꾸세요."
+  },
+  "doc.reorder.warning": {
+    "en": "Changing the order resets the current input’s user associations ({0}), individual decisions ({1}), and provided-PDF link records ({2}). Recorded reasons remain available in previous saved reports.",
+    "ko": "순서를 바꾸면 현재 입력의 사용자 대응 {0}개·개별 결정 {1}개와 제공 PDF 연결 이력 {2}개가 초기화됩니다. 입력한 이유는 이전 고정 보고서에서 계속 확인할 수 있습니다."
+  },
+  "doc.reorder.inputChanged": {
+    "en": "The input changed. Check the current revision order and try again.",
+    "ko": "입력이 바뀌었습니다. 현재 버전 순서를 확인한 뒤 다시 시도하세요."
+  },
+  "doc.reorder.pending": {
+    "en": "The new order will appear in a new report after analysis. Previous saved reports are preserved.",
+    "ko": "순서 변경은 재분석 후 새 보고서로 반영됩니다. 이전 고정 보고서는 유지됩니다."
+  },
+  "doc.error.staleMapping": {
+    "en": "Edit associations from the latest analysis results.",
+    "ko": "최신 분석 결과에서 대응을 수정하세요."
+  },
+  "doc.bundle.waitLoading": {
+    "en": "Wait for analysis and page loading to finish before editing.",
+    "ko": "분석과 페이지 로딩이 끝난 뒤 수정하세요."
+  },
+  "doc.bundle.analyzePending": {
+    "en": "Analyze input and association changes first.",
+    "ko": "입력·대응 변경을 먼저 분석하세요."
+  },
+  "doc.bundle.chooseLatest": {
+    "en": "Edit from the latest saved report.",
+    "ko": "최신 고정 보고서에서 수정하세요."
+  },
+  "doc.error.staleBundle": {
+    "en": "Edit provided-PDF links from the latest analysis results. Your input is retained until the sheet closes.",
+    "ko": "최신 분석 결과에서 제공 PDF 연결을 수정하세요. 입력 내용은 닫기 전까지 유지됩니다."
+  },
+  "doc.appearance.unknownCode": {
+    "en": "Unknown appearance state: {0}",
+    "ko": "알 수 없는 표시 상태: {0}"
+  },
+  "doc.matching.appearanceChange": {
+    "en": "Appearance change: {0}",
+    "ko": "표시 상태 변화: {0}"
+  },
+  "doc.matching.otherCode": {
+    "en": "Other evidence: {0}",
+    "ko": "기타 근거: {0}"
+  },
+  "doc.evidence.documentCode": {
+    "en": "Document evidence: {0}",
+    "ko": "문서 근거: {0}"
+  },
+  "doc.coverage.unknownCode": {
+    "en": "Observation scope is insufficient ({0}). Review the source and exported detailed evidence.",
+    "ko": "이 정보의 관측 범위가 충분하지 않습니다 ({0}). 원문과 내보낸 상세 근거를 확인하세요."
+  },
+  "doc.error.backendDetail": {
+    "en": "Engine error ({0}): {1}",
+    "ko": "분석 엔진 오류 ({0}): {1}"
+  },
+  "doc.error.fileLimit": {
+    "en": "Files up to 512 MiB each are supported.",
+    "ko": "파일당 512 MiB 이하를 지원합니다."
+  },
+  "doc.error.inputNotRegular": {
+    "en": "Only regular files can be imported. Links, folders, and special files are not supported.",
+    "ko": "일반 파일만 가져올 수 있습니다. 링크·폴더·특수 파일은 지원하지 않습니다."
+  },
+  "doc.recovery.sidecarFailure": {
+    "en": "Could not clean up reference work. Review the temporary work folder. {0}",
+    "ko": "참고 작업을 정리하지 못했습니다. 임시 작업 폴더를 확인하세요. {0}"
+  },
+  "doc.recovery.documentFailure": {
+    "en": "Could not clean up previous temporary document work. Saved reports can still be opened. {0}",
+    "ko": "이전 문서 임시 작업을 정리하지 못했습니다. 저장된 보고서는 계속 열 수 있습니다. {0}"
+  },
+  "doc.recovery.workbookFailure": {
+    "en": "Could not clean up previous temporary spreadsheet work. Document comparison remains available. {0}",
+    "ko": "이전 스프레드시트 임시 작업을 정리하지 못했습니다. 문서 비교는 계속 사용할 수 있습니다. {0}"
+  },
+  "doc.recovery.saveFailure": {
+    "en": "Analysis save status needs verification: {0}",
+    "ko": "이번 분석의 저장 여부 확인 필요: {0}"
+  },
+  "doc.recovery.runCleanupFailure": {
+    "en": "Could not verify temporary-file cleanup for this document analysis. {0}",
+    "ko": "이번 문서 분석의 임시 파일 정리를 확인하지 못했습니다. {0}"
+  },
+  "doc.analysis.rendering": {
+    "en": "Preparing image for {0}",
+    "ko": "{0} 화면 준비 중"
+  },
+  "doc.analysis.extractingLabel": {
+    "en": "Extracting {0}",
+    "ko": "{0} 추출 중"
+  },
+  "doc.analysis.referenceSummary": {
+    "en": "{0} · {1} · {2}",
+    "ko": "{0} · {1} · {2}"
+  },
+  "doc.export.mcpFailure": {
+    "en": "Could not load the configuration. {0}",
+    "ko": "설정을 불러오지 못했습니다. {0}"
+  },
+  "doc.revision.pagesAndFormats": {
+    "en": "{0} · {1}",
+    "ko": "{0} · {1}"
+  },
+  "doc.project.revisionsPending": {
+    "en": "{0} · awaiting analysis",
+    "ko": "{0} · 분석 대기"
+  },
+  "doc.compare.sourceRevision": {
+    "en": "Source view · {0}",
+    "ko": "원문 보기 · {0}"
+  },
+  "doc.evidence.inferred": {
+    "en": "{0} · inferred",
+    "ko": "{0} · 추정"
+  },
+  "doc.evidence.observed": {
+    "en": "{0} · observed",
+    "ko": "{0} · 관측"
+  },
+  "doc.evidence.unknownProvenance": {
+    "en": "{0} · evidence level unknown ({1})",
+    "ko": "{0} · 근거 수준 미상 ({1})"
+  },
+  "doc.project.revisionCount.one": {
+    "en": "{0} revision",
+    "ko": "{0}개 버전"
+  },
+  "doc.project.revisionCount.other": {
+    "en": "{0} revisions",
+    "ko": "{0}개 버전"
+  },
+  "doc.revision.pageCount.one": {
+    "en": "{0} page",
+    "ko": "{0}쪽"
+  },
+  "doc.revision.pageCount.other": {
+    "en": "{0} pages",
+    "ko": "{0}쪽"
+  },
+  "doc.changes.count.one": {
+    "en": "{0} change",
+    "ko": "{0}개"
+  },
+  "doc.changes.count.other": {
+    "en": "{0} changes",
+    "ko": "{0}개"
+  },
+  "doc.recovery.skippedSidecars.one": {
+    "en": "Could not automatically clean up {0} previous reference task. Sources and change history remain available.",
+    "ko": "이전 참고 작업 {0}개를 자동 정리하지 못했습니다. 원문과 변경 이력은 계속 사용할 수 있습니다."
+  },
+  "doc.recovery.skippedSidecars.other": {
+    "en": "Could not automatically clean up {0} previous reference tasks. Sources and change history remain available.",
+    "ko": "이전 참고 작업 {0}개를 자동 정리하지 못했습니다. 원문과 변경 이력은 계속 사용할 수 있습니다."
+  },
+  "doc.analysis.ocrInferredPages.one": {
+    "en": "OCR inferred: {0} page",
+    "ko": "OCR 추정 {0}쪽"
+  },
+  "doc.analysis.ocrInferredPages.other": {
+    "en": "OCR inferred: {0} pages",
+    "ko": "OCR 추정 {0}쪽"
+  },
+  "doc.analysis.ocrFailedPages.one": {
+    "en": "OCR failed: {0} page",
+    "ko": "OCR 실패 {0}쪽"
+  },
+  "doc.analysis.ocrFailedPages.other": {
+    "en": "OCR failed: {0} pages",
+    "ko": "OCR 실패 {0}쪽"
+  },
+  "doc.analysis.unresolvedPages.one": {
+    "en": "Unresolved: {0} page",
+    "ko": "판독 보류 {0}쪽"
+  },
+  "doc.analysis.unresolvedPages.other": {
+    "en": "Unresolved: {0} pages",
+    "ko": "판독 보류 {0}쪽"
+  },
+  "doc.analysis.noRenderPages.one": {
+    "en": "No PPTX rendering: {0} page",
+    "ko": "PPTX 렌더 없음 {0}쪽"
+  },
+  "doc.analysis.noRenderPages.other": {
+    "en": "No PPTX rendering: {0} pages",
+    "ko": "PPTX 렌더 없음 {0}쪽"
+  },
+  "doc.analysis.referenceTotal.one": {
+    "en": "Provided PDF: {0} page",
+    "ko": "제공 PDF 화면 {0}쪽"
+  },
+  "doc.analysis.referenceTotal.other": {
+    "en": "Provided PDF: {0} pages",
+    "ko": "제공 PDF 화면 {0}쪽"
+  },
+  "doc.analysis.referenceHuman.one": {
+    "en": "User linked: {0} page",
+    "ko": "사용자 연결 {0}쪽"
+  },
+  "doc.analysis.referenceHuman.other": {
+    "en": "User linked: {0} pages",
+    "ko": "사용자 연결 {0}쪽"
+  },
+  "doc.analysis.referenceInferred.one": {
+    "en": "Inferred: {0} page",
+    "ko": "자동 추정 {0}쪽"
+  },
+  "doc.analysis.referenceInferred.other": {
+    "en": "Inferred: {0} pages",
+    "ko": "자동 추정 {0}쪽"
+  },
+  "doc.tail.report.saveFolderPrompt": {
+    "en": "Folder to save reports in",
+    "ko": "보고서를 저장할 폴더"
+  },
+  "doc.tail.report.savedJsonJsonlMarkdown": {
+    "en": "Saved JSON, JSONL, and Markdown reports",
+    "ko": "JSON·JSONL·Markdown 보고서를 저장했습니다"
+  },
+  "doc.tail.import.regularSourceOpenFailed": {
+    "en": "Could not open the source as a regular file.",
+    "ko": "일반 원본 파일을 열지 못했습니다."
+  },
+  "doc.tail.import.regularSourceOnly": {
+    "en": "Only regular source files can be imported.",
+    "ko": "일반 원본 파일만 가져올 수 있습니다."
+  },
+  "doc.tail.import.maxFileSize512MiB": {
+    "en": "Files up to 512 MiB are supported.",
+    "ko": "파일당 512 MiB 이하를 지원합니다."
+  },
+  "doc.tail.bundle.groupWithAboveNeedsPreviousVersion": {
+    "en": "Can be grouped with the item above when a previous version exists.",
+    "ko": "앞 버전이 있을 때 위와 묶을 수 있습니다."
+  },
+  "doc.tail.bundle.onlyOnePptxOnePdf": {
+    "en": "Only one PPTX and one PDF can be paired.",
+    "ko": "PPTX 1개와 PDF 1개만 묶을 수 있습니다."
+  },
+  "doc.tail.bundle.selectPptxAndPdfDifferentFormats": {
+    "en": "Select one PPTX and one PDF of different formats.",
+    "ko": "서로 다른 형식의 PPTX 1개와 PDF 1개를 선택하세요."
+  },
+  "doc.tail.changeKind.textEdit": {
+    "en": "Text edit",
+    "ko": "텍스트 수정"
+  },
+  "doc.tail.changeKind.pageMove": {
+    "en": "Page move",
+    "ko": "페이지 이동"
+  },
+  "doc.tail.changeKind.pageAddition": {
+    "en": "Page addition",
+    "ko": "페이지 추가"
+  },
+  "doc.tail.changeKind.pageDeletion": {
+    "en": "Page deletion",
+    "ko": "페이지 삭제"
+  },
+  "doc.tail.changeKind.strikethroughMarked": {
+    "en": "Strikethrough marked",
+    "ko": "취소선 표시"
+  },
+  "doc.tail.changeKind.textObscured": {
+    "en": "Text obscured",
+    "ko": "텍스트 가림"
+  },
+  "doc.tail.changeKind.textRevealedAgain": {
+    "en": "Text shown again",
+    "ko": "텍스트 다시 표시"
+  },
+  "doc.tail.changeKind.visualChange": {
+    "en": "Visual change",
+    "ko": "화면 변경"
+  },
+  "doc.tail.changeKind.observationGap": {
+    "en": "Observation gap",
+    "ko": "관측 공백"
+  },
+  "doc.tail.changeKind.pageSplit": {
+    "en": "Page split",
+    "ko": "페이지 분할"
+  },
+  "doc.tail.changeKind.pageMerge": {
+    "en": "Page merge",
+    "ko": "페이지 병합"
+  },
+  "doc.tail.changeKind.pageLineageChange": {
+    "en": "Page lineage change",
+    "ko": "페이지 계보 변경"
+  },
+  "doc.tail.changeKind.suppliedPdfVisualDifference": {
+    "en": "Supplied PDF visual difference",
+    "ko": "제공 PDF 화면 차이"
+  },
+  "doc.tail.change.selectPrompt": {
+    "en": "Select a change",
+    "ko": "변경을 선택하세요"
+  },
+  "doc.tail.version.unconfirmed": {
+    "en": "Version unconfirmed",
+    "ko": "버전 미확정"
+  },
+  "doc.tail.notes.extractionFailedCheckSource": {
+    "en": "Notes extraction failed · Check the source.",
+    "ko": "노트 추출 실패 · 원본을 확인하세요."
+  },
+  "doc.tail.notes.extractionUnsupportedCheckSource": {
+    "en": "Notes extraction unsupported · Check in the source.",
+    "ko": "노트 추출 미지원 · 원본에서 확인하세요."
+  },
+  "doc.tail.notes.unobservableFormatHasNoSpeakerNotes": {
+    "en": "Notes unobservable · This format has no speaker notes information.",
+    "ko": "노트 관측 불가 · 이 형식에는 발표자 노트 정보가 없습니다."
+  },
+  "doc.tail.notes.observedValueUnavailable": {
+    "en": "Can't determine the observed notes value.",
+    "ko": "노트 관측값을 확인할 수 없습니다."
+  },
+  "doc.tail.notes.noneObservedFromSourceStructure": {
+    "en": "No notes · Observed from source structure",
+    "ko": "노트 없음 · 원본 구조 관측"
+  },
+  "doc.tail.notes.observationStatusUnconfirmedCheckSource": {
+    "en": "Notes observation status unconfirmed · Check in the source.",
+    "ko": "노트 관측 상태 미확정 · 원본에서 확인하세요."
+  },
+  "doc.tail.version.checkNeededOnPage": {
+    "en": "Version check needed · p.{0}",
+    "ko": "버전 확인 필요 · p.{0}"
+  },
+  "doc.tail.version.differentVersion": {
+    "en": "Different version",
+    "ko": "다른 버전"
+  },
+  "doc.tail.import.regularFilesOnlyNoLinksFoldersSpecial": {
+    "en": "Only regular files can be imported. Links, folders, and special files aren't supported.",
+    "ko": "일반 파일만 가져올 수 있습니다. 링크·폴더·특수 파일은 지원하지 않습니다."
+  },
+  "doc.tail.engine.busyInAnotherWindow": {
+    "en": "Analysis is running in another window. Try again after it finishes.",
+    "ko": "다른 창에서 분석 중입니다. 해당 분석이 끝난 뒤 다시 시도하세요."
+  },
+  "doc.tail.engine.diagnosticLogLabel": {
+    "en": " Diagnostic log: ",
+    "ko": " 진단 로그: "
+  },
+  "doc.tail.engine.terminatedBySignal": {
+    "en": "The analysis engine exited unexpectedly (signal {0}).",
+    "ko": "분석 엔진이 예기치 않게 종료되었습니다 (signal {0})."
+  },
+  "doc.tail.engine.responseUnreadableExitCode": {
+    "en": "Couldn't read the analysis engine's response (exit {0}).",
+    "ko": "분석 엔진 응답을 읽지 못했습니다 (exit {0})."
+  },
+  "doc.tail.engine.contractVersionMismatch": {
+    "en": "The app and analysis engine contract versions differ.",
+    "ko": "앱과 분석 엔진의 계약 버전이 다릅니다."
+  },
+  "doc.tail.render.possiblySubstitutedFontsLabel": {
+    "en": "Fonts that may be substituted: ",
+    "ko": "대체될 수 있는 글꼴: "
+  },
+  "doc.tail.render.someSourceTextUnconfirmedInConversion": {
+    "en": "Some source text couldn't be confirmed in the converted view.",
+    "ko": "변환 화면에서 일부 원문 텍스트를 확인하지 못했습니다."
+  },
+  "doc.tail.render.checkComplexObjectConversion": {
+    "en": "Check the conversion of complex objects such as charts and SmartArt.",
+    "ko": "차트·SmartArt 등 복합 개체의 변환 결과를 확인하세요."
+  },
+  "doc.tail.render.standardTextInsetsApplied": {
+    "en": "Converted view with standard default text margins applied.",
+    "ko": "텍스트의 기본 여백을 표준값으로 적용한 변환 화면입니다."
+  },
+  "doc.tail.text.annotationMetadataExcluded": {
+    "en": "Annotation metadata · Excluded from text comparison",
+    "ko": "주석 메타데이터 · 텍스트 비교 제외"
+  },
+  "doc.tail.text.usedForComparison": {
+    "en": "Used for comparison",
+    "ko": "비교에 사용"
+  },
+  "doc.tail.text.readingConflictComparisonWithheld": {
+    "en": "Reading conflict · Comparison withheld",
+    "ko": "판독 충돌 · 비교 보류"
+  },
+  "doc.tail.text.contextReadingIncompleteComparisonWithheld": {
+    "en": "Contextual reading incomplete · Comparison withheld",
+    "ko": "문맥 판독 미완료 · 비교 보류"
+  },
+  "doc.tail.text.comparisonWithheld": {
+    "en": "Comparison withheld",
+    "ko": "비교 보류"
+  },
+  "doc.tail.text.estimateRetainedExcluded": {
+    "en": "Estimate retained · Excluded from comparison",
+    "ko": "추정값 보존 · 비교 제외"
+  },
+  "doc.tail.text.hiddenSourceExcluded": {
+    "en": "Hidden source text · Excluded from comparison",
+    "ko": "숨은 원문 · 비교 제외"
+  },
+  "doc.tail.ocr.initialRetainedComparedViaRereading": {
+    "en": "Initial OCR retained · Compared via re-reading",
+    "ko": "최초 OCR 보존 · 재판독으로 비교"
+  },
+  "doc.tail.ocr.referenceSourceTextPreferred": {
+    "en": "Reference OCR · Source text takes priority",
+    "ko": "참고 OCR · 원문 우선"
+  },
+  "doc.tail.ocr.sourceRetainedComparedViaOcr": {
+    "en": "Source text retained · Compared via OCR",
+    "ko": "원문 보존 · OCR로 비교"
+  },
+  "doc.tail.ocr.contextRereadingEvidence": {
+    "en": "Contextual re-reading evidence",
+    "ko": "문맥 재판독 근거"
+  },
+  "doc.tail.ocr.recordedInitialLinkUnverified": {
+    "en": "Recorded initial OCR · Link unverified",
+    "ko": "기록된 최초 OCR · 연결 미검증"
+  },
+  "doc.tail.ocr.initial": {
+    "en": "Initial OCR",
+    "ko": "최초 OCR"
+  },
+  "doc.tail.ocr.primaryConfidenceScoreSuffix": {
+    "en": " · score {0}",
+    "ko": " · {0}점"
+  },
+  "doc.tail.ocr.regionObservationCreated": {
+    "en": "Region observation created",
+    "ko": "영역 관측 생성"
+  },
+  "doc.tail.ocr.processingLimitReached": {
+    "en": "Processing limit reached",
+    "ko": "처리 한도 도달"
+  },
+  "doc.tail.ocr.imageFormatUnsupported": {
+    "en": "Image format not supported",
+    "ko": "영상 형식 미지원"
+  },
+  "doc.tail.ocr.backgroundReadingUnsupported": {
+    "en": "Background reading not supported",
+    "ko": "배경 판독 미지원"
+  },
+  "doc.tail.ocr.noTextInkObserved": {
+    "en": "No text ink observed",
+    "ko": "문자 잉크 미관측"
+  },
+  "doc.tail.ocr.contextReadingFailed": {
+    "en": "Contextual reading failed",
+    "ko": "문맥 판독 실패"
+  },
+  "doc.tail.ocr.contextReadingStatusLabel": {
+    "en": "Contextual reading status · ",
+    "ko": "문맥 판독 상태 · "
+  },
+  "doc.tail.ocr.statusUnknown": {
+    "en": "Status unknown",
+    "ko": "상태 미상"
+  },
+  "doc.tail.ocr.contextReadingIncompleteInitialRetainedAsEstimate": {
+    "en": "Contextual reading couldn't be completed. The initial OCR is retained as an estimate.",
+    "ko": "문맥 판독을 완료하지 못했습니다. 최초 OCR은 추정값으로 보존합니다."
+  },
+  "doc.tail.ocr.sameRecognizerMultiConditionEstimate": {
+    "en": "Estimate from multiple conditions of the same recognizer. Compare it with the source view.",
+    "ko": "같은 인식기의 여러 조건에서 얻은 추정입니다. 원본 화면과 대조하세요."
+  },
+  "doc.tail.ocr.recognitionComplete": {
+    "en": "Recognition complete",
+    "ko": "인식 완료"
+  },
+  "doc.tail.ocr.noReading": {
+    "en": "No reading",
+    "ko": "판독값 없음"
+  },
+  "doc.tail.ocr.surroundingContentMixedIn": {
+    "en": "Surrounding content mixed in",
+    "ko": "주변 내용 혼입"
+  },
+  "doc.tail.ocr.clippedAtBoundary": {
+    "en": "Clipped at boundary",
+    "ko": "경계 잘림"
+  },
+  "doc.tail.ocr.conflictingAlternatives": {
+    "en": "Conflicting alternatives",
+    "ko": "대안 충돌"
+  },
+  "doc.tail.ocr.recognitionFailed": {
+    "en": "Recognition failed",
+    "ko": "인식 실패"
+  },
+  "doc.tail.ocr.languageKorean": {
+    "en": "Korean",
+    "ko": "한국어"
+  },
+  "doc.tail.ocr.languageEnglish": {
+    "en": "English",
+    "ko": "영어"
+  },
+  "doc.tail.ocr.conditionNumberPrefix": {
+    "en": "Condition {0} · ",
+    "ko": "조건 {0} · "
+  },
+  "doc.tail.ocr.scaleFactorSegment": {
+    "en": " · {0}× · ",
+    "ko": " · {0}배 · "
+  },
+  "doc.tail.ocr.wideSurroundingContext": {
+    "en": "Wide surroundings",
+    "ko": "넓은 주변"
+  },
+  "doc.tail.ocr.narrowSurroundingContext": {
+    "en": "Close surroundings",
+    "ko": "가까운 주변"
+  },
+  "doc.tail.ocr.recognitionScore": {
+    "en": "Recognition score {0}",
+    "ko": "인식 점수 {0}점"
+  },
+  "doc.tail.element.image": {
+    "en": "Image",
+    "ko": "이미지"
+  },
+  "doc.tail.element.semanticExtractionUnsupported": {
+    "en": "Semantic extraction not supported",
+    "ko": "의미 추출 미지원"
+  },
+  "doc.tail.source.noSourceText": {
+    "en": "No source text",
+    "ko": "원문 없음"
+  },
+  "doc.tail.sourcePage.previous": {
+    "en": "Previous source page",
+    "ko": "이전 원문 페이지"
+  },
+  "doc.tail.sourcePage.numberSuffix": {
+    "en": " source page number",
+    "ko": " 원문 페이지 번호"
+  },
+  "doc.tail.sourcePage.next": {
+    "en": "Next source page",
+    "ko": "다음 원문 페이지"
+  },
+  "doc.tail.sourcePage.checking": {
+    "en": "Checking source page…",
+    "ko": "원문 페이지를 확인하고 있습니다…"
+  },
+  "doc.tail.sourcePage.showingPreviousVerifyingNext": {
+    "en": "Showing previous page · Verifying next page",
+    "ko": "이전 페이지 표시 · 다음 페이지 검증 중"
+  },
+  "doc.tail.sourcePage.infoNeedsCheck": {
+    "en": "Page info needs checking",
+    "ko": "페이지 정보 확인 필요"
+  },
+  "doc.tail.renderSource.suppliedPdfUserLinkedReference": {
+    "en": "Supplied PDF · User-linked · Reference only",
+    "ko": "제공 PDF · 사용자 연결 · 참고용"
+  },
+  "doc.tail.renderSource.suppliedPdfPageMappingInferred": {
+    "en": "Supplied PDF · Page mapping inferred",
+    "ko": "제공 PDF · 페이지 대응 추정"
+  },
+  "doc.tail.renderSource.pptxLibreOffice": {
+    "en": "PPTX render · LibreOffice",
+    "ko": "PPTX 렌더 · LibreOffice"
+  },
+  "doc.tail.renderSource.originalPdfPdfKit": {
+    "en": "Source PDF · PDFKit",
+    "ko": "원본 PDF · PDFKit"
+  },
+  "doc.tail.renderSource.structureViewNoRender": {
+    "en": "Structure view · No render",
+    "ko": "구조 보기 · 렌더 없음"
+  },
+  "doc.tail.suppliedPdf.editPageLinksForVersion": {
+    "en": "Edit page links between this version's PPTX and the supplied PDF",
+    "ko": "이 버전의 PPTX와 제공 PDF 페이지 연결 수정"
+  },
+  "doc.tail.suppliedPdf.viewReportLinksAndHistory": {
+    "en": "View supplied PDF links and history for this report",
+    "ko": "이 보고서의 제공 PDF 연결·이력 조회"
+  },
+  "doc.tail.suppliedPdf.reviewPageLinksAndHistory": {
+    "en": "Review supplied PDF page links and history",
+    "ko": "제공 PDF 페이지 연결·이력 확인"
+  },
+  "doc.tail.render.referenceRender": {
+    "en": "Reference render",
+    "ko": "참고 렌더"
+  },
+  "doc.tail.render.viewOnlyofficeConversionForReference": {
+    "en": "View ONLYOFFICE's separate conversion for reference",
+    "ko": "ONLYOFFICE의 별도 변환 화면을 참고용으로 확인"
+  },
+  "doc.tail.suppliedPdf.visualEvidenceUserLinkedFidelityUnverified": {
+    "en": "Visual evidence from the supplied PDF. Pages were linked by the user; fidelity to the PowerPoint source is unverified.",
+    "ko": "제공 PDF의 화면 근거입니다. 사용자가 페이지를 연결했으며 PowerPoint 원본 충실도는 미검증입니다."
+  },
+  "doc.tail.suppliedPdf.visualEvidencePageMappingInferred": {
+    "en": "Visual evidence from the supplied PDF. Page mapping to the PPTX is inferred.",
+    "ko": "제공 PDF의 화면 근거입니다. PPTX와의 페이지 대응은 추정입니다."
+  },
+  "doc.tail.evidence.pptxCoordinatesUnverifiedCheckExtractedText": {
+    "en": "Screen coordinates of PPTX evidence are unverified. Check the content in the extracted source text below.",
+    "ko": "PPTX 근거의 화면 좌표는 미검증입니다. 아래 추출 원문에서 내용을 확인하세요."
+  },
+  "doc.tail.evidence.noCorrespondingSourceText": {
+    "en": "No corresponding source text",
+    "ko": "대응하는 원문 없음"
+  },
+  "doc.tail.evidence.distinguishObservedAbsenceFromDeletion": {
+    "en": "Distinguish observed absence from actual deletion in the change evidence.",
+    "ko": "관측 부재와 실제 삭제를 변경 근거에서 구분하세요."
+  },
+  "doc.tail.page.openFailed": {
+    "en": "Couldn't open the page",
+    "ko": "페이지를 열지 못했습니다"
+  },
+  "doc.tail.sourcePage.loading": {
+    "en": "Loading source page…",
+    "ko": "원문 페이지 로딩…"
+  },
+  "doc.tail.page.sizeUndeterminable": {
+    "en": "Can't determine the page size",
+    "ko": "페이지 크기를 확인할 수 없습니다"
+  },
+  "doc.tail.sourcePage.previousShownWhileVerifyingNext": {
+    "en": "Showing the previous page while the next page is verified.",
+    "ko": "다음 페이지를 검증하는 동안 이전 페이지를 표시합니다."
+  },
+  "doc.tail.inspector.extractedContentTablesDisplayState": {
+    "en": "Extracted content, tables, and display state",
+    "ko": "추출 내용·표·표시 상태"
+  },
+  "doc.tail.inspector.extractionAndOcrRetainedSeparately": {
+    "en": "Source extraction and OCR estimates are retained separately.",
+    "ko": "원문 추출과 OCR 추정을 각각 보존합니다."
+  },
+  "doc.tail.ocr.localStatusVerifyAgainstSource": {
+    "en": "Local OCR · {0} · Verify recognition results against the source view.",
+    "ko": "로컬 OCR · {0} · 인식 결과는 원본 화면으로 확인하세요."
+  },
+  "doc.tail.table.gridBoundsUnconfirmedCheckRowsColumns": {
+    "en": "Table grid boundaries are unconfirmed or outside the detection range. Check rows and columns in the source view.",
+    "ko": "표의 격자 경계가 미확정이거나 검출 범위를 벗어났습니다. 행·열을 원본 화면에서 확인하세요."
+  },
+  "doc.tail.strikethroughAnnotationDisplayUnverified": {
+    "en": "Strikethrough annotation · display state unverified",
+    "ko": "취소선 주석 · 표시 상태 미검증"
+  },
+  "doc.tail.deletionIntentAnnotationApplyCheck": {
+    "en": "Deletion-intent annotation · confirm whether applied",
+    "ko": "삭제 의도 주석 · 적용 여부 확인"
+  },
+  "doc.tail.pdfAnnotationRegionSourceCheckRequired": {
+    "en": "PDF annotation region · source check required",
+    "ko": "PDF 주석 영역 · 원본 확인 필요"
+  },
+  "doc.tail.sourcePositionUnverifiedEstimatedCoordsHiddenMode": {
+    "en": "Source position unverified · coordinates are estimates · observed in non-display mode",
+    "ko": "원문 위치 미검증 · 좌표는 추정값 · 비표시 모드 관측"
+  },
+  "doc.tail.sourcePositionDisplayUnverifiedFontCoordsEstimated": {
+    "en": "Source position and display state unverified · font coordinates are estimates.",
+    "ko": "원문 위치·표시 상태 미검증 · 글꼴 좌표는 추정값입니다."
+  },
+  "doc.tail.sourceStructure": {
+    "en": "Source structure",
+    "ko": "원본 구조"
+  },
+  "doc.tail.initialOcrEstimate": {
+    "en": "Initial OCR estimate",
+    "ko": "최초 OCR 추정"
+  },
+  "doc.tail.contextualRereadEstimate": {
+    "en": "Contextual reread estimate",
+    "ko": "문맥 재판독 추정"
+  },
+  "doc.tail.pptxCellStructureObserved": {
+    "en": "PPTX cell · structure observed",
+    "ko": "PPTX 셀 · 구조 관측"
+  },
+  "doc.tail.screenOcrTableCellEstimate": {
+    "en": "Screen OCR table cell · estimate",
+    "ko": "화면 OCR 표 셀 · 추정"
+  },
+  "doc.tail.pdfGridEstimate": {
+    "en": "PDF grid · estimate",
+    "ko": "PDF 격자 · 추정"
+  },
+  "doc.tail.speakerNotes": {
+    "en": "Speaker notes",
+    "ko": "발표자 노트"
+  },
+  "doc.tail.verifyingSelectedPageExtract": {
+    "en": "Verifying extracted content for the selected page.",
+    "ko": "선택한 페이지의 추출 내용을 검증하고 있습니다."
+  },
+  "doc.tail.currentPageExtractReadFailed": {
+    "en": "Could not read extracted content for the current page.",
+    "ko": "현재 페이지의 추출 내용을 읽지 못했습니다."
+  },
+  "doc.tail.max32PagesPerSide": {
+    "en": "You can select up to 32 pages on one side.",
+    "ko": "한쪽에서 최대 32쪽까지 선택할 수 있습니다."
+  },
+  "doc.tail.splitSelectOneEarlierTwoOrMoreLater": {
+    "en": "For a split, select 1 earlier page and 2 or more later pages.",
+    "ko": "분할은 이전 1쪽, 이후 2쪽 이상을 선택하세요."
+  },
+  "doc.tail.mergeSelectTwoOrMoreEarlierOneLater": {
+    "en": "For a merge, select 2 or more earlier pages and 1 later page.",
+    "ko": "병합은 이전 2쪽 이상, 이후 1쪽을 선택하세요."
+  },
+  "doc.tail.selectOnePageEachSide": {
+    "en": "Select one page on each side.",
+    "ko": "양쪽 페이지를 하나씩 선택하세요."
+  },
+  "doc.tail.enterChangeReason": {
+    "en": "Enter a change reason.",
+    "ko": "수정 이유를 입력하세요."
+  },
+  "doc.tail.changeReasonExceedsLimitByUnits": {
+    "en": "The change reason exceeds the limit by {0} units.",
+    "ko": "수정 이유가 한도를 {0}단위 넘었습니다."
+  },
+  "doc.tail.savedMappingForCurrentSelectionPrefix": {
+    "en": "Saved mapping for the current selection: ",
+    "ko": "현재 선택의 저장된 대응: "
+  },
+  "doc.tail.noDirectLink": {
+    "en": "No direct link",
+    "ko": "직접 연결 없음"
+  },
+  "doc.tail.editPageMapping": {
+    "en": "Edit page mapping",
+    "ko": "페이지 대응 수정"
+  },
+  "doc.tail.mappingType": {
+    "en": "Mapping type",
+    "ko": "대응 유형"
+  },
+  "doc.tail.linkOneToOne": {
+    "en": "Link 1:1",
+    "ko": "연결 1:1"
+  },
+  "doc.tail.splitOneToMany": {
+    "en": "Split 1:N",
+    "ko": "분할 1:N"
+  },
+  "doc.tail.mergeManyToOne": {
+    "en": "Merge N:1",
+    "ko": "병합 N:1"
+  },
+  "doc.tail.unlinkAndBlock": {
+    "en": "Unlink and block",
+    "ko": "해제·차단"
+  },
+  "doc.tail.wordingChangeReviewedSeparatelyNewReport": {
+    "en": "Whether wording was deleted or changed is reviewed separately against the source. Applying the page mapping analyzes a new report.",
+    "ko": "문구의 삭제·변경 여부는 원문 근거로 별도 검토합니다. 페이지 대응을 적용하면 새 보고서를 분석합니다."
+  },
+  "doc.tail.earlierVersion": {
+    "en": "Earlier version",
+    "ko": "이전 버전"
+  },
+  "doc.tail.laterVersion": {
+    "en": "Later version",
+    "ko": "이후 버전"
+  },
+  "doc.tail.earlierLaterPageCountsMax32": {
+    "en": "Earlier {0} pages → later {1} pages · select up to 32 pages per side",
+    "ko": "이전 {0}쪽 → 이후 {1}쪽 · 한쪽 최대 32쪽 선택"
+  },
+  "doc.tail.otherSimilarCandidatesMayExist": {
+    "en": "Other similar candidates may exist besides the links shown.",
+    "ko": "표시된 연결 외에 다른 유사 후보가 있을 수 있습니다."
+  },
+  "doc.tail.existingMappingsRemovedBranchesKept": {
+    "en": "{0} existing mappings will be removed. Remaining branches stay, and if only one pair remains it becomes a 1:1 link.",
+    "ko": "기존 대응 {0}개가 해제됩니다. 남은 분기들은 유지되며, 한 쌍만 남으면 1:1 연결로 바뀝니다."
+  },
+  "doc.tail.noCurrentLinkBlocksAutoPair": {
+    "en": "There is no current link. Applying blocks automatic linking of these two pages. Specify one pair at a time.",
+    "ko": "현재 연결은 없습니다. 적용하면 이 두 페이지의 자동 연결을 차단합니다. 한 번에 한 쌍을 지정합니다."
+  },
+  "doc.tail.unlinkOneKeepOtherBranches": {
+    "en": "Removes one link at a time. Other branch links stay.",
+    "ko": "한 번에 한 연결을 해제합니다. 나머지 분기 연결은 유지합니다."
+  },
+  "doc.tail.changeReasonRequired": {
+    "en": "Change reason (required)",
+    "ko": "수정 이유 (필수)"
+  },
+  "doc.tail.inputLengthOf2000": {
+    "en": "Input length {0}/2000",
+    "ko": "입력 길이 {0}/2000"
+  },
+  "doc.tail.someEmojiCountAsMultipleUnits": {
+    "en": "Some emoji count as multiple units.",
+    "ko": "일부 이모지는 여러 단위로 계산됩니다."
+  },
+  "doc.tail.cancelBeforeApplyDoesNotSave": {
+    "en": "Canceling before apply does not save.",
+    "ko": "적용 전 취소하면 저장하지 않습니다."
+  },
+  "doc.tail.applyAndReanalyze": {
+    "en": "Apply and reanalyze",
+    "ko": "적용하고 재분석"
+  },
+  "doc.tail.applySelectedRelationAnalyzeNewReport": {
+    "en": "Applies the selected relationship and analyzes a new report",
+    "ko": "선택한 관계를 적용하고 새 보고서로 분석합니다"
+  },
+  "doc.tail.searchNumberOrSummary": {
+    "en": "Search number or summary",
+    "ko": "번호·요약 검색"
+  },
+  "doc.tail.noSummaryRead": {
+    "en": "No summary read",
+    "ko": "판독된 요약 없음"
+  },
+  "doc.tail.selectedColon": {
+    "en": "Selected:",
+    "ko": "선택:"
+  },
+  "doc.tail.deselectPage": {
+    "en": "Deselect page {0}",
+    "ko": "페이지 {0} 선택 해제"
+  },
+  "doc.tail.titleSelectedPageCountPrefix": {
+    "en": "{0} selected {1} pages: ",
+    "ko": "{0} 선택 {1}쪽: "
+  },
+  "doc.tail.selectedPagesOutsideSearchJump": {
+    "en": "{0} selected pages outside the search results · press a number above to jump",
+    "ko": "검색 결과 밖 선택 {0}쪽 · 위 번호를 누르면 이동합니다"
+  },
+  "doc.tail.pageListScrollSearchMultiSelect": {
+    "en": "{0} pages in the list · move by scroll or search · ⌘·⇧-click to select multiple pages",
+    "ko": "목록 {0}쪽 · 스크롤·검색으로 이동 · ⌘·⇧ 클릭으로 여러 쪽 선택"
+  },
+  "doc.tail.noLink": {
+    "en": "No link",
+    "ko": "연결 없음"
+  },
+  "doc.tail.notSelected": {
+    "en": "Not selected",
+    "ko": "미선택"
+  },
+  "doc.tail.existingToAfterApply": {
+    "en": "Existing {0} → after apply {1}",
+    "ko": "기존 {0} → 적용 후 {1}"
+  },
+  "doc.tail.loadingLinkInfo": {
+    "en": "Loading link information.",
+    "ko": "연결 정보를 불러오고 있습니다."
+  },
+  "doc.tail.editLinksInLatestAnalysis": {
+    "en": "Edit links in the latest analysis result.",
+    "ko": "최신 분석 결과에서 연결을 수정하세요."
+  },
+  "doc.tail.selectPptxSlide": {
+    "en": "Select a PPTX slide.",
+    "ko": "PPTX 슬라이드를 선택하세요."
+  },
+  "doc.tail.selectPdfPageToLink": {
+    "en": "Select a PDF page to link.",
+    "ko": "연결할 PDF 페이지를 선택하세요."
+  },
+  "doc.tail.changeReasonWithin2000Units": {
+    "en": "Enter the change reason within 2000 units.",
+    "ko": "수정 이유는 2000단위 이내로 입력하세요."
+  },
+  "doc.tail.providedPdfPageLink": {
+    "en": "Provided PDF page link",
+    "ko": "제공 PDF 페이지 연결"
+  },
+  "doc.tail.linkHistoryCount": {
+    "en": "{0} link history entries",
+    "ko": "연결 이력 {0}개"
+  },
+  "doc.tail.pairSameVersionPptxPdfNoFidelity": {
+    "en": "Links same-version PPTX and PDF one pair at a time. The link is for on-screen reference and does not certify fidelity to the PowerPoint source.",
+    "ko": "같은 버전의 PPTX와 PDF를 한 쌍씩 연결합니다. 연결은 화면 참고용이며 PowerPoint 원본의 충실도를 보증하지 않습니다."
+  },
+  "doc.tail.pptxSourceSlide": {
+    "en": "PPTX source slide",
+    "ko": "PPTX 원본 슬라이드"
+  },
+  "doc.tail.providedPdfPage": {
+    "en": "Provided PDF page",
+    "ko": "제공 PDF 페이지"
+  },
+  "doc.tail.pptxSourceStructureOrConversionView": {
+    "en": "PPTX source · structure or separate conversion view",
+    "ko": "PPTX 원본 · 구조 또는 별도 변환 화면"
+  },
+  "doc.tail.providedPdfSource": {
+    "en": "Provided PDF source",
+    "ko": "제공 PDF 원본"
+  },
+  "doc.tail.selectedSourceLinkCautionCount": {
+    "en": "{0} cautions for the selected source and link",
+    "ko": "선택한 원문·연결 주의사항 {0}개"
+  },
+  "doc.tail.linkMethod": {
+    "en": "Link method",
+    "ko": "연결 방식"
+  },
+  "doc.tail.linkPdfPage": {
+    "en": "Link PDF page",
+    "ko": "PDF 페이지 연결"
+  },
+  "doc.tail.unlinkBlockSlidePdf": {
+    "en": "Unlink and block the PDF link for this slide",
+    "ko": "이 슬라이드의 PDF 연결 해제·차단"
+  },
+  "doc.tail.keepLinkRecordReasonConfirmation": {
+    "en": "Keeps the page link and records a new change reason and user confirmation in the history.",
+    "ko": "페이지 연결을 유지하고 새 수정 이유와 사용자 확인을 이력에 기록합니다."
+  },
+  "doc.tail.previousChangeReasonForCurrentLink": {
+    "en": "Previous change reason for the current link",
+    "ko": "현재 연결의 이전 수정 이유"
+  },
+  "doc.tail.replacesExistingLinksConfirmReason": {
+    "en": "Replaces {0} existing links · confirm the link reason",
+    "ko": "기존 연결 {0}개를 대체합니다 · 연결 이유 확인"
+  },
+  "doc.tail.suffixUserLink": {
+    "en": " · User link",
+    "ko": " · 사용자 연결"
+  },
+  "doc.tail.suffixAutomaticEstimate": {
+    "en": " · Automatic estimate",
+    "ko": " · 자동 추정"
+  },
+  "doc.tail.previouslyRecordedChangeReason": {
+    "en": "Previously recorded change reason",
+    "ko": "기존에 기록한 수정 이유"
+  },
+  "doc.tail.changeReasonRequiredKeptVerbatim": {
+    "en": "Change reason (required · preserved verbatim in link history)",
+    "ko": "수정 이유 (필수 · 연결 이력에 원문 그대로 보존)"
+  },
+  "doc.tail.applyPreservesHistoryAnalyzesFixedReport": {
+    "en": "Applying preserves link history and analyzes a new fixed report.",
+    "ko": "적용하면 연결 이력을 보존하고 새 고정 보고서를 분석합니다."
+  },
+  "doc.tail.currentPrefix": {
+    "en": "Current: ",
+    "ko": "현재: "
+  },
+  "doc.tail.noCurrentLink": {
+    "en": "No current link",
+    "ko": "현재 연결 없음"
+  },
+  "doc.tail.removedDueToAnotherLink": {
+    "en": "Removed because of another link",
+    "ko": "다른 연결로 인해 해제됨"
+  },
+  "doc.tail.unlinkedBlockedByUser": {
+    "en": "Unlinked and blocked by the user",
+    "ko": "사용자가 연결 해제·차단함"
+  },
+  "doc.tail.slideToPdfPage": {
+    "en": "Slide {0} → PDF p.{1}",
+    "ko": "슬라이드 {0} → PDF p.{1}"
+  },
+  "doc.tail.pageCount": {
+    "en": "{0} pages",
+    "ko": "{0}쪽"
+  },
+  "doc.tail.searchNumberOrWording": {
+    "en": "Search number or wording",
+    "ko": "번호·문구 검색"
+  },
+  "doc.tail.hidden": {
+    "en": "Hidden",
+    "ko": "숨김"
+  },
+  "doc.tail.selectedPageViewInList": {
+    "en": "Selected p.{0} · view in list",
+    "ko": "선택 p.{0} · 목록에서 보기"
+  },
+  "doc.tail.providedPdfLinkHistory": {
+    "en": "Provided PDF link history",
+    "ko": "제공 PDF 연결 이력"
+  },
+  "doc.tail.linkHistoryOldestFirstFixedReport": {
+    "en": "Shows records from oldest. “Current applied state” is the last decision valid in this fixed report. Unlinking and relinking preserve earlier records.",
+    "ko": "오래된 기록부터 표시합니다. ‘현재 적용 상태’는 이 고정 보고서에서 유효한 마지막 결정입니다. 해제·재연결은 이전 기록을 보존합니다."
+  },
+  "doc.tail.showMoreRecords": {
+    "en": "Show more records",
+    "ko": "기록 더 보기"
+  },
+  "doc.tail.noSavedLinkHistory": {
+    "en": "No saved link history.",
+    "ko": "저장된 연결 이력이 없습니다."
+  },
+  "doc.tail.reload": {
+    "en": "Reload",
+    "ko": "다시 불러오기"
+  },
+  "doc.tail.userLinkNotExportOrFidelityCertification": {
+    "en": "A user link does not certify the PDF export origin or fidelity to the PowerPoint source.",
+    "ko": "사용자 연결은 PDF 내보내기 출처나 PowerPoint 원본 충실도의 인증이 아닙니다."
+  },
+  "doc.tail.ordinalSlideArrowPrefix": {
+    "en": "{0}. Slide {1} → ",
+    "ko": "{0}. 슬라이드 {1} → "
+  },
+  "doc.tail.noPdfLink": {
+    "en": "No PDF link",
+    "ko": "PDF 연결 없음"
+  },
+  "doc.tail.currentAppliedState": {
+    "en": "Current applied state",
+    "ko": "현재 적용 상태"
+  },
+  "doc.tail.changeReason": {
+    "en": "Change reason",
+    "ko": "수정 이유"
+  },
+  "doc.tail.loadingReason": {
+    "en": "Loading reason…",
+    "ko": "이유 불러오는 중…"
+  },
+  "doc.tail.viewFullChangeReason": {
+    "en": "View full change reason",
+    "ko": "수정 이유 전체 보기"
+  },
+  "doc.tail.replacedExistingLinksPrefix": {
+    "en": "Replaced {0} existing links · ",
+    "ko": "대체한 기존 연결 {0}개 · "
+  },
+  "doc.tail.changeReasonLoadFailed": {
+    "en": "Could not load the change reason.",
+    "ko": "수정 이유를 불러오지 못했습니다."
+  },
+  "doc.tail.changeReasonRemainderCheckFailed": {
+    "en": "Could not check the rest of the change reason. Try again.",
+    "ko": "수정 이유의 나머지를 확인하지 못했습니다. 다시 시도하세요."
+  },
+  "doc.tail.libreOfficeRender": {
+    "en": "LibreOffice render",
+    "ko": "LibreOffice 렌더"
+  },
+  "doc.tail.structureViewSourceScreenUnverified": {
+    "en": "Structure view · source screen unverified",
+    "ko": "구조 보기 · 원본 화면 미검증"
+  },
+  "doc.tail.selectPage": {
+    "en": "Select a page",
+    "ko": "페이지를 선택하세요"
+  },
+  "doc.tail.verifyingPagePreviousLookupView": {
+    "en": "Verifying page · previous lookup view",
+    "ko": "페이지 검증 중 · 이전 조회 화면"
+  },
+  "doc.tail.suffixReferenceConversionView": {
+    "en": " · Reference conversion view",
+    "ko": " · 참고 변환 화면"
+  },
+  "doc.tail.onlyOfficeLocalConversion": {
+    "en": "ONLYOFFICE · local conversion",
+    "ko": "ONLYOFFICE · 로컬 변환"
+  },
+  "doc.tail.rendererVersionPageMappingEstimate": {
+    "en": "{0} {1} · page mapping estimate",
+    "ko": "{0} {1} · 페이지 대응 추정"
+  },
+  "doc.tail.previousReferencePage": {
+    "en": "Previous reference page",
+    "ko": "이전 참고 페이지"
+  },
+  "doc.tail.referencePage": {
+    "en": "Reference page",
+    "ko": "참고 페이지"
+  },
+  "doc.tail.nextReferencePage": {
+    "en": "Next reference page",
+    "ko": "다음 참고 페이지"
+  },
+  "doc.tail.fit": {
+    "en": "Fit",
+    "ko": "맞춤"
+  },
+  "doc.tail.referenceConversionMayDifferFromPowerPoint": {
+    "en": "This reference conversion view may differ from PowerPoint. It is not applied to saved change history or AI lookup results.",
+    "ko": "PowerPoint와 다를 수 있는 참고 변환 화면입니다. 저장된 변경 이력과 AI 조회 결과에는 반영하지 않습니다."
+  },
+  "doc.tail.hiddenOrNonUniquePagesLimitConversion": {
+    "en": "If a page is a hidden slide or has no unique wording, page mapping cannot be checked and reference conversion is limited.",
+    "ko": "숨김 슬라이드나 고유 문구가 없는 페이지가 있으면 페이지 대응을 확인할 수 없어 참고 변환이 제한됩니다."
+  },
+  "doc.tail.referenceViewOpenFailed": {
+    "en": "Could not open the reference view",
+    "ko": "참고 화면을 열지 못했습니다"
+  },
+  "doc.tail.checkingSourceAndPageMapping": {
+    "en": "Checking the source and page mapping…",
+    "ko": "원문과 페이지 대응을 확인하고 있습니다…"
+  },
+  "doc.tail.cancelConversion": {
+    "en": "Cancel conversion",
+    "ko": "변환 취소"
+  },
+  "doc.tail.renderingCheckItems": {
+    "en": "Rendering check items",
+    "ko": "렌더링 확인 항목"
+  },
+  "doc.tail.additionalFontCheckItemCount": {
+    "en": "{0} additional font check items",
+    "ko": "추가 글꼴 확인 항목 {0}개"
+  },
+  "doc.error.diagnosticLog": {
+    "en": "{0} Diagnostic log: {1}",
+    "ko": "{0} 진단 로그: {1}"
+  },
+  "doc.error.diagnosticDetail": {
+    "en": "{0} Diagnostic detail: {1}",
+    "ko": "{0} 진단 정보: {1}"
+  },
+  "doc.render.fontSubstitution": {
+    "en": "Fonts that may be substituted: {0}",
+    "ko": "대체될 수 있는 글꼴: {0}"
+  },
+  "doc.comparison.unknownRole": {
+    "en": "Comparison role: {0}",
+    "ko": "비교 역할: {0}"
+  },
+  "doc.ocr.labelWithScore": {
+    "en": "{0} · score {1}",
+    "ko": "{0} · {1}점"
+  },
+  "doc.ocr.contextStatus": {
+    "en": "Contextual reading status · {0}",
+    "ko": "문맥 판독 상태 · {0}"
+  },
+  "doc.ocr.condition": {
+    "en": "Condition {0} · {1} · {2}× · {3}",
+    "ko": "조건 {0} · {1} · {2}배 · {3}"
+  },
+  "doc.page.sideNumber": {
+    "en": "{0} source page number",
+    "ko": "{0} 원문 페이지 번호"
+  },
+  "doc.sidecar.title": {
+    "en": "{0} · reference conversion view",
+    "ko": "{0} · 참고 변환 화면"
+  },
+  "doc.tail.changeReasonExceedsLimitByUnits.one": {
+    "en": "The change reason exceeds the limit by {0} unit.",
+    "ko": "수정 이유가 한도를 {0}단위 넘었습니다."
+  },
+  "doc.tail.changeReasonExceedsLimitByUnits.other": {
+    "en": "The change reason exceeds the limit by {0} units.",
+    "ko": "수정 이유가 한도를 {0}단위 넘었습니다."
+  },
+  "doc.tail.existingMappingsRemovedBranchesKept.one": {
+    "en": "{0} existing mapping will be removed. Remaining branches stay; a single remaining pair becomes a 1:1 link.",
+    "ko": "기존 대응 {0}개가 해제됩니다. 남은 분기들은 유지되며, 한 쌍만 남으면 1:1 연결로 바뀝니다."
+  },
+  "doc.tail.existingMappingsRemovedBranchesKept.other": {
+    "en": "{0} existing mappings will be removed. Remaining branches stay; a single remaining pair becomes a 1:1 link.",
+    "ko": "기존 대응 {0}개가 해제됩니다. 남은 분기들은 유지되며, 한 쌍만 남으면 1:1 연결로 바뀝니다."
+  },
+  "doc.tail.selectedPagesOutsideSearchJump.one": {
+    "en": "{0} selected page is outside the search results · select its number above to jump",
+    "ko": "검색 결과 밖 선택 {0}쪽 · 위 번호를 누르면 이동합니다"
+  },
+  "doc.tail.selectedPagesOutsideSearchJump.other": {
+    "en": "{0} selected pages are outside the search results · select a number above to jump",
+    "ko": "검색 결과 밖 선택 {0}쪽 · 위 번호를 누르면 이동합니다"
+  },
+  "doc.tail.pageListScrollSearchMultiSelect.one": {
+    "en": "{0} page in the list · scroll or search · ⌘-click or ⇧-click to select multiple pages",
+    "ko": "목록 {0}쪽 · 스크롤·검색으로 이동 · ⌘·⇧ 클릭으로 여러 쪽 선택"
+  },
+  "doc.tail.pageListScrollSearchMultiSelect.other": {
+    "en": "{0} pages in the list · scroll or search · ⌘-click or ⇧-click to select multiple pages",
+    "ko": "목록 {0}쪽 · 스크롤·검색으로 이동 · ⌘·⇧ 클릭으로 여러 쪽 선택"
+  },
+  "doc.tail.linkHistoryCount.one": {
+    "en": "{0} link history entry",
+    "ko": "연결 이력 {0}개"
+  },
+  "doc.tail.linkHistoryCount.other": {
+    "en": "{0} link history entries",
+    "ko": "연결 이력 {0}개"
+  },
+  "doc.tail.selectedSourceLinkCautionCount.one": {
+    "en": "{0} caution for the selected source and link",
+    "ko": "선택한 원문·연결 주의사항 {0}개"
+  },
+  "doc.tail.selectedSourceLinkCautionCount.other": {
+    "en": "{0} cautions for the selected source and link",
+    "ko": "선택한 원문·연결 주의사항 {0}개"
+  },
+  "doc.tail.replacesExistingLinksConfirmReason.one": {
+    "en": "Replaces {0} existing link · review its reason",
+    "ko": "기존 연결 {0}개를 대체합니다 · 연결 이유 확인"
+  },
+  "doc.tail.replacesExistingLinksConfirmReason.other": {
+    "en": "Replaces {0} existing links · review their reasons",
+    "ko": "기존 연결 {0}개를 대체합니다 · 연결 이유 확인"
+  },
+  "doc.tail.pageCount.one": {
+    "en": "{0} page",
+    "ko": "{0}쪽"
+  },
+  "doc.tail.pageCount.other": {
+    "en": "{0} pages",
+    "ko": "{0}쪽"
+  },
+  "doc.tail.additionalFontCheckItemCount.one": {
+    "en": "{0} additional font check item",
+    "ko": "추가 글꼴 확인 항목 {0}개"
+  },
+  "doc.tail.additionalFontCheckItemCount.other": {
+    "en": "{0} additional font check items",
+    "ko": "추가 글꼴 확인 항목 {0}개"
+  },
+  "doc.ocr.notNeeded": {
+    "en": "OCR not needed",
+    "ko": "OCR 불필요"
+  },
+  "doc.ocr.unsupportedDimensions": {
+    "en": "Image dimensions not supported",
+    "ko": "영상 크기 미지원"
+  },
+  "doc.ocr.partial": {
+    "en": "Partially recognized",
+    "ko": "일부 판독"
+  },
+  "doc.mapping.savedSelection": {
+    "en": "Saved associations for this selection: {0}",
+    "ko": "현재 선택의 저장된 대응: {0}"
+  },
+  "doc.mapping.selectionCounts": {
+    "en": "{0} → {1} · select up to 32 pages per side",
+    "ko": "{0} → {1} · 한쪽 최대 32쪽 선택"
+  },
+  "doc.mapping.selectionAccessibility": {
+    "en": "{0}, {1}: {2}",
+    "ko": "{0} {1}: {2}"
+  },
+  "doc.bundle.pairAssociation": {
+    "en": "{0} · {1}",
+    "ko": "{0} · {1}"
+  },
+  "doc.bundle.currentAssociation": {
+    "en": "Current: {0} · {1}",
+    "ko": "현재: {0} · {1}"
+  },
+  "doc.bundle.userLinked": {
+    "en": "User linked",
+    "ko": "사용자 연결"
+  },
+  "doc.bundle.inferred": {
+    "en": "Inferred automatically",
+    "ko": "자동 추정"
+  },
+  "doc.bundle.historyEntry": {
+    "en": "{0}. Slide {1} → {2}",
+    "ko": "{0}. 슬라이드 {1} → {2}"
+  },
+  "doc.bundle.displacedWithID": {
+    "en": "{0} · {1}",
+    "ko": "{0} · {1}"
+  },
+  "doc.evidence.providedPDFRaster": {
+    "en": "Provided PDF image",
+    "ko": "제공 PDF 화면"
+  },
+  "doc.mapping.earlierPages.one": {
+    "en": "Before: {0} page",
+    "ko": "이전 {0}쪽"
+  },
+  "doc.mapping.earlierPages.other": {
+    "en": "Before: {0} pages",
+    "ko": "이전 {0}쪽"
+  },
+  "doc.mapping.laterPages.one": {
+    "en": "After: {0} page",
+    "ko": "이후 {0}쪽"
+  },
+  "doc.mapping.laterPages.other": {
+    "en": "After: {0} pages",
+    "ko": "이후 {0}쪽"
+  },
+  "doc.mapping.selectedPages.one": {
+    "en": "{0} selected page",
+    "ko": "선택 {0}쪽"
+  },
+  "doc.mapping.selectedPages.other": {
+    "en": "{0} selected pages",
+    "ko": "선택 {0}쪽"
+  },
+  "doc.bundle.displaced.one": {
+    "en": "Replaced {0} existing link",
+    "ko": "대체한 기존 연결 {0}개"
+  },
+  "doc.bundle.displaced.other": {
+    "en": "Replaced {0} existing links",
+    "ko": "대체한 기존 연결 {0}개"
+  }
+}

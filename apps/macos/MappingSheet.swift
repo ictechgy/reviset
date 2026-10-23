@@ -15,21 +15,22 @@ struct MappingSheet: View {
     @State private var leftSearch = ""
     @State private var rightSearch = ""
     @State private var saving = false
-    @State private var failure = ""
+    @State private var failureMessage=UIMessage.raw("")
+    private var failure:String {get{failureMessage.text} nonmutating set{failureMessage = .raw(newValue)}}
     var validationMessage: String? {
-        if max(left.count,right.count)>32 { return "한쪽에서 최대 32쪽까지 선택할 수 있습니다." }
-        if mode == "split" && !(left.count==1 && right.count>=2) { return "분할은 이전 1쪽, 이후 2쪽 이상을 선택하세요." }
-        if mode == "merge" && !(left.count>=2 && right.count==1) { return "병합은 이전 2쪽 이상, 이후 1쪽을 선택하세요." }
-        if (mode == "continuation" || mode == "unlink") && !(left.count==1 && right.count==1) { return "양쪽 페이지를 하나씩 선택하세요." }
-        if reason.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { return "수정 이유를 입력하세요." }
-        if reason.utf16.count>2000 { return "수정 이유가 한도를 \(reason.utf16.count-2000)단위 넘었습니다." }
+        if max(left.count,right.count)>32 { return L("doc.tail.max32PagesPerSide") }
+        if mode == "split" && !(left.count==1 && right.count>=2) { return L("doc.tail.splitSelectOneEarlierTwoOrMoreLater") }
+        if mode == "merge" && !(left.count>=2 && right.count==1) { return L("doc.tail.mergeSelectTwoOrMoreEarlierOneLater") }
+        if (mode == "continuation" || mode == "unlink") && !(left.count==1 && right.count==1) { return L("doc.tail.selectOnePageEachSide") }
+        if reason.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { return L("doc.tail.enterChangeReason") }
+        if reason.utf16.count>2000 { return LC("doc.tail.changeReasonExceedsLimitByUnits", reason.utf16.count-2000) }
         return nil
     }
     var valid: Bool { validationMessage == nil }
     var selectedEdges:[JSON] {model.report["matches"].array.filter{left.contains($0["from_page_id"].string)&&right.contains($0["to_page_id"].string)}}
     var currentSelectionText:String {
-        let values=selectedEdges.map{edge in edgeLabel(edge)+" · "+(edge["status"].string=="human_confirmed" ? "사용자 확정":edge["status"].string=="needs_review" ? "검토 필요":"추정 대응")}
-        return "현재 선택의 저장된 대응: "+(values.isEmpty ? "직접 연결 없음":values.joined(separator:" / "))
+        let values=selectedEdges.map{edge in edgeLabel(edge)+" · "+(edge["status"].string=="human_confirmed" ? L("doc.matching.humanConfirmed"):edge["status"].string=="needs_review" ? L("doc.matching.needsReview"):L("doc.matching.inferred"))}
+        return L("doc.mapping.savedSelection", .verbatim(values.isEmpty ? L("doc.tail.noDirectLink"):values.joined(separator:" / ")))
     }
     var conflicts: [JSON] {
         model.report["matches"].array.filter { edge in
@@ -39,29 +40,29 @@ struct MappingSheet: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack { Text("페이지 대응 수정").font(.title2.weight(.semibold)); Spacer(); Button("취소") { dismiss() }.keyboardShortcut(.cancelAction).disabled(saving) }
+            HStack { Text(L("doc.tail.editPageMapping")).font(.title2.weight(.semibold)); Spacer(); Button(L("doc.common.cancel")) { dismiss() }.keyboardShortcut(.cancelAction).disabled(saving) }
             ScrollView { VStack(alignment:.leading,spacing:10) {
-            Picker("대응 유형", selection: $mode) { Text("연결 1:1").tag("continuation"); Text("분할 1:N").tag("split"); Text("병합 N:1").tag("merge"); Text("해제·차단").tag("unlink") }.pickerStyle(.segmented).disabled(saving)
-            Text("문구의 삭제·변경 여부는 원문 근거로 별도 검토합니다. 페이지 대응을 적용하면 새 보고서를 분석합니다.").font(.caption).foregroundStyle(.secondary)
+            Picker(L("doc.tail.mappingType"), selection: $mode) { Text(L("doc.tail.linkOneToOne")).tag("continuation"); Text(L("doc.tail.splitOneToMany")).tag("split"); Text(L("doc.tail.mergeManyToOne")).tag("merge"); Text(L("doc.tail.unlinkAndBlock")).tag("unlink") }.pickerStyle(.segmented).disabled(saving)
+            Text(L("doc.tail.wordingChangeReviewedSeparatelyNewReport")).font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 16) {
-                pageList(before, search: $leftSearch, selection: $left, title: "이전 버전")
+                pageList(before, search: $leftSearch, selection: $left, title: L("doc.tail.earlierVersion"))
                 Image(systemName: mode == "split" ? "arrow.triangle.branch" : mode == "merge" ? "arrow.triangle.merge" : mode == "unlink" ? "scissors" : "arrow.right").foregroundStyle(.secondary)
-                pageList(after, search: $rightSearch, selection: $right, title: "이후 버전")
+                pageList(after, search: $rightSearch, selection: $right, title: L("doc.tail.laterVersion"))
             }.disabled(saving)
-            Text("이전 \(left.count)쪽 → 이후 \(right.count)쪽 · 한쪽 최대 32쪽 선택").font(.callout.weight(.medium))
+            Text(L("doc.mapping.selectionCounts", .verbatim(LC("doc.mapping.earlierPages", left.count)), .verbatim(LC("doc.mapping.laterPages", right.count)))).font(.callout.weight(.medium))
             Text(currentSelectionText).font(.caption).foregroundStyle(.secondary).lineLimit(2).help(currentSelectionText)
-            Text("표시된 연결 외에 다른 유사 후보가 있을 수 있습니다.").font(.caption2).foregroundStyle(.secondary)
+            Text(L("doc.tail.otherSimilarCandidatesMayExist")).font(.caption2).foregroundStyle(.secondary)
             if !conflicts.isEmpty {
-                Text("기존 대응 \(conflicts.count)개가 해제됩니다. 남은 분기들은 유지되며, 한 쌍만 남으면 1:1 연결로 바뀝니다.").font(.caption).foregroundStyle(.orange)
+                Text(LC("doc.tail.existingMappingsRemovedBranchesKept", conflicts.count)).font(.caption).foregroundStyle(.orange)
                 ScrollView(.horizontal) { HStack { ForEach(Array(conflicts.enumerated()), id: \.offset) { _,edge in Text(edgeLabel(edge)).font(.caption2).padding(5).background(Color.orange.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 4)) } } }.frame(maxHeight: 34)
             }
-            if mode == "unlink" { Text(conflicts.isEmpty ? "현재 연결은 없습니다. 적용하면 이 두 페이지의 자동 연결을 차단합니다. 한 번에 한 쌍을 지정합니다." : "한 번에 한 연결을 해제합니다. 나머지 분기 연결은 유지합니다.").font(.caption).foregroundStyle(.secondary) }
-            TextField("수정 이유 (필수)", text: $reason, axis:.vertical).lineLimit(2...3).textFieldStyle(.roundedBorder).disabled(saving)
+            if mode == "unlink" { Text(conflicts.isEmpty ? L("doc.tail.noCurrentLinkBlocksAutoPair") : L("doc.tail.unlinkOneKeepOtherBranches")).font(.caption).foregroundStyle(.secondary) }
+            TextField(L("doc.tail.changeReasonRequired"), text: $reason, axis:.vertical).lineLimit(2...3).textFieldStyle(.roundedBorder).disabled(saving)
             if !failure.isEmpty { Text(failure).font(.caption).foregroundStyle(.red) }
             }.frame(maxWidth:.infinity,alignment:.leading) }
-            HStack { if let message=validationMessage { Text(message).foregroundStyle(message=="수정 이유를 입력하세요." ? Color.secondary:Color.orange) };Spacer();Text("입력 길이 \(reason.utf16.count)/2000").help("일부 이모지는 여러 단위로 계산됩니다.").foregroundStyle(reason.utf16.count>2000 ? Color.orange : Color.secondary) }.font(.caption)
+            HStack { if let message=validationMessage { Text(message).foregroundStyle(message==L("doc.tail.enterChangeReason") ? Color.secondary:Color.orange) };Spacer();Text(L("doc.tail.inputLengthOf2000", .count(reason.utf16.count))).help(L("doc.tail.someEmojiCountAsMultipleUnits")).foregroundStyle(reason.utf16.count>2000 ? Color.orange : Color.secondary) }.font(.caption)
 
-            HStack { Text("적용 전 취소하면 저장하지 않습니다.").font(.caption).foregroundStyle(.secondary); Spacer(); if saving { ProgressView().controlSize(.small) }; Button("적용하고 재분석") { Task { await apply() } }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).disabled(!valid || saving || model.busy).accessibilityHint(Text(validationMessage ?? "선택한 관계를 적용하고 새 보고서로 분석합니다")) }
+            HStack { Text(L("doc.tail.cancelBeforeApplyDoesNotSave")).font(.caption).foregroundStyle(.secondary); Spacer(); if saving { ProgressView().controlSize(.small) }; Button(L("doc.tail.applyAndReanalyze")) { Task { await apply() } }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).disabled(!valid || saving || model.busy).accessibilityHint(Text(validationMessage ?? L("doc.tail.applySelectedRelationAnalyzeNewReport"))) }
         }.padding(24).frame(width: 900, height: 720).background(Color(nsColor:.windowBackgroundColor))
     }
     func pageList(_ revision: JSON, search: Binding<String>, selection: Binding<Set<String>>, title: String) -> some View {
@@ -71,20 +72,20 @@ struct MappingSheet: View {
         return ScrollViewReader { proxy in
             VStack(alignment: .leading, spacing: 8) {
                 Text(title + " · " + revision["label"].string).font(.headline)
-                TextField("번호·요약 검색", text: search).textFieldStyle(.roundedBorder)
-                List(pages, selection: selection) { page in HStack(alignment: .top) { Text("p.\(page["page"].int)").monospacedDigit().frame(width: 50, alignment: .leading); Text(page["text"].string.isEmpty ? "판독된 요약 없음" : page["text"].string).lineLimit(2).font(.caption) }.padding(.vertical, 4).tag(page["page_id"].string).id(page["page_id"].string) }.frame(height:280).scrollIndicators(.visible)
+                TextField(L("doc.tail.searchNumberOrSummary"), text: search).textFieldStyle(.roundedBorder)
+                List(pages, selection: selection) { page in HStack(alignment: .top) { Text("p.\(page["page"].int)").monospacedDigit().frame(width: 50, alignment: .leading); Text(page["text"].string.isEmpty ? L("doc.tail.noSummaryRead") : page["text"].string).lineLimit(2).font(.caption) }.padding(.vertical, 4).tag(page["page_id"].string).id(page["page_id"].string) }.frame(height:280).scrollIndicators(.visible)
                 ScrollView(.horizontal) {
                     HStack(spacing:5) {
-                        Text("선택:").font(.caption2).foregroundStyle(.secondary)
+                        Text(L("doc.tail.selectedColon")).font(.caption2).foregroundStyle(.secondary)
                         ForEach(selected) { page in
                             HStack(spacing:4) {
                                 Button("p.\(page["page"].int)") { search.wrappedValue="";Task { @MainActor in await Task.yield();proxy.scrollTo(page["page_id"].string,anchor:.center) } }.buttonStyle(.plain)
-                                Button { selection.wrappedValue.remove(page["page_id"].string) } label: { Image(systemName:"xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).accessibilityLabel("페이지 \(page["page"].int) 선택 해제")
+                                Button { selection.wrappedValue.remove(page["page_id"].string) } label: { Image(systemName:"xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain).accessibilityLabel(L("doc.tail.deselectPage", .count(page["page"].int)))
                             }.font(.caption).padding(5).background(Color.blue.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius:4))
                         }
                     }
-                }.frame(height:30).accessibilityElement(children:.contain).accessibilityLabel("\(title) 선택 \(selected.count)쪽: "+selected.map { String($0["page"].int) }.joined(separator:", "))
-                Text(hiddenCount>0 ? "검색 결과 밖 선택 \(hiddenCount)쪽 · 위 번호를 누르면 이동합니다" : "목록 \(pages.count)쪽 · 스크롤·검색으로 이동 · ⌘·⇧ 클릭으로 여러 쪽 선택").font(.caption2).foregroundStyle(.secondary)
+                }.frame(height:30).accessibilityElement(children:.contain).accessibilityLabel(L("doc.mapping.selectionAccessibility", .verbatim(title), .verbatim(LC("doc.mapping.selectedPages",selected.count)), .verbatim(selected.map { String($0["page"].int) }.joined(separator:", "))))
+                Text(hiddenCount>0 ? LC("doc.tail.selectedPagesOutsideSearchJump", hiddenCount) : LC("doc.tail.pageListScrollSearchMultiSelect", pages.count)).font(.caption2).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity).task { if let page=selected.first { await Task.yield();proxy.scrollTo(page["page_id"].string,anchor:.center) } }
         }
     }
@@ -98,6 +99,6 @@ struct MappingSheet: View {
         do {
             try await model.applyRelation(project: projectID, report: reportID, draftHash: draftHash, before: before["revision_occurrence_id"].string, after: after["revision_occurrence_id"].string, left: Array(left), right: Array(right), kind: mode, reason: reason)
             dismiss(); await model.run(projectID)
-        } catch { failure=error.localizedDescription;saving=false }
+        } catch { failureMessage=bridgeErrorMessage(error);saving=false }
     }
 }

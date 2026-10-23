@@ -127,3 +127,10 @@ XLSX·ODS·UTF-8 CSV 프로젝트는 문서와 별도 ID(`wprj_…`)를 사용�
 ## PDF 내보내기 도구가 다른 비교
 
 문서 엔진 55는 보이는 원문 글자와 간격을 제한된 좌표 범위에서 대응해 텍스트 조각 분할·기록 순서 차이를 검사한다. `pdf_source_run_layout_equivalent`가 있으면 원문 before/after 문자열은 보존하며 해당 비교를 의미상 텍스트 수정으로 단정하지 않는다. `pdf_visual_difference_without_text_change`는 문구 변경이 확인되지 않은 화면 차이이며 내보내기·글꼴·배치 차이와 실제 그림·서식 편집 모두 가능하다. 픽셀 차이만으로 원인이나 삭제 의도를 확정하지 않는다. 두 사유는 변경별 `get_change`의 coverage/evidence에서 조회하며, 버전별 source/visible/unresolved/suppressed 원문은 별도로 읽는다. 공백·구두점·숫자를 일괄 제거해 같은 내용이라고 결론내리지 않는다. 자세한 범위와 과거 엔진 보존은 [PDF exporter comparison](PDF-EXPORTER-COMPARISON.md)을 따른다.
+
+
+## UI language and original evidence
+
+The native interface supports English and Korean independently of the document's language. Changing that display preference does not change stored report IDs, reason codes, source strings, formulas, UTF-16 offsets, query schemas or MCP tool descriptions. MCP instructions and tool descriptions remain English; a client may explain retrieved evidence in the user's language while preserving quotations and citations. The server does not call a translation model.
+
+UI language does not select OCR models. OCR remains configured for Korean/English, including the document-table path. Language names on contextual observations label the recorded codes; they do not certify additional OCR language coverage. See [localization](LOCALIZATION.md) for exact interface/export scope and remaining script limits.

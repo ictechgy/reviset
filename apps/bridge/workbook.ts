@@ -41,7 +41,7 @@ export async function handleWorkbookAction(store: Store, action: string, input: 
     }
     case 'workbookPublish': { const a = z.object({ ...scope, label: z.string(), reason: z.string() }).parse(args); return service.publish(a.project_id, a.report_id, a.label, a.reason); }
     case 'workbookReleases': { const a = z.object({ project_id: key }).parse(args); return service.releases(a.project_id); }
-    case 'workbookExport': { const a = z.object({ ...scope, folder: z.string().min(1).max(4096) }).parse(args); return service.export(a.project_id, a.report_id, a.folder); }
+    case 'workbookExport': { const a = z.object({ ...scope, folder: z.string().min(1).max(4096),language:z.enum(['en','ko']).default('en') }).parse(args); return service.export(a.project_id, a.report_id, a.folder,a.language); }
     default: throw new DocverError('UNKNOWN_ACTION', 'Unknown workbook application action');
   }
 }
