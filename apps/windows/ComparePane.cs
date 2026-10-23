@@ -53,12 +53,14 @@ internal sealed class ComparePane
     private string previewSource = "";
     private string previewReason = "";
     private string previewText = "";
+    private (string Project, string Report, string Revision, string Page)? previewScope;
     private bool binding;
     private int row = 1;
     private int column = 1;
     private long pageGeneration;
     private long gridGeneration;
     private CancellationTokenSource pageRead = new();
+    private Task? activePageRequest;
     internal readonly Border Host = new() { BorderBrush = new SolidColorBrush(Color.FromRgb(225, 229, 235)), BorderThickness = new Thickness(1), Background = Brushes.White, ClipToBounds = true };
     internal string RevisionId => (revision.SelectedItem as Choice)?.Id ?? "";
     internal string SheetId => (sheet.SelectedItem as Choice)?.Id ?? "";
@@ -123,7 +125,7 @@ internal sealed class ComparePane
     }
     internal void Invalidate(string state = "loading")
     {
-        ++gridGeneration; ++pageGeneration; pageRead.Cancel(); ReadState = state; loadedGridScope = null; gridValue = default; previewSource = ""; previewReason = ""; previewText = "";
+        ++gridGeneration; ++pageGeneration; pageRead.Cancel(); ReadState = state; loadedGridScope = null; gridValue = default; previewScope = null; previewSource = ""; previewReason = ""; previewText = "";
         var previous = binding; binding = true; Cells.SelectedCells.Clear(); Cells.ItemsSource = null; binding = previous; Cells.IsEnabled = false; showFormula.IsEnabled = false;
         PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; fallback.Text = owner.Copy[state == "failed" ? "failed" : "loading"]; source.Text = ""; retry.Visibility = state == "failed" ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -175,17 +177,35 @@ internal sealed class ComparePane
     }
     internal async Task Load(long ticket, CancellationToken token)
     {
-        Localize(); try { if (owner.IsWorkbook) await LoadGrid(ticket, token); else await LoadPage(ticket, token); }
-        catch { if (owner.IsCurrent(ticket) && !token.IsCancellationRequested) Invalidate("failed"); throw; }
+        Localize(); if (owner.IsWorkbook)
+        {
+            var gridRequest = LoadGrid(ticket, token); var sequence = gridGeneration;
+            try { await gridRequest; } catch (OperationCanceledException) when (!owner.IsCurrent(ticket) || token.IsCancellationRequested || sequence != gridGeneration) { }
+            return;
+        }
+        var request = LoadPage(ticket, token);
+        while (true)
+        {
+            try { await request; return; }
+            catch (OperationCanceledException) when (owner.IsCurrent(ticket) && !token.IsCancellationRequested && activePageRequest is { } replacement && !ReferenceEquals(replacement, request)) { request = activePageRequest; }
+            catch (OperationCanceledException) when (!owner.IsCurrent(ticket) || token.IsCancellationRequested) { return; }
+        }
     }
-    private async Task LoadPage(long ticket, CancellationToken token)
+    private Task LoadPage(long ticket, CancellationToken token, Action<int>? startedForSmoke = null)
     {
-        pageRead.Cancel(); pageRead.Dispose(); pageRead = CancellationTokenSource.CreateLinkedTokenSource(token); token = pageRead.Token;
-        var sequence = ++pageGeneration; var selected = PageId; if (selected.Length == 0) { Invalidate("absent"); ReadState = "absent"; fallback.Text = owner.Copy["absentPage"]; return; }
+        var request = LoadPageCore(ticket, token, startedForSmoke); activePageRequest = request; return request;
+    }
+    private async Task LoadPageCore(long ticket, CancellationToken token, Action<int>? startedForSmoke)
+    {
+        // Retire the old page's text, provenance and bitmap before replacing its
+        // request owner. A locale update during the await may render only loading.
+        Invalidate(); pageRead.Dispose(); pageRead = CancellationTokenSource.CreateLinkedTokenSource(token); token = pageRead.Token;
+        var sequence = pageGeneration; var selected = PageId; var project = owner.ProjectId; var report = owner.ReportId; var occurrence = RevisionId; if (selected.Length == 0) { Invalidate("absent"); ReadState = "absent"; fallback.Text = owner.Copy["absentPage"]; return; }
         PageImage.Source = null; fallback.Text = owner.Copy["analyzing"]; source.Text = ""; fallback.Visibility = Visibility.Visible; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed;
-        var value = await owner.Bridge.Call("pagePreview", new { project_id = owner.ProjectId, report_id = owner.ReportId, page_id = selected, max_width = 1600 }, token);
-        if (!owner.IsCurrent(ticket) || sequence != pageGeneration || selected != PageId) return;
-        if (value.Get("page_id").Text() != selected || value.Get("report_id").Text() != owner.ReportId) throw new BridgeException("PAGE_SCOPE", "The preview belongs to a different page or report.");
+        try {
+        var value = await owner.Bridge.Call("pagePreview", new { project_id = project, report_id = report, page_id = selected, max_width = 1600 }, token, startedForSmoke: startedForSmoke);
+        if (!owner.IsCurrent(ticket) || sequence != pageGeneration || selected != PageId || project != owner.ProjectId || report != owner.ReportId || occurrence != RevisionId) return;
+        if (value.Get("page_id").Text() != selected || value.Get("report_id").Text() != report) throw new BridgeException("PAGE_SCOPE", "The preview belongs to a different page or report.");
         var encoded = value.Get("png_base64").Text(); var origin = value.Get("source").Text(); previewSource = origin; previewReason = value.Get("unavailable_reason").Text(); previewText = value.Get("text").Text(); source.Text = owner.Copy["source"] + ": " + origin;
         if (encoded.Length > 0)
         {
@@ -198,7 +218,12 @@ internal sealed class ComparePane
             source.Text = owner.Copy["structural"] + " · " + origin + "\n" + value.Get("unavailable_reason").Text(); fallback.Text = value.Get("text").Text();
             if (value.Get("text_truncated").Flag()) previewText += "\n… [" + value.Get("text_total_length").Text() + "]";
         }
-        ReadState = "ready"; retry.Visibility = Visibility.Collapsed; RerenderPresentation();
+        previewScope = (project, report, occurrence, selected); ReadState = "ready"; retry.Visibility = Visibility.Collapsed; RerenderPresentation();
+        } catch
+        {
+            if (owner.IsCurrent(ticket) && sequence == pageGeneration && !token.IsCancellationRequested && project == owner.ProjectId && report == owner.ReportId && occurrence == RevisionId && selected == PageId) { Invalidate("failed"); throw; }
+            throw new OperationCanceledException("The page request was superseded.", token);
+        }
     }
     private async Task LoadGrid(long ticket, CancellationToken token)
     {
@@ -211,12 +236,18 @@ internal sealed class ComparePane
         }
         if (RevisionId.Length == 0 || SheetId.Length == 0) { ReadState = "absent"; fallback.Text = owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : "absentSheet"]; return; }
         var revisionId = RevisionId; var sheetId = SheetId; var rowAt = row; var columnAt = column;
+        try {
         var value = await owner.Bridge.Call("workbookGrid", new { project_id = owner.ProjectId, report_id = owner.ReportId, revision_occurrence_id = revisionId, sheet_id = sheetId, row_start = rowAt, row_limit = 50, column_start = columnAt, column_limit = 8 }, token);
         if (!owner.IsCurrent(ticket) || sequence != gridGeneration || RevisionId != revisionId || SheetId != sheetId || row != rowAt || column != columnAt) return;
         if (value.Get("revision_occurrence_id").Text() != revisionId || value.Get("sheet_id").Text() != sheetId || value.Get("report_id").Text() != owner.ReportId) throw new BridgeException("GRID_SCOPE", "Grid response is outside the selected source scope.");
         loadedGridScope = (owner.ProjectId, owner.ReportId, revisionId, sheetId, rowAt, columnAt); ReadState = "ready"; Cells.IsEnabled = owner.AllowsEvidence; showFormula.IsEnabled = owner.AllowsEvidence;
         gridValue = value; rowStart.Text = row.ToString(System.Globalization.CultureInfo.InvariantCulture); colStart.Text = column.ToString(System.Globalization.CultureInfo.InvariantCulture); RenderGrid();
         source.Text = (revision.SelectedItem as Choice)?.Label + " · " + (sheet.SelectedItem as Choice)?.Label + " · " + row + "–" + Math.Min(1048576, row + 49); source.ToolTip = revisionId + "\n" + sheetId; fallback.Visibility = Visibility.Collapsed; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Visible;
+        } catch
+        {
+            if (owner.IsCurrent(ticket) && sequence == gridGeneration && !token.IsCancellationRequested && RevisionId == revisionId && SheetId == sheetId && row == rowAt && column == columnAt) { Invalidate("failed"); throw; }
+            throw new OperationCanceledException("The grid request was superseded.", token);
+        }
     }
     private void RenderGrid()
     {
@@ -279,8 +310,17 @@ internal sealed class ComparePane
             fallback.Text = owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : owner.IsWorkbook ? "absentSheet" : "absentPage"];
             if (evidenceAbsence == "sheetMetadata" && sheet.SelectedItem is Choice observed) fallback.Text += "\n\n" + observed.Label + "\n" + owner.Copy["row"] + ": " + observed.Value.Get("row_count").Text() + "\n" + owner.Copy["column"] + ": " + observed.Value.Get("column_count").Text(); return;
         }
-        if (!owner.IsWorkbook && ReadState == "ready") { source.Text = PageImage.Source is not null ? owner.Copy["source"] + ": " + previewSource : owner.Copy["structural"] + " · " + previewSource + "\n" + previewReason; fallback.Text = previewText; }
+        if (!owner.IsWorkbook && ReadState == "ready")
+        {
+            if (!PreviewMatchesSelection) { source.Text = ""; fallback.Text = owner.Copy["loading"]; PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; return; }
+            source.Text = PageImage.Source is not null ? owner.Copy["source"] + ": " + previewSource : owner.Copy["structural"] + " · " + previewSource + "\n" + previewReason; fallback.Text = previewText;
+        }
     }
+    private bool PreviewMatchesSelection => previewScope is { } scope && scope.Project == owner.ProjectId && scope.Report == owner.ReportId && scope.Revision == RevisionId && scope.Page == PageId;
+    internal string VerifiedPreviewText => PreviewMatchesSelection ? previewText : "";
+    internal string PresentedSourceCaption => source.Text;
+    internal string PresentedFallback => fallback.Text;
+    internal Task SelectPageForSmoke(string id, Action<int>? started = null) { SetEventPage(id); return LoadPage(owner.Generation, owner.ReadToken, started); }
     internal static string ColumnName(int column) { var name = ""; while (column > 0) { column--; name = (char)('A' + column % 26) + name; column /= 26; } return name; }
     internal async Task GoForSmoke(string cell) { address.Text = cell; await GoAddress(); }
 }

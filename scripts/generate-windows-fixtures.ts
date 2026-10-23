@@ -12,7 +12,8 @@ await mkdir(folder,{recursive:true});
 for(const [version,value] of [[1,100],[2,120]] as const){
   const pdf=new PDFDocument({size:[720,405],margin:40}),chunks:Buffer[]=[];
   const done=new Promise<Buffer>((ok,fail)=>{pdf.on('data',(b:Buffer)=>chunks.push(b));pdf.on('end',()=>ok(Buffer.concat(chunks)));pdf.on('error',fail);});
-  pdf.fontSize(26).text('Revenue '+value,40,50);pdf.fontSize(14).text('Windows native comparison control',40,110);pdf.end();
+  pdf.fontSize(26).text('Revenue '+value,40,50);pdf.fontSize(14).text('Windows native comparison control',40,110);
+  pdf.addPage({size:[720,405],margin:40});pdf.fontSize(26).text(`Second page evidence ${version} / ${value}`,40,50);pdf.fontSize(14).text('Distinct source for pending page and language transitions',40,110);pdf.end();
   await writeFile(join(folder,`v${version}.pdf`),await done);
 }
 const deck=new (pptxgen as unknown as typeof pptxgen.default)();deck.layout='LAYOUT_WIDE';
