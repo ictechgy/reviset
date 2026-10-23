@@ -693,6 +693,11 @@ private struct SmokeStructureView: View {
     }
     private static func documentLockProbe(_ model:AppModel,request:JSON,output:URL)async throws {
         let database=model.bridge.library.appendingPathComponent("docver.sqlite"),before=try fileDigest(database)
+        func assetDigests()throws->[String:String] {
+            let folder=model.bridge.library.appendingPathComponent("assets")
+            return try Dictionary(uniqueKeysWithValues:FileManager.default.contentsOfDirectory(at:folder,includingPropertiesForKeys:nil).filter{$0.lastPathComponent.range(of:"^[a-f0-9]{64}$",options:.regularExpression) != nil}.map{($0.lastPathComponent,try fileDigest($0))})
+        }
+        let assetsBefore=try assetDigests()
         try await Task.sleep(nanoseconds:350_000_000)
         let windows=NSApp.windows.filter{$0.isVisible && $0.contentView != nil}
         let markers=windows.compactMap(\.contentView).flatMap{workspaceLayoutMarkers(in:$0)}
@@ -704,11 +709,23 @@ private struct SmokeStructureView: View {
             for child in element.accessibilityChildren() ?? [] {if let accessible=child as? NSAccessibilityProtocol {visit(accessible)}}
         }
         visit(window)
-        let disabled=buttons.count==2 && buttons.allSatisfy{!$0.isAccessibilityEnabled()}
+        // SwiftUI's semantic AX identifiers are not materialized by a closed
+        // in-process AX tree. Observe each actual Button label's environment,
+        // then corroborate the top plus import action with its physical native button.
+        let expected=Set(["Reviset.document.import.environment.plus","Reviset.document.import.environment.sidebar"])
+        let imports=markers.filter{expected.contains($0.identifier?.rawValue ?? "")}
+        let disabled=Set(imports.compactMap{$0.identifier?.rawValue})==expected && imports.count==2 && imports.allSatisfy{!$0.contentEnabled}
+        var ancestor:NSView?=imports.first(where:{$0.identifier?.rawValue=="Reviset.document.import.environment.plus"}),nativeButton:NSButton?
+        while let view=ancestor {if let button=view as? NSButton {nativeButton=button;break};ancestor=view.superview}
+        let nativeDisabled=nativeButton.map{!$0.isEnabled} ?? false
+        let localeMatches=imports.allSatisfy{$0.contentLocale.identifier==LanguagePreferences.shared.localizer.locale.identifier}
         let unchanged=try fileDigest(database)==before
-        guard !model.libraryAvailable,!model.initializing,!sidebar.contentEnabled,disabled,unchanged else{throw BridgeError(code:"LOCK_DOCUMENT_CONTROLS",message:"The locked document workspace exposed enabled controls or changed library bytes (import controls found: \(buttons.count)).")}
+        let assetsUnchanged=try assetDigests()==assetsBefore
+        let facts:[String:Any]=["library_lock_denied":!model.libraryAvailable,"initialization_settled":!model.initializing,"sidebar_environment_disabled":!sidebar.contentEnabled,"import_controls_disabled":disabled,"disabled_import_controls":imports.filter{!$0.contentEnabled}.count,"native_plus_import_button_found":nativeButton != nil,"native_plus_import_button_disabled":nativeDisabled,"database_bytes_unchanged":unchanged,"source_assets_unchanged":assetsUnchanged,"hosted_locale":sidebar.contentLocale.identifier,"import_locales_match_scene":localeMatches,"ax_import_identifiers_observed":buttons.count,"observation_scope":"two actual Button-label environment markers and physical top-plus sidebar import NSButton; semantic AX identifiers and OS gestures are not qualified"]
+        try JSON(facts).data().write(to:output.appendingPathComponent("lock-observation.json"))
         try captureView(window,output.appendingPathComponent("native-document-library-locked.png"))
-        try JSON(["completed":true,"checks":["library_lock_denied":true,"sidebar_environment_disabled":true,"import_controls_disabled":true,"disabled_import_controls":buttons.count,"database_bytes_unchanged":true,"hosted_locale":sidebar.contentLocale.identifier],"smoke_invocation_id":request["smoke_invocation_id"].string,"interaction_scope":"actual second app process and document import-control accessibility state; no OS gestures"]).data().write(to:output.appendingPathComponent("validation.json"))
+        guard !model.libraryAvailable,!model.initializing,!sidebar.contentEnabled,disabled,nativeDisabled,localeMatches,unchanged,assetsUnchanged else{throw BridgeError(code:"LOCK_DOCUMENT_CONTROLS",message:"The locked document controls, hosted environment or immutable library bytes failed validation; see lock-observation.json.")}
+        try JSON(["completed":true,"checks":facts,"smoke_invocation_id":request["smoke_invocation_id"].string,"interaction_scope":"actual second app process, two production Button-label environments and physical top-plus sidebar import NSButton; no OS AX/gesture or VoiceOver automation"]).data().write(to:output.appendingPathComponent("validation.json"))
     }
     static func captureView(_ window:NSWindow,_ url:URL) throws {
         guard let view=window.contentView,let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) else { throw BridgeError(code:"CAPTURE_FAILED",message:"앱 화면을 캡처할 수 없습니다.") }
