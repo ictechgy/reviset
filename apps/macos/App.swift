@@ -230,6 +230,8 @@ private struct SmokeStructureView: View {
         let opaque="language.system {0} %@ %% 한글 العربية"
         let row=ImportRow(label:opaque,urls:[URL(fileURLWithPath:"/not-opened/"+opaque+".pdf")])
         let sheet=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:500),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+        sheet.isReleasedWhenClosed=false
+        defer {if sheet.sheetParent != nil {parent.endSheet(sheet)};sheet.orderOut(nil);sheet.close()}
         sheet.isOpaque=true;sheet.backgroundColor = .windowBackgroundColor
         sheet.contentView=NSHostingView(rootView:ImportView(initialRows:[row],initialTitle:opaque).environmentObject(model).background(Color(nsColor:.windowBackgroundColor)))
         func fields(_ root:NSView)->[NSTextField] { (root as? NSTextField).map{[$0]} ?? [] + root.subviews.flatMap(fields) }
@@ -264,6 +266,8 @@ private struct SmokeStructureView: View {
         func selectionFacts()->[String:Any] { ["selected":model.selectedChangeID ?? "","left":model.leftPageID,"right":model.rightPageID,"from":model.from,"to":model.to,"project":model.projectID,"report":model.report["report_id"].string,"tab":model.tab,"loading_changes":model.loadingChanges] }
         let preparedFacts=selectionFacts()
         let emptySheet=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:500),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+        emptySheet.isReleasedWhenClosed=false
+        defer {if emptySheet.sheetParent != nil {parent.endSheet(emptySheet)};emptySheet.orderOut(nil);emptySheet.close()}
         emptySheet.isOpaque=true;emptySheet.backgroundColor = .windowBackgroundColor
         emptySheet.contentView=NSHostingView(rootView:ImportView(initialRows:[row]).environmentObject(model).background(Color(nsColor:.windowBackgroundColor)))
         let structurePage=JSON(["page_id":"opaque-structure-fixture","elements":[
@@ -271,6 +275,8 @@ private struct SmokeStructureView: View {
             ["kind":"image","bbox":[0.05,0.35,0.4,0.4]],
             ["kind":"unsupported","bbox":[0.5,0.35,0.45,0.4]]]])
         let structure=NSWindow(contentRect:NSRect(x:0,y:0,width:600,height:300),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+        structure.isReleasedWhenClosed=false
+        defer {if structure.sheetParent != nil {parent.endSheet(structure)};structure.orderOut(nil);structure.close()}
         structure.isOpaque=true;structure.backgroundColor = .white
         structure.contentView=NSHostingView(rootView:SmokeStructureView(page:structurePage))
         func canvases(_ root:NSView)->[StructureCanvas.Canvas] {if let view=root as? StructureCanvas.Canvas{return [view]};return root.subviews.flatMap(canvases)}
@@ -291,6 +297,7 @@ private struct SmokeStructureView: View {
                 guard tracker.enteredTracking else {throw BridgeError(code:"L10N_MENU",message:"Native menu did not enter tracking")}
                 trackedMenus.append(["menu":menu.title,"titles_while_open":titles,"entered_tracking":true]);openedTitles += titles
             }
+            try JSON(["language":choice.rawValue,"is_active":NSApp.isActive,"expected":expectedMenus,"cached_before_open":cachedMenus,"tracked":trackedMenus]).data().write(to:output.appendingPathComponent("native-language-\(choice.rawValue)-menus.json"))
             guard expectedMenus.allSatisfy({openedTitles.contains($0)}) else {
                 try JSON(["language":choice.rawValue,"is_active":NSApp.isActive,"expected":expectedMenus,"cached_before_open":cachedMenus,"tracked":trackedMenus]).data().write(to:output.appendingPathComponent("language-menu-failure.json"))
                 throw BridgeError(code:"L10N_MENU",message:"Opened custom menus did not present selected-language labels")
@@ -306,6 +313,8 @@ private struct SmokeStructureView: View {
             parent.beginSheet(emptySheet,completionHandler:{_ in});try await Task.sleep(nanoseconds:250_000_000)
             emptySheet.contentView?.layoutSubtreeIfNeeded()
             let defaultFields=emptySheet.contentView.map(fields) ?? []
+            let defaultFacts:[String:Any] = ["language":choice.rawValue,"expected_title":L("doc.import.defaultTitle"),"expected_placeholder":L("doc.import.projectName"),"is_key_window":emptySheet.isKeyWindow,"editable_fields":defaultFields.filter(\.isEditable).map{["placeholder":$0.placeholderString ?? "","value":$0.stringValue]}]
+            try JSON(defaultFacts).data().write(to:output.appendingPathComponent("native-language-\(choice.rawValue)-default-title.json"))
             guard defaultFields.contains(where:{$0.placeholderString==L("doc.import.projectName") && $0.stringValue==L("doc.import.defaultTitle")}) else {throw BridgeError(code:"L10N_DEFAULT_TITLE",message:"Untouched document title did not follow language")}
             try captureView(emptySheet,output.appendingPathComponent("native-language-\(choice.rawValue)-import-default.png"));parent.endSheet(emptySheet);emptySheet.orderOut(nil)
             parent.beginSheet(structure,completionHandler:{_ in});try await Task.sleep(nanoseconds:250_000_000)
@@ -315,6 +324,8 @@ private struct SmokeStructureView: View {
             let structurePath=output.appendingPathComponent("native-language-\(choice.rawValue)-structure.png")
             try captureView(structure,structurePath);structureCaptures.append(try Data(contentsOf:structurePath));parent.endSheet(structure);structure.orderOut(nil)
             let settings=NSWindow(contentRect:NSRect(x:0,y:0,width:560,height:340),styleMask:[.titled,.closable],backing:.buffered,defer:false)
+            settings.isReleasedWhenClosed=false
+            defer {if settings.sheetParent != nil {parent.endSheet(settings)};settings.orderOut(nil);settings.close()}
             settings.isOpaque=true;settings.backgroundColor = .windowBackgroundColor
             settings.contentView=NSHostingView(rootView:LanguageSettingsView().environment(\.locale,preferences.localizer.locale).background(Color(nsColor:.windowBackgroundColor)))
             parent.beginSheet(settings,completionHandler:{_ in});try await Task.sleep(nanoseconds:350_000_000)

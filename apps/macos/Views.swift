@@ -377,7 +377,7 @@ struct ImportView: View {
     @State private var title=""
     @State private var titleEdited=false
     private var effectiveTitle:String { titleEdited ? title : L("doc.import.defaultTitle") }
-    private var titleBinding:Binding<String> { Binding(get:{effectiveTitle},set:{title=$0;titleEdited=true}) }
+    private var titleBinding:Binding<String> { Binding(get:{effectiveTitle},set:{value in guard titleEdited || value != effectiveTitle else{return};title=value;titleEdited=true}) }
     @State private var rows:[ImportRow]=[]
     @State private var saving=false
     @State private var choosing=false

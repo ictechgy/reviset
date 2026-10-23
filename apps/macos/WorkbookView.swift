@@ -1157,7 +1157,7 @@ private struct WorkbookImportSheet: View {
     // An untouched default follows the display language. Once edited, including
     // explicitly cleared, the draft is user data and remains verbatim.
     private var effectiveTitle: String { titleEdited ? title : L("workbook.import.defaultTitle") }
-    private var titleBinding: Binding<String> { Binding(get:{effectiveTitle},set:{titleEdited = true; title = $0}) }
+    private var titleBinding: Binding<String> { Binding(get:{effectiveTitle},set:{value in guard titleEdited || value != effectiveTitle else{return};title=value;titleEdited=true}) }
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             HStack { Text(L("workbook.import.title")).font(.title2.weight(.semibold)); Spacer(); Button(L("workbook.action.close")) { dismiss() }.keyboardShortcut(.cancelAction).disabled(locked) }
@@ -1817,6 +1817,14 @@ struct WorkbookGrid: NSViewRepresentable {
         window.contentView?.layoutSubtreeIfNeeded(); draftWindow.contentView?.layoutSubtreeIfNeeded(); defaultDraftWindow.contentView?.layoutSubtreeIfNeeded()
         let englishDraft = try checkDraft(),englishTechnicalRow = try await checkTechnicalRow()
         let englishDefaultTitle = try checkDefaultTitle(L("workbook.import.defaultTitle"))
+        // Native focus/commit can echo an unchanged binding value. That is not
+        // a user edit and must not freeze the generated default title.
+        let untouchedField=try defaultTitleField()
+        defaultDraftWindow.makeKeyAndOrderFront(nil)
+        try require(defaultDraftWindow.makeFirstResponder(untouchedField),"The untouched title field could not receive native focus.")
+        try require(defaultDraftWindow.makeFirstResponder(nil),"The untouched title field could not commit native focus.")
+        try await Task.sleep(nanoseconds:100_000_000)
+        _ = try checkDefaultTitle(englishDefaultTitle)
         for name in ["before","after"] {
             guard let table = grid(window.contentView,pane:name),let coordinator = table.dataSource as? WorkbookGrid.Coordinator,let scroll = table.enclosingScrollView else { continue }
             let clip = scroll.contentView; originalOrigins[name] = clip.bounds.origin
