@@ -1,0 +1,63 @@
+name: Windows native app
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, feat/native-layout-windows]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.22.1
+          cache: npm
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 10.0.402
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build
+      - name: Layout preference corruption and restoration checks
+        run: dotnet run --project tests/windows/PreferencesChecks.csproj -c Release
+      - name: Prepare patched PDF.js runtime
+        run: node --import tsx -e "import {preparePdfjs} from './scripts/prepare-pdfjs.ts'; await preparePdfjs();"
+      - name: Portable engine and Windows boundary tests
+        run: node --import tsx --test --test-concurrency=1 tests/integration/windows-runtime.test.ts tests/integration/native-page-preview.test.ts tests/integration/document-input-boundaries.test.ts tests/integration/workbook-core.test.ts tests/integration/workbook-ingest.test.ts tests/integration/localized-export.test.ts
+      - run: node --import tsx scripts/generate-windows-fixtures.ts
+      - run: npm run windows:build
+      - name: Actual packaged WPF app and backend smoke
+        shell: pwsh
+        run: |
+          $output = Join-Path $PWD 'artifacts/windows-native'
+          $fixtures = Join-Path $PWD 'tests/fixtures/generated/windows'
+          New-Item -ItemType Directory -Force $output | Out-Null
+          $app = Join-Path $PWD 'release/Reviset-Windows-x64/Reviset.exe'
+          $probe = Start-Process -FilePath $app -ArgumentList @('--smoke', ('"' + $output + '"'), '--fixtures', ('"' + $fixtures + '"')) -PassThru
+          if (-not $probe.WaitForExit(600000)) { $probe.Kill($true); throw 'Native WPF smoke exceeded ten minutes' }
+          if ($probe.ExitCode -ne 0) { throw "Native WPF smoke failed: $($probe.ExitCode)" }
+          $result = Get-Content (Join-Path $output 'result.json') -Raw | ConvertFrom-Json
+          if (-not $result.passed) { throw 'Native WPF smoke did not report pass' }
+          $build = Get-Content 'release/Reviset-Windows-x64/build-info.json' -Raw | ConvertFrom-Json
+          if ($build.source_head -ne $env:GITHUB_SHA -or $build.source_dirty) { throw 'Packaged source provenance mismatch' }
+      - name: Verify app-generated MCP configurations with bundled runtime
+        run: node --import tsx scripts/verify-windows-package.ts
+      - name: Archive portable Windows app
+        if: success()
+        shell: pwsh
+        run: Compress-Archive -Path release/Reviset-Windows-x64 -DestinationPath release/Reviset-Windows-x64.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: windows-native-${{ github.sha }}
+          path: |
+            release/Reviset-Windows-x64.zip
+            artifacts/windows-native/
+          if-no-files-found: warn
+          retention-days: 14

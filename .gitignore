@@ -10,4 +10,8 @@ artifacts/
 dist/
 release/
 output/
+apps/windows/bin/
+apps/windows/obj/
+tests/windows/bin/
+tests/windows/obj/
 .omc/

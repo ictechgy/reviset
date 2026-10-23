@@ -41,6 +41,7 @@ async function directories(library:string,create:boolean){
 async function smallFile(path:string,maximum:number){const st=await lstat(path);if(!st.isFile()||st.isSymbolicLink()||st.size>maximum)fail('SIDECAR_RESOURCE','참고 렌더러 리소스를 확인할 수 없습니다.');const bytes=await readFile(path);if(bytes.length>maximum)fail('SIDECAR_RESOURCE','참고 렌더러 리소스 한도를 넘었습니다.');return bytes;}
 
 export async function onlyOfficeSidecarConfigured(resources:string):Promise<boolean>{
+  if(process.platform==='win32')return false;
   try{const config=Provider.parse(JSON.parse((await smallFile(join(resources,'provider.json'),65536)).toString('utf8')));await realpath(config.app_path);return true;}catch{return false;}
 }
 
@@ -182,6 +183,7 @@ export async function recoverOnlyOfficeSidecars(library:string):Promise<{recover
 }
 
 export async function createOnlyOfficeSidecar(options:{library:string;resources:string;guard:string;report:ReportData;scope:SidecarScopeData;signal?:AbortSignal}){
+  if(process.platform==='win32')fail('SIDECAR_PLATFORM','A confined Windows reference renderer is not available');
   const {library,resources,guard,report,signal}=options,scope=SidecarScope.parse(options.scope),selected=sidecarSource(report,scope);
   signal?.throwIfAborted();let source:Buffer;
   try{source=await smallFile(join(library,'assets',selected.asset.asset_id.slice(7)),MAX_INPUT_BYTES);}

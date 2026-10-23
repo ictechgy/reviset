@@ -5,6 +5,7 @@ import { dirname,join,resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { DesktopService,type DesktopDraft } from '../../packages/desktop/service.js';
+import {pagePreview} from '../../packages/desktop/preview.js';
 import { DocverError, Decision, RelationSelection, BundleSelection,bundleDirectiveState, byteHash, hash,comparisonText,textChunk,unresolvedComparisonText, SCHEMA_VERSION, ENGINE_VERSION } from '../../packages/schema/index.js';
 import { querySchemas } from '../../packages/query/index.js';
 import {SidecarScope,createOnlyOfficeSidecar,closeOnlyOfficeSidecar,recoverOnlyOfficeSidecars,onlyOfficeSidecarConfigured} from '../../packages/render/onlyoffice-sidecar.js';
@@ -98,6 +99,10 @@ try{
       const revisions=r.revisions.map(({pages,...v})=>({...v,pages:pages.map(p=>({page_id:p.page_id,asset_id:p.asset_id,page:p.page,width:p.width,height:p.height,text:textChunk(comparisonText(p),0,180),capabilities:p.capabilities,hidden:p.hidden,ocr:p.ocr,appearance:p.appearance?{kind:p.appearance.kind,source_page_id:p.appearance.source_page_id,asset_id:p.appearance.asset_id,association:p.appearance.association}:undefined,coverage_gaps:p.coverage_gaps.slice(0,3)}))}));
       const all=r.revisions.flatMap(v=>v.pages),quality_counts={ocr_inferred_pages:all.filter(p=>p.elements.some(e=>e.method==='vision_ocr')).length,ocr_failed_pages:all.filter(p=>p.ocr&&['failed','unavailable'].includes(p.ocr.status)).length,unresolved_comparison_pages:all.filter(p=>!!unresolvedComparisonText(p)||!!p.ocr_unresolved_text).length,reference_pdf_pages:all.filter(p=>!!p.appearance).length,human_reference_pdf_pages:all.filter(p=>p.appearance?.association==='human_confirmed').length,inferred_reference_pdf_pages:all.filter(p=>p.appearance?.association==='inferred').length,pptx_without_render:all.filter(p=>!p.preview&&!p.appearance&&r.revisions.some(v=>v.assets.some(a=>a.asset_id===p.asset_id&&a.format==='pptx'))).length};
       value={...r,revisions,quality_counts,draft_hash:readableDraftHash(d.project_id),changes:undefined,candidates:undefined,bundle_decisions:undefined,bundle_decision_count:r.bundle_decisions?.length??0,matches:r.matches.map(({from_page_id,to_page_id,relation_id,relation_kind,status})=>({from_page_id,to_page_id,relation_id,relation_kind,status})),coverage_gaps:r.coverage_gaps.slice(0,500),coverage_gap_count:r.coverage_gaps.length,change_counts:r.changes.reduce<Record<string,number>>((a,c)=>(a[c.kind]=(a[c.kind]??0)+1,a),{})};break;
+    }
+    case 'pagePreview':{
+      const d=scope.extend({report_id:key.refine(v=>v!=='latest','Native previews require a fixed report'),page_id:key,max_width:z.number().int().min(320).max(2048).default(1280)}).strict().parse(args);
+      value=await pagePreview(service,root,d);break;
     }
     case 'page':{
       const d=scope.extend({page_id:key,basis:z.enum(['effective','source']).default('effective')}).parse(args),{page,asset,reference:effectiveReference}=service.pageData(d.project_id,d.report_id,d.page_id);

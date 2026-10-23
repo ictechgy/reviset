@@ -4,7 +4,7 @@ English (canonical) · [한국어](README.ko.md)
 
 Formerly **Docver**. [Rename and compatibility notes](docs/RENAMING.md).
 
-**A native macOS app for reading document version history with source evidence.**
+**Native desktop apps for reading document version history with source evidence.**
 
 Reviset compares versions of PPTX/PDF documents and XLSX/ODS/CSV workbooks. People inspect the originals side by side; AI clients query the same fixed reports through a read-only MCP server. Import and analysis run locally without an account, API key, or cloud upload.
 
@@ -35,8 +35,9 @@ Inspect the actual before/after addresses, stored input values, and inferred `A2
 | XLSX, ODS, UTF-8 CSV | Sheets, cells, formulas, saved values, basic formatting, hidden content, row movement | Formulas are not recalculated. CSV values are strings; advanced Excel/Calc objects have explicit coverage limits. |
 | Human review | Link/unlink/split/merge pages; correct associations between a PPTX and a supplied PDF from the same version | User associations are reference decisions, not a rendering fidelity certificate. |
 | AI and export | Fixed JSON/JSONL/Markdown reports; version contents, changes, evidence, and history through read-only MCP | Source text is data, not instructions. Follow-up queries and citations should use fixed report IDs. |
+| Workspace layouts | Resize, hide and dock panels; compare horizontally or vertically; save named layouts | Display preferences are separate from source data and reports. |
 
-The UI uses **SwiftUI, AppKit, and PDFKit**. A shared TypeScript engine and SQLite store serve the app, CLI, and MCP. PDFKit displays PDFs; PPTX previews use bundled LibreOffice conversion or a PDF supplied for the same version.
+The macOS UI uses **SwiftUI, AppKit, and PDFKit**; the Windows application uses **WPF native controls**. A shared TypeScript engine and SQLite store serve both apps, CLI, and MCP. On macOS, PDFKit displays PDFs and PPTX previews use bundled LibreOffice conversion or a supplied PDF. Windows uses verified PDF raster previews and explicit PPTX structural fallback; Apple OCR and confined Office rendering remain unavailable there. See the [Windows capability/build guide](docs/WINDOWS.md).
 
 ## Build from source
 
@@ -59,7 +60,19 @@ The build downloads a pinned LibreOffice version, verifies its SHA-256 and The D
 
 The Node executable used for packaging must link only system dylibs. If the build stops with `Node links a non-system dylib`, inspect `otool -L "$(command -v node)"` and use a Node executable that meets this requirement. If Vision APIs fail to compile, check the selected Xcode/SDK and its version. See the [dependency and packaging notes](docs/dependencies.md) for details.
 
-### Use the app
+### Windows build
+
+On Windows x64 with the .NET 10 SDK and Node 24 installed:
+
+```powershell
+npm ci --ignore-scripts
+npm run windows:build
+.\release\Reviset-Windows-x64\Reviset.exe
+```
+
+Keep the entire output folder together; .NET, Node and production dependencies are bundled. The [Windows workflow](.github/workflows/windows.yml) builds and tests the actual package. Windows import, fixed-report comparison, workbook grid, export and MCP share the engine; manual page/bundle relation editing remains in the macOS UI. Windows runtime qualification is tracked in the [platform guide](docs/WINDOWS.md).
+
+### Use the macOS app
 
 1. Choose **Import Document Versions…** (`⌘O`), or **Compare Spreadsheet Versions…** (`⌘⇧O`) for spreadsheets. Arrange files in version order.
 2. A document version can contain just one PPTX or PDF. Bundling a PPTX with a PDF from the same version is optional.
@@ -68,6 +81,8 @@ The Node executable used for packaging must link only system dylibs. If the buil
 5. Open **AI & export** to export a fixed report or copy the project's MCP configuration.
 
 Try the built-in **Open five-revision synthetic demo** and **Three-version Excel demo**. Document focus mode is `⌘⌥F`; the evidence panel is `⌘⌥I`.
+
+Use the **Layout** menu to choose a preset, move or hide panels, change comparison direction, save a named layout, or reset. Drag native splitters to resize. Document and spreadsheet layouts are stored separately; changing layout retains the report and source-view state. See [workspace customization](docs/WORKSPACE-LAYOUTS.md).
 
 Choose **Reviset → Settings…** (`⌘,`) for **System Default**, **English**, or **한국어**. System Default resolves the supported system-language preference order at launch and falls back to English. Reopen Reviset after changing the macOS language order. The app updates its own interface without clearing import/review drafts or starting a new analysis. Some macOS-owned menu items may follow the system app language after reopening.
 

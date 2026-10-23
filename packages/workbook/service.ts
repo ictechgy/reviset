@@ -1,12 +1,13 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { constants, mkdirSync } from 'node:fs';
-import { open, writeFile, mkdir, rm, readdir } from 'node:fs/promises';
+import { mkdirSync } from 'node:fs';
+import { writeFile, mkdir, rm, readdir } from 'node:fs/promises';
 import { basename, extname, join, resolve } from 'node:path';
 import { z } from 'zod';
 import { Store } from '../storage/index.js';
 import { canonical, byteHash, hash, DocverError } from '../schema/index.js';
 import {exportLanguage,type ExportLanguage} from '../export/language.js';
 import { publishContent } from '../runtime/atomic-content.js';
+import { openRegularFile } from '../runtime/regular-file.js';
 import { WorkbookFormat, WorkbookObservation, WorkbookCell, workbookID, WORKBOOK_SCHEMA_VERSION, WORKBOOK_ENGINE_VERSION } from './types.js';
 import { blankCellsInViewport, validateBlankRangeLayout } from './sparse.js';
 import { extractWorkbook } from './ingest.js';
@@ -29,7 +30,7 @@ function reportSerialization<T>(serialize:()=>T):T {
 async function regularFile(path: string, expected?: string, maxBytes=MAX_WORKBOOK_INPUT_BYTES): Promise<Buffer> {
   let handle; try {
     // A FIFO must not block open before we can reject its descriptor type.
-    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); const stat = await handle.stat();
+    handle = await openRegularFile(path).catch(error=>{if(error instanceof DocverError&&error.code==='INPUT_NOT_REGULAR')throw new DocverError('WORKBOOK_INPUT_LIMIT',`Workbook source/stage must be a regular file of at most ${maxBytes/(1024*1024)} MiB`);throw error;}); const stat = await handle.stat();
     if (!stat.isFile() || stat.size > maxBytes) throw new DocverError('WORKBOOK_INPUT_LIMIT', `Workbook source/stage must be a regular file of at most ${maxBytes/(1024*1024)} MiB`);
     const chunks: Buffer[] = []; let size = 0; const digest = createHash('sha256');
     for await (const chunk of handle.createReadStream({ autoClose: false, highWaterMark: 1024 * 1024 })) { size += chunk.length; if (size > maxBytes) throw new DocverError('WORKBOOK_INPUT_LIMIT', `Workbook source/stage grew beyond ${maxBytes/(1024*1024)} MiB`); chunks.push(chunk); digest.update(chunk); }

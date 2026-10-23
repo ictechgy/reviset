@@ -106,6 +106,7 @@ export function rendererSandbox(folder:string,executable:string):string{
   return `(version 1)(allow default)(deny lsopen)(deny mach-lookup)(allow mach-lookup ${services.map(p=>`(global-name ${JSON.stringify(p)})`).join(' ')})(deny mach-register)(deny user-preference-write)(deny signal (target others))(deny system-debug)(deny process-exec)(allow process-exec (subpath ${JSON.stringify(vendor)}))(deny network*)(allow network* (local unix-socket (literal ${JSON.stringify(pipe)})) (remote unix-socket (literal ${JSON.stringify(pipe)})))(deny file-read-data)(allow file-read-data ${jobAncestors.map(p=>`(literal ${JSON.stringify(p)})`).join(' ')} (literal ${JSON.stringify(pipe)}))(allow file-read-data ${readable.map(p=>`(subpath ${JSON.stringify(p)})`).join(' ')})(deny file-write*)(allow file-write* (subpath "/dev") (literal "/private/tmp") (literal ${JSON.stringify(pipe)}) (subpath ${JSON.stringify(folder)}))(deny file-write* (subpath ${JSON.stringify(vendor)}))`;
 }
 export async function isolatedOfficeVersion(executable:string):Promise<string>{
+  if(process.platform==='win32')throw new DocverError('CONVERTER_UNAVAILABLE','A confined Windows Office renderer is not installed');
   const folder=await realpath(await mkdtemp(join(tmpdir(),'docver-office-probe-')));
   try{return (await runTool(process.platform==='darwin'?'/usr/bin/sandbox-exec':executable,process.platform==='darwin'?['-p',rendererSandbox(folder,executable),executable,'--version']:['--version'],{timeout:30_000,cwd:folder,inheritEnv:false,env:{PATH:'/usr/bin:/bin:/usr/sbin:/sbin',LANG:'en_US.UTF-8',LC_ALL:'en_US.UTF-8',CFFIXED_USER_HOME:folder,HOME:folder,TMPDIR:folder+'/',XDG_CACHE_HOME:join(folder,'cache'),PYTHONDONTWRITEBYTECODE:'1'}})).trim();}
   finally{await rm(folder,{recursive:true,force:true});}
@@ -115,6 +116,7 @@ export async function convertPptx(path:string,executable=officeExecutable()??'so
 }
 export async function convertPptxDetailed(path:string,executable=officeExecutable()??'soffice',timeout=120_000,signal?:AbortSignal,sourceBytes?:Uint8Array):Promise<{pdf:Buffer;input:OfficeInputPreparationData}> {
   signal?.throwIfAborted();
+  if(process.platform==='win32')throw new DocverError('CONVERTER_UNAVAILABLE','A confined Windows Office renderer is not installed; PPTX structure remains available');
   // Read once before conversion setup so input boundary errors retain their
   // identity and a caller's verified source bytes are never reopened by path.
   const input=sourceBytes??await readRegularFile(path,{signal});

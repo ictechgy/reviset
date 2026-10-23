@@ -15,6 +15,10 @@ export function cancelActiveTools(){stop();}
 const terminate=()=>stop(),interrupt=()=>stop();
 export async function runTool(executable:string,args:string[],options:{input?:string;cwd?:string;timeout?:number;signal?:AbortSignal;maxBytes?:number;env?:NodeJS.ProcessEnv;inheritEnv?:boolean;supervised?:boolean;onSupervisorPid?:(pid:number)=>void}={}):Promise<string>{
   options.signal?.throwIfAborted();
+  // The Windows native host owns the engine in a kill-on-close Job Object.
+  // This POSIX supervisor has no qualified Windows external-tool adapter;
+  // taskkill cannot safely reap a tree whose leader has already exited.
+  if(process.platform==='win32')throw new DocverError('TOOL_PLATFORM_UNSUPPORTED','External document processors require a qualified Windows confinement adapter');
   return new Promise((resolveRun,reject)=>{
     const child=spawn(executable,args,{cwd:options.cwd,detached:true,stdio:options.supervised?['pipe','pipe','pipe','pipe']:['pipe','pipe','pipe'],env:{...(options.inheritEnv===false?{}:process.env),SAL_DISABLE_OPENCL:'1',...options.env}});
     const output={chunks:[] as Buffer[],bytes:0},diagnostic={chunks:[] as Buffer[],bytes:0};let failure:Error|undefined;
@@ -60,9 +64,13 @@ export async function runTool(executable:string,args:string[],options:{input?:st
 }
 const repository=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 export function visionExecutable():string|undefined {
+  if(process.platform==='win32')return undefined;
   return [join(dirname(process.execPath),'DocverVision'),process.env.DOCVER_VISION,join(repository,'dist/native/DocverVision')].find(p=>p&&existsSync(p));
 }
 export function officeExecutable():string|undefined {
+  // The shipped confinement adapter is macOS-specific. Do not discover and
+  // launch an unconfined Windows Office installation as an implicit fallback.
+  if(process.platform==='win32')return undefined;
   return [join(dirname(process.execPath),'LibreOffice.app/Contents/MacOS/soffice'),process.env.DOCVER_SOFFICE,join(repository,'dist/tools/LibreOffice.app/Contents/MacOS/soffice'),'/Applications/LibreOffice.app/Contents/MacOS/soffice'].find(p=>p&&existsSync(p));
 }
 const HelperInfo=z.object({version:z.string().min(1),os:z.string().min(1),revision:z.literal(3),languages:z.array(z.string()).refine(l=>l.includes('ko-KR')&&l.includes('en-US')),language_correction:z.literal(false),font_inventory_sha256:z.string().regex(/^[a-f0-9]{64}$/),font_families:z.array(z.string())}).passthrough();

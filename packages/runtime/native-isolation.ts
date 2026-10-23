@@ -1,5 +1,6 @@
 import {readFile,realpath,mkdir} from 'node:fs/promises';
 import {join,dirname} from 'node:path';import {homedir} from 'node:os';
+import {DocverError} from '../schema/index.js';
 export const NATIVE_ISOLATION_POLICY='job-home-read-allowlist-no-directory-enumeration-v2';
 export function nativeHelperPolicy(folder:string,executable:string,source?:string,interpreter?:string){
   const roots=['/System','/usr/lib','/usr/share','/private/etc','/private/var/db','/Library/Fonts',join(homedir(),'Library/Fonts'),'/dev',folder];
@@ -11,6 +12,7 @@ export function nativeHelperPolicy(folder:string,executable:string,source?:strin
   return `(version 1)(allow default)(deny network*)(deny process-fork)(deny process-exec)(allow process-exec ${[executable,...(interpreter?[interpreter]:[])].map(p=>`(literal ${JSON.stringify(p)})`).join(' ')})(deny lsopen)(deny user-preference-write)(deny signal (target others))(deny system-debug)(deny file-read-data)(allow file-read-data ${jobAncestors.map(p=>`(literal ${JSON.stringify(p)})`).join(' ')} ${roots.map(p=>`(subpath ${JSON.stringify(p)})`).join(' ')} ${files.map(p=>`(literal ${JSON.stringify(p)})`).join(' ')})(deny file-write*)(allow file-write* (subpath ${JSON.stringify(folder)}) (subpath "/dev"))`;
 }
 export async function nativeHelperLaunch(executable:string,folder:string,source?:string){
+  if(process.platform==='win32')throw new DocverError('OCR_UNAVAILABLE','The Apple native helper has no confined Windows adapter');
   folder=await realpath(folder);executable=await realpath(executable);if(source)source=await realpath(source);
   await mkdir(join(folder,'Library/Caches'),{recursive:true,mode:0o700});
   // CFFIXED_USER_HOME is required: CoreML otherwise reads/writes its normal

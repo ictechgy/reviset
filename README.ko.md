@@ -6,7 +6,7 @@
 
 이전 이름은 **Docver**입니다. [리네이밍과 호환성](docs/RENAMING.md)을 참고하세요.
 
-**문서의 변경 이력을 원문 근거와 함께 읽는 네이티브 macOS 앱.**
+**문서의 변경 이력을 원문 근거와 함께 읽는 네이티브 데스크톱 앱.**
 
 Reviset은 여러 버전의 PPTX·PDF와 XLSX·ODS·CSV를 비교합니다. 사람은 원문을 나란히 보고, AI는 같은 고정 보고서를 읽기 전용 MCP로 조회합니다. 문서를 가져오고 분석하는 데 계정·API 키·클라우드 업로드가 필요하지 않습니다.
 
@@ -37,8 +37,9 @@ Reviset은 여러 버전의 PPTX·PDF와 XLSX·ODS·CSV를 비교합니다. 사�
 | XLSX·ODS·UTF-8 CSV | 시트·셀·수식·저장값·기본 서식·숨김·행 이동 비교 | 수식을 재계산하지 않습니다. CSV는 문자열로 읽고 고급 Excel/Calc 개체는 별도 한계로 표시합니다. |
 | 사람의 검토 | 페이지 연결·해제·분할·병합, 같은 버전 PPTX와 제공 PDF의 대응 수정 | 사용자 연결은 참고용이며 렌더 충실도를 보증하지 않습니다. |
 | AI·내보내기 | 고정 보고서 JSON·JSONL·Markdown, 특정 버전 조회, 변경 근거·이력의 읽기 전용 MCP | AI는 원문을 지시가 아닌 데이터로 취급하고 고정 보고서 ID를 인용해야 합니다. |
+| 화면 배치 | 패널 크기·표시·위치, 좌우·위아래 비교, 사용자 배치 저장·복원 | 화면 설정은 원문·보고서와 분리해 저장합니다. |
 
-UI는 **SwiftUI·AppKit·PDFKit**, 공통 엔진은 TypeScript와 SQLite를 사용합니다. PDF는 PDFKit으로 표시하고 PPTX 미리보기는 동봉 LibreOffice 변환 또는 사용자가 함께 제공한 PDF를 사용합니다.
+macOS UI는 **SwiftUI·AppKit·PDFKit**, Windows UI는 **WPF 네이티브 컨트롤**을 사용하며 TypeScript·SQLite 엔진을 공유합니다. macOS의 PPTX 미리보기는 동봉 LibreOffice 변환 또는 제공 PDF를 사용합니다. Windows는 검증한 PDF 미리보기와 명시적인 PPTX 구조 보기를 제공하며 Apple OCR과 격리된 Office 변환은 아직 사용할 수 없습니다. [Windows 기능·빌드 안내](docs/WINDOWS.md)를 참고하세요.
 
 ## 소스에서 시작하기
 
@@ -61,7 +62,19 @@ open release/Reviset-Local.app
 
 패키징에 쓰는 Node는 시스템 dylib에만 연결된 실행 파일이어야 합니다. 빌드가 `Node links a non-system dylib`로 중단되면 `otool -L "$(command -v node)"`로 연결을 확인하고 이 조건을 만족하는 Node 실행 파일을 사용하세요. Vision API를 컴파일하지 못하면 Xcode/SDK 선택과 버전을 확인하세요. [의존성·패키징 기록](docs/dependencies.md)에 세부 조건이 있습니다.
 
-### 앱 사용
+### Windows 빌드
+
+Windows x64에 .NET 10 SDK와 Node 24를 설치한 뒤 실행합니다.
+
+```powershell
+npm ci --ignore-scripts
+npm run windows:build
+.\release\Reviset-Windows-x64\Reviset.exe
+```
+
+출력 폴더 전체를 함께 사용하세요. .NET·Node·운영 의존성이 포함됩니다. [Windows 워크플로](.github/workflows/windows.yml)는 실제 패키지를 빌드·검사합니다. 가져오기·고정 보고서 비교·스프레드시트·내보내기·MCP는 공통 엔진을 사용하며 수동 페이지·묶음 대응 편집은 macOS UI에서 제공합니다. 실행 검증 상태는 [플랫폼 안내](docs/WINDOWS.md)에 기록합니다.
+
+### macOS 앱 사용
 
 1. 문서는 **문서 버전 가져오기**(`⌘O`), 스프레드시트는 **스프레드시트 버전 비교…**(`⌘⇧O`)로 엽니다. 파일 순서를 버전 순서로 지정합니다.
 2. PPTX 또는 PDF 하나만으로 문서 버전이 성립합니다. 같은 버전의 PPTX와 PDF를 함께 묶는 것은 선택 사항입니다.
