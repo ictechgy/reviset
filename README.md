@@ -10,7 +10,7 @@ Reviset compares versions of PPTX/PDF documents and XLSX/ODS/CSV workbooks. Peop
 
 For example, follow `draft.pptx → review.pdf → final.pptx` as revenue changes from `100억 → 120억 → 110억` (억 denotes 100 million). Inspect the source in each version. Beyond the first-to-last difference, the history also keeps content that was added and later removed in intermediate versions.
 
-> **Under development and validation.** This repository provides source build instructions. The validated local app targets Apple Silicon Macs; public installer distribution, notarization, and installation on other Macs remain outstanding. A project license has not been selected. The interface supports English and Korean; most detailed project notes are in Korean.
+> **Under development and validation.** Source builds are available for Apple Silicon macOS and Windows x64. Actual native app checks passed on both platforms. Claude, Devin and Grok approved the tested `29f3a8ad` source. Mac notarization, Windows package signing and installation on other machines remain outstanding. See the [native workspace validation](docs/NATIVE-WORKSPACES-2026-10-23.md) for tested sources and scope. A project license has not been selected. The interface supports English and Korean.
 
 ## Screenshots
 
@@ -25,6 +25,22 @@ A five-version synthetic demo showing the numeric change displayed as `100억 �
 ![Reviset showing inferred row movement from A2 to A3, physical cell addresses, and stored input values](docs/images/workbook-comparison-en.png)
 
 Inspect the actual before/after addresses, stored input values, and inferred `A2 → A3` row movement. Both screenshots were captured from the running English interface using synthetic demos. Korean source names and text remain unchanged.
+
+### Custom workspace layouts
+
+![Native Mac document comparison with vertically stacked source pages](docs/images/macos-document-stacked-en.png)
+
+Stack the source pages vertically to give each more width. The actual app retains the selected page and 150% zoom; a narrower pane can crop the viewport at that zoom without changing the source file.
+
+![Native Mac workbook with Changes docked left and selected source cells visible](docs/images/macos-workbook-changes-left-en.png)
+
+Move Changes beside the workbook while keeping compact paging controls and selected source-cell evidence visible. Both captures are unmodified originals from the English Mac app at `29f3a8ad`; [validation scope](docs/NATIVE-WORKSPACES-2026-10-23.md).
+
+### Native Windows app
+
+![Native Windows WPF app comparing original PDF pages in Document Focus](docs/images/windows-document-focus-en.png)
+
+The actual Windows x64 package at `29f3a8ad` showing original PDFs in Document Focus. The UI uses native WPF controls. [Build instructions, workbook view and platform limits](docs/WINDOWS.md).
 
 ## Features
 
@@ -82,7 +98,7 @@ Keep the entire output folder together; .NET, Node and production dependencies a
 
 Try the built-in **Open five-revision synthetic demo** and **Three-version Excel demo**. Document focus mode is `⌘⌥F`; the evidence panel is `⌘⌥I`.
 
-Use the **Layout** menu to choose a preset, move or hide panels, change comparison direction, save a named layout, or reset. Drag native splitters to resize. Document and spreadsheet layouts are stored separately; changing layout retains the report and source-view state. See [workspace customization](docs/WORKSPACE-LAYOUTS.md).
+Use **Layout** to choose Balanced, Document Focus or Review; move or hide panels; change comparison direction; save a named arrangement; or reset. Drag native splitters to resize. Document and workbook preferences are separate. On macOS, toggling temporary Focus off restores the previous panels with geometry edits made while focused. Opening a panel during Focus also restores the other preceding panels. Saving during Focus captures that retained arrangement and keeps Focus active. Applying a preset, saved layout or reset starts a new baseline. Independently hiding panels keeps report and history controls available. See [workspace customization](docs/WORKSPACE-LAYOUTS.md).
 
 Choose **Reviset → Settings…** (`⌘,`) for **System Default**, **English**, or **한국어**. System Default resolves the supported system-language preference order at launch and falls back to English. Reopen Reviset after changing the macOS language order. The app updates its own interface without clearing import/review drafts or starting a new analysis. Some macOS-owned menu items may follow the system app language after reopening.
 
@@ -148,7 +164,7 @@ The earlier [LibreOffice compatibility check](docs/LIBREOFFICE-2026-10-22.md) us
 | Rectangle regressions and TypeScript checking | `f3a66bc`; TypeScript source bytes unchanged at `8364e3d` | Five passed; type checking passed |
 | Packaged `release/Reviset-LibreOffice-3.app` | Clean `8364e3d9d67f2ed4ed5ffa3d58ce50e1313ab93e` | Six native launches and five MCP sessions passed; 20 captures inspected; original and legacy-report bytes preserved |
 
-The final package also passed strict signature verification, and its exact Swift source bytes passed compilation with warnings treated as errors. Native checks covered fresh analyses and saved-report reopening for Calc, mixed PPTX/PDF history and PDF cover/strike evidence. The full suite was not rerun at the final head. Universal OCR accuracy and strict PowerPoint fidelity remain **OPEN**; OS gestures, VoiceOver, notarization, public distribution, and installation on other Macs remain outside this qualification. Direct ODP import is unsupported; save as PPTX or export PDF in Impress first.
+That earlier package also passed strict signature verification, and its exact Swift source bytes passed compilation with warnings treated as errors. Native checks covered fresh analyses and saved-report reopening for Calc, mixed PPTX/PDF history and PDF cover/strike evidence. The full suite was not rerun at that package's final source. Universal OCR accuracy and strict PowerPoint fidelity remain **OPEN**; OS gestures, VoiceOver, notarization, public distribution, and installation on other Macs remain outside this qualification. Direct ODP import is unsupported; save as PPTX or export PDF in Impress first.
 
 Most detailed documents below are in Korean.
 
@@ -156,6 +172,9 @@ Most detailed documents below are in Korean.
 | --- | --- |
 | [Official public-document results](docs/PUBLIC-CORPUS-2026-10-22.md) | Real-data results, security isolation, confirmed limits and exact source scope |
 | [Quality status](docs/QUALITY.md) | Validation results and remaining accuracy/distribution gates |
+| [Workspace customization](docs/WORKSPACE-LAYOUTS.md) | Native presets, docking, saved layouts and retained viewing state |
+| [Windows application](docs/WINDOWS.md) | Build, local workflow and platform capability gaps |
+| [Native workspace validation](docs/NATIVE-WORKSPACES-2026-10-23.md) | Exact Mac/Windows sources, runtime checks and review scope |
 | [LibreOffice compatibility and repair](docs/LIBREOFFICE-2026-10-22.md) | Actual Calc/Impress saves, PDF covers, final app and historical-report verification |
 | [Earlier overall repair review](docs/REVIEW-2026-10-22.md) | Input/archive boundaries, commit recovery, native fixes, and snapshot-bound review/package evidence |
 | [Earlier workbook improvements and validation](docs/WORKBOOK-RECOVERY-2026-10-22.md) | Read recovery, cell provenance, UI changes, and scoped review evidence |
