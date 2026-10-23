@@ -191,11 +191,11 @@ internal sealed class ComparePane
             catch (OperationCanceledException) when (!owner.IsCurrent(ticket) || token.IsCancellationRequested) { return; }
         }
     }
-    private Task LoadPage(long ticket, CancellationToken token, Action<int>? startedForSmoke = null)
+    private Task LoadPage(long ticket, CancellationToken token, Func<CancellationToken, Task>? beforeInstallForSmoke = null)
     {
-        var request = LoadPageCore(ticket, token, startedForSmoke); activePageRequest = request; return request;
+        var request = LoadPageCore(ticket, token, beforeInstallForSmoke); activePageRequest = request; return request;
     }
-    private async Task LoadPageCore(long ticket, CancellationToken token, Action<int>? startedForSmoke)
+    private async Task LoadPageCore(long ticket, CancellationToken token, Func<CancellationToken, Task>? beforeInstallForSmoke)
     {
         // Retire the old page's text, provenance and bitmap before replacing its
         // request owner. A locale update during the await may render only loading.
@@ -203,7 +203,10 @@ internal sealed class ComparePane
         var sequence = pageGeneration; var selected = PageId; var project = owner.ProjectId; var report = owner.ReportId; var occurrence = RevisionId; if (selected.Length == 0) { Invalidate("absent"); ReadState = "absent"; fallback.Text = owner.Copy["absentPage"]; return; }
         PageImage.Source = null; fallback.Text = owner.Copy["analyzing"]; source.Text = ""; fallback.Visibility = Visibility.Visible; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed;
         try {
-        var value = await owner.Bridge.Call("pagePreview", new { project_id = project, report_id = report, page_id = selected, max_width = 1600 }, token, startedForSmoke: startedForSmoke);
+        var value = await owner.Bridge.Call("pagePreview", new { project_id = project, report_id = report, page_id = selected, max_width = 1600 }, token);
+        // Isolated native QA may asynchronously hold the real returned payload
+        // before installation; the owned page token cancels a superseded hold.
+        if (beforeInstallForSmoke is not null) await beforeInstallForSmoke(token);
         if (!owner.IsCurrent(ticket) || sequence != pageGeneration || selected != PageId || project != owner.ProjectId || report != owner.ReportId || occurrence != RevisionId) return;
         if (value.Get("page_id").Text() != selected || value.Get("report_id").Text() != report) throw new BridgeException("PAGE_SCOPE", "The preview belongs to a different page or report.");
         var encoded = value.Get("png_base64").Text(); var origin = value.Get("source").Text(); previewSource = origin; previewReason = value.Get("unavailable_reason").Text(); previewText = value.Get("text").Text(); source.Text = owner.Copy["source"] + ": " + origin;
@@ -320,7 +323,7 @@ internal sealed class ComparePane
     internal string VerifiedPreviewText => PreviewMatchesSelection ? previewText : "";
     internal string PresentedSourceCaption => source.Text;
     internal string PresentedFallback => fallback.Text;
-    internal Task SelectPageForSmoke(string id, Action<int>? started = null) { SetEventPage(id); return LoadPage(owner.Generation, owner.ReadToken, started); }
+    internal Task SelectPageForSmoke(string id, Func<CancellationToken, Task>? beforeInstall = null) { SetEventPage(id); return LoadPage(owner.Generation, owner.ReadToken, beforeInstall); }
     internal static string ColumnName(int column) { var name = ""; while (column > 0) { column--; name = (char)('A' + column % 26) + name; column /= 26; } return name; }
     internal async Task GoForSmoke(string cell) { address.Text = cell; await GoAddress(); }
 }

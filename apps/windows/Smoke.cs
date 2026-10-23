@@ -63,25 +63,25 @@ internal static class Smoke
             result["document_previews"] = previews; Require(previews.Count >= 2, "Expected multiple document previews"); checks.Add("document_pdf_and_pptx_previews_or_explicit_fallback");
             var documentPages = window.Report.Get("revisions").Items()[0].Get("pages").Items(); Require(documentPages.Count >= 2, "Distinct two-page control fixture is required");
             await window.Before.SelectPageForSmoke(documentPages[0].Get("page_id").Text()); Require(window.Before.VerifiedPreviewText.Contains("Revenue 100", StringComparison.Ordinal), "Page A source control is missing");
-            var pageTicket = window.Generation; var pageReport = window.ReportId; var pendingStarted = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously); using var releasePage = new ManualResetEventSlim(false);
-            var pendingPage = window.Before.SelectPageForSmoke(documentPages[1].Get("page_id").Text(), pid => { pendingStarted.TrySetResult(pid); if (!releasePage.Wait(TimeSpan.FromSeconds(20))) throw new TimeoutException("Pending page control was not released"); });
+            var pageTicket = window.Generation; var pageReport = window.ReportId; var pendingStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var releasePage = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var pendingPage = window.Before.SelectPageForSmoke(documentPages[1].Get("page_id").Text(), async ownedToken => { pendingStarted.TrySetResult(); await releasePage.Task.WaitAsync(TimeSpan.FromSeconds(20), ownedToken); });
             try
             {
-                Require(await pendingStarted.Task.WaitAsync(TimeSpan.FromSeconds(10)) > 0, "Replacement page request did not start");
+                await pendingStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 foreach (var language in new[] { "ko", "en" }) { window.SetLanguage(language); Require(window.Before.ReadState == "loading" && window.Before.PageImage.Source is null && window.Before.VerifiedPreviewText.Length == 0 && window.Before.PresentedSourceCaption.Length == 0 && window.Before.PresentedFallback == window.Copy["loading"] && window.Generation == pageTicket && window.ReportId == pageReport && window.Before.PageId == documentPages[1].Get("page_id").Text(), "Pending page B locale update reused page A text/image/provenance"); }
             }
-            finally { releasePage.Set(); }
+            finally { releasePage.TrySetResult(); }
             await pendingPage; Require(window.Before.ReadState == "ready" && window.Before.VerifiedPreviewText.Contains("Second page evidence 1 / 100", StringComparison.Ordinal) && !window.Before.VerifiedPreviewText.Contains("Revenue 100", StringComparison.Ordinal), "Verified replacement page did not bind distinct page B source");
             await window.Before.SelectPageForSmoke(documentPages[0].Get("page_id").Text()); checks.Add("distinct_pending_page_language_transition_never_reuses_previous_text_image_or_provenance");
-            var supersededStarted = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously); using var releaseSuperseded = new ManualResetEventSlim(false);
-            var oldPageRead = window.Before.SelectPageForSmoke(documentPages[1].Get("page_id").Text(), pid => { supersededStarted.TrySetResult(pid); if (!releaseSuperseded.Wait(TimeSpan.FromSeconds(20))) throw new TimeoutException("Superseded page control was not released"); });
+            var supersededStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var releaseSuperseded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var oldPageRead = window.Before.SelectPageForSmoke(documentPages[1].Get("page_id").Text(), async ownedToken => { supersededStarted.TrySetResult(); await releaseSuperseded.Task.WaitAsync(TimeSpan.FromSeconds(20), ownedToken); });
             Task newestPage;
             try
             {
-                Require(await supersededStarted.Task.WaitAsync(TimeSpan.FromSeconds(10)) > 0, "Superseded page request did not start"); newestPage = window.Before.SelectPageForSmoke(documentPages[0].Get("page_id").Text()); window.SetLanguage("ko"); window.SetLanguage("en");
+                await supersededStarted.Task.WaitAsync(TimeSpan.FromSeconds(10)); newestPage = window.Before.SelectPageForSmoke(documentPages[0].Get("page_id").Text()); window.SetLanguage("ko"); window.SetLanguage("en");
                 Require(window.Before.ReadState == "loading" && window.Before.VerifiedPreviewText.Length == 0, "Superseding page locale transition reused retired payload");
             }
-            finally { releaseSuperseded.Set(); }
+            finally { releaseSuperseded.TrySetResult(); }
             try { await oldPageRead; throw new InvalidOperationException("Superseded page request did not cancel"); } catch (OperationCanceledException) { }
             await newestPage; Require(window.Before.ReadState == "ready" && window.Before.VerifiedPreviewText.Contains("Revenue 100", StringComparison.Ordinal) && window.Before.PageId == documentPages[0].Get("page_id").Text(), "Older page cancellation invalidated the newest verified request"); checks.Add("older_page_cancellation_cannot_fail_or_cancel_newest_same_scope_page_request");
             await CheckLayout(window, checks, output, "document");
