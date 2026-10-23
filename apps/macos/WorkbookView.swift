@@ -1687,7 +1687,8 @@ struct WorkbookGrid: NSViewRepresentable {
     private static func exerciseLanguageSwitch(_ model: WorkbookModel,window: NSWindow,folder: URL,originals: [WorkbookImportRow]) async throws -> [String:Any] {
         let preferences = LanguagePreferences.shared,defaults = UserDefaults.standard
         let originalSelection = preferences.selection
-        let originalStoredPreference = defaults.object(forKey:LanguagePreferences.preferenceKey)
+        let preferenceDomain = Bundle.main.bundleIdentifier ?? "org.docver.native"
+        let originalStoredPreference = defaults.persistentDomain(forName:preferenceDomain)?[LanguagePreferences.preferenceKey]
         var preferenceRestored = false
         func restorePreference() {
             preferences.selection = originalSelection
@@ -1821,7 +1822,7 @@ struct WorkbookGrid: NSViewRepresentable {
         try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-localization-ko.png"))
         try Smoke.captureView(draftWindow,folder.appendingPathComponent("native-workbook-import-draft-ko.png"))
         restorePreference()
-        let restored = defaults.object(forKey:LanguagePreferences.preferenceKey)
+        let restored = defaults.persistentDomain(forName:preferenceDomain)?[LanguagePreferences.preferenceKey]
         let storedPreferenceRestored = originalStoredPreference == nil ? restored == nil : (originalStoredPreference as? NSObject)?.isEqual(restored) == true
         try require(storedPreferenceRestored && preferences.selection == originalSelection,"The exact prior language preference was not restored.")
         return ["en":["panes":englishPanes,"warning":englishWarning,"status":englishStatus,"draft":englishDraft],"ko":["panes":koreanPanes,"warning":koreanWarning,"status":koreanStatus,"draft":koreanDraft],"same_model_grid_selection_viewport_and_reveal_intent":true,"source_cells_changes_project_and_stored_report_unchanged":true,"original_sha_and_size_unchanged":true,"preference_restored_exactly":true,"original_preference_entry_present":originalStoredPreference != nil,"draft_host":"opaque white NSWindow with NSHostingView of production WorkbookImportSheet; seeded @State only, no submitted import or OS input","capture_scope":"actual packaged production main window and import component; programmatic locale/scroll changes, no VoiceOver automation"]
