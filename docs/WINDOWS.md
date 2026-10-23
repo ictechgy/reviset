@@ -44,7 +44,7 @@ PPTX structural content is labelled separately from an original page rendering. 
 
 Import one PDF or PPTX per document version, or pair one PDF with one PPTX from the same version. For workbooks, select XLSX, ODS or UTF-8 comma-separated CSV. Name and order the versions before import. Reanalysis creates a new fixed report while preserving earlier reports.
 
-Choose before/after versions, then select a page or sheet and a change. The change-list mode switches between endpoint net changes and intermediate history for the selected interval. Workbooks provide physical cell-address navigation and stored formula/value evidence. Read-only MCP and exports use the selected fixed report; source text and diagnostic codes remain verbatim when the interface language changes. Manual page/bundle relation editing remains in the macOS UI.
+Choose before/after versions, then select a page or sheet and a change. The change-list mode switches between endpoint net changes and intermediate history for the selected interval. Workbooks provide physical cell-address navigation and stored formula/value evidence. Exports use the selected fixed report. The copied read-only MCP configuration is project-scoped; clients choose and reuse a fixed report ID. Source text and diagnostic codes remain verbatim when the interface language changes. Manual page/bundle relation editing remains in the macOS UI.
 
 ## Layouts and data
 
