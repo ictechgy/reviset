@@ -262,8 +262,7 @@ internal sealed class MainWindow : Window
     {
         var splitter = new NativeSplitter { Persist = persist, Background = new SolidColorBrush(Color.FromRgb(233, 236, 241)), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, ResizeDirection = vertical ? GridResizeDirection.Columns : GridResizeDirection.Rows, ResizeBehavior = GridResizeBehavior.PreviousAndNext, ShowsPreview = true, Focusable = true, KeyboardIncrement = 10 };
         AutomationProperties.SetName(splitter, Copy[name]); splitter.ToolTip = Copy[name]; splitter.Tag = name;
-        splitter.DragCompleted += (_, _) => persist();
-        splitter.AddHandler(Keyboard.KeyUpEvent, new KeyEventHandler((_, args) => { if (args.Key is Key.Left or Key.Right or Key.Up or Key.Down) persist(); }), true); return splitter;
+        splitter.DragCompleted += (_, _) => { if (splitter.Parent is Grid parent) parent.UpdateLayout(); persist(); }; return splitter;
     }
     private void CaptureLayout(int leading = -1, int trailing = -1)
     {
@@ -291,27 +290,38 @@ internal sealed class MainWindow : Window
     }
     internal async Task OpenProject(JsonElement project)
     {
-        if (busy) return; var ticket = BeginScope(); currentProject = project; projectId = project.Get("project_id").Text(); reportId = ""; binding = true; reports.ItemsSource = null; binding = false; ClearReport(); UpdateContext();
+        if (busy) return; await OpenProjectCore(project);
+    }
+    private async Task OpenProjectCore(JsonElement project, string preferredReport = "")
+    {
+        var ticket = BeginScope(); currentProject = project; projectId = project.Get("project_id").Text(); reportId = ""; binding = true; reports.ItemsSource = null; binding = false; ClearReport(); UpdateContext();
         var value = await Bridge.Call(IsWorkbook ? "workbookReports" : "reports", new { project_id = projectId }, reads.Token);
         if (ticket != generation) return;
         var items = value.Items().Select(v => new Choice(v.Get("report_id").Text(), v.Get("created_at").Text() + " · " + v.Get("report_id").Text(), v)).ToList();
-        binding = true; reports.ItemsSource = items; reports.SelectedIndex = items.Count > 0 ? 0 : -1; binding = false;
-        if (items.Count > 0) await OpenReport(items[0].Id); else status.Text = Copy["noReport"]; SetBusy(false);
+        var selected = preferredReport.Length > 0 ? items.Find(item => item.Id == preferredReport) : items.FirstOrDefault(); if (preferredReport.Length > 0 && selected is null) throw new BridgeException("REPORT_SCOPE", "The committed fixed report was not present in this project."); binding = true; reports.ItemsSource = items; reports.SelectedItem = selected; binding = false;
+        if (selected is not null) await OpenReportCore(selected.Id); else status.Text = Copy["noReport"]; SetBusy(busy);
     }
     internal async Task OpenReport(string fixedReport)
     {
-        if (busy || projectId.Length == 0 || fixedReport == "latest") return;
+        if (busy || projectId.Length == 0 || fixedReport == "latest") return; await OpenReportCore(fixedReport);
+    }
+    private async Task OpenReportCore(string fixedReport)
+    {
         var ticket = BeginScope(); reportId = fixedReport; currentReport = default; ClearReport();
         var value = await Bridge.Call(IsWorkbook ? "workbookView" : "view", Json.Scope(projectId, fixedReport), reads.Token);
         if (ticket != generation) return;
         if (value.Get("report_id").Text() != fixedReport || value.Get("project_id").Text() != projectId) throw new BridgeException("REPORT_SCOPE", "The report response is outside the selected fixed snapshot.");
         currentReport = value; var revisions = value.Get("revisions").Items();
         binding = true; Before.SetRevisions(revisions, 0); After.SetRevisions(revisions, Math.Max(0, revisions.Count - 1)); binding = false;
-        UpdateContext(); await ReloadComparison(); SetBusy(false);
+        UpdateContext(); await ReloadComparisonCore(); SetBusy(busy);
     }
     internal async Task ReloadComparison()
     {
-        if (binding || reportId.Length == 0 || busy && !restoringOperation) return; var ticket = BeginScope();
+        if (binding || reportId.Length == 0 || busy && !restoringOperation) return; await ReloadComparisonCore();
+    }
+    private async Task ReloadComparisonCore()
+    {
+        var ticket = BeginScope();
         intervalFrom = Before.RevisionId; intervalTo = After.RevisionId; UpdateInterval();
         InvalidateAuthority(true); Before.Invalidate(); After.Invalidate();
         var revisions = currentReport.Get("revisions").Items(); var from = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalFrom); var to = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalTo);
@@ -321,7 +331,7 @@ internal sealed class MainWindow : Window
     }
     internal Task RetryComparison()
     {
-        if (reportId.Length == 0) return Task.CompletedTask;
+        if (busy || reportId.Length == 0) return Task.CompletedTask;
         if (intervalFrom.Length > 0) Before.SetEvidenceRevision(intervalFrom);
         if (intervalTo.Length > 0) After.SetEvidenceRevision(intervalTo);
         // Restore normal selectors for retry; event absence must not substitute cells.
@@ -349,6 +359,11 @@ internal sealed class MainWindow : Window
         var saved = new ComparisonSelection(projectId, reportId, IsWorkbook, currentProject, currentReport, Before.CaptureSelection(), After.CaptureSelection(), intervalFrom, intervalTo);
         BeginScope(); InvalidateAuthority(true); Before.Invalidate(); After.Invalidate(); SetBusy(true); return saved;
     }
+    private async Task FinishMutation(CancellationTokenSource owned, ComparisonSelection previous, bool completed)
+    {
+        try { if (ReferenceEquals(operation, owned) && !completed) await RestoreAfterMutation(previous); }
+        finally { if (ReferenceEquals(operation, owned)) { operation = null; SetBusy(false); } owned.Dispose(); }
+    }
     private async Task RestoreAfterMutation(ComparisonSelection saved)
     {
         if (closed) return;
@@ -370,46 +385,48 @@ internal sealed class MainWindow : Window
     }
     internal async Task ImportAndAnalyze(string title, IReadOnlyList<ImportRow> rows)
     {
-        if (busy) return; operation = new(); var previous = AdmitMutation(); var completed = false; status.Text = Copy["importing"];
+        if (busy) return; var owned = new CancellationTokenSource(); operation = owned; var previous = AdmitMutation(); var completed = false; status.Text = Copy["importing"];
         try
         {
             var input = new List<object>(); foreach (var row in rows)
             {
-                var hashes = new List<string>(); foreach (var path in row.Paths) hashes.Add(await ImportWindow.Identity(path, operation.Token));
+                var hashes = new List<string>(); foreach (var path in row.Paths) hashes.Add(await ImportWindow.Identity(path, owned.Token));
                 input.Add(IsWorkbook ? new { label = row.Label.Trim(), path = row.Paths[0], expected_sha256 = hashes[0] } : (object)new { label = row.Label.Trim(), files = row.Paths, expected_sha256 = hashes });
             }
-            var project = await Bridge.Call(IsWorkbook ? "workbookCreate" : "create", new { title, revisions = input }, operation.Token);
+            var project = await Bridge.Call(IsWorkbook ? "workbookCreate" : "create", new { title, revisions = input }, owned.Token);
             currentProject = project; projectId = project.Get("project_id").Text(); reportId = ""; BeginScope(); ClearReport();
-            await AnalyzeCore(operation.Token);
+            await AnalyzeCore(owned.Token); await RefreshProjects();
             completed = true;
         }
-        finally { if (!completed) await RestoreAfterMutation(previous); operation.Dispose(); operation = null; SetBusy(false); await RefreshProjects(); }
+        finally { await FinishMutation(owned, previous, completed); }
     }
     private Task Analyze() => AnalyzeWithStarted(null);
-    private async Task AnalyzeWithStarted(Action<int>? startedForSmoke)
+    private async Task AnalyzeWithStarted(Action<int>? startedForSmoke, Func<Task>? afterCommitForSmoke = null)
     {
-        if (busy || projectId.Length == 0) return; operation = new(); var previous = AdmitMutation(); var completed = false;
-        try { await AnalyzeCore(operation.Token, startedForSmoke); completed = true; }
-        finally { if (!completed) await RestoreAfterMutation(previous); operation.Dispose(); operation = null; SetBusy(false); }
+        if (busy || projectId.Length == 0) return; var owned = new CancellationTokenSource(); operation = owned; var previous = AdmitMutation(); var completed = false;
+        try { await AnalyzeCore(owned.Token, startedForSmoke, afterCommitForSmoke); completed = true; }
+        finally { await FinishMutation(owned, previous, completed); }
     }
-    private async Task AnalyzeCore(CancellationToken token, Action<int>? startedForSmoke = null)
+    private async Task AnalyzeCore(CancellationToken token, Action<int>? startedForSmoke = null, Func<Task>? afterCommitForSmoke = null)
     {
-        var project = projectId; var workbook = IsWorkbook; status.Text = Copy["analyzing"]; var stage = await Bridge.Call(workbook ? "workbookAnalyze" : "analyze", new { project_id = project }, token, progress: value => Dispatcher.BeginInvoke(() => { if (!closed && busy) status.Text = Copy["analyzing"] + " " + value.Pretty(); }), startedForSmoke: startedForSmoke);
+        var project = projectId; var workbook = IsWorkbook; status.Text = Copy["analyzing"]; var stage = await Bridge.Call(workbook ? "workbookAnalyze" : "analyze", new { project_id = project }, token, progress: value => Dispatcher.BeginInvoke(() => { if (!closed && busy && operation is { } current && current.Token == token) status.Text = Copy["analyzing"] + " " + value.Pretty(); }), startedForSmoke: startedForSmoke);
         status.Text = Copy["committing"];
         var saved = await AnalysisCommit.Save(project, workbook, stage, token, (action, args, cancel) => Bridge.Call(action, args, cancel));
-        SetBusy(false); await OpenProject(currentProject); var fixedId = saved.Get("report_id").Text(); if (projectId == project && IsWorkbook == workbook && fixedId.Length > 0 && reportId != fixedId) await OpenReport(fixedId); status.Text = Copy["ready"];
+        if (afterCommitForSmoke is not null) await afterCommitForSmoke();
+        await OpenProjectCore(currentProject, saved.Get("report_id").Text()); status.Text = Copy["ready"];
     }
     private async Task Reorder()
     {
         if (busy || IsWorkbook || projectId.Length == 0) return;
-        var projects = await Bridge.Call("projects"); var project = projects.Items().Find(v => v.Get("project_id").Text() == projectId); var dialog = new ImportWindow(Copy, false, project.Get("revisions").Items()) { Owner = this }; if (dialog.ShowDialog() != true) return;
-        currentProject = await Bridge.Call("reorder", new { project_id = projectId, order = dialog.Rows.Select(v => v.OriginalIndex).ToArray(), draft_hash = project.Get("draft_hash").Text() }); await OpenProject(currentProject); await RefreshProjects();
+        var selectedProject = projectId; var ticket = generation; var projects = await Bridge.Call("projects", token: reads.Token); if (!IsCurrent(ticket) || busy || IsWorkbook || projectId != selectedProject) return; var project = projects.Items().Find(v => v.Get("project_id").Text() == selectedProject); var dialog = new ImportWindow(Copy, false, project.Get("revisions").Items()) { Owner = this }; if (dialog.ShowDialog() != true || busy || projectId != selectedProject) return;
+        var owned = new CancellationTokenSource(); operation = owned; var previous = AdmitMutation(); var completed = false;
+        try { currentProject = await Bridge.Call("reorder", new { project_id = selectedProject, order = dialog.Rows.Select(v => v.OriginalIndex).ToArray(), draft_hash = project.Get("draft_hash").Text() }, owned.Token); await OpenProjectCore(currentProject); await RefreshProjects(); completed = true; } finally { await FinishMutation(owned, previous, completed); }
     }
     private async Task Export()
     {
         if (reportId.Length == 0 || busy) return; var project = projectId; var report = reportId; var workbook = IsWorkbook; var language = Copy.Language;
         var folder = new OpenFolderDialog { Title = Copy["export"], Multiselect = false }; if (folder.ShowDialog(this) != true) return;
-        operation = new(); SetBusy(true); try { await Bridge.Call(workbook ? "workbookExport" : "export", new { project_id = project, report_id = report, folder = folder.FolderName, language }, operation.Token); status.Text = Copy["exported"] + ": " + folder.FolderName; } finally { operation.Dispose(); operation = null; SetBusy(false); }
+        var owned = new CancellationTokenSource(); operation = owned; SetBusy(true); try { await Bridge.Call(workbook ? "workbookExport" : "export", new { project_id = project, report_id = report, folder = folder.FolderName, language }, owned.Token); status.Text = Copy["exported"] + ": " + folder.FolderName; } finally { if (ReferenceEquals(operation, owned)) { operation = null; SetBusy(false); } owned.Dispose(); }
     }
     private async Task CopyMcp()
     {
@@ -426,7 +443,7 @@ internal sealed class MainWindow : Window
         if (reportId.Length == 0 || intervalFrom.Length == 0 || intervalTo.Length == 0) return;
         var revisions = currentReport.Get("revisions").Items(); var from = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalFrom); var to = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalTo);
         if (from > to || from < 0 || to < 0) { if (IsCurrent(ticket)) { ComparisonState = "invalid"; changesReady = false; detail.Text = Copy["reverse"]; } return; }
-        if (from == to) { if (IsCurrent(ticket)) { changes.Clear(); changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = true; more.IsEnabled = false; detail.Text = Copy["noChanges"]; } return; }
+        if (from == to) { if (IsCurrent(ticket)) { changes.Clear(); changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = !busy; more.IsEnabled = false; detail.Text = Copy["noChanges"]; } return; }
         List<JsonElement> values; string next = "";
         if (IsWorkbook)
         {
@@ -437,7 +454,7 @@ internal sealed class MainWindow : Window
         else { values = (await Bridge.Call("changes", new { project_id = projectId, report_id = reportId, from = intervalFrom, to = intervalTo, mode = "history" }, token)).Items(); }
         if (!IsCurrent(ticket)) return; binding = true; if (!append) changes.Clear();
         foreach (var value in values) { var label = value.Get("kind").Text() + " · " + (IsWorkbook ? value.Get("description").Text() : value.Get("before").Text() + " → " + value.Get("after").Text()); changes.Add(new(value.Get("change_id").Text(), label.Length > 210 ? label[..210] + "…" : label, value)); }
-        binding = false; nextChanges = next; changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = true; more.IsEnabled = next.Length > 0; if (changes.Count == 0) detail.Text = Copy["noChanges"] + "\n\n" + Copy["coverage"] + "\n" + currentReport.Get("coverage_gaps").Pretty();
+        binding = false; nextChanges = next; changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = !busy; more.IsEnabled = !busy && next.Length > 0; if (changes.Count == 0) detail.Text = Copy["noChanges"] + "\n\n" + Copy["coverage"] + "\n" + currentReport.Get("coverage_gaps").Pretty();
     }
     private async Task LoadMoreChanges()
     {
@@ -493,7 +510,7 @@ internal sealed class MainWindow : Window
     private async Task LoadDetail(int offset)
     {
         if (detailLoader is not { } loader) return; var sequence = ++detailGeneration; var ticket = generation; cellReads.Cancel(); cellReads.Dispose(); cellReads = new(); var token = cellReads.Token; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; detail.Text = Copy["loading"];
-        try { var value = await loader(offset, token); if (!IsCurrent(ticket) || sequence != detailGeneration || token.IsCancellationRequested) return; detailOffset = offset; detailNext = RawSourcePaging.Next(value, offset); detailItemNext = value.Get("next_cursor").Text(); detail.Text = FormatDetail(value); detailRange.Text = Copy["textRange"] + ": " + offset + " → " + (detailNext?.ToString(CultureInfo.InvariantCulture) ?? "✓"); detailMetadata.Text = value.Pretty(); firstDetail.IsEnabled = offset > 0 || detailCursor.Length > 0; nextDetail.IsEnabled = detailNext is not null || detailItemNext.Length > 0; }
+        try { var value = await loader(offset, token); if (!IsCurrent(ticket) || sequence != detailGeneration || token.IsCancellationRequested) return; detailOffset = offset; detailNext = RawSourcePaging.Next(value, offset); detailItemNext = value.Get("next_cursor").Text(); detail.Text = FormatDetail(value); detailRange.Text = FormatRanges(value); detailMetadata.Text = value.Pretty(); firstDetail.IsEnabled = !busy && (offset > 0 || detailCursor.Length > 0); nextDetail.IsEnabled = !busy && (detailNext is not null || detailItemNext.Length > 0); }
         catch { if (IsCurrent(ticket) && sequence == detailGeneration && !token.IsCancellationRequested) { detail.Text = Copy["failed"]; firstDetail.IsEnabled = true; } throw; }
     }
     private string FormatDetail(JsonElement value)
@@ -507,6 +524,23 @@ internal sealed class MainWindow : Window
         if (value.Get("component").Text() == "style") return string.Join("\n\n", value.Get("items").Items().Select(item => item.Get("key").Text() + "\n" + item.Get("value").Text()));
         return Cell(value.Get("items").Items().FirstOrDefault());
     }
+    private string FormatRanges(JsonElement value)
+    {
+        var lines = new List<string> { Copy["textRange"] };
+        void Cell(JsonElement cell, string side)
+        {
+            foreach (var field in new[] { "value", "formula", "number_format" })
+            {
+                var range = cell.Get("text_continuations").Get(field); if (range.ValueKind != JsonValueKind.Object) continue;
+                var start = range.Get("offset").Number(); var end = start + cell.Get(field).Text().Length; var total = range.Get("total_length").Number();
+                lines.Add(side + (side.Length > 0 ? " · " : "") + (field == "value" ? Copy["cached"] : field == "formula" ? Copy["formula"] : field) + ": [" + start + ", " + end + ") / " + total + " · " + range.Get("state").Text());
+            }
+        }
+        if (value.Get("before").ValueKind == JsonValueKind.Object) { Cell(value.Get("before").Get("items").Items().FirstOrDefault().Get("before"), Copy["before"]); Cell(value.Get("after").Get("items").Items().FirstOrDefault().Get("after"), Copy["after"]); }
+        else if (value.Get("component").Text() == "style") foreach (var item in value.Get("items").Items()) { var range = item.Get("text_continuations").Get("value"); var start = range.Get("offset").Number(); lines.Add(item.Get("key").Text() + ": [" + start + ", " + (start + item.Get("value").Text().Length) + ") / " + range.Get("total_length").Number()); }
+        else Cell(value.Get("items").Items().FirstOrDefault(), "");
+        return string.Join("\n", lines);
+    }
     internal IEnumerable<GridSplitter> NativeSplitters()
     {
         IEnumerable<DependencyObject> Visit(DependencyObject parent) { for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++) { var child = VisualTreeHelper.GetChild(parent, index); yield return child; foreach (var nested in Visit(child)) yield return nested; } }
@@ -514,6 +548,7 @@ internal sealed class MainWindow : Window
     }
     internal int ActionableChanges => changesReady && changeList.IsEnabled ? changes.Count : 0;
     internal string DetailText => detail.Text;
+    internal bool AllowsEvidence => !busy;
     internal Task AnalyzeForSmoke() => Analyze();
     internal async Task CheckAnalysisCancellationForSmoke()
     {
@@ -525,6 +560,21 @@ internal sealed class MainWindow : Window
         try { await analysis; throw new InvalidOperationException("Actual analysis cancellation unexpectedly completed."); } catch (OperationCanceledException) { }
         try { await pending; } catch (OperationCanceledException) { }
         if (startedPid <= 0 || busy || reportId != fixedReport || Before.CaptureSelection() != before || After.CaptureSelection() != after || ComparisonState != "ready") throw new InvalidOperationException("Cancelled analysis did not restore the exact comparison after a pending read.");
+    }
+    internal async Task CheckPostCommitAdmissionForSmoke()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var analysis = AnalyzeWithStarted(null, async () => { entered.TrySetResult(); await release.Task; });
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(30)); var owner = operation; var ticket = generation;
+            if (!busy || owner is null || !owner.Token.CanBeCanceled) throw new InvalidOperationException("Writer admission was released before successful report refresh.");
+            await Analyze(); await ImportAndAnalyze("must remain rejected", []);
+            if (!busy || !ReferenceEquals(operation, owner) || generation != ticket) throw new InvalidOperationException("A second mutation replaced the post-commit writer owner.");
+            owner.Cancel(); if (!owner.IsCancellationRequested || !ReferenceEquals(operation, owner)) throw new InvalidOperationException("Post-commit cancellation did not belong to the admitted writer.");
+        }
+        finally { release.TrySetResult(); }
+        await analysis; if (busy || operation is not null || ComparisonState != "ready" || reportId.Length == 0) throw new InvalidOperationException("Successful report refresh did not release its own writer cleanly.");
     }
     internal async Task CheckFailedGridForSmoke(Func<Task> corrupt, Func<Task> restore)
     {
@@ -560,7 +610,8 @@ internal sealed class MainWindow : Window
             Before.SetEvidenceRevision(first, ""); await Before.Load(generation, reads.Token); if (Before.SheetId.Length != 0 || Before.ReadState != "absent" || Before.Cells.Items.Count != 0 || Before.AuthorizesCell(1, 1)) throw new InvalidOperationException("Absent evidence substituted a real sheet/cell.");
             Before.SetEvidenceRevision(first, "unknown_sheet_id"); await Before.Load(generation, reads.Token); if (Before.SheetId.Length != 0 || Before.ReadState != "absent" || Before.Cells.Items.Count != 0) throw new InvalidOperationException("Unknown evidence substituted a real sheet/cell.");
             await RetryComparison();
-            var absent = changes.FirstOrDefault(c => c.Value.Get("from_sheet_id").Text().Length == 0 || c.Value.Get("to_sheet_id").Text().Length == 0);
+            Choice? FindAbsent() => changes.FirstOrDefault(c => c.Value.Get("kind").Text() == "sheet_observation" && (c.Value.Get("from_sheet_id").Text().Length == 0 ^ c.Value.Get("to_sheet_id").Text().Length == 0));
+            var absent = FindAbsent(); var pages = 0; while (absent is null && nextChanges.Length > 0 && pages++ < 100) { await LoadMoreChanges(); absent = FindAbsent(); }
             if (absent is null) throw new InvalidOperationException("Expected a genuine one-sided sheet event fixture.");
             await SelectChange(absent.Value);
             if (absent.Value.Get("from_sheet_id").Text().Length == 0 && (Before.ReadState != "absent" || Before.SheetId.Length != 0 || Before.Cells.Items.Count != 0)) throw new InvalidOperationException("One-sided before event invented a grid.");

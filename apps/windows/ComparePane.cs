@@ -103,7 +103,7 @@ internal sealed class ComparePane
         foreach (var arrow in arrows) { arrow.Button.ToolTip = owner.Copy[arrow.Key]; AutomationProperties.SetName(arrow.Button, heading.Text + " · " + owner.Copy[arrow.Key]); }
         docControls.Visibility = owner.IsWorkbook ? Visibility.Collapsed : Visibility.Visible; workbookControls.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed; sparse.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
     }
-    internal void NavigationEnabled(bool enabled) { foreach (var control in navigation) control.IsEnabled = enabled; }
+    internal void NavigationEnabled(bool enabled) { foreach (var control in navigation) control.IsEnabled = enabled; showFormula.IsEnabled = enabled && ReadState == "ready" && loadedGridScope is not null; }
     internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence);
     internal void RestoreSelection(PaneSelection saved)
     {
@@ -210,7 +210,7 @@ internal sealed class ComparePane
         var value = await owner.Bridge.Call("workbookGrid", new { project_id = owner.ProjectId, report_id = owner.ReportId, revision_occurrence_id = revisionId, sheet_id = sheetId, row_start = rowAt, row_limit = 50, column_start = columnAt, column_limit = 8 }, token);
         if (!owner.IsCurrent(ticket) || sequence != gridGeneration || RevisionId != revisionId || SheetId != sheetId || row != rowAt || column != columnAt) return;
         if (value.Get("revision_occurrence_id").Text() != revisionId || value.Get("sheet_id").Text() != sheetId || value.Get("report_id").Text() != owner.ReportId) throw new BridgeException("GRID_SCOPE", "Grid response is outside the selected source scope.");
-        loadedGridScope = (owner.ProjectId, owner.ReportId, revisionId, sheetId, rowAt, columnAt); ReadState = "ready"; Cells.IsEnabled = true; showFormula.IsEnabled = true;
+        loadedGridScope = (owner.ProjectId, owner.ReportId, revisionId, sheetId, rowAt, columnAt); ReadState = "ready"; Cells.IsEnabled = owner.AllowsEvidence; showFormula.IsEnabled = owner.AllowsEvidence;
         gridValue = value; rowStart.Text = row.ToString(System.Globalization.CultureInfo.InvariantCulture); colStart.Text = column.ToString(System.Globalization.CultureInfo.InvariantCulture); RenderGrid();
         source.Text = (revision.SelectedItem as Choice)?.Label + " · " + (sheet.SelectedItem as Choice)?.Label + " · " + row + "–" + Math.Min(1048576, row + 49); source.ToolTip = revisionId + "\n" + sheetId; fallback.Visibility = Visibility.Collapsed; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Visible;
     }
