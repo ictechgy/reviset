@@ -40,6 +40,7 @@ struct WorkspaceSplit<Top:View,Bottom:View>:NSViewControllerRepresentable {
     private var observer:NSObjectProtocol?
     init(name:String,defaultBottomHeight:CGFloat,compactTopHeight:CGFloat?,top:Top,bottom:Bottom) {
         self.top=NSHostingController(rootView:top);self.bottom=NSHostingController(rootView:bottom)
+        self.top.sizingOptions=[];self.bottom.sizingOptions=[]
         preferenceKey="Docver.workspace."+name+".changesHeight";self.defaultBottomHeight=defaultBottomHeight;self.compactTopHeight=compactTopHeight
         super.init(nibName:nil,bundle:nil)
         splitView.isVertical=false;splitView.dividerStyle = .thin;splitView.identifier=NSUserInterfaceItemIdentifier("Docver.workspace."+name)
