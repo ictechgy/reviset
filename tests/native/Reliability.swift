@@ -32,13 +32,18 @@ import AppKit
             let error=BridgeError(code:code,message:"original diagnostic")
             let rendered=bridgeErrorMessage(error).text
             try require(error.localizedDescription=="original diagnostic" && error.code==code && error.message=="original diagnostic","NativeErrorLostRawCodeOrMessage-"+code)
-            try require(code=="OTHER_FAILURE" ? rendered.contains(code) && rendered.contains(expected) : rendered==expected,"NativeErrorLocalizationLostCodeOrMessage-"+code)
+            try require(rendered.contains(code) && rendered.contains(expected) && rendered.contains("original diagnostic"),"NativeErrorLocalizationLostCodeOrMessage-"+code)
         }
         try require(changeDisplayName(JSON(["kind":"future_kind-{0}-%@"]))=="future_kind-{0}-%@","UnknownChangeKindWasHidden")
         let staleDetail="원본 진단 {0} %@ /opaque/path"
         let knownBackend=BridgeError(code:"STALE_REPORT",message:staleDetail)
         let knownPresentation=Localizer(language:"en").render(bridgeErrorMessage(knownBackend))
         try require(knownPresentation.contains("Refresh") && knownPresentation.contains("STALE_REPORT") && knownPresentation.contains(staleDetail) && knownBackend.message==staleDetail,"KnownBackendGuidanceLostRawDiagnostic")
+        for (code,phrase) in [("SOURCE_CHANGED","source files changed"),("INPUT_IDENTITY","verification data"),("WORKBOOK_IDENTITY","consistency check"),("WORKBOOK_STYLE_SCOPE","consistency check")] {
+            let diagnostic=BridgeError(code:code,message:staleDetail)
+            let rendered=Localizer(language:"en").render(bridgeErrorMessage(diagnostic))
+            try require(rendered.contains(phrase) && rendered.contains(code) && rendered.contains(staleDetail),"BackendGuidanceConfusedFileAndReportIdentity-"+code)
+        }
         let typedDiagnostic=BridgeError(code:"HELPER_PROTOCOL",message:UIMessage("doc.error.diagnosticLog",.message(UIMessage("doc.tail.engine.responseUnreadableExitCode",.integer(1234))),.verbatim("/tmp/source-{0}-%@.log")))
         try require(typedDiagnostic.localizedDescription.contains("1234") && typedDiagnostic.localizedDescription.contains("/tmp/source-{0}-%@.log"),"TypedErrorLostOffActorDiagnosticDetail")
         try require(JSON(1.9).int==1 && JSON(-1.9).int == -1,"IntegerTruncationChanged")

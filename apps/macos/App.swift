@@ -81,6 +81,25 @@ private struct SmokeStructureView: View {
     let page: JSON
     var body: some View { StructureCanvas(language:LanguagePreferences.shared.effectiveLanguage,page:page,evidence:JSON()) }
 }
+// The native SwiftUI menu delegate materializes labels when tracking starts.
+// Qualify that public AppKit lifecycle rather than inspect a closed-menu cache.
+@MainActor private final class SmokeMenuTracker: NSObject {
+    let menu:NSMenu
+    private(set) var titles:[String]=[]
+    private(set) var enteredTracking=false
+    init(_ menu:NSMenu) {self.menu=menu}
+    @objc private func captureAndClose(_ timer:Timer) {
+        enteredTracking=true;titles=menu.items.map(\.title)
+        menu.cancelTrackingWithoutAnimation()
+    }
+    func track(in view:NSView)->[String] {
+        let timer=Timer(timeInterval:0.25,target:self,selector:#selector(captureAndClose(_:)),userInfo:nil,repeats:false)
+        RunLoop.main.add(timer,forMode:.eventTracking)
+        menu.popUp(positioning:nil,at:NSPoint(x:20,y:20),in:view)
+        timer.invalidate()
+        return titles
+    }
+}
 @MainActor enum Smoke {
     private static var started=false
     static func workbookLockProbe(_ model:AppModel,request:JSON) async {
@@ -260,9 +279,23 @@ private struct SmokeStructureView: View {
             preferences.selection=choice
             try await Task.sleep(nanoseconds:650_000_000)
             parent.contentView?.layoutSubtreeIfNeeded();parent.contentView?.displayIfNeeded()
-            NSApp.mainMenu?.update()
-            let label=L("app.menu.importVersions"),menus=NSApp.mainMenu.map(menuTitles) ?? []
-            guard menus.contains(label) else {throw BridgeError(code:"L10N_MENU",message:"Custom menu did not update: \(label)")}
+            let menuKeys:[StaticString]=["app.menu.importVersions","app.menu.workbooks","app.menu.focus","app.menu.evidence"]
+            let expectedMenus=menuKeys.map{preferences.localizer.string($0)}
+            let knownTitles=Set(menuKeys.flatMap{[Localizer(language:"en").string($0),Localizer(language:"ko").string($0)]})
+            let cachedMenus=NSApp.mainMenu.map(menuTitles) ?? []
+            let ownedMenus=(NSApp.mainMenu?.items ?? []).compactMap(\.submenu).filter{$0.items.contains(where:{knownTitles.contains($0.title)})}
+            var trackedMenus:[[String:Any]]=[],openedTitles:[String]=[]
+            guard let parentView=parent.contentView,!ownedMenus.isEmpty else {throw BridgeError(code:"L10N_MENU",message:"App-owned native menus are missing")}
+            for menu in ownedMenus {
+                let tracker=SmokeMenuTracker(menu),titles=tracker.track(in:parentView)
+                guard tracker.enteredTracking else {throw BridgeError(code:"L10N_MENU",message:"Native menu did not enter tracking")}
+                trackedMenus.append(["menu":menu.title,"titles_while_open":titles,"entered_tracking":true]);openedTitles += titles
+            }
+            guard expectedMenus.allSatisfy({openedTitles.contains($0)}) else {
+                try JSON(["language":choice.rawValue,"is_active":NSApp.isActive,"expected":expectedMenus,"cached_before_open":cachedMenus,"tracked":trackedMenus]).data().write(to:output.appendingPathComponent("language-menu-failure.json"))
+                throw BridgeError(code:"L10N_MENU",message:"Opened custom menus did not present selected-language labels")
+            }
+            let label=L("app.menu.importVersions")
             try captureView(parent,output.appendingPathComponent("native-language-\(choice.rawValue)-document.png"))
             if sheet.sheetParent == nil { parent.beginSheet(sheet,completionHandler:{_ in}) }
             try await Task.sleep(nanoseconds:350_000_000)
@@ -296,11 +329,11 @@ private struct SmokeStructureView: View {
                 let origin=view.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero
                 guard ObjectIdentifier(view)==state.0,abs(view.scaleFactor-state.1)<0.0001,abs(origin.x-state.2.x)<1,abs(origin.y-state.2.y)<1,view.currentPage===state.3 else {throw BridgeError(code:"L10N_VIEWPORT",message:"PDF identity, scale, viewport or page changed")}
             }
-            stages.append(["language":choice.rawValue,"custom_menu":label,"status":model.status,"draft_text_unchanged":true,"untouched_default_title_translated":true,"same_structure_canvas_and_source":true,"same_pdf_identity_zoom_viewport_and_page":true,"same_model_report_and_selection":true])
+            stages.append(["language":choice.rawValue,"custom_menu":label,"native_menu_tracking":trackedMenus,"status":model.status,"draft_text_unchanged":true,"untouched_default_title_translated":true,"same_structure_canvas_and_source":true,"same_pdf_identity_zoom_viewport_and_page":true,"same_model_report_and_selection":true])
         }
         guard structureCaptures.count==2,structureCaptures[0] != structureCaptures[1] else {throw BridgeError(code:"L10N_STRUCTURE",message:"Fallback placeholder labels did not redraw")}
         guard stages[0]["status"] as? String != stages[1]["status"] as? String else{throw BridgeError(code:"L10N_STATUS",message:"Stored typed status did not rerender")}
-        return ["passed":true,"stages":stages,"prepared_selection":preparedFacts,"mounted_sources":mountedSources,"draft_opaque_text":opaque,"ocr_language_setting_unchanged":true,"interaction_scope":"actual app, model-driven language setting and production import/settings hosts; no OS keyboard/mouse or full VoiceOver claim"]
+        return ["passed":true,"stages":stages,"prepared_selection":preparedFacts,"mounted_sources":mountedSources,"draft_opaque_text":opaque,"interaction_scope":"actual app; model-driven language, production import/settings hosts and native NSMenu tracking with timed cancellation; no OS keyboard/mouse or full VoiceOver claim"]
     }
     static func captureSelectedPages(_ model:AppModel,_ output:URL,selectionReady:()->Bool) async throws->[String:Any] {
         let report=model.report["report_id"].string,mode=model.pageMode,left=model.leftPageID,right=model.rightPageID,started=Date()
