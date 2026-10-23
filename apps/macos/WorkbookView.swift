@@ -1719,17 +1719,20 @@ struct WorkbookGrid: NSViewRepresentable {
             panes[name]=Pane(table:table,coordinator:coordinator,reveal:coordinator.parent.revealIntent,selected:table.selectedRow,origin:scroll.contentView.bounds.origin)
         }
         guard !panes.isEmpty else{throw BridgeError(code:"WORKBOOK_LAYOUT_GRID",message:"No live workbook grid is available.")}
+        func retainedState()throws {
+        let current=[model.projectID,model.reportID,model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.selectedChangeID,String(model.selectedRow),String(model.selectedColumn)]
+        guard current==identity,try model.beforeCell.data()==rawBefore,try model.afterCell.data()==rawAfter else{throw BridgeError(code:"WORKBOOK_LAYOUT_STATE",message:"Docking changed the selected report, cell or raw evidence.")}
+        for (name,pane) in panes {
+            guard let table=grid(content,pane:name),let coordinator=table.dataSource as? WorkbookGrid.Coordinator,let scroll=table.enclosingScrollView,table === pane.table,coordinator === pane.coordinator,coordinator.parent.revealIntent==pane.reveal,table.selectedRow==pane.selected else{throw BridgeError(code:"WORKBOOK_LAYOUT_IDENTITY",message:"Docking replaced a grid/coordinator or reset its selection/reveal authority.")}
+            let maximum=NSPoint(x:max(0,scroll.documentView!.frame.width-scroll.contentView.bounds.width),y:max(0,scroll.documentView!.frame.height-scroll.contentView.bounds.height))
+            guard abs(scroll.contentView.bounds.minX-min(pane.origin.x,maximum.x))<1,abs(scroll.contentView.bounds.minY-min(pane.origin.y,maximum.y))<1 else{throw BridgeError(code:"WORKBOOK_LAYOUT_VIEWPORT",message:"Docking moved the manual grid viewport beyond native size clamping.")}
+        }
+        }
         var geometry:[[String:Any]]=[]
         for dock in [WorkspaceChangesDock.left,.right] {
             layout.apply(.review);layout.update{$0.changesDock=dock;$0.inspectorDock=dock == .left ? .right:.left}
             try await Task.sleep(nanoseconds:350_000_000);content.layoutSubtreeIfNeeded()
-            let current=[model.projectID,model.reportID,model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.selectedChangeID,String(model.selectedRow),String(model.selectedColumn)]
-            guard current==identity,try model.beforeCell.data()==rawBefore,try model.afterCell.data()==rawAfter else{throw BridgeError(code:"WORKBOOK_LAYOUT_STATE",message:"Docking changed the selected report, cell or raw evidence.")}
-            for (name,pane) in panes {
-                guard let table=grid(content,pane:name),let coordinator=table.dataSource as? WorkbookGrid.Coordinator,let scroll=table.enclosingScrollView,table === pane.table,coordinator === pane.coordinator,coordinator.parent.revealIntent==pane.reveal,table.selectedRow==pane.selected else{throw BridgeError(code:"WORKBOOK_LAYOUT_IDENTITY",message:"Docking replaced a grid/coordinator or reset its selection/reveal authority.")}
-                let maximum=NSPoint(x:max(0,scroll.documentView!.frame.width-scroll.contentView.bounds.width),y:max(0,scroll.documentView!.frame.height-scroll.contentView.bounds.height))
-                guard abs(scroll.contentView.bounds.minX-min(pane.origin.x,maximum.x))<1,abs(scroll.contentView.bounds.minY-min(pane.origin.y,maximum.y))<1 else{throw BridgeError(code:"WORKBOOK_LAYOUT_VIEWPORT",message:"Docking moved the manual grid viewport beyond native size clamping.")}
-            }
+            try retainedState()
             func split(_ view:NSView)->NSSplitView? {
                 if let candidate=view as? NSSplitView,candidate.identifier?.rawValue=="Reviset.workspace.workbook.changes" {return candidate}
                 return view.subviews.lazy.compactMap(split).first
@@ -1741,8 +1744,19 @@ struct WorkbookGrid: NSViewRepresentable {
             try Smoke.captureView(window,folder.appendingPathComponent(file))
             geometry.append(["dock":dock.rawValue,"pane_height":pane.bounds.height,"list_height":list.bounds.height,"visible_list_height":list.visibleRect.height,"list_fraction":fraction,"capture":file])
         }
+        layout.update{$0.sidebarVisible=true;$0.inspectorVisible=true;$0.changesVisible=true;$0.sidebarWidth=279;$0.changesDock = .right;$0.changesWidth=389;$0.inspectorDock = .left;$0.inspectorWidth=341;$0.pageArrangement = .horizontal;$0.pageFraction=0.37}
+        try await Task.sleep(nanoseconds:250_000_000);try retainedState()
+        let custom=layout.configuration
+        layout.toggleFocus();try await Task.sleep(nanoseconds:250_000_000);try retainedState()
+        layout.update{$0.pageFraction=0.63;$0.pageArrangement = .vertical;$0.sidebarWidth=301;$0.changesDock = .left;$0.changesWidth=417;$0.inspectorWidth=355}
+        var merged=custom;merged.pageFraction=0.63;merged.pageArrangement = .vertical;merged.sidebarWidth=301;merged.changesDock = .left;merged.changesWidth=417;merged.inspectorWidth=355
+        try await Task.sleep(nanoseconds:250_000_000);try retainedState()
+        let stored=WorkspaceLayoutStore(scope:.workbook),mergedBytes=WorkspaceLayoutPreferences.data(.workbook)
+        guard layout.isFocused,!stored.isFocused,stored.configuration==merged else{throw BridgeError(code:"WORKBOOK_FOCUS_PERSIST",message:"A focused workbook geometry edit discarded its retained arrangement or persisted hidden panels.")}
+        layout.toggleFocus();try await Task.sleep(nanoseconds:250_000_000);try retainedState()
+        guard !layout.isFocused,layout.configuration==merged,WorkspaceLayoutPreferences.data(.workbook)==mergedBytes else{throw BridgeError(code:"WORKBOOK_FOCUS_RESTORE",message:"Leaving workbook Focus lost its edited arrangement or rewrote persisted bytes.")}
         layout.update{$0=original};try await Task.sleep(nanoseconds:250_000_000)
-        return ["transitions":geometry,"minimum_visible_list_fraction":0.6,"report_selection_raw_cells_grid_coordinator_and_viewport_preserved":true,"interaction_scope":"actual packaged production layout actions and native geometry; no OS gestures"]
+        return ["transitions":geometry,"minimum_visible_list_fraction":0.6,"report_selection_raw_cells_grid_coordinator_and_viewport_preserved":true,"focused_geometry_merges_into_persisted_baseline":true,"focus_exit_restores_custom_visibility_and_edited_geometry":true,"interaction_scope":"actual packaged production layout actions and native geometry; no OS gestures"]
     }
     private static func exerciseLanguageSwitch(_ model: WorkbookModel,window: NSWindow,folder: URL,originals: [WorkbookImportRow]) async throws -> [String:Any] {
         let preferences = LanguagePreferences.shared,defaults = UserDefaults.standard

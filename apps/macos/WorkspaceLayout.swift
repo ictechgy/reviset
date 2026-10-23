@@ -61,10 +61,12 @@ private struct WorkspaceLayoutEnvelope:Codable {
     let scope:WorkspaceLayoutScope
     @Published private(set) var configuration:WorkspaceLayoutConfiguration
     @Published private(set) var saved:[SavedWorkspaceLayout]=[]
+    // Focus is a reversible session action. An independently hidden set of
+    // panels remains a normal layout, including after preference reload.
+    @Published private(set) var isFocused=false
     @Published var settingsPresented=false
     private(set) var persistenceReadOnly=false
     private var preFocusConfiguration:WorkspaceLayoutConfiguration?
-    var isFocused:Bool {!configuration.sidebarVisible && !configuration.inspectorVisible && !configuration.changesVisible}
     init(scope:WorkspaceLayoutScope) {
         self.scope=scope
         configuration = .preset(.balanced,scope:scope)
@@ -124,14 +126,28 @@ private struct WorkspaceLayoutEnvelope:Codable {
     func update(_ edit:(inout WorkspaceLayoutConfiguration)->Void) {
         var next=configuration;edit(&next)
         guard next.isValid,next != configuration else{return}
-        preFocusConfiguration=nil;configuration=next;persist()
+        if isFocused,let previous=preFocusConfiguration,
+           next.sidebarVisible==configuration.sidebarVisible,next.inspectorVisible==configuration.inspectorVisible,next.changesVisible==configuration.changesVisible {
+            // A divider or geometry setting changes the retained arrangement,
+            // without promoting Focus's transient hidden panels to preferences.
+            var retained=next
+            retained.sidebarVisible=previous.sidebarVisible;retained.inspectorVisible=previous.inspectorVisible;retained.changesVisible=previous.changesVisible
+            preFocusConfiguration=retained;configuration=next;persist()
+        } else {applyConfiguration(next)}
+    }
+    private func applyConfiguration(_ next:WorkspaceLayoutConfiguration) {
+        guard next.isValid else{return}
+        let wasFocused=isFocused
+        preFocusConfiguration=nil;isFocused=false
+        if next != configuration {configuration=next;persist()}
+        else if wasFocused {persist()}
     }
     func apply(_ preset:WorkspaceLayoutPreset) {
-        if preset == .focus {setFocus(true)} else {preFocusConfiguration=nil;update{$0 = .preset(preset,scope:scope)}}
+        if preset == .focus {setFocus(true)} else {applyConfiguration(.preset(preset,scope:scope))}
     }
     func apply(_ savedLayout:SavedWorkspaceLayout) {
         guard saved.contains(where:{$0.id==savedLayout.id}),savedLayout.configuration.isValid else{return}
-        update{$0=savedLayout.configuration}
+        applyConfiguration(savedLayout.configuration)
     }
     func reset() {apply(.balanced)}
     func toggleFocus() {
@@ -141,11 +157,14 @@ private struct WorkspaceLayoutEnvelope:Codable {
         if focused {
             guard !isFocused else{return}
             preFocusConfiguration=configuration
+            isFocused=true
             var next=configuration;next.sidebarVisible=false;next.inspectorVisible=false;next.changesVisible=false
             configuration=next
-        } else if let previous=preFocusConfiguration {
-            preFocusConfiguration=nil;configuration=previous
-        } else if isFocused {apply(.balanced)}
+        } else if isFocused {
+            let previous=preFocusConfiguration
+            preFocusConfiguration=nil;isFocused=false
+            if let previous {configuration=previous}
+        }
     }
     func canSave(_ name:String)->Bool {
         let trimmed=name.trimmingCharacters(in:.whitespacesAndNewlines)

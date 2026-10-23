@@ -607,7 +607,8 @@ private struct SmokeStructureView: View {
     static func exerciseLayout(_ model:AppModel,layout:WorkspaceLayoutStore,output:URL) async throws->[String:Any] {
         let originalLayout=layout.configuration,originalZoom=model.zoom
         defer{layout.update{$0=originalLayout};model.zoom=originalZoom}
-        let chromeChecks=try await exerciseDocumentChrome(model,layout:layout)
+        model.zoom=1.5
+        let chromeChecks=try await exerciseDocumentChrome(model,layout:layout,output:output)
         layout.reset();model.tab="compare";model.focus=false;model.showChanges=true;try await model.updateChanges()
         try await Task.sleep(nanoseconds:300_000_000)
         func pane(_ view:NSView)->NSSplitView? {
@@ -671,24 +672,56 @@ private struct SmokeStructureView: View {
         layout.reset()
         return ["document_chrome_checks":chromeChecks,"default_change_pane_points":initial,"default_document_pane_points":canvas,"resized_change_pane_points":resized,"reopened_change_pane_points":remembered,"native_divider_and_height_reopen":true,"existing_snapshot_reopen":!model.report.isNull,"custom_layout_transitions":checks,"actual_dock_geometry":geometry,"retained_pdf_views":originalPDFs.count,"report_selection_page_zoom_and_pdf_identity_preserved":true,"captures":captures,"interaction_scope":"production layout actions and native public AppKit geometry; no OS gestures; PDF viewport may clamp naturally when its available size changes"]
     }
-    private static func exerciseDocumentChrome(_ model:AppModel,layout:WorkspaceLayoutStore)async throws->Int {
-        var checks=0
-        for tab in ["compare","history"] {
-            model.tab=tab
-            for preset in WorkspaceLayoutPreset.allCases {
-                layout.apply(preset)
-                try await check()
-            }
-            layout.reset();layout.update{$0.sidebarVisible=false};try await check()
-            layout.update{$0.sidebarVisible=true};try await check()
-        }
-        func check()async throws {
+    private static func exerciseDocumentChrome(_ model:AppModel,layout:WorkspaceLayoutStore,output:URL)async throws->Int {
+        var checks=0,observations:[[String:Any]]=[]
+        func check(_ action:String,focused:Bool)async throws {
             try await Task.sleep(nanoseconds:180_000_000)
             let names=Set(NSApp.windows.compactMap(\.contentView).flatMap{workspaceLayoutMarkers(in:$0)}.compactMap{$0.identifier?.rawValue})
             let report=names.contains("Reviset.document.reportBar"),versions=names.contains("Reviset.document.versionBar")
-            guard report == !layout.isFocused,versions == (!layout.isFocused && model.tab != "compare") else{throw BridgeError(code:"LAYOUT_REPORT_CHROME",message:"A projects-panel or preset action incorrectly hid the saved-report or history-version controls.")}
+            guard layout.isFocused==focused,model.focus==focused,report == !focused,versions == (!focused && model.tab != "compare") else{throw BridgeError(code:"LAYOUT_REPORT_CHROME",message:"A panel or Focus action incorrectly changed the report/history controls or explicit focus state.")}
+            observations.append(["tab":model.tab,"action":action,"focused":focused,"report_bar":report,"history_version_bar":versions])
             checks+=1
         }
+        for tab in ["compare","history"] {
+            model.tab=tab
+            for preset in WorkspaceLayoutPreset.allCases {layout.apply(preset);try await check(preset.rawValue,focused:preset == .focus)}
+            layout.reset();layout.update{$0.sidebarVisible=false};try await check("projects hidden",focused:false)
+            layout.update{$0.sidebarVisible=true};try await check("projects shown",focused:false)
+            layout.update{$0.sidebarWidth=279;$0.changesDock = .right;$0.changesWidth=389;$0.changesHeight=233;$0.inspectorVisible=false;$0.inspectorDock = .left;$0.inspectorWidth=341;$0.pageArrangement = .vertical;$0.pageFraction=0.37}
+            layout.update{$0.sidebarVisible=false};layout.update{$0.changesVisible=false}
+            try await check("manually all panels hidden",focused:false)
+            let hidden=layout.configuration,hiddenBytes=WorkspaceLayoutPreferences.data(.document),reloaded=WorkspaceLayoutStore(scope:.document)
+            guard !reloaded.isFocused,reloaded.configuration==hidden else{throw BridgeError(code:"LAYOUT_HIDDEN_RELOAD",message:"An independently hidden layout reopened as Focus.")}
+            if let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}) {try captureView(window,output.appendingPathComponent("native-layout-"+LanguagePreferences.shared.effectiveLanguage+"-manual-hidden-"+tab+".png"))}
+            for cycle in 1...2 {
+                layout.toggleFocus();try await check("all-hidden Focus on \(cycle)",focused:true)
+                layout.update{$0.sidebarVisible=false};layout.update{$0.changesVisible=false};layout.update{$0.inspectorVisible=false}
+                guard layout.isFocused,layout.configuration==hidden,WorkspaceLayoutPreferences.data(.document)==hiddenBytes else{throw BridgeError(code:"LAYOUT_HIDDEN_FOCUS",message:"Equal-geometry Focus entry or no-op synchronization changed the retained layout.")}
+                layout.toggleFocus();try await check("all-hidden Focus restored \(cycle)",focused:false)
+                guard layout.configuration==hidden,WorkspaceLayoutPreferences.data(.document)==hiddenBytes else{throw BridgeError(code:"LAYOUT_HIDDEN_RESTORE",message:"Leaving Focus replaced an independently hidden custom layout or its persisted bytes.")}
+            }
+            layout.update{$0.sidebarVisible=true;$0.changesVisible=true;$0.inspectorVisible=true}
+            try await check("custom geometry before Focus",focused:false)
+            let before=layout.configuration,report=model.report["report_id"].string,selection=[model.projectID,model.selectedChangeID,model.leftPageID,model.rightPageID],zoom=model.zoom
+            func pdfs(_ view:NSView)->[PDFView] {(view as? PDFView).map{[$0]} ?? view.subviews.flatMap(pdfs)}
+            let sources=NSApp.windows.compactMap(\.contentView).flatMap(pdfs).map{($0,$0.document,$0.currentPage,$0.scaleFactor)}
+            guard tab != "compare" || sources.count==2 else{throw BridgeError(code:"LAYOUT_FOCUS_SOURCE_COUNT",message:"Two live source PDF views are required for focused geometry qualification.")}
+            func retainedSources()throws {
+                guard model.report["report_id"].string==report,[model.projectID,model.selectedChangeID,model.leftPageID,model.rightPageID]==selection,model.zoom==zoom else{throw BridgeError(code:"LAYOUT_FOCUS_SELECTION",message:"Editing focused geometry changed the report or selected source evidence.")}
+                let current=NSApp.windows.compactMap(\.contentView).flatMap(pdfs)
+                guard current.count==sources.count else{throw BridgeError(code:"LAYOUT_FOCUS_HOST",message:"Editing focused geometry replaced source hosts.")}
+                for (pdf,document,page,scale) in sources {guard current.contains(where:{$0 === pdf}),pdf.document === document,pdf.currentPage === page,abs(pdf.scaleFactor-scale)<0.001 else{throw BridgeError(code:"LAYOUT_FOCUS_PDF",message:"Editing focused geometry replaced the PDF or changed its page/zoom.")}}
+            }
+            layout.toggleFocus();try await check("geometry Focus on",focused:true)
+            layout.update{$0.pageFraction=0.63;$0.pageArrangement = .horizontal;$0.sidebarWidth=301;$0.changesDock = .left;$0.changesWidth=417;$0.inspectorWidth=355}
+            var merged=before;merged.pageFraction=0.63;merged.pageArrangement = .horizontal;merged.sidebarWidth=301;merged.changesDock = .left;merged.changesWidth=417;merged.inspectorWidth=355
+            try await check("geometry edited during Focus",focused:true);try retainedSources()
+            let stored=WorkspaceLayoutStore(scope:.document),mergedBytes=WorkspaceLayoutPreferences.data(.document)
+            guard !stored.isFocused,stored.configuration==merged else{throw BridgeError(code:"LAYOUT_FOCUS_PERSIST",message:"A focused geometry edit persisted transient hidden panels or lost the retained arrangement.")}
+            layout.toggleFocus();try await check("edited geometry restored",focused:false);try retainedSources()
+            guard layout.configuration==merged,WorkspaceLayoutPreferences.data(.document)==mergedBytes else{throw BridgeError(code:"LAYOUT_FOCUS_GEOMETRY",message:"Focus exit lost the edited geometry or rewrote its persisted bytes.")}
+        }
+        try JSON(["checks":checks,"manual_all_hidden_remains_nonfocus":true,"equal_geometry_focus_published_and_restored":true,"focused_geometry_merges_into_persisted_baseline":true,"report_selection_pdf_identity_page_and_zoom_retained":true,"observations":observations,"viewport_scope":"existing native hosts remain; viewport may clamp naturally when pane dimensions change","interaction_scope":"production model/layout actions and AppKit content; no OS gestures"]).data().write(to:output.appendingPathComponent("document-chrome-observations.json"))
         return checks
     }
     private static func documentLockProbe(_ model:AppModel,request:JSON,output:URL)async throws {

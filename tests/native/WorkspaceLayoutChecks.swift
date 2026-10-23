@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import PDFKit
+import Combine
 
 @MainActor private enum LayoutProbeRegistry {
     static var pdfs:[String:PDFView]=[:]
@@ -178,7 +179,47 @@ private struct LayoutHarness:View {
             try require(layout.isFocused && layout.configuration.changesDock==custom.changesDock && layout.configuration.pageFraction==custom.pageFraction,"Focus did not retain custom geometry")
             layout.toggleFocus();await settle();try assertIdentity("restored custom focus")
             try require(layout.configuration==custom && WorkspaceLayoutPreferences.data(.document)==customBytes,"Focus toggle lost custom layout or rewrote persisted bytes")
+            for scoped in [layout,WorkspaceLayoutStore(scope:.workbook)] {
+                scoped.update{$0=custom};scoped.toggleFocus()
+                var edits=0
+                scoped.update{edits+=1;$0.pageFraction=0.63;$0.pageArrangement = .horizontal;$0.sidebarWidth=301;$0.changesDock = .left;$0.changesWidth=417;$0.inspectorWidth=355}
+                var merged=custom;merged.pageFraction=0.63;merged.pageArrangement = .horizontal;merged.sidebarWidth=301;merged.changesDock = .left;merged.changesWidth=417;merged.inspectorWidth=355
+                await settle();try assertIdentity("\(scoped.scope.rawValue) focused geometry edit")
+                try require(edits==1 && scoped.isFocused,"A focused geometry edit ran twice or cancelled Focus")
+                let duringFocus=WorkspaceLayoutStore(scope:scoped.scope),mergedBytes=WorkspaceLayoutPreferences.data(scoped.scope)
+                try require(!duringFocus.isFocused && duringFocus.configuration==merged,"Focused geometry persisted hidden panel state or lost the retained arrangement")
+                scoped.toggleFocus();await settle();try assertIdentity("\(scoped.scope.rawValue) edited Focus restored")
+                try require(!scoped.isFocused && scoped.configuration==merged && WorkspaceLayoutPreferences.data(scoped.scope)==mergedBytes,"Focus exit lost merged geometry or rewrote stored bytes")
+                scoped.toggleFocus();edits=0;scoped.update{edits+=1;$0.sidebarVisible.toggle()}
+                try require(edits==1 && !scoped.isFocused && scoped.configuration.sidebarVisible,"An explicit visibility edit did not leave Focus exactly once")
+            }
+            layout.update{$0=custom};await settle()
             layout.update{$0.sidebarVisible=false};try require(!layout.isFocused,"Hiding projects incorrectly enabled focus")
+            layout.update{$0.inspectorVisible=false};layout.update{$0.changesVisible=false};await settle()
+            let manuallyHidden=layout.configuration,hiddenBytes=WorkspaceLayoutPreferences.data(.document)
+            try require(!layout.isFocused,"Manually hiding every panel incorrectly enabled Focus")
+            let hiddenReopened=WorkspaceLayoutStore(scope:.document)
+            try require(!hiddenReopened.isFocused && hiddenReopened.configuration==manuallyHidden,"Reloading an all-hidden layout incorrectly enabled Focus")
+            var focusSignals:[Bool]=[]
+            let focusSubscription=layout.$isFocused.dropFirst().sink{focusSignals.append($0)}
+            for cycle in 1...2 {
+                layout.toggleFocus();await settle();try assertIdentity("all-hidden Focus on \(cycle)")
+                try require(layout.isFocused && layout.configuration==manuallyHidden,"Focus did not activate when the panel geometry was already all-hidden")
+                layout.update{$0.sidebarVisible=false};layout.update{$0.inspectorVisible=false};layout.update{$0.changesVisible=false}
+                layout.apply(.focus)
+                try require(layout.isFocused,"No-op panel synchronization or reapplying Focus cancelled the active session")
+                layout.toggleFocus();await settle();try assertIdentity("all-hidden Focus restored \(cycle)")
+                try require(!layout.isFocused && layout.configuration==manuallyHidden && WorkspaceLayoutPreferences.data(.document)==hiddenBytes,"All-hidden Focus exit lost custom docks/dimensions or rewrote persisted bytes")
+            }
+            try require(focusSignals==[true,false,true,false],"Equal-geometry Focus changes were not independently published: \(focusSignals)")
+            withExtendedLifetime(focusSubscription){}
+            try require(layout.saveCurrent(named:"Temporary all-hidden"),"All-hidden saved-layout setup")
+            let hiddenSaved=layout.saved.last!
+            layout.apply(.focus);layout.apply(hiddenSaved);await settle()
+            try require(!layout.isFocused && layout.configuration==manuallyHidden,"Applying an equal-geometry saved layout did not leave Focus")
+            let savedHiddenReopened=WorkspaceLayoutStore(scope:.document)
+            try require(!savedHiddenReopened.isFocused && savedHiddenReopened.configuration==manuallyHidden,"Saved all-hidden layout reopened as Focus")
+            layout.remove(hiddenSaved.id)
             layout.apply(.review);try require(!layout.isFocused,"Review incorrectly enabled focus")
             layout.reset();await settle()
             let changes=controllers()["Reviset.workspace.probe.changes"]!,sizing=changes as! WorkspacePaneSizing

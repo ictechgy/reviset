@@ -145,6 +145,7 @@ struct MainView: View {
         .onChange(of:model.inspector){layout.update{$0.inspectorVisible=model.inspector}}
         .onChange(of:model.showChanges){layout.update{$0.changesVisible=model.showChanges}}
         .onChange(of:layout.configuration){syncLayoutFlags()}
+        .onChange(of:layout.isFocused){syncLayoutFlags()}
         .onChange(of:model.tab){if model.tab != "export"{model.changeRange()}}
         .sheet(isPresented:$model.importSheet){ImportView()}
         .alert(item:$model.reorderConfirmation){request in Alert(title:Text(L("doc.reorder.title")),message:Text(request.message),primaryButton:.destructive(Text(L("doc.reorder.confirm"))){Task{await model.confirmReorder(request)}},secondaryButton:.cancel(Text(L("doc.common.cancel"))))}
