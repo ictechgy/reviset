@@ -207,7 +207,7 @@ struct CompareWorkspace: View {
                 Button{model.inspector.toggle()}label:{Label(L("doc.compare.evidence"),systemImage:"sidebar.right")}
             }.padding(.horizontal,16).padding(.top,12).onChange(of:model.from){model.changeRange()}.onChange(of:model.to){model.changeRange()}
             HStack{
-                if model.revisions.count>1 {Picker(L("doc.compare.documentView"),selection:$model.pageMode){Text(L("doc.compare.both")).tag("both");Text(L("doc.compare.beforeOnly")).tag("before");Text(L("doc.compare.afterOnly")).tag("after")}.pickerStyle(.segmented).frame(width:295)}
+                if model.revisions.count>1 {HStack(spacing:8){Text(L("doc.compare.documentView")).lineLimit(1).fixedSize();Picker(L("doc.compare.documentView"),selection:$model.pageMode){Text(L("doc.compare.both")).tag("both");Text(L("doc.compare.beforeOnly")).tag("before");Text(L("doc.compare.afterOnly")).tag("after")}.labelsHidden().pickerStyle(.segmented).frame(minWidth:210,idealWidth:250,maxWidth:300)}}
                 Picker(L("doc.common.zoom"),selection:$model.zoom){Text(L("doc.common.fit")).tag(0.0);Text("100%").tag(1.0);Text("150%").tag(1.5);Text("200%").tag(2.0)}.frame(width:160)
                 Spacer();Button(model.showChanges ? L("doc.changes.collapse"):L("doc.changes.expand")){model.showChanges.toggle()}
             }.controlSize(.small).padding(.horizontal,16).padding(.vertical,10)

@@ -60,7 +60,7 @@ struct MappingSheet: View {
             TextField(L("doc.tail.changeReasonRequired"), text: $reason, axis:.vertical).lineLimit(2...3).textFieldStyle(.roundedBorder).disabled(saving)
             if !failure.isEmpty { Text(failure).font(.caption).foregroundStyle(.red) }
             }.frame(maxWidth:.infinity,alignment:.leading) }
-            HStack { if let message=validationMessage { Text(message).foregroundStyle(message==L("doc.tail.enterChangeReason") ? Color.secondary:Color.orange) };Spacer();Text(L("doc.tail.inputLengthOf2000", .count(reason.utf16.count))).help(L("doc.tail.someEmojiCountAsMultipleUnits")).foregroundStyle(reason.utf16.count>2000 ? Color.orange : Color.secondary) }.font(.caption)
+            HStack { if let message=validationMessage { Text(message).foregroundStyle(message==L("doc.tail.enterChangeReason") ? Color.secondary:Color.orange) };Spacer();Text(L("doc.tail.inputLengthOf2000", .integer(reason.utf16.count))).help(L("doc.tail.someEmojiCountAsMultipleUnits")).foregroundStyle(reason.utf16.count>2000 ? Color.orange : Color.secondary) }.font(.caption)
 
             HStack { Text(L("doc.tail.cancelBeforeApplyDoesNotSave")).font(.caption).foregroundStyle(.secondary); Spacer(); if saving { ProgressView().controlSize(.small) }; Button(L("doc.tail.applyAndReanalyze")) { Task { await apply() } }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).disabled(!valid || saving || model.busy).accessibilityHint(Text(validationMessage ?? L("doc.tail.applySelectedRelationAnalyzeNewReport"))) }
         }.padding(24).frame(width: 900, height: 720).background(Color(nsColor:.windowBackgroundColor))

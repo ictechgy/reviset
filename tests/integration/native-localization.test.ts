@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
 import {buildLocalizationResources, readLocalizationCatalog, validateLocalizationCatalog, validateLocalizationKeys, validateSourceLocalizationKeys} from '../../scripts/localization.js';
 
 test('localization catalog rejects missing languages, placeholders, duplicate keys and unresolved source keys', async () => {
@@ -68,6 +69,7 @@ let count = UIMessage.plural("test.count", 2)
 
 test('native localization preserves raw data, chooses plural forms, falls back and rerenders typed state', {skip: process.platform !== 'darwin', timeout: 45000}, async () => {
   const root = await mkdtemp(join(tmpdir(), 'reviset-native-localization-'));
+  const bundleIdentifier = 'org.reviset.localization-checks.' + randomUUID();
   try {
     const contents = join(root, 'LocalizationProbe.app/Contents');
     const resources = join(contents, 'Resources');
@@ -75,7 +77,7 @@ test('native localization preserves raw data, chooses plural forms, falls back a
     const domains = join(root, 'catalog');
     await mkdir(join(contents, 'MacOS'), {recursive: true});
     await mkdir(domains);
-    await writeFile(join(contents, 'Info.plist'), '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>LocalizationProbe</string><key>CFBundleIdentifier</key><string>org.reviset.localization-checks</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleDevelopmentRegion</key><string>en</string><key>CFBundleLocalizations</key><array><string>en</string><string>ko</string></array></dict></plist>');
+    await writeFile(join(contents, 'Info.plist'), '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>LocalizationProbe</string><key>CFBundleIdentifier</key><string>' + bundleIdentifier + '</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleDevelopmentRegion</key><string>en</string><key>CFBundleLocalizations</key><array><string>en</string><string>ko</string></array></dict></plist>');
     const common = JSON.parse(await readFile(resolve('apps/macos/Localization/Common.json'), 'utf8')) as Record<string, {en: string; ko: string}>;
     const fixture = {
       ...common,
@@ -95,5 +97,8 @@ test('native localization preserves raw data, chooses plural forms, falls back a
     execFileSync('swiftc', ['-warnings-as-errors', '-swift-version', '5', '-parse-as-library', '-target', 'arm64-apple-macos14.0', 'apps/macos/Localization.swift', 'tests/native/LocalizationChecks.swift', '-o', executable], {timeout: 25000, stdio: 'pipe'});
     const stdout = execFileSync(executable, [join(root, 'LocalizationProbe.app')], {encoding: 'utf8', timeout: 12000, env: {PATH: '/usr/bin:/bin'}});
     assert.match(stdout, /PASS localization:/u);
-  } finally { await rm(root, {recursive: true, force: true}); }
+  } finally {
+    spawnSync('/usr/bin/defaults', ['delete', bundleIdentifier], {stdio: 'ignore'});
+    await rm(root, {recursive: true, force: true});
+  }
 });

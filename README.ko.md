@@ -71,7 +71,7 @@ open release/Reviset-Local.app
 
 앱의 **5버전 합성 데모**와 **3버전 엑셀 데모**로 직접 확인할 수 있습니다. 문서 집중 모드는 `⌘⌥F`, 근거 패널은 `⌘⌥I`입니다.
 
-**Reviset → 설정…**(`⌘,`)에서 **시스템 기본**, **English**, **한국어**를 고릅니다. 시스템 기본은 앱 실행 또는 해당 옵션을 다시 선택할 때 지원하는 시스템 언어의 선호 순서를 확인하고 해당 언어가 없으면 영어로 표시합니다. macOS 언어 순서를 바꾼 뒤에는 Reviset을 다시 여세요. 앱 자체의 문구는 작성 중인 가져오기·검토 초안을 유지하면서 바뀝니다. 일부 macOS 메뉴는 앱을 다시 열면 시스템 앱 언어를 따를 수 있습니다.
+**Reviset → 설정…**(`⌘,`)에서 **시스템 기본**, **English**, **한국어**를 고릅니다. 시스템 기본은 앱 실행 시 지원하는 시스템 언어의 선호 순서를 확인하고 해당 언어가 없으면 영어로 표시합니다. macOS 언어 순서를 바꾼 뒤에는 Reviset을 다시 여세요. 앱 자체의 문구는 작성 중인 가져오기·검토 초안을 유지하면서 바뀝니다. 일부 macOS 메뉴는 앱을 다시 열면 시스템 앱 언어를 따를 수 있습니다.
 
 화면 언어와 OCR은 별도입니다. OCR은 현재 **한국어·영어**로 설정되며 다른 언어의 OCR 정확도를 새로 보장하지 않습니다. [언어 지원 범위와 원문 보존 계약](docs/LOCALIZATION.md)을 참고하세요.
 
@@ -86,7 +86,7 @@ open release/Reviset-Local.app
 npm run fixtures
 npm run cli -- analyze --manifest tests/fixtures/generated/forward/manifest.json
 npm run cli -- query --project prj_forward --tool list_changes --args '{"kind":"text_modified","max_output_tokens":8000}'
-npm run cli -- export --project prj_forward --out artifacts/forward --language ko
+npm run cli -- export --project prj_forward --out artifacts/forward-ko --language ko
 ```
 
 CLI 저장소 기본값은 `.docver/`이고 `--store PATH`로 바꿀 수 있습니다. 문서 manifest의 `revisions` 배열 순서가 버전 순서입니다. 스프레드시트 CLI는 `workbook-analyze`, `workbook-query`, `workbook-export`를 제공합니다. [스프레드시트 계약](docs/SPREADSHEETS.md)을 참고하세요.

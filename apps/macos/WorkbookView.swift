@@ -1596,9 +1596,6 @@ struct WorkbookGrid: NSViewRepresentable {
             guard let window = NSApp.windows.first(where:{$0.isVisible && containsGrid($0.contentView)}) else { throw BridgeError(code:"WORKBOOK_SMOKE_WINDOW",message:"실제 네이티브 통합 문서 그리드 창이 없습니다.") }
             checks["pane_evidence"] = try assertPanes(model,window:window)
             checks["header_scroll_geometry"] = try await exerciseHeaderScrollGeometry(model,window:window)
-            if request["language_switch_check"].bool {
-                checks["language_switch"] = try await exerciseLanguageSwitch(model,window:window,folder:folder,originals:originals)
-            }
             if request.dictionary.keys.contains("expected_blank_formatting_warning") { checks["rendered_blank_formatting_warning"] = try checkBlankFormattingWarning(model,request:request) }
             try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-compare.png"))
             if request["require_dense_raw_proof"].bool {
@@ -1677,6 +1674,14 @@ struct WorkbookGrid: NSViewRepresentable {
             for original in originals { guard try ImportFileIdentity.capture(original.url) == original.identity else { throw BridgeError(code:"WORKBOOK_SMOKE_ORIGINAL",message:"원본 파일의 SHA-256 또는 크기가 달라졌습니다.") } }
             checks["original_bytes_unchanged"] = true; checks["report_metadata_unchanged"] = true
             let config = model.mcp
+            // Locale qualification deliberately changes version/selection state.
+            // Run it only after production checks, captures, and the MCP snapshot
+            // so those results cannot inherit its temporary navigation choices.
+            if request["language_switch_check"].bool {
+                model.tab = "compare"
+                try await Task.sleep(nanoseconds:300_000_000)
+                checks["language_switch"] = try await exerciseLanguageSwitch(model,window:window,folder:folder,originals:originals)
+            }
             model.closeReads()
             guard !model.canCopyMCP,!model.ready else { throw BridgeError(code:"WORKBOOK_SMOKE_CLOSE_AUTHORITY",message:"창을 닫은 뒤 이전 범위의 복사 권한이 남았습니다.") }
             checks["closed_workspace_invalidates_authority"] = true

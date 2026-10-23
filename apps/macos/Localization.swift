@@ -183,8 +183,8 @@ private final class DisplayFormatters: @unchecked Sendable {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let bundle: Bundle
     var selection: UILanguage {
+        willSet { objectWillChange.send() }
         didSet {
-            objectWillChange.send()
             defaults.set(selection.rawValue, forKey: Self.preferenceKey)
             localizer = Localizer(language: selection == .system ? Localizer.preferredLanguage() : selection.rawValue, bundle: bundle)
         }

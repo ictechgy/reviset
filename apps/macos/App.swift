@@ -201,7 +201,7 @@ private struct SmokeStructureView: View {
         let defaults=UserDefaults.standard,domain=Bundle.main.bundleIdentifier ?? "org.docver.native"
         let stored=defaults.persistentDomain(forName:domain)?[LanguagePreferences.preferenceKey]
         let status=model.statusMessage,identity=ObjectIdentifier(model),report=try model.report.data(),project=model.projectID
-        let selected=model.selectedChangeID,left=model.leftPageID,right=model.rightPageID,from=model.from,to=model.to,originalZoom=model.zoom,originalTab=model.tab
+        let originalZoom=model.zoom,originalTab=model.tab
         defer {
             preferences.selection=original;model.statusMessage=status;model.zoom=originalZoom;model.tab=originalTab
             if let stored { defaults.set(stored,forKey:LanguagePreferences.preferenceKey) }
@@ -216,7 +216,16 @@ private struct SmokeStructureView: View {
         func fields(_ root:NSView)->[NSTextField] { (root as? NSTextField).map{[$0]} ?? [] + root.subviews.flatMap(fields) }
         func menuTitles(_ menu:NSMenu)->[String] { menu.items.flatMap{[$0.title]+($0.submenu.map(menuTitles) ?? [])} }
         func pdfs(_ root:NSView)->[PDFView] { if let view=root as? PDFView {return [view]};return root.subviews.flatMap(pdfs) }
-        model.tab="compare";model.zoom=1.6
+        model.statusMessage=UIMessage("app.settings.description")
+        model.tab="compare";model.zoom=1.5
+        // The tab intentionally changes query scope. Settle that setup before
+        // taking the baseline that a language mutation must preserve.
+        try await Task.sleep(nanoseconds:50_000_000)
+        try await model.updateChanges()
+        guard !model.loadingChanges else {throw BridgeError(code:"L10N_SETUP",message:"Compare range did not settle")}
+        let viewportOutput=output.appendingPathComponent("language-viewport")
+        try FileManager.default.createDirectory(at:viewportOutput,withIntermediateDirectories:true)
+        let mountedSources=try await captureSelectedPages(model,viewportOutput,selectionReady:{!model.loadingChanges && model.tab=="compare"})
         let expectedPages=model.pageMode == "before" ? [model.leftPageID] : model.pageMode == "after" ? [model.rightPageID] : [model.leftPageID,model.rightPageID]
         let expectedPDFCount=expectedPages.filter{!$0.isEmpty}.count
         var pdfViews:[PDFView]=[]
@@ -232,6 +241,9 @@ private struct SmokeStructureView: View {
         }}
         try await Task.sleep(nanoseconds:200_000_000)
         let pdfState=pdfViews.map { view in (ObjectIdentifier(view),view.scaleFactor,view.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero,view.currentPage) }
+        let selected=model.selectedChangeID,left=model.leftPageID,right=model.rightPageID,from=model.from,to=model.to
+        func selectionFacts()->[String:Any] { ["selected":model.selectedChangeID ?? "","left":model.leftPageID,"right":model.rightPageID,"from":model.from,"to":model.to,"project":model.projectID,"report":model.report["report_id"].string,"tab":model.tab,"loading_changes":model.loadingChanges] }
+        let preparedFacts=selectionFacts()
         let emptySheet=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:500),styleMask:[.titled,.closable],backing:.buffered,defer:false)
         emptySheet.isOpaque=true;emptySheet.backgroundColor = .windowBackgroundColor
         emptySheet.contentView=NSHostingView(rootView:ImportView(initialRows:[row]).environmentObject(model).background(Color(nsColor:.windowBackgroundColor)))
@@ -244,7 +256,6 @@ private struct SmokeStructureView: View {
         structure.contentView=NSHostingView(rootView:SmokeStructureView(page:structurePage))
         func canvases(_ root:NSView)->[StructureCanvas.Canvas] {if let view=root as? StructureCanvas.Canvas{return [view]};return root.subviews.flatMap(canvases)}
         var canvasID:ObjectIdentifier?,structureCaptures:[Data]=[],stages:[[String:Any]]=[]
-        model.statusMessage=UIMessage("app.settings.description")
         for choice in [UILanguage.en,.ko] {
             preferences.selection=choice
             try await Task.sleep(nanoseconds:650_000_000)
@@ -275,7 +286,10 @@ private struct SmokeStructureView: View {
             settings.contentView=NSHostingView(rootView:LanguageSettingsView().environment(\.locale,preferences.localizer.locale).background(Color(nsColor:.windowBackgroundColor)))
             parent.beginSheet(settings,completionHandler:{_ in});try await Task.sleep(nanoseconds:350_000_000)
             try captureView(settings,output.appendingPathComponent("native-language-\(choice.rawValue)-settings.png"));parent.endSheet(settings);settings.orderOut(nil)
-            guard ObjectIdentifier(model)==identity,model.projectID==project,try model.report.data()==report,model.selectedChangeID==selected,model.leftPageID==left,model.rightPageID==right,model.from==from,model.to==to else {throw BridgeError(code:"L10N_MODEL",message:"Language switch changed document model or selection")}
+            guard ObjectIdentifier(model)==identity,model.projectID==project,try model.report.data()==report,model.selectedChangeID==selected,model.leftPageID==left,model.rightPageID==right,model.from==from,model.to==to else {
+                try JSON(["before":preparedFacts,"after":selectionFacts(),"same_model":ObjectIdentifier(model)==identity,"same_report_bytes":try model.report.data()==report]).data().write(to:output.appendingPathComponent("language-model-failure.json"))
+                throw BridgeError(code:"L10N_MODEL",message:"Language switch changed document model or selection")
+            }
             let currentPDFs=parent.contentView.map(pdfs) ?? []
             guard currentPDFs.count==pdfState.count else {throw BridgeError(code:"L10N_VIEWPORT",message:"PDF view count changed")}
             for (view,state) in zip(currentPDFs,pdfState) {
@@ -286,7 +300,7 @@ private struct SmokeStructureView: View {
         }
         guard structureCaptures.count==2,structureCaptures[0] != structureCaptures[1] else {throw BridgeError(code:"L10N_STRUCTURE",message:"Fallback placeholder labels did not redraw")}
         guard stages[0]["status"] as? String != stages[1]["status"] as? String else{throw BridgeError(code:"L10N_STATUS",message:"Stored typed status did not rerender")}
-        return ["passed":true,"stages":stages,"draft_opaque_text":opaque,"ocr_language_setting_unchanged":true,"interaction_scope":"actual app, model-driven language setting and production import/settings hosts; no OS keyboard/mouse or full VoiceOver claim"]
+        return ["passed":true,"stages":stages,"prepared_selection":preparedFacts,"mounted_sources":mountedSources,"draft_opaque_text":opaque,"ocr_language_setting_unchanged":true,"interaction_scope":"actual app, model-driven language setting and production import/settings hosts; no OS keyboard/mouse or full VoiceOver claim"]
     }
     static func captureSelectedPages(_ model:AppModel,_ output:URL,selectionReady:()->Bool) async throws->[String:Any] {
         let report=model.report["report_id"].string,mode=model.pageMode,left=model.leftPageID,right=model.rightPageID,started=Date()

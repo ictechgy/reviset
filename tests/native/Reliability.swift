@@ -35,6 +35,10 @@ import AppKit
             try require(code=="OTHER_FAILURE" ? rendered.contains(code) && rendered.contains(expected) : rendered==expected,"NativeErrorLocalizationLostCodeOrMessage-"+code)
         }
         try require(changeDisplayName(JSON(["kind":"future_kind-{0}-%@"]))=="future_kind-{0}-%@","UnknownChangeKindWasHidden")
+        let staleDetail="원본 진단 {0} %@ /opaque/path"
+        let knownBackend=BridgeError(code:"STALE_REPORT",message:staleDetail)
+        let knownPresentation=Localizer(language:"en").render(bridgeErrorMessage(knownBackend))
+        try require(knownPresentation.contains("Refresh") && knownPresentation.contains("STALE_REPORT") && knownPresentation.contains(staleDetail) && knownBackend.message==staleDetail,"KnownBackendGuidanceLostRawDiagnostic")
         let typedDiagnostic=BridgeError(code:"HELPER_PROTOCOL",message:UIMessage("doc.error.diagnosticLog",.message(UIMessage("doc.tail.engine.responseUnreadableExitCode",.integer(1234))),.verbatim("/tmp/source-{0}-%@.log")))
         try require(typedDiagnostic.localizedDescription.contains("1234") && typedDiagnostic.localizedDescription.contains("/tmp/source-{0}-%@.log"),"TypedErrorLostOffActorDiagnosticDetail")
         try require(JSON(1.9).int==1 && JSON(-1.9).int == -1,"IntegerTruncationChanged")

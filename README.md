@@ -69,7 +69,7 @@ The Node executable used for packaging must link only system dylibs. If the buil
 
 Try the built-in **Open five-revision synthetic demo** and **Three-version Excel demo**. Document focus mode is `⌘⌥F`; the evidence panel is `⌘⌥I`.
 
-Choose **Reviset → Settings…** (`⌘,`) for **System Default**, **English**, or **한국어**. System Default resolves the supported system-language preference order at launch or when reselected and falls back to English. Reopen Reviset after changing the macOS language order. The app updates its own interface without clearing import/review drafts or starting a new analysis. Some macOS-owned menu items may follow the system app language after reopening.
+Choose **Reviset → Settings…** (`⌘,`) for **System Default**, **English**, or **한국어**. System Default resolves the supported system-language preference order at launch and falls back to English. Reopen Reviset after changing the macOS language order. The app updates its own interface without clearing import/review drafts or starting a new analysis. Some macOS-owned menu items may follow the system app language after reopening.
 
 Interface language and OCR are separate: OCR remains configured for **Korean and English**. Other scripts can be preserved from an available original text layer, with the existing reading-order and extraction limits. See [language support and invariants](docs/LOCALIZATION.md).
 
@@ -84,7 +84,7 @@ Run these commands from the source checkout after completing the app build above
 npm run fixtures
 npm run cli -- analyze --manifest tests/fixtures/generated/forward/manifest.json
 npm run cli -- query --project prj_forward --tool list_changes --args '{"kind":"text_modified","max_output_tokens":8000}'
-npm run cli -- export --project prj_forward --out artifacts/forward --language en
+npm run cli -- export --project prj_forward --out artifacts/forward-en --language en
 ```
 
 The CLI store defaults to `.docver/`; override it with `--store PATH`. The order of `revisions` in a document manifest defines version order. Spreadsheet commands are `workbook-analyze`, `workbook-query`, and `workbook-export`; see the [spreadsheet contract](docs/SPREADSHEETS.md).

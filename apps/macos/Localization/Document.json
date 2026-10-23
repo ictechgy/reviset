@@ -2066,5 +2066,57 @@
   "doc.error.unsupportedAction": {
     "en": "This app action is unavailable. Reopen Reviset and try again.",
     "ko": "이 앱 동작을 사용할 수 없습니다. Reviset을 다시 열고 시도해 주세요."
+  },
+  "doc.error.sourceChanged": {
+    "en": "The source files changed. Choose the files again.",
+    "ko": "원본 파일이 바뀌었습니다. 파일을 다시 선택해 주세요."
+  },
+  "doc.error.savedDataUnreadable": {
+    "en": "The saved project or report cannot be read. Inspect the details before continuing.",
+    "ko": "저장된 프로젝트나 보고서를 읽을 수 없습니다. 계속하기 전에 상세 내용을 확인해 주세요."
+  },
+  "doc.error.savedDataMissing": {
+    "en": "The requested saved project, report or source is unavailable. Refresh and select an available item.",
+    "ko": "요청한 프로젝트·보고서·원문이 없습니다. 새로 고친 뒤 사용 가능한 항목을 선택해 주세요."
+  },
+  "doc.error.stateChanged": {
+    "en": "Saved state no longer matches this operation. Refresh the project and inspect the details.",
+    "ko": "저장 상태가 이 작업과 맞지 않습니다. 프로젝트를 새로 고치고 상세 내용을 확인해 주세요."
+  },
+  "doc.error.inputStructure": {
+    "en": "The selected input format, structure or version order is unsupported. Check the details.",
+    "ko": "선택한 파일 형식·구조·버전 순서를 지원하지 않습니다. 상세 내용을 확인해 주세요."
+  },
+  "doc.error.selectionScope": {
+    "en": "This selection does not match the current fixed report. Select the intended report and source again.",
+    "ko": "이 선택이 현재 고정 보고서와 맞지 않습니다. 보고서와 원문을 다시 선택해 주세요."
+  },
+  "doc.error.reviewRequired": {
+    "en": "Review the pending associations and confirm the version order before continuing.",
+    "ko": "계속하기 전에 대기 중인 대응 관계와 버전 순서를 검토하고 확인해 주세요."
+  },
+  "doc.error.readOnlyOperation": {
+    "en": "This operation is read-only. Open an editable project to make changes.",
+    "ko": "이 작업은 읽기 전용입니다. 변경하려면 편집 가능한 프로젝트를 열어 주세요."
+  },
+  "doc.error.operationLimit": {
+    "en": "This operation exceeds supported size or complexity limits. Reduce the selected input or query range.",
+    "ko": "지원하는 크기나 복잡도 한도를 넘었습니다. 입력 자료나 조회 범위를 줄여 주세요."
+  },
+  "doc.error.outputBudget": {
+    "en": "The requested response budget is too small. Increase it or narrow the query.",
+    "ko": "요청한 응답 한도가 너무 작습니다. 한도를 늘리거나 조회 범위를 줄여 주세요."
+  },
+  "doc.error.engineSemantics": {
+    "en": "The saved report contains incompatible comparison metadata. Inspect the details before reanalysis.",
+    "ko": "저장된 보고서의 비교 메타데이터가 호환되지 않습니다. 재분석 전에 상세 내용을 확인해 주세요."
+  },
+  "doc.error.queryUnavailable": {
+    "en": "This query is unavailable. Reopen Reviset and copy the current MCP configuration.",
+    "ko": "이 조회를 사용할 수 없습니다. Reviset을 다시 열고 현재 MCP 설정을 복사해 주세요."
+  },
+  "doc.error.knownBackendDetail": {
+    "en": "{0}\nDetails ({1}): {2}",
+    "ko": "{0}\n상세 ({1}): {2}"
   }
 }
