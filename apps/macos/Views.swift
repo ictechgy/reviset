@@ -108,6 +108,7 @@ struct CoverageGapEvidence:View {
 struct MainView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
+    @EnvironmentObject private var layout:WorkspaceLayoutStore
     var body: some View {
         VStack(spacing:0) {
             if !model.error.isEmpty { HStack { Image(systemName:"exclamationmark.triangle.fill");Text(model.error).textSelection(.enabled);Spacer();Button(L("doc.common.close")){model.error=""} }.padding(10).background(.red.opacity(0.1)) }
@@ -115,8 +116,7 @@ struct MainView: View {
             if !model.workbookRecoveryWarning.isEmpty {HStack {Image(systemName:"info.circle");Text(model.workbookRecoveryWarning);Spacer();Button(L("doc.common.close")){model.workbookRecoveryWarning=""}}.font(.caption).padding(10).background(.orange.opacity(0.1))}
             if !model.sidecarRecoveryWarning.isEmpty {HStack {Image(systemName:"info.circle");Text(model.sidecarRecoveryWarning);Spacer();Button(L("doc.recovery.temporaryFolder")){NSWorkspace.shared.open(model.bridge.library.appendingPathComponent("sidecars-v1"))};Button(L("doc.common.close")){model.sidecarRecoveryWarning=""}}.font(.caption).padding(10).background(.orange.opacity(0.1))}
             if model.busy { HStack { ProgressView().controlSize(.small);Text(model.status);Text("\(model.progress["current"].int)/\(max(1,model.progress["total"].int))").foregroundStyle(.secondary);Spacer();Button(model.committing ? L("doc.analysis.saving") : L("doc.analysis.cancel")){model.cancel()}.disabled(model.committing) }.padding(10).background(.blue.opacity(0.06)) }
-            HStack(spacing:0) {
-                if !model.focus { SidebarView().frame(width:220);Divider() }
+            WorkspacePaneSplit(name:"document.projects",auxiliaryFirst:true,auxiliaryVisible:layout.configuration.sidebarVisible,extent:.points(layout.configuration.sidebarWidth),primaryMinimum:760,auxiliaryMinimum:180,onResize:{value in if case .points(let width)=value {layout.update{$0.sidebarWidth=min(380,max(180,width))}}}) {
                 VStack(spacing:0) {
                     if model.report.isNull { EmptyWorkspace() }
                     else {
@@ -125,12 +125,13 @@ struct MainView: View {
                         else if model.tab=="history" { HistoryView() }
                         else { CompareWorkspace() }
                     }
-                }.frame(maxWidth:.infinity,maxHeight:.infinity)
-            }
+                }.frame(maxWidth:.infinity,maxHeight:.infinity).environmentObject(model).environmentObject(layout)
+            } auxiliary:{SidebarView().environmentObject(model)}
             Divider();HStack { Label(L("doc.privacy.localMac"),systemImage:"internaldrive");Spacer();Text(!model.evidenceWarning.isEmpty ? model.evidenceWarning:model.status.isEmpty ? L("doc.evidence.footer") : model.status);Spacer();Text("Reviset · Native macOS") }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,5)
         }.disabled(!model.libraryAvailable || model.initializing).preferredColorScheme(.light).background(Color(nsColor:.windowBackgroundColor)).frame(minWidth:1100,minHeight:740)
         .toolbar {
-            ToolbarItem(placement:.navigation){Button {model.focus.toggle()} label:{Image(systemName:model.focus ? "sidebar.left" : "arrow.up.left.and.arrow.down.right")}.help(model.focus ? L("doc.workspace.standard") : L("doc.workspace.focus"))}
+            ToolbarItem(placement:.navigation){Button {layout.toggleFocus()} label:{Image(systemName:model.focus ? "sidebar.left" : "arrow.up.left.and.arrow.down.right")}.help(model.focus ? L("doc.workspace.standard") : L("doc.workspace.focus"))}
+            ToolbarItem { WorkspaceLayoutMenu(layout:layout) }
             ToolbarItem { Text(model.project["title"].string.isEmpty ? "Reviset" : model.project["title"].string).font(.headline) }
             ToolbarItemGroup(placement:.primaryAction) {
                 Button{openWindow(id:"workbooks")}label:{Label(L("doc.workspace.spreadsheets"),systemImage:"tablecells")}.help(L("doc.workspace.spreadsheetsHelp")).disabled(!model.libraryAvailable || model.initializing)
@@ -139,12 +140,20 @@ struct MainView: View {
                     Button {Task{await model.exportReport()}} label:{Label(L("doc.common.export"),systemImage:"square.and.arrow.up")}
                 }
             }
-        }.onChange(of:model.tab){if model.tab != "export"{model.changeRange()}}
+        }.focusedSceneObject(layout)
+        .onChange(of:model.focus){layout.update{$0.sidebarVisible = !model.focus}}
+        .onChange(of:model.inspector){layout.update{$0.inspectorVisible=model.inspector}}
+        .onChange(of:model.showChanges){layout.update{$0.changesVisible=model.showChanges}}
+        .onChange(of:layout.configuration){syncLayoutFlags()}
+        .onChange(of:model.tab){if model.tab != "export"{model.changeRange()}}
         .sheet(isPresented:$model.importSheet){ImportView()}
         .alert(item:$model.reorderConfirmation){request in Alert(title:Text(L("doc.reorder.title")),message:Text(request.message),primaryButton:.destructive(Text(L("doc.reorder.confirm"))){Task{await model.confirmReorder(request)}},secondaryButton:.cancel(Text(L("doc.common.cancel"))))}
         .sheet(item:$model.sidecarRequest){request in OnlyOfficeSidecarSheet(request:request).environmentObject(model)}
         .sheet(isPresented:$model.bundleSheet){BundleSheet(projectID:model.bundleProjectID,reportID:model.bundleReportID,occurrence:model.bundleOccurrence,initialSource:model.bundleSourceID).environmentObject(model)}
-        .task {await model.start()}
+        .task {syncLayoutFlags();await model.start()}
+    }
+    private func syncLayoutFlags() {
+        model.focus = !layout.configuration.sidebarVisible;model.inspector=layout.configuration.inspectorVisible;model.showChanges=layout.configuration.changesVisible
     }
 }
 struct SidebarView: View {
@@ -182,19 +191,18 @@ struct VersionBar: View {
 }
 struct ComparePagesView:View {
     @EnvironmentObject var model:AppModel
+    @EnvironmentObject var layout:WorkspaceLayoutStore
     var body:some View {
-        HSplitView {
-            if model.revisions.count<2 {PageColumn(revision:model.revision(0),side:L("doc.common.source"),pageID:$model.leftPageID)}
-            else {
-                if model.pageMode != "after" {PageColumn(revision:model.revision(model.from),side:L("doc.common.before"),pageID:$model.leftPageID)}
-                if model.pageMode != "before" {PageColumn(revision:model.revision(model.to),side:L("doc.common.after"),pageID:$model.rightPageID)}
-            }
-        }.frame(maxWidth:.infinity,maxHeight:.infinity)
+        WorkspacePaneSplit(name:"document.pages",isVertical:layout.configuration.pageArrangement == .horizontal,primaryVisible:model.revisions.count<2 || model.pageMode != "after",auxiliaryVisible:model.revisions.count>1 && model.pageMode != "before",extent:.fraction(layout.configuration.pageFraction),primaryMinimum:150,auxiliaryMinimum:150,onResize:{value in if case .fraction(let fraction)=value {layout.update{$0.pageFraction=min(0.8,max(0.2,fraction))}}}) {
+            PageColumn(revision:model.revisions.count<2 ? model.revision(0):model.revision(model.from),side:model.revisions.count<2 ? L("doc.common.source"):L("doc.common.before"),pageID:$model.leftPageID).environmentObject(model)
+        } auxiliary:{PageColumn(revision:model.revision(model.to),side:L("doc.common.after"),pageID:$model.rightPageID).environmentObject(model)}
+        .frame(maxWidth:.infinity,maxHeight:.infinity)
     }
 }
 
 struct CompareWorkspace: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var layout:WorkspaceLayoutStore
     var body: some View {
         VStack(spacing:0){
             HStack(spacing:10){
@@ -211,36 +219,55 @@ struct CompareWorkspace: View {
                 Picker(L("doc.common.zoom"),selection:$model.zoom){Text(L("doc.common.fit")).tag(0.0);Text("100%").tag(1.0);Text("150%").tag(1.5);Text("200%").tag(2.0)}.frame(width:160)
                 Spacer();Button(model.showChanges ? L("doc.changes.collapse"):L("doc.changes.expand")){model.showChanges.toggle()}
             }.controlSize(.small).padding(.horizontal,16).padding(.vertical,10)
-            HSplitView {
-                Group {
-                    if model.showChanges {
-                        WorkspaceSplit(name:"compare",defaultBottomHeight:140) {
-                            ComparePagesView().environmentObject(model)
-                        } bottom: {
-                            ChangeListView().environmentObject(model)
-                        }
-                    } else { ComparePagesView() }
-                }.frame(maxWidth:.infinity,maxHeight:.infinity)
-                if model.inspector { InspectorView().frame(minWidth:275,idealWidth:300,maxWidth:360) }
-            }
+            WorkspacePaneSplit(name:"document.inspector",auxiliaryFirst:layout.configuration.inspectorDock == .left,auxiliaryVisible:layout.configuration.inspectorVisible,extent:.points(layout.configuration.inspectorWidth),primaryMinimum:layout.configuration.changesVisible && layout.configuration.changesDock != .bottom ? 500:300,auxiliaryMinimum:260,onResize:{value in if case .points(let width)=value {layout.update{$0.inspectorWidth=min(480,max(260,width))}}}) {
+                WorkspacePaneSplit(name:"document.changes",isVertical:layout.configuration.changesDock != .bottom,auxiliaryFirst:layout.configuration.changesDock == .left,auxiliaryVisible:layout.configuration.changesVisible,extent:.points(layout.configuration.changesDock == .bottom ? layout.configuration.changesHeight:layout.configuration.changesWidth),primaryMinimum:240,auxiliaryMinimum:layout.configuration.changesDock == .bottom ? 110:260,onResize:{value in if case .points(let size)=value {layout.update{if $0.changesDock == .bottom {$0.changesHeight=min(600,max(110,size))}else{$0.changesWidth=min(600,max(260,size))}}}}) {
+                    ComparePagesView().environmentObject(model).environmentObject(layout)
+                } auxiliary:{ChangeListView().environmentObject(model).environmentObject(layout)}
+            } auxiliary:{InspectorView().environmentObject(model)}
         }.onChange(of:model.selectedChangeID){Task {await Task.yield();model.selectEvidence()}}
     }
 }
 struct ChangeListView: View {
     @EnvironmentObject var model: AppModel
-    var body: some View {VStack(spacing:5){HStack{Picker(L("doc.changes.kind"),selection:$model.kind){Text(L("doc.changes.all")).tag("all");ForEach(changeKinds,id:\.self){Text(changeKindName($0)).tag($0)}}.frame(minWidth:220,idealWidth:240,maxWidth:260);TextField(L("doc.changes.search"),text:$model.search).textFieldStyle(.roundedBorder).frame(maxWidth:250);Spacer();if model.loadingChanges{ProgressView().controlSize(.small)};Text(LC("doc.changes.count", model.filteredChanges.count)).font(.caption).foregroundStyle(.secondary)}.padding(.horizontal,12).padding(.top,8)
+    @EnvironmentObject var layout:WorkspaceLayoutStore
+    private var compact:Bool {layout.configuration.changesDock != .bottom}
+    var body: some View {VStack(spacing:5){
+        ViewThatFits(in:.horizontal) {
+            HStack{filters;Spacer();changeCount}
+            VStack(alignment:.leading,spacing:8){filters;changeCount}
+        }.padding(.horizontal,12).padding(.top,8)
         if model.filteredChanges.isEmpty {Text(model.emptyChangesMessage).font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity).padding(12)}
-        else {ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges || !model.changesFailure.isEmpty).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear) } }.padding(6) }}
+        else {ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c,compact:compact).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges || !model.changesFailure.isEmpty).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear) } }.padding(6) }}
     }}
+    private var filters:some View {
+        let arrangement=compact ? AnyLayout(VStackLayout(alignment:.leading,spacing:6)):AnyLayout(HStackLayout(spacing:8))
+        return arrangement {
+            Picker(L("doc.changes.kind"),selection:$model.kind){Text(L("doc.changes.all")).tag("all");ForEach(changeKinds,id:\.self){Text(changeKindName($0)).tag($0)}}.frame(minWidth:200,idealWidth:220,maxWidth:260)
+            TextField(L("doc.changes.search"),text:$model.search).textFieldStyle(.roundedBorder).frame(maxWidth:250)
+        }
+    }
+    private var changeCount:some View {HStack{if model.loadingChanges{ProgressView().controlSize(.small)};Text(LC("doc.changes.count",model.filteredChanges.count)).font(.caption).foregroundStyle(.secondary)}}
 }
 
 struct ChangeRow: View {
     @EnvironmentObject var model:AppModel
     let change: JSON
+    var compact=false
     var kindName: String {changeDisplayName(change)}
     var text: String {(change["after"].isNull ? change["before"].string:change["after"].string).replacingOccurrences(of:"\n",with:" ")}
     var status: String {let value=change["lineage"]["status"].string;return value=="human_confirmed" ? L("doc.matching.humanConfirmed"):value=="needs_review" ? L("doc.matching.needsReview"):L("doc.matching.inferred")}
-    var body: some View {HStack(spacing:10){Text(kindName).font(.caption).foregroundStyle(change["kind"].string=="coverage_gap" ? Color.secondary:Color.blue).lineLimit(2).fixedSize(horizontal:false,vertical:true).frame(width:155,alignment:.leading).help(kindName);VStack(alignment:.leading,spacing:3){Text(text).lineLimit(1).font(.caption);if model.tab=="history"{Text(changeVersionSummary(change,revisions:model.revisions)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)};Text(evidencePageSummary(change)).font(.caption2).foregroundStyle(.secondary)};Spacer();if change["region_pairing_assessment"].string == "inferred"{Text(L("doc.matching.regionInferred")).font(.caption2).foregroundStyle(.orange)};if change["text_assessment"].string == "inferred"{Text(L("doc.ocr.inferredReview")).font(.caption2).foregroundStyle(.orange)};if !change["appearance_assessment"].string.isEmpty{Text(change["appearance_assessment"].string=="observed" ? L("doc.appearance.observed"):L("doc.appearance.inferred")).font(.caption2).foregroundStyle(.orange)};Text(status).font(.caption2).foregroundStyle(.secondary)}.padding(.vertical,3)}
+    var body:some View {
+        let arrangement=compact ? AnyLayout(VStackLayout(alignment:.leading,spacing:5)):AnyLayout(HStackLayout(spacing:10))
+        arrangement {
+            Text(kindName).font(.caption).foregroundStyle(change["kind"].string=="coverage_gap" ? Color.secondary:Color.blue).lineLimit(2).fixedSize(horizontal:false,vertical:true).frame(width:compact ? nil:155,alignment:.leading).help(kindName)
+            VStack(alignment:.leading,spacing:3){Text(text).lineLimit(compact ? 3:1).font(.caption);if model.tab=="history"{Text(changeVersionSummary(change,revisions:model.revisions)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)};Text(evidencePageSummary(change)).font(.caption2).foregroundStyle(.secondary)}
+            if !compact {Spacer()}
+            if change["region_pairing_assessment"].string == "inferred"{Text(L("doc.matching.regionInferred")).font(.caption2).foregroundStyle(.orange)}
+            if change["text_assessment"].string == "inferred"{Text(L("doc.ocr.inferredReview")).font(.caption2).foregroundStyle(.orange)}
+            if !change["appearance_assessment"].string.isEmpty{Text(change["appearance_assessment"].string=="observed" ? L("doc.appearance.observed"):L("doc.appearance.inferred")).font(.caption2).foregroundStyle(.orange)}
+            Text(status).font(.caption2).foregroundStyle(.secondary)
+        }.padding(.vertical,3).frame(maxWidth:.infinity,alignment:.leading)
+    }
 }
 
 struct InspectorView: View {

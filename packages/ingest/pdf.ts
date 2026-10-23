@@ -8,8 +8,11 @@ import { captureNativePages,ocrEnvironment,supplementPdfOcr,type OcrOptions } fr
 const require=createRequire(import.meta.url);
 const pdfRoot=dirname(require.resolve('pdfjs-dist/package.json'));
 export const PDF_TEXT_GEOMETRY_POLICY='viewport-scaled-run-advance-v2';
-export const pdfOptions = {isEvalSupported:false,useSystemFonts:false,standardFontDataUrl:join(pdfRoot,'standard_fonts/'),
-  cMapUrl:join(pdfRoot,'cmaps/'),cMapPacked:true,wasmUrl:join(pdfRoot,'wasm/'),verbosity:0};
+// PDF.js requires a literal trailing '/' even on Windows; Node's factories
+// read these as filesystem paths (not file:// strings). Append it after join,
+// which otherwise normalizes a requested trailing slash to '\\' on Windows.
+export const pdfOptions = {isEvalSupported:false,useSystemFonts:false,standardFontDataUrl:join(pdfRoot,'standard_fonts')+'/',
+  cMapUrl:join(pdfRoot,'cmaps')+'/',cMapPacked:true,wasmUrl:join(pdfRoot,'wasm')+'/',verbosity:0};
 export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOptions&{ocr?:'off'|'auto'|'all'}={}):Promise<PageData[]> {
   // Load outline paths for precise rectangular-clip checks. Source text and
   // metric boxes remain unchanged; unsupported/missing paths stay unverified.

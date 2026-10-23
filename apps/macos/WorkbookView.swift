@@ -670,20 +670,21 @@ private extension JSON {
 struct WorkbookWorkspace: View {
     @State private var language = LanguagePreferences.shared
     @StateObject var model: WorkbookModel
+    @StateObject private var layout=WorkspaceLayoutStore(scope:.workbook)
     init(bridge: Bridge) { _model = StateObject(wrappedValue:WorkbookModel(bridge:bridge)) }
     var body: some View {
         VStack(spacing:0) {
-            HSplitView {
-                sidebar.frame(minWidth:205,idealWidth:225,maxWidth:290)
-                VStack(spacing:0) {
-                    reportBar
-                    if model.loadingReport { WorkbookStatus(title:L("workbook.status.loadingReport"),detail:L("workbook.status.loadingReportDetail"),loading:true) }
-                    else if model.report.isNull { emptyWorkspace }
-                    else if model.tab == "compare" { comparison }
-                    else { aiAndReleases }
-                }.frame(minWidth:640,maxWidth:.infinity,maxHeight:.infinity)
-                if model.inspectorVisible, model.tab == "compare", !model.report.isNull { WorkbookInspector(model:model).frame(minWidth:260,idealWidth:290,maxWidth:380) }
-            }
+            WorkspacePaneSplit(name:"workbook.projects",auxiliaryFirst:true,auxiliaryVisible:layout.configuration.sidebarVisible,extent:.points(layout.configuration.sidebarWidth),primaryMinimum:760,auxiliaryMinimum:180,onResize:{value in if case .points(let width)=value {layout.update{$0.sidebarWidth=min(380,max(180,width))}}}) {
+                WorkspacePaneSplit(name:"workbook.inspector",auxiliaryFirst:layout.configuration.inspectorDock == .left,auxiliaryVisible:layout.configuration.inspectorVisible && model.tab == "compare" && !model.report.isNull,extent:.points(layout.configuration.inspectorWidth),primaryMinimum:layout.configuration.changesVisible && layout.configuration.changesDock != .bottom ? 500:300,auxiliaryMinimum:260,onResize:{value in if case .points(let width)=value {layout.update{$0.inspectorWidth=min(480,max(260,width))}}}) {
+                    VStack(spacing:0) {
+                        reportBar
+                        if model.loadingReport { WorkbookStatus(title:L("workbook.status.loadingReport"),detail:L("workbook.status.loadingReportDetail"),loading:true) }
+                        else if model.report.isNull { emptyWorkspace }
+                        else if model.tab == "compare" { comparison }
+                        else { aiAndReleases }
+                    }.frame(maxWidth:.infinity,maxHeight:.infinity)
+                } auxiliary:{WorkbookInspector(model:model)}
+            } auxiliary:{sidebar}
             Divider()
             HStack(spacing:8) {
                 if model.busy || model.loadingDemo { ProgressView().controlSize(.small) }
@@ -693,15 +694,19 @@ struct WorkbookWorkspace: View {
         }.frame(minWidth:1180,minHeight:760).background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light)
         .toolbar {
             ToolbarItem { Text(L("workbook.window.title")).font(.headline) }
+            ToolbarItem { WorkspaceLayoutMenu(layout:layout) }
             ToolbarItemGroup(placement:.primaryAction) {
                 Picker(L("workbook.tab.label"),selection:$model.tab) { Text(L("workbook.tab.compare")).tag("compare"); Text(L("workbook.tab.ai")).tag("ai") }.pickerStyle(.segmented).frame(width:270)
                 Button { model.inspectorVisible.toggle() } label: { Label(L("workbook.inspector.title"),systemImage:"sidebar.right") }
                 Button { model.importPresented = true } label: { Label(L("workbook.action.importVersions"),systemImage:"plus") }.disabled(model.busy || model.loadingDemo)
             }
         }
+        .focusedSceneObject(layout)
+        .onChange(of:model.inspectorVisible){layout.update{$0.inspectorVisible=model.inspectorVisible}}
+        .onChange(of:layout.configuration.inspectorVisible){model.inspectorVisible=layout.configuration.inspectorVisible}
         .sheet(isPresented:$model.importPresented) { WorkbookImportSheet(model:model) }
         .sheet(isPresented:$model.publishPresented) { WorkbookPublishSheet(model:model) }
-        .task { await model.start(); await WorkbookNativeSmoke.runIfRequested(model) }
+        .task { model.inspectorVisible=layout.configuration.inspectorVisible;await model.start(); await WorkbookNativeSmoke.runIfRequested(model) }
         .onDisappear { model.closeReads() }
     }
     private var sidebar: some View {
@@ -776,14 +781,14 @@ struct WorkbookWorkspace: View {
                     Button(L("workbook.action.reloadRange")) { Task { await model.loadRange() } }.disabled(!model.ready || model.loadingRange)
                 }.padding(8)
             }
-            HSplitView {
-                gridPane(before:true)
-                gridPane(before:false)
-            }.frame(minHeight:240,maxHeight:.infinity).overlay { if model.loadingRange { ZStack { Color(nsColor:.windowBackgroundColor).opacity(0.94); ProgressView(L("workbook.status.loadingRange")) } } }
-            Text(model.independentPaneCoordinates ? L("workbook.nav.independentDetail") : L("workbook.nav.sameAddressDetail")).font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)
-            Text(L("workbook.grid.legend")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).padding(.bottom,5)
-            Divider()
-            changesPane.frame(minHeight:150,idealHeight:200,maxHeight:240)
+            WorkspacePaneSplit(name:"workbook.changes",isVertical:layout.configuration.changesDock != .bottom,auxiliaryFirst:layout.configuration.changesDock == .left,auxiliaryVisible:layout.configuration.changesVisible,extent:.points(layout.configuration.changesDock == .bottom ? layout.configuration.changesHeight:layout.configuration.changesWidth),primaryMinimum:240,auxiliaryMinimum:layout.configuration.changesDock == .bottom ? 110:260,onResize:{value in if case .points(let size)=value {layout.update{if $0.changesDock == .bottom {$0.changesHeight=min(600,max(110,size))}else{$0.changesWidth=min(600,max(260,size))}}}}) {
+                VStack(spacing:0) {
+                    WorkspacePaneSplit(name:"workbook.pages",isVertical:layout.configuration.pageArrangement == .horizontal,extent:.fraction(layout.configuration.pageFraction),primaryMinimum:150,auxiliaryMinimum:150,onResize:{value in if case .fraction(let fraction)=value {layout.update{$0.pageFraction=min(0.8,max(0.2,fraction))}}}) {gridPane(before:true)} auxiliary:{gridPane(before:false)}
+                    .frame(minHeight:160,maxHeight:.infinity).overlay { if model.loadingRange { ZStack { Color(nsColor:.windowBackgroundColor).opacity(0.94); ProgressView(L("workbook.status.loadingRange")) } } }
+                    Text(model.independentPaneCoordinates ? L("workbook.nav.independentDetail") : L("workbook.nav.sameAddressDetail")).font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)
+                    Text(L("workbook.grid.legend")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).padding(.bottom,5)
+                }
+            } auxiliary:{changesPane}
         }
     }
     private var versionBar: some View {
@@ -831,7 +836,9 @@ struct WorkbookWorkspace: View {
     }
     private var changesPane: some View {
         VStack(spacing:0) {
-            HStack {
+            let compact=layout.configuration.changesDock != .bottom
+            let arrangement=compact ? AnyLayout(VStackLayout(alignment:.leading,spacing:6)):AnyLayout(HStackLayout())
+            arrangement {
                 Text(model.changesMode == "history" ? L("workbook.changes.historyTitle") : L("workbook.changes.netTitle")).font(.headline)
                 Text(L("workbook.changes.page",.integer(model.changePageNumber),.count(model.changes.count),.count(model.changeTotal))).font(.caption).foregroundStyle(.secondary)
                 Spacer()
@@ -856,11 +863,12 @@ struct WorkbookWorkspace: View {
             else {
                 List(selection:Binding<String?>(get:{model.selectedChangeID.isEmpty ? nil : model.selectedChangeID},set:{if let id = $0 { Task { await model.chooseChange(id) } }})) {
                     ForEach(model.changes,id:\.workbookChangeID) { change in
-                        HStack(spacing:10) {
-                            Text(verbatim:WorkbookLabels.kind(change["kind"].string)).font(.caption.weight(.semibold)).frame(width:110,alignment:.leading)
-                            Text(verbatim:change["before_address"].string + " → " + change["after_address"].string).font(.system(.caption,design:.monospaced)).frame(width:125,alignment:.leading)
-                            Text(verbatim:WorkbookLabels.description(change)).font(.caption).lineLimit(2)
-                            Spacer()
+                        let rowLayout=compact ? AnyLayout(VStackLayout(alignment:.leading,spacing:5)):AnyLayout(HStackLayout(spacing:10))
+                        rowLayout {
+                            Text(verbatim:WorkbookLabels.kind(change["kind"].string)).font(.caption.weight(.semibold)).frame(width:compact ? nil:110,alignment:.leading)
+                            Text(verbatim:change["before_address"].string + " → " + change["after_address"].string).font(.system(.caption,design:.monospaced)).frame(width:compact ? nil:125,alignment:.leading)
+                            Text(verbatim:WorkbookLabels.description(change)).font(.caption).lineLimit(compact ? 4:2)
+                            if !compact {Spacer()}
                             Text(verbatim:WorkbookLabels.association(change["association"].string)).font(.caption).foregroundStyle(change["association"].string == "needs_review" ? .orange : .secondary)
                         }.tag(change["change_id"].string)
                     }

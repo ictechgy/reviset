@@ -19,6 +19,7 @@ test('native page preview binds a verified source to fixed report/page and prese
   try{
     const file=join(root,'source.pdf');await writeFile(file,await pdfBytes());
     const draft=await service.create('Preview control',[{label:'v1',files:[file]}]),run=await service.run(draft.project_id),report=run.report,page=report.revisions[0].pages[0];
+    assert.equal(report.revisions[0].status,'success',JSON.stringify(report.revisions[0].errors));assert.ok(page,'A successful PDF import must produce a page');
     const before=JSON.stringify(service.snapshot(draft.project_id,report.report_id));
     const args={project_id:draft.project_id,report_id:report.report_id,page_id:page.page_id,max_width:640};
     const result=await pagePreview(service,library,args);

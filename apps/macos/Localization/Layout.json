@@ -1,0 +1,134 @@
+{
+  "layout.title": {
+    "en": "Layout",
+    "ko": "화면 배치"
+  },
+  "layout.help": {
+    "en": "Arrange panels without losing your place",
+    "ko": "보던 위치를 유지하면서 패널 배치 변경"
+  },
+  "layout.preset.balanced": {
+    "en": "Balanced",
+    "ko": "균형 배치"
+  },
+  "layout.preset.focus": {
+    "en": "Document Focus",
+    "ko": "문서 집중"
+  },
+  "layout.preset.review": {
+    "en": "Review",
+    "ko": "검토 배치"
+  },
+  "layout.panel.projects": {
+    "en": "Projects and Versions",
+    "ko": "프로젝트 및 버전"
+  },
+  "layout.panel.changes": {
+    "en": "Changes Panel",
+    "ko": "변경 목록"
+  },
+  "layout.panel.inspector": {
+    "en": "Evidence Panel",
+    "ko": "근거 패널"
+  },
+  "layout.save": {
+    "en": "Save Current Layout…",
+    "ko": "현재 배치 저장…"
+  },
+  "layout.save.confirm": {
+    "en": "Save Layout",
+    "ko": "배치 저장"
+  },
+  "layout.customize": {
+    "en": "Customize Layout…",
+    "ko": "화면 배치 설정…"
+  },
+  "layout.reset": {
+    "en": "Reset Layout",
+    "ko": "기본 배치로 복원"
+  },
+  "layout.name": {
+    "en": "Layout name",
+    "ko": "배치 이름"
+  },
+  "layout.name.help": {
+    "en": "Use a unique name of up to 80 characters. Save up to 12 layouts for this workspace.",
+    "ko": "80자 이내의 중복되지 않는 이름을 입력하세요. 이 작업 공간에 배치를 최대 12개 저장할 수 있습니다."
+  },
+  "layout.cancel": {
+    "en": "Cancel",
+    "ko": "취소"
+  },
+  "layout.liveDescription": {
+    "en": "Changes apply immediately. Drag dividers to resize panels. Document and spreadsheet workspaces remember layouts separately.",
+    "ko": "변경 사항은 즉시 적용됩니다. 구분선을 끌어 패널 크기를 조절하세요. 문서와 스프레드시트의 배치는 별도로 저장됩니다."
+  },
+  "layout.width.projects": {
+    "en": "Projects width",
+    "ko": "프로젝트 패널 너비"
+  },
+  "layout.width.changes": {
+    "en": "Changes width",
+    "ko": "변경 목록 너비"
+  },
+  "layout.height.changes": {
+    "en": "Changes height",
+    "ko": "변경 목록 높이"
+  },
+  "layout.width.inspector": {
+    "en": "Evidence width",
+    "ko": "근거 패널 너비"
+  },
+  "layout.dock.changes": {
+    "en": "Changes position",
+    "ko": "변경 목록 위치"
+  },
+  "layout.dock.inspector": {
+    "en": "Evidence position",
+    "ko": "근거 패널 위치"
+  },
+  "layout.position.bottom": {
+    "en": "Bottom",
+    "ko": "아래"
+  },
+  "layout.position.left": {
+    "en": "Left",
+    "ko": "왼쪽"
+  },
+  "layout.position.right": {
+    "en": "Right",
+    "ko": "오른쪽"
+  },
+  "layout.pages": {
+    "en": "Before and after views",
+    "ko": "이전·이후 화면 배치"
+  },
+  "layout.pages.horizontal": {
+    "en": "Side by side",
+    "ko": "좌우로 나란히"
+  },
+  "layout.pages.vertical": {
+    "en": "Stacked",
+    "ko": "위아래로"
+  },
+  "layout.saved": {
+    "en": "Saved Layouts",
+    "ko": "저장된 배치"
+  },
+  "layout.apply": {
+    "en": "Apply",
+    "ko": "적용"
+  },
+  "layout.delete": {
+    "en": "Delete",
+    "ko": "삭제"
+  },
+  "layout.done": {
+    "en": "Done",
+    "ko": "완료"
+  },
+  "layout.persistenceReadOnly": {
+    "en": "These saved settings cannot be loaded by this app. Changes apply to this session only; the original settings are preserved.",
+    "ko": "이 앱에서 기존 저장 설정을 불러올 수 없습니다. 변경 사항은 이번 실행에만 적용되며 기존 설정은 보존됩니다."
+  }
+}

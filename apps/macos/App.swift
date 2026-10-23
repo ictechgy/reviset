@@ -7,10 +7,11 @@ import Combine
 @main struct RevisetApp: App {
     @StateObject private var model=AppModel()
     @StateObject private var language=LanguagePreferences.shared
+    @StateObject private var documentLayout=WorkspaceLayoutStore(scope:.document)
     @Environment(\.openWindow) private var openWindow
     var body: some Scene {
-        Window("Reviset", id:"main") {MainView().environmentObject(model).environment(\.locale,language.localizer.locale).task {
-            await Smoke.runIfRequested(model)
+        Window("Reviset", id:"main") {MainView().environmentObject(model).environmentObject(documentLayout).environment(\.locale,language.localizer.locale).task {
+            await Smoke.runIfRequested(model,layout:documentLayout)
             if ProcessInfo.processInfo.environment["DOCVER_WORKBOOK_SMOKE_REQUEST"] != nil {
                 for _ in 0..<400 { if !model.initializing { break }; try? await Task.sleep(nanoseconds:50_000_000) }
                 if let path=ProcessInfo.processInfo.environment["DOCVER_WORKBOOK_SMOKE_REQUEST"],let data=try? Data(contentsOf:URL(fileURLWithPath:path)),let raw=try? JSONSerialization.jsonObject(with:data),JSON(raw)["expect_library_locked"].bool {
@@ -45,6 +46,7 @@ import Combine
 @MainActor struct RevisetCommands: Commands {
     @ObservedObject var model: AppModel
     @ObservedObject var language: LanguagePreferences
+    @FocusedObject private var activeLayout:WorkspaceLayoutStore?
     @Environment(\.openWindow) private var openWindow
     var body: some Commands {
         // Commands cache native menu labels; an observed input explicitly invalidates
@@ -55,8 +57,11 @@ import Combine
             Button(localizer.string("app.menu.workbooks")) { openWindow(id:"workbooks") }.keyboardShortcut("o",modifiers:[.command,.shift]).disabled(!model.libraryAvailable || model.initializing)
         }
         CommandGroup(after:.sidebar) {
-            Button(localizer.string("app.menu.focus")) { model.focus.toggle() }.keyboardShortcut("f",modifiers:[.command,.option])
-            Button(localizer.string("app.menu.evidence")) { model.inspector.toggle() }.keyboardShortcut("i",modifiers:[.command,.option])
+            Button(localizer.string("app.menu.focus")) { activeLayout?.toggleFocus() }.keyboardShortcut("f",modifiers:[.command,.option]).disabled(activeLayout == nil)
+            Button(localizer.string("app.menu.evidence")) { activeLayout?.update{$0.inspectorVisible.toggle()} }.keyboardShortcut("i",modifiers:[.command,.option]).disabled(activeLayout == nil)
+            Button(localizer.string("layout.panel.projects")) { activeLayout?.update{$0.sidebarVisible.toggle()} }.keyboardShortcut("s",modifiers:[.command,.option]).disabled(activeLayout == nil)
+            Button(localizer.string("layout.panel.changes")) { activeLayout?.update{$0.changesVisible.toggle()} }.keyboardShortcut("c",modifiers:[.command,.option]).disabled(activeLayout == nil)
+            Button(localizer.string("layout.reset")) { activeLayout?.reset() }.keyboardShortcut("0",modifiers:[.command,.option]).disabled(activeLayout == nil)
         }
     }
 }
@@ -115,7 +120,7 @@ private struct SmokeStructureView: View {
         } catch {try? JSON(["completed":false,"error":error.localizedDescription]).data().write(to:folder.appendingPathComponent("validation.json"))}
         NSApp.terminate(nil)
     }
-    static func runIfRequested(_ model:AppModel) async {
+    static func runIfRequested(_ model:AppModel,layout:WorkspaceLayoutStore) async {
         guard !started,let path=ProcessInfo.processInfo.environment["DOCVER_SMOKE_REQUEST"] else{return};started=true
         do{
             let request=JSON(try JSONSerialization.jsonObject(with:Data(contentsOf:URL(fileURLWithPath:path))))
@@ -147,7 +152,7 @@ private struct SmokeStructureView: View {
                 try captureView(sheet,output.appendingPathComponent("native-bundle-page240.png"));model.bundleSheet=false;try await Task.sleep(nanoseconds:200_000_000)
             }
             let manualChecks=request["manual_relations"].bool ? try await exerciseManualRelations(model,output):[]
-            let layoutChecks=request["layout_checks"].bool ? try await exerciseLayout(model):[:]
+            let layoutChecks=request["layout_checks"].bool ? try await exerciseLayout(model,layout:layout,output:output):[:]
             let referenceChecks=request["reference_appearance_checks"].bool ? try await exerciseReferenceAppearance(model):[:]
             let importChecks=request["import_draft_files"].array.isEmpty ? [:]:try await exerciseImportDraft(model,output,request["import_draft_files"].array.map{URL(fileURLWithPath:$0.string)})
             let bundleChecks=request["bundle_mapping_checks"].bool ? try await exerciseBundleMapping(model,output):[:]
@@ -594,11 +599,13 @@ private struct SmokeStructureView: View {
         guard old["mapping_relations"].array.isEmpty else { throw BridgeError(code:"MANUAL_IMMUTABILITY",message:"과거 보고서의 대응이 바뀌었습니다.") }
         return ["concurrent same-range awaits settle the immutable history response","native model split + merge persisted in3 immutable reports","every branch opens without async selection reset","actual paired native sheet rendered and dismissed without writes","original snapshot retains original topology"]
     }
-    static func exerciseLayout(_ model:AppModel) async throws->[String:Any] {
-        model.tab="compare";model.focus=false;model.showChanges=true;try await model.updateChanges()
+    static func exerciseLayout(_ model:AppModel,layout:WorkspaceLayoutStore,output:URL) async throws->[String:Any] {
+        let originalLayout=layout.configuration,originalZoom=model.zoom
+        defer{layout.update{$0=originalLayout};model.zoom=originalZoom}
+        layout.reset();model.tab="compare";model.focus=false;model.showChanges=true;try await model.updateChanges()
         try await Task.sleep(nanoseconds:300_000_000)
         func pane(_ view:NSView)->NSSplitView? {
-            if let split=view as? NSSplitView,split.identifier?.rawValue=="Docver.workspace.compare" {return split}
+            if let split=view as? NSSplitView,split.identifier?.rawValue=="Reviset.workspace.document.changes" {return split}
             for child in view.subviews {if let split=pane(child){return split}};return nil
         }
         func current()throws->NSSplitView {
@@ -607,14 +614,44 @@ private struct SmokeStructureView: View {
         }
         let split=try current(),initial=split.arrangedSubviews[1].frame.height,canvas=split.arrangedSubviews[0].frame.height
         guard abs(initial-140)<2 && canvas>initial else {throw BridgeError(code:"LAYOUT_DEFAULT",message:"문서 영역의 기본 높이가 충분하지 않습니다: \(canvas), \(initial)")}
-        split.setPosition(canvas-40,ofDividerAt:0);split.layoutSubtreeIfNeeded();try await Task.sleep(nanoseconds:100_000_000)
+        var responder:NSResponder?=split.nextResponder
+        var resizer:WorkspacePaneSizing?
+        while let candidate=responder {
+            if let sizing=candidate as? WorkspacePaneSizing,sizing.splitView === split {resizer=sizing;break}
+            responder=candidate.nextResponder
+        }
+        guard let resizer else{throw BridgeError(code:"LAYOUT_CONTROLLER",message:"The native layout controller is unavailable.")}
+        resizer.resizeAuxiliary(to:initial+40,commit:true);split.layoutSubtreeIfNeeded();try await Task.sleep(nanoseconds:100_000_000)
         let resized=split.arrangedSubviews[1].frame.height
         guard resized>=initial+35 else{throw BridgeError(code:"LAYOUT_DRAG",message:"네이티브 분할선으로 변경 목록 크기를 바꾸지 못했습니다.")}
         model.showChanges=false;try await Task.sleep(nanoseconds:150_000_000);model.showChanges=true;try await Task.sleep(nanoseconds:250_000_000)
         let reopened=try current(),remembered=reopened.arrangedSubviews[1].frame.height
         guard abs(remembered-resized)<2 else{throw BridgeError(code:"LAYOUT_MEMORY",message:"변경 목록 높이 유지 실패: 조절 \(resized), 다시 열기 \(remembered), 저장 \(WorkspaceGeometryPreferences.height("Docver.workspace.compare.changesHeight") ?? -1)")}
-        reopened.setPosition(reopened.bounds.height-reopened.dividerThickness-initial,ofDividerAt:0)
-        return ["default_change_pane_points":initial,"default_document_pane_points":canvas,"resized_change_pane_points":resized,"reopened_change_pane_points":remembered,"native_divider_and_height_reopen":true,"existing_snapshot_reopen":!model.report.isNull]
+        resizer.resizeAuxiliary(to:initial,commit:true)
+        func pdfs(_ view:NSView)->[PDFView] {var result=(view as? PDFView).map{[$0]} ?? [];for child in view.subviews{result+=pdfs(child)};return result}
+        guard let window=split.window,let content=window.contentView else{throw BridgeError(code:"LAYOUT_WINDOW",message:"The source window is unavailable.")}
+        model.zoom=1.5;try await Task.sleep(nanoseconds:400_000_000)
+        let originalPDFs=pdfs(content),pdfIdentities=Set(originalPDFs.map(ObjectIdentifier.init))
+        let pdfFacts=originalPDFs.map{pdf in (pdf,pdf.document,pdf.currentPage,pdf.scaleFactor)}
+        let project=model.projectID,report=model.report["report_id"].string,selected=model.selectedChangeID,left=model.leftPageID,right=model.rightPageID
+        var captures:[String]=[],checks=0
+        func qualify(_ name:String)async throws {
+            try await Task.sleep(nanoseconds:300_000_000);content.layoutSubtreeIfNeeded()
+            guard model.projectID==project,model.report["report_id"].string==report,model.selectedChangeID==selected,model.leftPageID==left,model.rightPageID==right,model.zoom==1.5,Set(pdfs(content).map(ObjectIdentifier.init))==pdfIdentities else{throw BridgeError(code:"LAYOUT_STATE",message:"A layout change replaced source views or changed the selected report/page/evidence.")}
+            for (pdf,document,page,scale) in pdfFacts {
+                guard pdf.document === document,pdf.currentPage === page,abs(pdf.scaleFactor-scale)<0.001 else{throw BridgeError(code:"LAYOUT_PDF_STATE",message:"A layout change replaced the PDF document or reset its page/zoom.")}
+            }
+            let file="native-layout-"+LanguagePreferences.shared.effectiveLanguage+"-"+name+".png"
+            try captureView(window,output.appendingPathComponent(file));captures.append(file);checks+=1
+        }
+        for preset in WorkspaceLayoutPreset.allCases {layout.apply(preset);try await qualify(preset.rawValue)}
+        for dock in [WorkspaceChangesDock.left,.right] {
+            layout.apply(.review);layout.update{$0.changesDock=dock;$0.inspectorDock=dock == .left ? .right:.left}
+            try await qualify("changes-"+dock.rawValue)
+        }
+        layout.apply(.balanced);layout.update{$0.pageArrangement = .vertical};try await qualify("stacked")
+        layout.reset()
+        return ["default_change_pane_points":initial,"default_document_pane_points":canvas,"resized_change_pane_points":resized,"reopened_change_pane_points":remembered,"native_divider_and_height_reopen":true,"existing_snapshot_reopen":!model.report.isNull,"custom_layout_transitions":checks,"retained_pdf_views":originalPDFs.count,"report_selection_page_zoom_and_pdf_identity_preserved":true,"captures":captures,"interaction_scope":"production layout actions and native public AppKit geometry; no OS gestures; PDF viewport may clamp naturally when its available size changes"]
     }
     static func captureView(_ window:NSWindow,_ url:URL) throws {
         guard let view=window.contentView,let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) else { throw BridgeError(code:"CAPTURE_FAILED",message:"앱 화면을 캡처할 수 없습니다.") }
