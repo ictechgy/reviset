@@ -46,6 +46,9 @@ internal sealed class MainWindow : Window
     private string detailCursor = "";
     private string detailItemNext = "";
     private long detailGeneration;
+    private JsonElement detailPayload;
+    private JsonElement documentDetail;
+    private string inspectorMode = "prompt";
     private bool changesReady;
     internal string ComparisonState { get; private set; } = "empty";
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 5, 12, 5), MaxHeight = 70 };
@@ -173,6 +176,7 @@ internal sealed class MainWindow : Window
     {
         foreach (var action in relocalize) action(); Before.Localize(); After.Localize();
         detailPaging.Visibility = IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
+        RerenderInspector();
         foreach (var splitter in NativeSplitters()) if (splitter.Tag is string key) { AutomationProperties.SetName(splitter, Copy[key]); splitter.ToolTip = Copy[key]; }
         if (!busy) status.Text = Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"]; UpdateContext(); UpdateInterval();
     }
@@ -454,7 +458,7 @@ internal sealed class MainWindow : Window
         else { values = (await Bridge.Call("changes", new { project_id = projectId, report_id = reportId, from = intervalFrom, to = intervalTo, mode = "history" }, token)).Items(); }
         if (!IsCurrent(ticket)) return; binding = true; if (!append) changes.Clear();
         foreach (var value in values) { var label = value.Get("kind").Text() + " · " + (IsWorkbook ? value.Get("description").Text() : value.Get("before").Text() + " → " + value.Get("after").Text()); changes.Add(new(value.Get("change_id").Text(), label.Length > 210 ? label[..210] + "…" : label, value)); }
-        binding = false; nextChanges = next; changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = !busy; more.IsEnabled = !busy && next.Length > 0; if (changes.Count == 0) detail.Text = Copy["noChanges"] + "\n\n" + Copy["coverage"] + "\n" + currentReport.Get("coverage_gaps").Pretty();
+        binding = false; nextChanges = next; changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = !busy; more.IsEnabled = !busy && next.Length > 0; if (changes.Count == 0) detail.Text = Copy["noChanges"] + "\n\n" + Copy["coverage"] + "\n" + currentReport.Get("coverage_gaps").Pretty(); else if (!append) detail.Text = Copy["selectCell"];
     }
     private async Task LoadMoreChanges()
     {
@@ -484,7 +488,7 @@ internal sealed class MainWindow : Window
             var evidence = change.Get("evidence").Items();
             var beforePage = evidence.Select(v => v.Get("page_id").Text()).FirstOrDefault(id => Before.HasPage(id)); var afterPage = evidence.Select(v => v.Get("page_id").Text()).FirstOrDefault(id => After.HasPage(id)); Before.SetEventPage(beforePage); After.SetEventPage(afterPage);
             await Before.Load(ticket, token); await After.Load(ticket, token); if (!IsCurrent(ticket)) return;
-            detail.Text = Copy["event"] + ": " + VersionLabel(Before.RevisionId) + " → " + VersionLabel(After.RevisionId) + "\n\n" + Copy["before"] + "\n" + change.Get("before").Text() + "\n\n" + Copy["after"] + "\n" + change.Get("after").Text(); detailMetadata.Text = change.Pretty();
+            documentDetail = change; inspectorMode = "event"; RerenderInspector(); detailMetadata.Text = change.Pretty();
         }
         if (IsCurrent(ticket)) { changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = true; more.IsEnabled = nextChanges.Length > 0; }
         } catch { if (IsCurrent(ticket) && !token.IsCancellationRequested) FailComparison(); throw; }
@@ -504,14 +508,24 @@ internal sealed class MainWindow : Window
         var project = projectId; var report = reportId; ClearDetail(); detailStyle.IsEnabled = true; detailLoader = (offset, cancel) => { var request = new Dictionary<string, object?>(args) { ["text_offset"] = offset, ["component"] = detailStyle.IsChecked == true ? "style" : "cell", ["limit"] = 1 }; if (detailStyle.IsChecked == true && detailCursor.Length > 0) request["cursor"] = detailCursor; return QueryFixed("get_workbook_cell", request, project, report, cancel); }; await LoadDetail(0);
     }
     private Task<JsonElement> QueryFixed(string name, Dictionary<string, object?> args, string project, string report, CancellationToken token) { args["project_id"] = project; args["report_id"] = report; args["max_output_tokens"] = 8000; return Bridge.Call("workbookQuery", new { name, args }, token); }
-    private void ClearDetail() { ++detailGeneration; cellReads.Cancel(); detailLoader = null; detailNext = null; detailOffset = 0; detailCursor = ""; detailItemNext = ""; detailStyle.IsChecked = false; detailStyle.IsEnabled = false; detailRange.Text = ""; detailMetadata.Text = ""; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; }
+    private void ClearDetail() { ++detailGeneration; cellReads.Cancel(); detailLoader = null; detailPayload = default; documentDetail = default; inspectorMode = "prompt"; detailNext = null; detailOffset = 0; detailCursor = ""; detailItemNext = ""; detailStyle.IsChecked = false; detailStyle.IsEnabled = false; detailRange.Text = ""; detailMetadata.Text = ""; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; }
     private Task FirstDetail() { detailCursor = ""; return LoadDetail(0); }
     private Task NextDetail() { if (detailNext is { } offset) return LoadDetail(offset); if (detailItemNext.Length > 0) { detailCursor = detailItemNext; return LoadDetail(0); } return Task.CompletedTask; }
     private async Task LoadDetail(int offset)
     {
-        if (detailLoader is not { } loader) return; var sequence = ++detailGeneration; var ticket = generation; cellReads.Cancel(); cellReads.Dispose(); cellReads = new(); var token = cellReads.Token; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; detail.Text = Copy["loading"];
-        try { var value = await loader(offset, token); if (!IsCurrent(ticket) || sequence != detailGeneration || token.IsCancellationRequested) return; detailOffset = offset; detailNext = RawSourcePaging.Next(value, offset); detailItemNext = value.Get("next_cursor").Text(); detail.Text = FormatDetail(value); detailRange.Text = FormatRanges(value); detailMetadata.Text = value.Pretty(); firstDetail.IsEnabled = !busy && (offset > 0 || detailCursor.Length > 0); nextDetail.IsEnabled = !busy && (detailNext is not null || detailItemNext.Length > 0); }
-        catch { if (IsCurrent(ticket) && sequence == detailGeneration && !token.IsCancellationRequested) { detail.Text = Copy["failed"]; firstDetail.IsEnabled = true; } throw; }
+        if (detailLoader is not { } loader) return; var sequence = ++detailGeneration; var ticket = generation; cellReads.Cancel(); cellReads.Dispose(); cellReads = new(); var token = cellReads.Token; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; detailPayload = default; documentDetail = default; inspectorMode = "loading"; detailMetadata.Text = ""; detailRange.Text = ""; detail.Text = Copy["loading"];
+        try { var value = await loader(offset, token); if (!IsCurrent(ticket) || sequence != detailGeneration || token.IsCancellationRequested) return; detailOffset = offset; detailNext = RawSourcePaging.Next(value, offset); detailItemNext = value.Get("next_cursor").Text(); detailPayload = value; inspectorMode = "raw"; RerenderInspector(); detailMetadata.Text = value.Pretty(); firstDetail.IsEnabled = !busy && (offset > 0 || detailCursor.Length > 0); nextDetail.IsEnabled = !busy && (detailNext is not null || detailItemNext.Length > 0); }
+        catch { if (IsCurrent(ticket) && sequence == detailGeneration && !token.IsCancellationRequested) { inspectorMode = "failed"; detail.Text = Copy["failed"]; firstDetail.IsEnabled = true; } throw; }
+    }
+    private void RerenderInspector()
+    {
+        if (inspectorMode == "raw" && detailPayload.ValueKind == JsonValueKind.Object) { detail.Text = FormatDetail(detailPayload); detailRange.Text = FormatRanges(detailPayload); return; }
+        if (inspectorMode == "event" && documentDetail.ValueKind == JsonValueKind.Object) { detail.Text = Copy["event"] + ": " + VersionLabel(Before.RevisionId) + " → " + VersionLabel(After.RevisionId) + "\n\n" + Copy["before"] + "\n" + documentDetail.Get("before").Text() + "\n\n" + Copy["after"] + "\n" + documentDetail.Get("after").Text(); return; }
+        if (inspectorMode == "failed" || ComparisonState == "failed") detail.Text = Copy["failed"];
+        else if (inspectorMode == "loading" || ComparisonState == "loading") detail.Text = Copy["loading"];
+        else if (ComparisonState == "invalid") detail.Text = Copy["reverse"];
+        else if (ComparisonState == "ready" && changes.Count == 0) detail.Text = Copy["noChanges"] + "\n\n" + Copy["coverage"] + "\n" + currentReport.Get("coverage_gaps").Pretty();
+        else detail.Text = Copy["selectCell"];
     }
     private string FormatDetail(JsonElement value)
     {
@@ -548,6 +562,12 @@ internal sealed class MainWindow : Window
     }
     internal int ActionableChanges => changesReady && changeList.IsEnabled ? changes.Count : 0;
     internal string DetailText => detail.Text;
+    internal void CheckLoadedLanguageForSmoke()
+    {
+        if (inspectorMode != "raw" || detailPayload.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("Language qualification requires retained loaded source detail.");
+        var payload = detailPayload.GetRawText(); var before = Before.CaptureSelection(); var after = After.CaptureSelection(); var report = reportId; var ticket = generation;
+        foreach (var language in new[] { "ko", "en" }) { SetLanguage(language); if (!detail.Text.Contains(Copy["cached"], StringComparison.Ordinal) || !detail.Text.Contains(Copy["formula"], StringComparison.Ordinal) || detailPayload.GetRawText() != payload || generation != ticket || reportId != report || Before.CaptureSelection() != before || After.CaptureSelection() != after) throw new InvalidOperationException("Language change did not locally rerender retained detail without altering source/scope."); }
+    }
     internal bool AllowsEvidence => !busy;
     internal Task AnalyzeForSmoke() => Analyze();
     internal async Task CheckAnalysisCancellationForSmoke()
@@ -559,7 +579,7 @@ internal sealed class MainWindow : Window
         if (generation != admitted || ActionableChanges != 0) throw new InvalidOperationException("Busy evidence interaction started a new request scope.");
         try { await analysis; throw new InvalidOperationException("Actual analysis cancellation unexpectedly completed."); } catch (OperationCanceledException) { }
         try { await pending; } catch (OperationCanceledException) { }
-        if (startedPid <= 0 || busy || reportId != fixedReport || Before.CaptureSelection() != before || After.CaptureSelection() != after || ComparisonState != "ready") throw new InvalidOperationException("Cancelled analysis did not restore the exact comparison after a pending read.");
+        if (startedPid <= 0 || busy || reportId != fixedReport || Before.CaptureSelection() != before || After.CaptureSelection() != after || ComparisonState != "ready" || detail.Text == Copy["loading"]) throw new InvalidOperationException("Cancelled analysis did not restore the exact comparison after a pending read.");
     }
     internal async Task CheckPostCommitAdmissionForSmoke()
     {
@@ -574,7 +594,7 @@ internal sealed class MainWindow : Window
             owner.Cancel(); if (!owner.IsCancellationRequested || !ReferenceEquals(operation, owner)) throw new InvalidOperationException("Post-commit cancellation did not belong to the admitted writer.");
         }
         finally { release.TrySetResult(); }
-        await analysis; if (busy || operation is not null || ComparisonState != "ready" || reportId.Length == 0) throw new InvalidOperationException("Successful report refresh did not release its own writer cleanly.");
+        await analysis; if (busy || operation is not null || ComparisonState != "ready" || reportId.Length == 0 || detail.Text == Copy["loading"]) throw new InvalidOperationException("Successful report refresh did not release its own writer cleanly.");
     }
     internal async Task CheckFailedGridForSmoke(Func<Task> corrupt, Func<Task> restore)
     {

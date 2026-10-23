@@ -50,6 +50,9 @@ internal sealed class ComparePane
     private (string Project, string Report, string Revision, string Sheet, int Row, int Column)? loadedGridScope;
     internal string ReadState { get; private set; } = "empty";
     private string evidenceAbsence = "";
+    private string previewSource = "";
+    private string previewReason = "";
+    private string previewText = "";
     private bool binding;
     private int row = 1;
     private int column = 1;
@@ -102,6 +105,7 @@ internal sealed class ComparePane
         AutomationProperties.SetName(Cells, owner.Copy[after ? "after" : "before"] + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(revision, heading.Text + " · " + owner.Copy["label"]); AutomationProperties.SetName(sheet, heading.Text + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(address, heading.Text + " · " + owner.Copy["address"]);
         foreach (var arrow in arrows) { arrow.Button.ToolTip = owner.Copy[arrow.Key]; AutomationProperties.SetName(arrow.Button, heading.Text + " · " + owner.Copy[arrow.Key]); }
         docControls.Visibility = owner.IsWorkbook ? Visibility.Collapsed : Visibility.Visible; workbookControls.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed; sparse.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
+        RerenderPresentation();
     }
     internal void NavigationEnabled(bool enabled) { foreach (var control in navigation) control.IsEnabled = enabled; showFormula.IsEnabled = enabled && ReadState == "ready" && loadedGridScope is not null; }
     internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence);
@@ -119,7 +123,7 @@ internal sealed class ComparePane
     }
     internal void Invalidate(string state = "loading")
     {
-        ++gridGeneration; ++pageGeneration; pageRead.Cancel(); ReadState = state; loadedGridScope = null; gridValue = default;
+        ++gridGeneration; ++pageGeneration; pageRead.Cancel(); ReadState = state; loadedGridScope = null; gridValue = default; previewSource = ""; previewReason = ""; previewText = "";
         var previous = binding; binding = true; Cells.SelectedCells.Clear(); Cells.ItemsSource = null; binding = previous; Cells.IsEnabled = false; showFormula.IsEnabled = false;
         PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; fallback.Text = owner.Copy[state == "failed" ? "failed" : "loading"]; source.Text = ""; retry.Visibility = state == "failed" ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -182,7 +186,7 @@ internal sealed class ComparePane
         var value = await owner.Bridge.Call("pagePreview", new { project_id = owner.ProjectId, report_id = owner.ReportId, page_id = selected, max_width = 1600 }, token);
         if (!owner.IsCurrent(ticket) || sequence != pageGeneration || selected != PageId) return;
         if (value.Get("page_id").Text() != selected || value.Get("report_id").Text() != owner.ReportId) throw new BridgeException("PAGE_SCOPE", "The preview belongs to a different page or report.");
-        var encoded = value.Get("png_base64").Text(); var origin = value.Get("source").Text(); source.Text = owner.Copy["source"] + ": " + origin;
+        var encoded = value.Get("png_base64").Text(); var origin = value.Get("source").Text(); previewSource = origin; previewReason = value.Get("unavailable_reason").Text(); previewText = value.Get("text").Text(); source.Text = owner.Copy["source"] + ": " + origin;
         if (encoded.Length > 0)
         {
             if (encoded.Length > 24 * 1024 * 1024) throw new BridgeException("PREVIEW_LIMIT", "The page image exceeds the desktop preview limit.");
@@ -192,9 +196,9 @@ internal sealed class ComparePane
         else
         {
             source.Text = owner.Copy["structural"] + " · " + origin + "\n" + value.Get("unavailable_reason").Text(); fallback.Text = value.Get("text").Text();
-            if (value.Get("text_truncated").Flag()) fallback.Text += "\n… [" + value.Get("text_total_length").Text() + "]";
+            if (value.Get("text_truncated").Flag()) previewText += "\n… [" + value.Get("text_total_length").Text() + "]";
         }
-        ReadState = "ready"; retry.Visibility = Visibility.Collapsed;
+        ReadState = "ready"; retry.Visibility = Visibility.Collapsed; RerenderPresentation();
     }
     private async Task LoadGrid(long ticket, CancellationToken token)
     {
@@ -264,6 +268,18 @@ internal sealed class ComparePane
     private void ResizePreview()
     {
         if (PageImage.Source is BitmapSource bitmap) PageImage.Width = Math.Min(bitmap.PixelWidth, Math.Max(100, Host.ActualWidth - 35));
+    }
+    private void RerenderPresentation()
+    {
+        if (ReadState == "failed") { fallback.Text = owner.Copy["failed"]; return; }
+        if (ReadState == "loading") { fallback.Text = owner.Copy["loading"]; return; }
+        if (ReadState == "empty") { fallback.Text = owner.Copy["selectPage"]; return; }
+        if (ReadState == "absent")
+        {
+            fallback.Text = owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : owner.IsWorkbook ? "absentSheet" : "absentPage"];
+            if (evidenceAbsence == "sheetMetadata" && sheet.SelectedItem is Choice observed) fallback.Text += "\n\n" + observed.Label + "\n" + owner.Copy["row"] + ": " + observed.Value.Get("row_count").Text() + "\n" + owner.Copy["column"] + ": " + observed.Value.Get("column_count").Text(); return;
+        }
+        if (!owner.IsWorkbook && ReadState == "ready") { source.Text = PageImage.Source is not null ? owner.Copy["source"] + ": " + previewSource : owner.Copy["structural"] + " · " + previewSource + "\n" + previewReason; fallback.Text = previewText; }
     }
     internal static string ColumnName(int column) { var name = ""; while (column > 0) { column--; name = (char)('A' + column % 26) + name; column /= 26; } return name; }
     internal async Task GoForSmoke(string cell) { address.Text = cell; await GoAddress(); }
