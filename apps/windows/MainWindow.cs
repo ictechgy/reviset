@@ -85,6 +85,7 @@ internal sealed class MainWindow : Window
     private bool restoringOperation;
     private bool projectChoicesReady;
     private long projectChoicesGeneration;
+    private CancellationTokenSource? projectChoicesRead;
     private sealed record ComparisonSelection(string Project, string Report, bool Workbook, JsonElement Draft, JsonElement Snapshot, PaneSelection Before, PaneSelection After, string IntervalFrom, string IntervalTo);
     private string projectId = "";
     private string reportId = "";
@@ -125,7 +126,7 @@ internal sealed class MainWindow : Window
             if (responsiveScheduled || (!eventArgs.WidthChanged || Math.Abs(eventArgs.NewSize.Width - lastLayoutWidth) <= 1) && (!eventArgs.HeightChanged || Math.Abs(eventArgs.NewSize.Height - lastLayoutHeight) <= 1)) return;
             responsiveScheduled = true; Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () => { responsiveScheduled = false; if (!closed) ApplyLayout(false); });
         };
-        Closing += (_, _) => { closed = true; reads.Cancel(); cellReads.Cancel(); operation?.Cancel(); SavePreferences(); };
+        Closing += (_, _) => { closed = true; CancelProjectChoices(); reads.Cancel(); cellReads.Cancel(); operation?.Cancel(); SavePreferences(); };
     }
 
     private void BuildShell()
@@ -309,32 +310,48 @@ internal sealed class MainWindow : Window
     public async Task Initialize() => await Guard(async () => { await Bridge.Call("recover"); await Bridge.Call("workbookRecover"); await RefreshProjects(); });
     internal async Task SwitchWorkspace(bool workbook, Func<Task>? beforeProjectsForSmoke = null)
     {
-        if (busy) return; SavePreferences(); IsWorkbook = workbook; binding = true; documents.IsChecked = !workbook; workbooks.IsChecked = workbook; binding = false;
+        if (busy) return; CancelProjectChoices(); SavePreferences(); IsWorkbook = workbook; binding = true; documents.IsChecked = !workbook; workbooks.IsChecked = workbook; binding = false;
         BeginScope(); projectId = ""; reportId = ""; currentReport = default; currentProject = default; binding = true; reports.ItemsSource = null; binding = false; ClearReport(); ApplyLayout(); Localize(); SetBusy(false); await RefreshProjectsCore(beforeProjectsForSmoke);
     }
     internal Task RefreshProjects() => RefreshProjectsCore(null);
+    private void CancelProjectChoices()
+    {
+        ++projectChoicesGeneration; var prior = projectChoicesRead; projectChoicesRead = null; prior?.Cancel();
+        // Its own async invocation disposes the source after its await settles.
+    }
     private async Task RefreshProjectsCore(Func<Task>? beforeInstallForSmoke)
     {
-        var ticket = generation; var workbook = IsWorkbook; var sequence = ++projectChoicesGeneration;
+        if (closed) return;
+        CancelProjectChoices(); var workbook = IsWorkbook; var sequence = projectChoicesGeneration;
+        var owned = new CancellationTokenSource(); projectChoicesRead = owned; var token = owned.Token;
         projectChoicesReady = false; binding = true; projectList.ItemsSource = null; binding = false; projectList.IsEnabled = false;
-        var value = await Bridge.Call(workbook ? "workbookProjects" : "projects", token: reads.Token);
-        if (beforeInstallForSmoke is not null) await beforeInstallForSmoke();
-        if (ticket != generation || workbook != IsWorkbook || sequence != projectChoicesGeneration) return;
-        if (value.ValueKind != JsonValueKind.Array || value.Items().Any(item => !ProjectKindMatches(item.Get("project_id").Text(), workbook))) throw new BridgeException("PROJECT_SCOPE", "The project list does not belong to the selected workspace.");
-        var items = value.Items().Select(v => Choice.From(v, "project_id", "title")).ToList();
-        binding = true; projectList.ItemsSource = items; projectList.SelectedItem = items.Find(v => v.Id == projectId); binding = false; projectChoicesReady = true; projectList.IsEnabled = !busy;
-        if (projectId.Length == 0) status.Text = Copy["chooseProject"];
+        try
+        {
+            var value = await Bridge.Call(workbook ? "workbookProjects" : "projects", token: token);
+            if (beforeInstallForSmoke is not null) await beforeInstallForSmoke();
+            if (closed || token.IsCancellationRequested || workbook != IsWorkbook || sequence != projectChoicesGeneration) return;
+            if (value.ValueKind != JsonValueKind.Array || value.Items().Any(item => !ProjectKindMatches(item.Get("project_id").Text(), workbook))) throw new BridgeException("PROJECT_SCOPE", "The project list does not belong to the selected workspace.");
+            var items = value.Items().Select(v => Choice.From(v, "project_id", "title")).ToList();
+            binding = true; projectList.ItemsSource = items; projectList.SelectedItem = items.Find(v => v.Id == projectId); binding = false; projectChoicesReady = true; projectList.IsEnabled = !busy;
+            if (projectId.Length == 0) status.Text = Copy["chooseProject"];
+        }
+        catch (OperationCanceledException) when (closed || token.IsCancellationRequested || workbook != IsWorkbook || sequence != projectChoicesGeneration) { }
+        finally { if (ReferenceEquals(projectChoicesRead, owned)) projectChoicesRead = null; owned.Dispose(); }
     }
     private static bool ProjectKindMatches(string id, bool workbook) => Regex.IsMatch(id, workbook ? "^wprj_[a-zA-Z0-9_-]{1,155}$" : "^prj_[a-zA-Z0-9_-]{1,156}$", RegexOptions.CultureInvariant);
-    internal async Task OpenProject(JsonElement project)
+    internal async Task OpenProject(JsonElement project, Func<CancellationToken, Task>? afterReportsForSmoke = null)
     {
-        if (busy || !projectChoicesReady || !ProjectKindMatches(project.Get("project_id").Text(), IsWorkbook)) return; var current = projectList.Items.OfType<Choice>().FirstOrDefault(item => item.Id == project.Get("project_id").Text()); if (current is null) return; await OpenProjectCore(current.Value);
+        if (busy || !projectChoicesReady || !ProjectKindMatches(project.Get("project_id").Text(), IsWorkbook)) return; var current = projectList.Items.OfType<Choice>().FirstOrDefault(item => item.Id == project.Get("project_id").Text()); if (current is null) return; await OpenProjectCore(current.Value, afterReportsForSmoke: afterReportsForSmoke);
     }
-    private async Task OpenProjectCore(JsonElement project, string preferredReport = "")
+    private async Task OpenProjectCore(JsonElement project, string preferredReport = "", Func<CancellationToken, Task>? afterReportsForSmoke = null)
     {
         var candidate = project.Get("project_id").Text(); var workbook = IsWorkbook; if (!ProjectKindMatches(candidate, workbook)) throw new BridgeException("PROJECT_SCOPE", "The project belongs to a different workspace.");
-        var ticket = BeginScope(); reportId = ""; currentReport = default; binding = true; reports.ItemsSource = null; binding = false; ClearReport(); UpdateContext();
-        var value = await Bridge.Call(workbook ? "workbookReports" : "reports", new { project_id = candidate }, reads.Token);
+        var ticket = BeginScope(); var token = reads.Token;
+        // A visible candidate is not yet an authoritative project. Revoke the
+        // previous writer target synchronously before the first suspended read.
+        projectId = ""; currentProject = default; reportId = ""; currentReport = default; binding = true; reports.ItemsSource = null; binding = false; ClearReport(); UpdateContext(); SetBusy(busy); status.Text = Copy["loading"];
+        var value = await Bridge.Call(workbook ? "workbookReports" : "reports", new { project_id = candidate }, token);
+        if (afterReportsForSmoke is not null) await afterReportsForSmoke(token);
         if (ticket != generation || workbook != IsWorkbook) return;
         if (value.ValueKind != JsonValueKind.Array || value.Items().Any(item => !item.Get("report_id").Text().StartsWith(workbook ? "wreport_" : "rpt_", StringComparison.Ordinal))) throw new BridgeException("REPORT_SCOPE", "The report list does not belong to the selected workspace.");
         currentProject = project; projectId = candidate;
@@ -657,6 +674,49 @@ internal sealed class MainWindow : Window
         var existing = projectList.Items.OfType<Choice>().FirstOrDefault(item => item.Id == project) ?? throw new InvalidOperationException("The current existing project was not reachable in the native list.");
         await OpenProject(existing.Value); await OpenReport(fixedReport);
         if (projectId != project || reportId != fixedReport || ComparisonState != "ready") throw new InvalidOperationException("Selecting an existing project did not return to its pinned report.");
+    }
+    internal async Task CheckProjectTransitionAuthorityForSmoke(Func<Task<string>> counts)
+    {
+        var source = projectList.Items.OfType<Choice>().First(item => item.Id == projectId); var fixedReport = reportId;
+        var candidate = projectList.Items.OfType<Choice>().FirstOrDefault(item => item.Id != source.Id) ?? throw new InvalidOperationException("Project transition control requires a second real project.");
+        var initialCounts = await counts(); var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        binding = true; projectList.SelectedItem = candidate; binding = false;
+        var loading = OpenProject(candidate.Value, async token => { entered.TrySetResult(); await release.Task.WaitAsync(TimeSpan.FromSeconds(20), token); });
+        void AssertNoWriterTarget()
+        {
+            if (projectId.Length != 0 || reportId.Length != 0 || currentProject.ValueKind != JsonValueKind.Undefined || currentReport.ValueKind != JsonValueKind.Undefined || analyzeButton.IsEnabled || reorderButton.IsEnabled || exportButton.IsEnabled || mcpButton.IsEnabled) throw new InvalidOperationException("Pending/failed project selection retained an actionable previous or unverified writer target.");
+        }
+        try
+        {
+            AssertNoWriterTarget(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(10)); AssertNoWriterTarget();
+            await Analyze(); await Reorder(); await Export(); AssertNoWriterTarget();
+            if (initialCounts != await counts()) throw new InvalidOperationException("A project mutation dispatched while its real reports reply was pending.");
+        }
+        finally { release.TrySetResult(); }
+        await loading; if (projectId != candidate.Id || currentProject.Get("project_id").Text() != candidate.Id) throw new InvalidOperationException("Validated candidate did not become authoritative after its reports read settled.");
+        binding = true; projectList.SelectedItem = source; binding = false; await OpenProject(source.Value); await OpenReport(fixedReport);
+        binding = true; projectList.SelectedItem = candidate; binding = false;
+        try { await OpenProject(candidate.Value, _ => throw new IOException("Isolated post-reply project transition settlement failure")); throw new InvalidOperationException("Post-reply transition failure control unexpectedly installed the candidate."); } catch (IOException) { }
+        AssertNoWriterTarget(); await Analyze(); await Reorder(); await Export();
+        if (initialCounts != await counts()) throw new InvalidOperationException("A failed transition dispatched analysis or changed pinned report counts.");
+        binding = true; projectList.SelectedItem = source; binding = false; await OpenProject(source.Value); await OpenReport(fixedReport);
+        if (projectId != source.Id || reportId != fixedReport || ComparisonState != "ready") throw new InvalidOperationException("Project selection did not recover its exact previous pinned report.");
+    }
+    internal async Task CheckIndependentProjectRefreshForSmoke()
+    {
+        var project = projectId; var fixedReport = reportId; var from = intervalFrom; var to = intervalTo; var mode = NetMode;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var refresh = RefreshProjectsCore(async () => { entered.TrySetResult(); await release.Task.WaitAsync(TimeSpan.FromSeconds(20)); });
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10)); var initialGeneration = generation;
+            comparisonMode.SelectedIndex = mode ? 0 : 1; await modeRequest; await ReloadSourceWindow();
+            if (generation <= initialGeneration || projectId != project || reportId != fixedReport || intervalFrom != from || intervalTo != to || NetMode == mode || ComparisonState != "ready") throw new InvalidOperationException("Comparison mode/source changes did not retain their authoritative scope while the independent project list was pending.");
+        }
+        finally { release.TrySetResult(); }
+        await refresh;
+        if (!projectChoicesReady || !projectList.IsEnabled || !projectList.Items.OfType<Choice>().Any(item => item.Id == project) || projectId != project || reportId != fixedReport || ComparisonState != "ready") throw new InvalidOperationException("Same-workspace comparison changes stranded the project list refresh.");
+        comparisonMode.SelectedIndex = mode ? 1 : 0; await modeRequest;
     }
     internal async Task CheckWorkspaceListForSmoke()
     {
