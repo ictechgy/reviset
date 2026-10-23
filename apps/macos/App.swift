@@ -61,6 +61,7 @@ import Combine
             Button(localizer.string("app.menu.evidence")) { activeLayout?.update{$0.inspectorVisible.toggle()} }.keyboardShortcut("i",modifiers:[.command,.option]).disabled(activeLayout == nil)
             Button(localizer.string("layout.panel.projects")) { activeLayout?.update{$0.sidebarVisible.toggle()} }.keyboardShortcut("s",modifiers:[.command,.option]).disabled(activeLayout == nil)
             Button(localizer.string("layout.panel.changes")) { activeLayout?.update{$0.changesVisible.toggle()} }.keyboardShortcut("c",modifiers:[.command,.option]).disabled(activeLayout == nil)
+            Button(localizer.string("layout.customize")) { activeLayout?.settingsPresented=true }.keyboardShortcut("l",modifiers:[.command,.option]).disabled(activeLayout == nil)
             Button(localizer.string("layout.reset")) { activeLayout?.reset() }.keyboardShortcut("0",modifiers:[.command,.option]).disabled(activeLayout == nil)
         }
     }
@@ -634,12 +635,24 @@ private struct SmokeStructureView: View {
         let originalPDFs=pdfs(content),pdfIdentities=Set(originalPDFs.map(ObjectIdentifier.init))
         let pdfFacts=originalPDFs.map{pdf in (pdf,pdf.document,pdf.currentPage,pdf.scaleFactor)}
         let project=model.projectID,report=model.report["report_id"].string,selected=model.selectedChangeID,left=model.leftPageID,right=model.rightPageID
-        var captures:[String]=[],checks=0
+        var captures:[String]=[],checks=0,geometry:[[String:Any]]=[]
         func qualify(_ name:String)async throws {
             try await Task.sleep(nanoseconds:300_000_000);content.layoutSubtreeIfNeeded()
             guard model.projectID==project,model.report["report_id"].string==report,model.selectedChangeID==selected,model.leftPageID==left,model.rightPageID==right,model.zoom==1.5,Set(pdfs(content).map(ObjectIdentifier.init))==pdfIdentities else{throw BridgeError(code:"LAYOUT_STATE",message:"A layout change replaced source views or changed the selected report/page/evidence.")}
             for (pdf,document,page,scale) in pdfFacts {
                 guard pdf.document === document,pdf.currentPage === page,abs(pdf.scaleFactor-scale)<0.001 else{throw BridgeError(code:"LAYOUT_PDF_STATE",message:"A layout change replaced the PDF document or reset its page/zoom.")}
+            }
+            if layout.configuration.changesVisible {
+                let split=try current(),dock=layout.configuration.changesDock
+                guard split.arrangedSubviews.count==2 else{throw BridgeError(code:"LAYOUT_GEOMETRY",message:"The native change/source split has missing panes.")}
+                let auxiliary=split.arrangedSubviews[dock == .left ? 0:1],source=split.arrangedSubviews[dock == .left ? 1:0]
+                let available=(dock == .bottom ? split.bounds.height:split.bounds.width)-split.dividerThickness
+                let minimum:CGFloat=dock == .bottom ? 110:260
+                let requested=CGFloat(dock == .bottom ? layout.configuration.changesHeight:layout.configuration.changesWidth)
+                let expected=min(max(minimum,requested),max(minimum,available-240))
+                let actual=dock == .bottom ? auxiliary.frame.height:auxiliary.frame.width,sourceExtent=dock == .bottom ? source.frame.height:source.frame.width
+                guard abs(actual-expected)<2,sourceExtent>=239 else{throw BridgeError(code:"LAYOUT_GEOMETRY",message:"Dock \(dock.rawValue) has actual \(actual), preferred/clamped \(expected), source \(sourceExtent).")}
+                geometry.append(["action":name,"dock":dock.rawValue,"available":available,"changes_actual":actual,"changes_expected":expected,"source_extent":sourceExtent])
             }
             let file="native-layout-"+LanguagePreferences.shared.effectiveLanguage+"-"+name+".png"
             try captureView(window,output.appendingPathComponent(file));captures.append(file);checks+=1
@@ -651,7 +664,7 @@ private struct SmokeStructureView: View {
         }
         layout.apply(.balanced);layout.update{$0.pageArrangement = .vertical};try await qualify("stacked")
         layout.reset()
-        return ["default_change_pane_points":initial,"default_document_pane_points":canvas,"resized_change_pane_points":resized,"reopened_change_pane_points":remembered,"native_divider_and_height_reopen":true,"existing_snapshot_reopen":!model.report.isNull,"custom_layout_transitions":checks,"retained_pdf_views":originalPDFs.count,"report_selection_page_zoom_and_pdf_identity_preserved":true,"captures":captures,"interaction_scope":"production layout actions and native public AppKit geometry; no OS gestures; PDF viewport may clamp naturally when its available size changes"]
+        return ["default_change_pane_points":initial,"default_document_pane_points":canvas,"resized_change_pane_points":resized,"reopened_change_pane_points":remembered,"native_divider_and_height_reopen":true,"existing_snapshot_reopen":!model.report.isNull,"custom_layout_transitions":checks,"actual_dock_geometry":geometry,"retained_pdf_views":originalPDFs.count,"report_selection_page_zoom_and_pdf_identity_preserved":true,"captures":captures,"interaction_scope":"production layout actions and native public AppKit geometry; no OS gestures; PDF viewport may clamp naturally when its available size changes"]
     }
     static func captureView(_ window:NSWindow,_ url:URL) throws {
         guard let view=window.contentView,let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) else { throw BridgeError(code:"CAPTURE_FAILED",message:"앱 화면을 캡처할 수 없습니다.") }

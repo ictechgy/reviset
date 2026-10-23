@@ -94,8 +94,21 @@ private struct LayoutHarness:View {
         guard !started else{return};started=true
         do {
             await settle();await settle()
+            if let window=NSApp.windows.first(where:{$0.isVisible}) {window.setContentSize(NSSize(width:1440,height:960))}
+            await settle()
             try require(controllers().count==4,"Missing native split controllers: \(controllers().keys)")
             try require(controllers()["Reviset.workspace.probe.projects"]!.splitView.bounds.height>700,"Workspace split failed to fill its native window")
+            var namedSplitters=0
+            for (name,controller) in controllers() {
+                let split=controller.splitView
+                try require(!(split.accessibilityLabel() ?? "").isEmpty,"Unnamed split group: \(name)")
+                let dividers=(split.accessibilityChildren() ?? []).compactMap{$0 as? NSAccessibilityProtocol}.filter{$0.accessibilityRole() == .splitter}
+                for divider in dividers {
+                    try require(divider.accessibilityLabel()==split.accessibilityLabel(),"Unnamed/contextless native drag splitter: \(name)")
+                    namedSplitters+=1
+                }
+            }
+            try require(namedSplitters>=3,"Visible native splitters were not exposed with names: \(namedSplitters)")
             let hosts=hostingIdentities(),pdfs=LayoutProbeRegistry.pdfs,grid=LayoutProbeRegistry.grids["cells"]!,coordinator=LayoutProbeRegistry.coordinators["cells"]!,draft=LayoutProbeRegistry.draft!
             let ancestry=pdfs.mapValues(ancestors)
             for pdf in pdfs.values {pdf.go(to:pdf.document!.page(at:1)!);pdf.scaleFactor=1.5}
@@ -123,6 +136,16 @@ private struct LayoutHarness:View {
                         await settle();try assertIdentity("\(dock.rawValue)/\(inspector.rawValue)/\(direction.rawValue)");transitions+=1
                         try require(controllers()["Reviset.workspace.probe.changes"]!.splitView.isVertical == (dock != .bottom),"Changes dock orientation")
                         try require(controllers()["Reviset.workspace.probe.pages"]!.splitView.isVertical == (direction == .horizontal),"Page orientation")
+                        let changeSplit=controllers()["Reviset.workspace.probe.changes"]!.splitView
+                        let auxiliary=changeSplit.arrangedSubviews[dock == .left ? 0:1],primary=changeSplit.arrangedSubviews[dock == .left ? 1:0]
+                        let available=(dock == .bottom ? changeSplit.bounds.height:changeSplit.bounds.width)-changeSplit.dividerThickness
+                        let minimum:CGFloat=dock == .bottom ? 110:260
+                        let requested:CGFloat=dock == .bottom ? CGFloat(layout.configuration.changesHeight):CGFloat(layout.configuration.changesWidth)
+                        let expected=min(max(minimum,requested),max(minimum,available-240))
+                        let actual=dock == .bottom ? auxiliary.frame.height:auxiliary.frame.width
+                        let sourceExtent=dock == .bottom ? primary.frame.height:primary.frame.width
+                        try require(abs(actual-expected)<2,"Dock extent \(dock.rawValue)/\(inspector.rawValue)/\(direction.rawValue): actual \(actual), expected \(expected), source \(sourceExtent), available \(available)")
+                        try require(sourceExtent>=239,"Docking hid the source canvas: \(sourceExtent)")
                     }
                 }
             }
@@ -140,6 +163,7 @@ private struct LayoutHarness:View {
             try require(layout.configuration.changesHeight==stored,"Temporary viewport clamp overwrote preferred size")
             try require(changes.splitView.arrangedSubviews[1].frame.height<stored,"Small viewport did not clamp the large preferred pane")
             window.setFrame(originalFrame,display:true);await settle()
+            try require(abs(changes.splitView.arrangedSubviews[1].frame.height-stored)<2,"Preferred size was not restored after the window grew")
             try assertIdentity("window resize")
             try require(layout.saveCurrent(named:"My {0} 50% 한글"),"Named layout save")
             let saved=layout.saved[0];layout.apply(.focus);layout.apply(saved);await settle();try assertIdentity("named layout apply")

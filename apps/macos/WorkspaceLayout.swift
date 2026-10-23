@@ -65,6 +65,7 @@ private struct WorkspaceLayoutEnvelope:Codable {
     let scope:WorkspaceLayoutScope
     @Published private(set) var configuration:WorkspaceLayoutConfiguration
     @Published private(set) var saved:[SavedWorkspaceLayout]=[]
+    @Published var settingsPresented=false
     private(set) var persistenceReadOnly=false
     init(scope:WorkspaceLayoutScope) {
         self.scope=scope
@@ -144,14 +145,17 @@ struct WorkspacePaneSplit<Primary:View,Auxiliary:View>:NSViewControllerRepresent
 @MainActor final class WorkspacePaneSplitController<Primary:View,Auxiliary:View>:NSSplitViewController,WorkspacePaneSizing {
     let primary:NSHostingController<Primary>,auxiliary:NSHostingController<Auxiliary>
     let primaryItem:NSSplitViewItem,auxiliaryItem:NSSplitViewItem
+    private let name:String
     private var extent=WorkspacePaneExtent.fraction(0.5)
     private var auxiliaryFirst=false
     private var positioning=false
     private var observer:NSObjectProtocol?
     private var mouseMonitor:Any?
     private var isTrackingDivider=false
+    private var geometryScheduled=false
     private var onResize:(WorkspacePaneExtent)->Void={_ in}
     init(name:String,primary:Primary,auxiliary:Auxiliary) {
+        self.name=name
         self.primary=NSHostingController(rootView:primary);self.auxiliary=NSHostingController(rootView:auxiliary)
         // Split items own their bounds. A Text-only host's default maxSize would
         // otherwise constrain the entire split to its 16-point intrinsic height.
@@ -163,7 +167,12 @@ struct WorkspacePaneSplit<Primary:View,Auxiliary:View>:NSViewControllerRepresent
         primaryItem.canCollapse=true;auxiliaryItem.canCollapse=true
         primaryItem.holdingPriority = .defaultLow;auxiliaryItem.holdingPriority=NSLayoutConstraint.Priority(260)
         addSplitViewItem(primaryItem);addSplitViewItem(auxiliaryItem)
-        observer=NotificationCenter.default.addObserver(forName:NSSplitView.didResizeSubviewsNotification,object:splitView,queue:.main) { [weak self] _ in MainActor.assumeIsolated{self?.rememberDivider()} }
+        observer=NotificationCenter.default.addObserver(forName:NSSplitView.didResizeSubviewsNotification,object:splitView,queue:.main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else{return}
+                self.rememberDivider();self.schedulePreferredGeometry()
+            }
+        }
         mouseMonitor=NSEvent.addLocalMonitorForEvents(matching:.leftMouseDown){[weak self] event in
             MainActor.assumeIsolated{self?.beginDividerGesture(event)};return event
         }
@@ -198,6 +207,8 @@ struct WorkspacePaneSplit<Primary:View,Auxiliary:View>:NSViewControllerRepresent
         primaryItem.isCollapsed = !primaryVisible && auxiliaryVisible
         auxiliaryItem.isCollapsed = !auxiliaryVisible
         splitView.needsLayout=true
+        updateAccessibility()
+        schedulePreferredGeometry()
     }
     private var available:CGFloat {(splitView.isVertical ? splitView.bounds.width:splitView.bounds.height)-splitView.dividerThickness}
     private var visibleExtent:CGFloat {splitView.isVertical ? auxiliary.view.frame.width:auxiliary.view.frame.height}
@@ -206,13 +217,36 @@ struct WorkspacePaneSplit<Primary:View,Auxiliary:View>:NSViewControllerRepresent
         switch extent {case .points(let value):requested=CGFloat(value);case .fraction(let value):requested=available*CGFloat(value)}
         return min(max(auxiliaryItem.minimumThickness,requested),max(auxiliaryItem.minimumThickness,available-primaryItem.minimumThickness))
     }
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        guard !positioning,available>0,!primaryItem.isCollapsed,!auxiliaryItem.isCollapsed,!(isTrackingDivider && NSEvent.pressedMouseButtons & 1 != 0) else{return}
+    override func viewDidAppear() {super.viewDidAppear();schedulePreferredGeometry()}
+    override func viewDidLayout() {super.viewDidLayout();schedulePreferredGeometry()}
+    private func schedulePreferredGeometry() {
+        guard !geometryScheduled else{return}
+        geometryScheduled=true
+        DispatchQueue.main.async{[weak self] in
+            guard let self else{return}
+            self.geometryScheduled=false;self.applyPreferredGeometry()
+        }
+    }
+    private func updateAccessibility() {
+        let label:String
+        if name.hasSuffix(".projects") {label=L("layout.split.projects")}
+        else if name.hasSuffix(".inspector") {label=L("layout.split.inspector")}
+        else if name.hasSuffix(".changes") {label=L("layout.split.changes")}
+        else {label=L("layout.split.pages")}
+        splitView.setAccessibilityLabel(label)
+        splitView.setAccessibilityHelp(L("layout.split.help"))
+        for child in splitView.accessibilityChildren() ?? [] {
+            if let element=child as? NSAccessibilityProtocol,element.accessibilityRole() == .splitter {element.setAccessibilityLabel(label)}
+        }
+    }
+    private func applyPreferredGeometry() {
+        updateAccessibility()
+        guard splitView.window != nil,!positioning,available>0,!primaryItem.isCollapsed,!auxiliaryItem.isCollapsed,!(isTrackingDivider && NSEvent.pressedMouseButtons & 1 != 0) else{return}
         let desired=desiredExtent
         guard abs(visibleExtent-desired)>0.5 else{return}
         positioning=true
         splitView.setPosition(auxiliaryFirst ? desired:available-desired,ofDividerAt:0)
+        splitView.layoutSubtreeIfNeeded()
         positioning=false
     }
     private func rememberDivider() {
@@ -239,7 +273,6 @@ struct WorkspacePaneSplit<Primary:View,Auxiliary:View>:NSViewControllerRepresent
 
 struct WorkspaceLayoutMenu:View {
     @ObservedObject var layout:WorkspaceLayoutStore
-    @State private var settings=false
     @State private var savePrompt=false
     @State private var name=""
     var body:some View {
@@ -257,11 +290,11 @@ struct WorkspaceLayoutMenu:View {
                 Divider()
             }
             Button(L("layout.save")){name="";savePrompt=true}.disabled(layout.saved.count>=12 || layout.persistenceReadOnly)
-            Button(L("layout.customize")){settings=true}
+            Button(L("layout.customize")){layout.settingsPresented=true}
             Button(L("layout.reset")){layout.reset()}
         } label:{Label(L("layout.title"),systemImage:"rectangle.3.group")}
         .help(L("layout.help"))
-        .sheet(isPresented:$settings){WorkspaceLayoutSettings(layout:layout)}
+        .sheet(isPresented:$layout.settingsPresented){WorkspaceLayoutSettings(layout:layout)}
         .alert(L("layout.save"),isPresented:$savePrompt) {
             TextField(L("layout.name"),text:$name)
             Button(L("layout.save.confirm")){_ = layout.saveCurrent(named:name)}.disabled(!layout.canSave(name))
