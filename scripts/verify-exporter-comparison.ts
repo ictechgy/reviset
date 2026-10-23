@@ -45,6 +45,7 @@ for(const item of manifest.cases.filter((c:any)=>c.format==='pptx')){
   const sourcePages=extractPptx(source,'sha256:'+byteHash(source));
   const expected=await extractPdf(reference,'sha256:'+byteHash(reference),{ocr:'off'}),actual=await extractPdf(converted,'sha256:'+byteHash(converted),{ocr:'off'});
   if(expected.length!==item.expected_pages||actual.length!==item.expected_pages)throw new Error('Page count mismatch');
+  if(sourcePages.length!==expected.length)throw new Error('Ordinal qualification requires source slide and PDF page counts to match');
   const matched=matchPages(expected,actual),forced:MatchData[]=expected.map((p,i)=>({from_page_id:p.page_id,to_page_id:actual[i].page_id,score:1,status:'human_confirmed',reasons:['qualification_same_pptx_known_page_ordinal']}));
   const before=revision(expected,'powerpoint_'+item.id),after=revision(actual,'libreoffice_'+item.id);
   const auto=summarize(diffRevisions(before,after,matched.matches,matched.candidates,()=> 'family'));
