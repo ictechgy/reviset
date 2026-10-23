@@ -558,7 +558,7 @@ let changeKinds = ["coverage_gap", "page_added", "page_deleted", "page_lineage_c
     case "page_split": return L("doc.tail.changeKind.pageSplit")
     case "page_merged": return L("doc.tail.changeKind.pageMerge")
     case "page_lineage_changed": return L("doc.tail.changeKind.pageLineageChange")
-    default: return L("doc.tail.change.selectPrompt")
+    default: return kind.isEmpty ? L("doc.tail.change.selectPrompt") : kind
     }
 }
 func isReferenceAppearanceChange(_ change:JSON)->Bool {
