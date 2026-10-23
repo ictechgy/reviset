@@ -185,9 +185,14 @@ internal static class Smoke
             Require(window.ReportId == report && window.Before.RevisionId == beforeVersion && window.After.RevisionId == afterVersion && window.Before.PageId == page && window.Before.SelectedRow == row && window.Before.SelectedColumn == column, "Layout changed report/version/page/grid state");
             Require(ReferenceEquals(nativeRows, window.Before.Cells.ItemsSource) && ReferenceEquals(sourceImage, window.Before.PageImage.Source) && window.Before.PageImage.LayoutTransform.Value == zoom, "Layout recreated native content or lost zoom");
             for (var index = 0; index < 2; index++) { var pane = index == 0 ? window.Before : window.After; var scroll = window.IsWorkbook ? pane.GridScroll! : pane.PageScroll; Require(Math.Abs(scroll.HorizontalOffset - Math.Min(positions[index].HorizontalOffset, scroll.ScrollableWidth)) <= 1 && Math.Abs(scroll.VerticalOffset - Math.Min(positions[index].VerticalOffset, scroll.ScrollableHeight)) <= 1, "Native viewport changed beyond its measured scrollable clamp"); }
+            if (preset.Name is "focus" or "changes-left" or "changes-right" or "vertical" || window.IsWorkbook && preset.Name is "review" or "balanced") Screenshot(window, Path.Combine(output, name + "-layout-" + preset.Name + ".png"));
             if (!window.IsWorkbook) Require(window.Before.Zoom == 1.5, "Layout reset user zoom");
-            else { var coordinates = new { before = await window.Before.CheckFrozenCoordinatesForSmoke(), after = await window.After.CheckFrozenCoordinatesForSmoke() }; await File.WriteAllTextAsync(Path.Combine(output, name + "-frozen-coordinates-" + preset.Name + ".json"), JsonSerializer.Serialize(coordinates, new JsonSerializerOptions { WriteIndented = true })); }
-            if (preset.Name is "focus" or "changes-left" or "changes-right" or "vertical") Screenshot(window, Path.Combine(output, name + "-layout-" + preset.Name + ".png"));
+            else
+            {
+                Task Observe(string side, object geometry) => File.WriteAllTextAsync(Path.Combine(output, name + "-frozen-observed-" + preset.Name + "-" + side + ".json"), JsonSerializer.Serialize(geometry, new JsonSerializerOptions { WriteIndented = true }));
+                var coordinates = new { before = await window.Before.CheckFrozenCoordinatesForSmoke(geometry => Observe("before", geometry)), after = await window.After.CheckFrozenCoordinatesForSmoke(geometry => Observe("after", geometry)) };
+                await File.WriteAllTextAsync(Path.Combine(output, name + "-frozen-coordinates-" + preset.Name + ".json"), JsonSerializer.Serialize(coordinates, new JsonSerializerOptions { WriteIndented = true }));
+            }
         }
         checks.Add(name + "_actual_focus_left_right_vertical_native_layout_captures_preserve_report_hosts_source_and_viewport");
         if (window.IsWorkbook) checks.Add("native_frozen_row_numbers_remain_visible_correct_after_manual_xy_scroll_all_layouts_and_physical_stored_cell_queries");
