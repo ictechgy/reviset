@@ -16,15 +16,15 @@ For example, follow `draft.pptx → review.pdf → final.pptx` as revenue change
 
 ### PPTX and PDF comparison
 
-![Reviset showing a numeric change from 100억 to 120억 with before-and-after source evidence](docs/images/document-comparison.png)
+![Reviset showing a numeric change from 100억 to 120억 with before-and-after source evidence](docs/images/document-comparison-en.png)
 
 A five-version synthetic demo showing the numeric change displayed as `100억 → 120억` and its source evidence. The left pane shows a LibreOffice conversion of a PPTX; the right pane shows the original PDF.
 
 ### Spreadsheet comparison
 
-![Reviset showing inferred row movement from A2 to A3, physical cell addresses, and stored input values](docs/images/workbook-comparison.png)
+![Reviset showing inferred row movement from A2 to A3, physical cell addresses, and stored input values](docs/images/workbook-comparison-en.png)
 
-Inspect the actual before/after addresses, stored input values, and inferred `A2 → A3` row movement. Both screenshots were captured from the running app using synthetic demos.
+Inspect the actual before/after addresses, stored input values, and inferred `A2 → A3` row movement. Both screenshots were captured from the running English interface using synthetic demos. Korean source names and text remain unchanged.
 
 ## Features
 
@@ -71,7 +71,7 @@ Try the built-in **Open five-revision synthetic demo** and **Three-version Excel
 
 Choose **Reviset → Settings…** (`⌘,`) for **System Default**, **English**, or **한국어**. System Default resolves the supported system-language preference order at launch and falls back to English. Reopen Reviset after changing the macOS language order. The app updates its own interface without clearing import/review drafts or starting a new analysis. Some macOS-owned menu items may follow the system app language after reopening.
 
-Interface language and OCR are separate: OCR remains configured for **Korean and English**. Other scripts can be preserved from an available original text layer, with the existing reading-order and extraction limits. See [language support and invariants](docs/LOCALIZATION.md).
+Interface language and OCR are separate: OCR remains configured for **Korean and English**. Other scripts can be preserved from an available original text layer, with the existing reading-order and extraction limits. See [language support and invariants](docs/LOCALIZATION.md) and the [source-bound validation record](docs/LOCALIZATION-2026-10-23.md).
 
 The existing storage location is retained across the rename. Imported originals are copied into `~/Library/Application Support/Docver/library/`. The selected source files are not overwritten. Reanalysis preserves earlier fixed reports separately.
 
