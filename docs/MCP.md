@@ -123,3 +123,7 @@ XLSX·ODS·UTF-8 CSV 프로젝트는 문서와 별도 ID(`wprj_…`)를 사용�
 ### 2026-10-22 native workbook package
 
 현재 스프레드시트 포함 앱은 `release/Docver-Sheets.app`, runtime source `ba8eae815950f92511b7ebb81335bc1f02c6e79f`다. 앱의 AI·내보내기에서 현재 위치·프로젝트에 맞는 설정을 복사한다. 최종 동봉 MCP의12개 workbook도구를15호출(변경 summary/before/after와 범위 밖 거절 포함)로 검사했고 DB 불변을 확인했다. 공백 경로로 이동한 ZIP에서도 생성 설정의 Node와 서버가 이동한 앱 내부를 가리키는지 확인한 뒤 같은 도구를 실행했다. 원문은 UTF-16 offset/length와 continuation을 끝까지 읽고 고정 보고서·occurrence·sheet·셀 주소를 인용한다. [기능 도입 범위](WORKBOOK-2026-10-22.md), [후속 앱·이동 검증](WORKBOOK-RECOVERY-2026-10-22.md).
+
+## PDF 내보내기 도구가 다른 비교
+
+문서 엔진 55는 보이는 원문 글자와 간격을 제한된 좌표 범위에서 대응해 텍스트 조각 분할·기록 순서 차이를 검사한다. `pdf_source_run_layout_equivalent`가 있으면 원문 before/after 문자열은 보존하며 해당 비교를 의미상 텍스트 수정으로 단정하지 않는다. `pdf_visual_difference_without_text_change`는 문구 변경이 확인되지 않은 화면 차이이며 내보내기·글꼴·배치 차이와 실제 그림·서식 편집 모두 가능하다. 픽셀 차이만으로 원인이나 삭제 의도를 확정하지 않는다. 두 사유는 변경별 `get_change`의 coverage/evidence에서 조회하며, 버전별 source/visible/unresolved/suppressed 원문은 별도로 읽는다. 공백·구두점·숫자를 일괄 제거해 같은 내용이라고 결론내리지 않는다. 자세한 범위와 과거 엔진 보존은 [PDF exporter comparison](PDF-EXPORTER-COMPARISON.md)을 따른다.

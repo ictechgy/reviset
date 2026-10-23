@@ -68,6 +68,8 @@ func coverageReasonName(_ value:String)->String {
     case "pptx_source_changed_despite_identical_reference_pixels": return "PPTX 원본은 바뀌었지만 제공된 PDF 화면은 같습니다. 원본의 변경이 PDF에 반영됐는지 확인하세요."
     case "reference_appearance_unavailable_or_unverified_for_page": return "이 페이지의 화면 근거를 양쪽 모두 확인하지 못해 화면 비교를 보류했습니다. 다른 페이지의 비교는 유지합니다."
     case "provided_pdf_visual_difference_with_inferred_source_association": return "제공된 PDF 화면의 차이입니다. PDF와 PPTX 페이지의 대응은 추정이며 원본 화면의 충실도를 보증하지 않습니다."
+    case "pdf_source_run_layout_equivalent": return "PDF 글자와 간격을 대응 영역에서 대조한 결과, 글자가 나뉘거나 기록된 순서의 차이로 판단했습니다. 문구 수정으로 판정하지 않았습니다. 원문과 화면 차이는 별도로 확인하세요."
+    case "pdf_visual_difference_without_text_change": return "PDF 화면은 다르지만 문구 변경은 확인되지 않았습니다. 내보내기 도구·글꼴·배치 차이나 실제 그림·서식 편집 모두 원인일 수 있습니다. 내용 삭제로 단정하지 마세요."
     case "provided_pdf_association_inferred_not_powerpoint_equivalence": return "제공된 PDF 화면을 표시합니다. PPTX 페이지와의 대응은 추정이므로 해당 버전에서 내보낸 PDF인지 확인하세요."
     case "reference_pdf_reused_for_different_pptx": return "하나의 PDF가 서로 다른 PPTX 원본에 묶여 있어 자동 화면 대응을 보류했습니다."
     case "reference_rotation_requires_review": return "회전된 PDF의 자동 화면 대응을 보류했습니다. 원문 방향을 확인하세요."

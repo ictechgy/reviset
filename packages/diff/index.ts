@@ -5,6 +5,7 @@ import {numericSlots,numericPattern,numericShape,numericNotationSupported} from 
 import {isEstimatedPdfSource} from '../ingest/pdf-text-geometry.js';
 import {reviewEstimatedSource} from './estimated-source-review.js';
 import {appearanceRaster,appearanceEnvironment,appearanceEvidence} from '../render/reference-appearance.js';
+import {equivalentPdfSourceLayout} from './pdf-source-layout.js';
 function regionElements(p:PageData):ElementData[]{return p.comparison_basis==='hybrid_regions_v1'?comparisonRegions(p):p.elements.filter(e=>p.comparison_basis==='raster_ocr'?e.method==='vision_ocr':(e.kind==='text'||e.kind==='table_cell')&&e.method!=='vision_document_cell');}
 function comparisonElements(p:PageData):ElementData[]{return regionElements(p).filter(e=>p.comparison_basis==='hybrid_regions_v1'?e.comparison_role==='selected':p.comparison_basis==='raster_ocr'||e.visibility===undefined||['visible','struck_through'].includes(e.visibility));}
 const selectedRaster=(e:ElementData)=>e.method==='vision_ocr'&&e.provenance==='inferred'&&e.visibility==='visible'&&e.comparison_role==='selected';
@@ -102,7 +103,10 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
     const formatA=from.assets.find(s=>s.asset_id===a.asset_id)?.format,formatB=to.assets.find(s=>s.asset_id===b.asset_id)?.format;
     const samePixels=!!rasterA&&rasterA===rasterB,sameRaster=samePixels&&formatA==='pdf'&&formatB==='pdf';
     if(sameRaster&&normalize(comparisonText(a))!==normalize(comparisonText(b)))add('coverage_gap',a,b,m,'ocr_or_text_disagrees_for_identical_native_raster');
-    const textDiffers=normalize(comparisonText(a))!==normalize(comparisonText(b));
+    const rawTextDiffers=normalize(comparisonText(a))!==normalize(comparisonText(b));
+    const samePdfSourceLayout=rawTextDiffers&&formatA==='pdf'&&formatB==='pdf'&&m.status!=='needs_review'&&!unresolvedComparisonText(a)&&!unresolvedComparisonText(b)&&equivalentPdfSourceLayout(a,b);
+    if(samePdfSourceLayout)add('coverage_gap',a,b,m,'pdf_source_run_layout_equivalent');
+    const textDiffers=rawTextDiffers&&!samePdfSourceLayout;
     const regionsPaired=ocrRegionsPaired(a,b);
     if(textDiffers&&!regionsPaired)add('coverage_gap',a,b,m,'ocr_region_missing_or_numeric_ambiguity_withheld');
     if(!sameRaster&&regionsPaired&&!unresolvedComparisonText(a)&&!unresolvedComparisonText(b)&&a.capabilities.text==='available'&&b.capabilities.text==='available'&&textDiffers) {
@@ -209,7 +213,7 @@ export function diffRevisions(from:RevisionData,to:RevisionData,matches:MatchDat
       add('coverage_gap',a,b,m,'revision_interval_render_appearance_not_comparable');const gap=changes.at(-1)!;gap.before=null;gap.after=null;gap.coverage_gaps[0].feature='visual_comparison';gap.lineage.reasons.push('gap_applies_to_entire_revision_interval');
       gap.evidence=gap.evidence.map((e,i)=>({...e,quote:'',method:'native_raster',provenance:(i===0?formatA:formatB)==='pdf'?'observed':'inferred',render_sha256:i===0?rasterA:rasterB}));renderIntervalGap=true;
     }
-    if(formatA===formatB&&(formatA==='pdf'||a.preview?.environment===b.preview?.environment)&&rasterA&&rasterB&&rasterA!==rasterB&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){add('visual_region_changed',a,b,m,sourcePdfAppearance?'native_raster_difference_is_not_semantic_deletion':'render_difference_may_include_renderer_substitution');const change=changes.at(-1)!;change.appearance_assessment=sourcePdfAppearance?'observed':'inferred';change.evidence=change.evidence.map((e,i)=>({...e,quote:'',method:'native_raster',provenance:(i===0?formatA:formatB)==='pdf'?'observed':'inferred',render_sha256:i===0?rasterA:rasterB}));}
+    if(formatA===formatB&&(formatA==='pdf'||a.preview?.environment===b.preview?.environment)&&rasterA&&rasterB&&rasterA!==rasterB&&!changes.some(c=>c.kind==='text_modified'&&c.evidence.some(e=>e.page_id===a.page_id))){add('visual_region_changed',a,b,m,sourcePdfAppearance?'pdf_visual_difference_without_text_change':'render_difference_may_include_renderer_substitution');const change=changes.at(-1)!;if(sourcePdfAppearance)change.coverage_gaps[0].feature='visual_comparison';change.appearance_assessment=sourcePdfAppearance?'observed':'inferred';change.evidence=change.evidence.map((e,i)=>({...e,quote:'',method:'native_raster',provenance:(i===0?formatA:formatB)==='pdf'?'observed':'inferred',render_sha256:i===0?rasterA:rasterB}));}
     }
     if((a.suppressed_text||b.suppressed_text)&&normalize(a.text)!==normalize(b.text)&&normalize(comparisonText(a))===normalize(comparisonText(b)))add('coverage_gap',a,b,m,'raw_text_changed_in_suppressed_layer');
     for(const old of a.elements.filter(e=>e.text)){

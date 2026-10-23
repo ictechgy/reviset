@@ -1,3 +1,4 @@
+import {diffRevisions as legacyBundle54Diff} from '../diff/legacy-bundle-54.js';
 import {diffRevisions as legacyBundle53Diff} from '../diff/legacy-bundle-53.js';
 import {diffRevisions as legacyBundle51Diff} from '../diff/legacy-bundle-51.js';
 import {matchPages as legacyBundle51Match} from '../matching/legacy-bundle-51.js';
@@ -61,7 +62,8 @@ const archivedLineageKernel=(version:string)=>['0.3.0-native.lineage.44','0.3.0-
 const archivedBundle50Kernel=(version:string)=>version==='0.3.0-native.bundle.50';
 const archivedBundle51Kernel=(version:string)=>version==='0.3.0-native.bundle.51';
 const archivedBundle53Kernel=(version:string)=>version==='0.4.0-native.bundle.53';
-const currentLineageKernel=(version:string)=>version===ENGINE_VERSION||archivedBundle53Kernel(version)||archivedLineageKernel(version)||archivedBundle50Kernel(version)||archivedBundle51Kernel(version);
+const archivedBundle54Kernel=(version:string)=>version==='0.4.0-native.bundle.54';
+const currentLineageKernel=(version:string)=>version===ENGINE_VERSION||archivedBundle54Kernel(version)||archivedBundle53Kernel(version)||archivedLineageKernel(version)||archivedBundle50Kernel(version)||archivedBundle51Kernel(version);
 const resource=(r:ReportData,kind:string,key?:string)=>`docver://projects/${r.project_id}/reports/${r.report_id}/${kind}${key?'/'+key:''}`;
 export const reportMetadata=(r:ReportData)=>({schema_version:r.schema_version,report_id:r.report_id,project_id:r.project_id,engine_version:r.engine_version,schema_hash:r.schema_hash,timeline_revision_id:r.timeline_revision_id,mapping_revision_id:r.mapping_revision_id,
   observation_environment:r.observation_environment,revision_count:r.revisions.length,change_count:r.changes.length,relation_count:r.mapping_relations?.length??0,bundle_decision_count:r.bundle_decisions?.length??0,relation_edge_count:r.matches.length,unresolved_candidates:r.candidates.filter(c=>c.status==='needs_review').length,resource_uri:resource(r,'manifest')});
@@ -203,11 +205,11 @@ export class QueryService {
           const left=primary(a),right=primary(b);
           const directed=currentLineageKernel(r.engine_version)?(archivedLineageKernel(r.engine_version)?legacyLineage45Range:archivedBundle50Kernel(r.engine_version)?legacyBundle50Range:archivedBundle51Kernel(r.engine_version)?legacyBundle51Range:rangeLineage)(r,a,b):undefined;
           const matches=directed?.matches??left.pages.flatMap(p=>right.pages.filter(q=>entity(p.page_id)===entity(q.page_id)).map(q=>({from_page_id:p.page_id,to_page_id:q.page_id,score:Math.min(1,...r.matches.filter(m=>r.lineages.find(l=>l.entity_id===entity(p.page_id))?.page_ids.includes(m.from_page_id)).map(m=>m.score)),status:r.lineages.find(l=>l.entity_id===entity(p.page_id))?.status??'inferred',reasons:['snapshot_lineage_range_net']})));
-          const diff=currentLineageKernel(r.engine_version)?archivedLineageKernel(r.engine_version)?legacyLineage45Diff:archivedBundle50Kernel(r.engine_version)?legacyBundle50Diff:archivedBundle51Kernel(r.engine_version)?legacyBundle51Diff:archivedBundle53Kernel(r.engine_version)?legacyBundle53Diff:diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Diff:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Diff:undefined;
+          const diff=currentLineageKernel(r.engine_version)?archivedLineageKernel(r.engine_version)?legacyLineage45Diff:archivedBundle50Kernel(r.engine_version)?legacyBundle50Diff:archivedBundle51Kernel(r.engine_version)?legacyBundle51Diff:archivedBundle54Kernel(r.engine_version)?legacyBundle54Diff:archivedBundle53Kernel(r.engine_version)?legacyBundle53Diff:diffRevisions:r.engine_version==='0.1.0-native.1'?legacyNativeDiff:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Diff:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Diff:undefined;
           if(!diff)throw new DocverError('ENGINE_VERSION_UNAVAILABLE','Historical range computation requires its archived engine; stored history/export remains readable, and reanalysis creates a new report');
           const matcher=archivedLineageKernel(r.engine_version)?legacyLineage45Match:archivedBundle50Kernel(r.engine_version)?legacyBundle50Match:archivedBundle51Kernel(r.engine_version)?legacyBundle51Match:r.engine_version==='0.1.0-native.1'?legacyNativeMatch:r.engine_version==='0.2.0-native.ocr-render.9'?legacyOcr9Match:['0.2.0-native.ocr-render.42','0.2.0-native.ocr-render.43'].includes(r.engine_version)?legacyOcr43Match:matchPages;
           const candidates=(matcher===matchPages?matchPages(left.pages,right.pages,[],[],{maxCosts:r.observation_environment.matching_work_policy===MATCHING_WORK_POLICY?MAX_ASSIGNMENT_COSTS:r.observation_environment.matching_work_policy==='hungarian-32m-costs-v1'?32_000_000:undefined,maxMatrixCells:r.observation_environment.matching_work_policy===MATCHING_WORK_POLICY?MAX_MATCHING_MATRIX_CELLS:undefined}):matcher(left.pages,right.pages)).candidates;
-          const endpointIds=r.engine_version===ENGINE_VERSION||archivedBundle53Kernel(r.engine_version)||r.engine_version==='0.3.0-native.lineage.45'||archivedBundle50Kernel(r.engine_version)||archivedBundle51Kernel(r.engine_version)?[a.revision_occurrence_id,b.revision_occurrence_id]:[args.from,args.to];
+          const endpointIds=r.engine_version===ENGINE_VERSION||archivedBundle54Kernel(r.engine_version)||archivedBundle53Kernel(r.engine_version)||r.engine_version==='0.3.0-native.lineage.45'||archivedBundle50Kernel(r.engine_version)||archivedBundle51Kernel(r.engine_version)?[a.revision_occurrence_id,b.revision_occurrence_id]:[args.from,args.to];
           changes=diff(left,right,matches,candidates,entity,directed?.structural).map((c,i)=>{const event={...c,schema_version:r.schema_version};return {...event,report_id:r.report_id,change_id:id('net',[r.report_id,...endpointIds,i,event]),evidence_uri:resource(r,'manifest')};});
           if(!this.loadSnapshot)this.ranges.set(cacheKey,changes);
           }
@@ -249,7 +251,7 @@ export class QueryService {
   }
   private rangeChange(r:ReportData,args:any):ChangeData|undefined {
     const events=this.changeSet({project_id:r.project_id,report_id:r.report_id,from:args.from,to:args.to,mode:'range_net'}),direct=events.find(c=>c.change_id===args.change_id);
-    if(direct||r.engine_version===ENGINE_VERSION||archivedBundle53Kernel(r.engine_version))return direct;
+    if(direct||r.engine_version===ENGINE_VERSION||archivedBundle54Kernel(r.engine_version)||archivedBundle53Kernel(r.engine_version))return direct;
     // Retain the exact historical selector-preimage recovery used by get_evidence.
     const resolve=(key:string)=>r.revisions.find(v=>v.revision_occurrence_id===key)??r.revisions.find(v=>v.revision_id===key),left=resolve(args.from)!,right=resolve(args.to)!;
     const aliases=(v:typeof left)=>[...new Set([v.revision_occurrence_id,v.revision_id])].filter(key=>resolve(key)===v);
