@@ -201,9 +201,9 @@ private struct SmokeStructureView: View {
         let defaults=UserDefaults.standard,domain=Bundle.main.bundleIdentifier ?? "org.docver.native"
         let stored=defaults.persistentDomain(forName:domain)?[LanguagePreferences.preferenceKey]
         let status=model.statusMessage,identity=ObjectIdentifier(model),report=try model.report.data(),project=model.projectID
-        let selected=model.selectedChangeID,left=model.leftPageID,right=model.rightPageID,from=model.from,to=model.to,originalZoom=model.zoom
+        let selected=model.selectedChangeID,left=model.leftPageID,right=model.rightPageID,from=model.from,to=model.to,originalZoom=model.zoom,originalTab=model.tab
         defer {
-            preferences.selection=original;model.statusMessage=status;model.zoom=originalZoom
+            preferences.selection=original;model.statusMessage=status;model.zoom=originalZoom;model.tab=originalTab
             if let stored { defaults.set(stored,forKey:LanguagePreferences.preferenceKey) }
             else { defaults.removeObject(forKey:LanguagePreferences.preferenceKey) }
         }
@@ -216,10 +216,17 @@ private struct SmokeStructureView: View {
         func fields(_ root:NSView)->[NSTextField] { (root as? NSTextField).map{[$0]} ?? [] + root.subviews.flatMap(fields) }
         func menuTitles(_ menu:NSMenu)->[String] { menu.items.flatMap{[$0.title]+($0.submenu.map(menuTitles) ?? [])} }
         func pdfs(_ root:NSView)->[PDFView] { if let view=root as? PDFView {return [view]};return root.subviews.flatMap(pdfs) }
-        model.zoom=1.6
-        try await Task.sleep(nanoseconds:350_000_000)
-        let pdfViews=parent.contentView.map(pdfs) ?? []
-        guard !pdfViews.isEmpty else {throw BridgeError(code:"L10N_VIEWPORT",message:"No production PDF views to qualify")}
+        model.tab="compare";model.zoom=1.6
+        let expectedPages=model.pageMode == "before" ? [model.leftPageID] : model.pageMode == "after" ? [model.rightPageID] : [model.leftPageID,model.rightPageID]
+        let expectedPDFCount=expectedPages.filter{!$0.isEmpty}.count
+        var pdfViews:[PDFView]=[]
+        for _ in 0..<200 {
+            parent.contentView?.layoutSubtreeIfNeeded()
+            pdfViews=parent.contentView.map(pdfs) ?? []
+            if pdfViews.count==expectedPDFCount && !pdfViews.isEmpty && pdfViews.allSatisfy({$0.document != nil && $0.currentPage != nil}) {break}
+            try await Task.sleep(nanoseconds:50_000_000)
+        }
+        guard !pdfViews.isEmpty,pdfViews.count==expectedPDFCount,pdfViews.allSatisfy({$0.document != nil && $0.currentPage != nil}) else {throw BridgeError(code:"L10N_VIEWPORT",message:"Selected production PDF views did not mount")}
         for view in pdfViews { if let clip=view.documentView?.enclosingScrollView?.contentView {
             clip.scroll(to:NSPoint(x:clip.bounds.origin.x+24,y:clip.bounds.origin.y+32));clip.enclosingScrollView?.reflectScrolledClipView(clip)
         }}
