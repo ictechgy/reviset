@@ -22,11 +22,12 @@ function units(page:PageData):Unit[]|undefined {
   // re-kind source runs as table cells; silently filtering them loses edits.
   const runs=page.comparison_basis==='hybrid_regions_v1'?comparisonRegions(page):page.elements.filter(e=>(e.kind==='text'||e.kind==='table_cell')&&e.method!=='vision_document_cell'&&(e.visibility===undefined||['visible','struck_through'].includes(e.visibility)));
   if(!runs.length||runs.length>MAX_RUNS||page.comparison_basis==='raster_ocr')return;
+  let sourceUnits=0;
+  for(const run of runs){sourceUnits+=run.text.length;if(sourceUnits>MAX_GLYPHS)return;}
   if(runs.map(run=>run.text).join('\n')!==comparisonText(page))return;
-  const result:Unit[]=[];let size=0;
+  const result:Unit[]=[];
   for(const run of runs){
     if(run.comparison_role==='unresolved'||run.provenance!=='observed'||run.method!=='pdf_text'||run.availability!=='available'||run.visibility!=='visible'||hasUnverifiedPdfGeometry(run)||annotationBlocksRegion(annotations,run.bbox))return;
-    size+=run.text.length;if(size>MAX_GLYPHS)return;
     if(/[\u0590-\u08ff\u200e\u200f\u202a-\u202e\u2066-\u2069\ufb1d-\ufdff\ufe70-\ufeff\u{10800}-\u{10fff}\u{1e800}-\u{1eeff}]/u.test(run.text))return;
     const spans=run.visibility_spans;if(!spans?.length||spans.length>MAX_GLYPHS-result.length)return;
     const characters:{text:string;spaceBefore:boolean;spaceAfter:boolean}[]=[];let space=false;
