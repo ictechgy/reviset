@@ -27,3 +27,20 @@ Engine 54's complete diff is archived unchanged in `packages/diff/legacy-bundle-
 The reproducible local harness is `scripts/verify-exporter-comparison.ts`. It checks pinned upstream PowerPoint references against preserved LibreOffice exports of the exact same ten source decks, with 26 pages, and separately checks actual locally authored PDF numeric/spacing controls. Upstream fixture bytes remain in the private validation cache and are not redistributed. Its compact-character diagnostic is not the product equivalence predicate and is not an accuracy score. Public replay runs deny networking and source writes; raw observations, input hashes and failed attempts stay in the local evidence archive.
 
 The earlier [PowerPoint reference measurements](QUALITY.md#powerpoint-독립-참조) retain their original snapshot and pixel-fidelity limitations. Eliminating a false text edit does not make LibreOffice render pixel-identical to PowerPoint, resolve all existing coverage gaps or establish universal OCR accuracy.
+
+### Recorded qualification, 2026-10-23
+
+The implementation was qualified at commit `b3f556a615f88dd892f8fc61f77e8e429e262c6c`. The complete integration suite ran at the earlier implementation commit shown below; it is not presented as a full-suite run of the final commit. The subsequent fixes received focused regression tests, public-fixture replay and code/architecture review.
+
+| Check | Source snapshot | Result and scope |
+| --- | --- | --- |
+| Complete integration suite | `4989296f6babc9e9108fc40a7136b723d710291c` | 456 passed, zero failures or skips; TypeScript check passed. Tracked sources stayed unchanged during the run. |
+| Final exporter regressions | `b3f556a` | 10 passed, zero failures or skips; TypeScript check passed. Covers significant character/space changes, table-cell coverage, independent hidden-layer changes, conservative rejection, admission limits and archived engine-54 query parity. |
+| Existing PowerPoint/LibreOffice PDF pairs | `b3f556a`, compared with `78df903` | Ten decks, 26 pages: false text-edit events fell from two to zero; all 26 automatic page matches remained. All 27 pre-existing uncertainty-event payloads remained byte-identical. Two new run-layout explanations were added. |
+| Actual authored PDF controls | `b3f556a` | Four passed: a split run with unchanged `100` produced no text edit; `100 → 101` with and without a split, and `1 00 → 100`, retained a text edit. |
+| Final native macOS app | `b3f556a` | Build and strict local signature verification passed. Two three-version PDF projects passed fresh analysis and reopening, four launches total. The Korean explanation and numeric-change views were visually inspected. |
+| MCP inside that app | `b3f556a` | 74 positive-case calls passed, checking original strings, change/history evidence and project scope. Another 54 calls checked uncertainty in a preserved report extracted at `4989296`; those calls are not a new extraction or an accuracy pass. |
+
+The public replay used manifest SHA-256 `4209c193deb0e6f24a2806aa152395364e558e131b0bd3419e0151cae636bd19` from upstream commit `faeca2bc29598744a62f787076d9e340e5095b8b`. All 32 input-file hashes matched the baseline and remained unchanged. OCR was disabled, and the LibreOffice PDFs were preserved earlier conversion outputs: this run did not launch a new renderer or measure new pixel fidelity. Forced ordinal associations were used only as a separate diagnostic for these known-source fixtures; production automatic matching was checked separately.
+
+A retained negative native fixture has ambiguous glyph overlap and withholds a real `100 → 101` text-edit claim while exposing the raw strings and uncertainty. It remains an unresolved accuracy case; passing the read-only MCP checks does not resolve it. The local app has an ad-hoc signature, not notarization. These checks do not cover all fonts, exporters, OCR inputs, accessibility interactions or PowerPoint rendering fidelity.
