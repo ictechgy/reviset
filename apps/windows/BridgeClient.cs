@@ -20,7 +20,7 @@ internal sealed class BridgeClient : IDisposable
     public string Backend => Path.Combine(BundleRoot, "backend", "bridge.mjs");
     public BridgeClient(string bundleRoot, string library) { BundleRoot = Path.GetFullPath(bundleRoot); Library = Path.GetFullPath(library); }
 
-    public async Task<JsonElement> Call(string action, object? arguments = null, CancellationToken token = default, Action<JsonElement>? progress = null, Action<int>? startedForSmoke = null)
+    public async Task<JsonElement> Call(string action, object? arguments = null, CancellationToken token = default, Action<JsonElement>? progress = null, Action<int>? startedForSmoke = null, Func<JsonElement, CancellationToken, Task>? beforeReplyForSmoke = null)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
         token = linked.Token;
@@ -30,7 +30,7 @@ internal sealed class BridgeClient : IDisposable
             if (!File.Exists(Node) || !File.Exists(Backend)) throw new BridgeException("BUNDLE_MISSING", "The bundled Node runtime or backend is missing. Install the complete Reviset package.");
             var start = StartInfo(Backend);
             start.ArgumentList.Add("--root"); start.ArgumentList.Add(Library);
-            return await Execute(start, new { action, args = arguments ?? new { } }, token, progress, startedForSmoke).ConfigureAwait(false);
+            return await Execute(start, new { action, args = arguments ?? new { } }, token, progress, startedForSmoke, beforeReplyForSmoke).ConfigureAwait(false);
         }
         finally { serial.Release(); }
     }
@@ -46,7 +46,7 @@ internal sealed class BridgeClient : IDisposable
         return start;
     }
 
-    private static async Task<JsonElement> Execute(ProcessStartInfo start, object request, CancellationToken token, Action<JsonElement>? progress, Action<int>? startedForSmoke)
+    private async Task<JsonElement> Execute(ProcessStartInfo start, object request, CancellationToken token, Action<JsonElement>? progress, Action<int>? startedForSmoke, Func<JsonElement, CancellationToken, Task>? beforeReplyForSmoke)
     {
         using var job = new ProcessJob();
         using var process = new Process { StartInfo = start };
@@ -73,17 +73,41 @@ internal sealed class BridgeClient : IDisposable
             if (reply.Get("protocol_version").Text() != "0.1.0" || reply.Get("schema_version").Text() != "0.4.0") throw new BridgeException("PROTOCOL_MISMATCH", "The app and document engine contract versions differ.");
             if (!reply.Get("ok").Flag()) throw new BridgeException(reply.Get("error").Get("code").Text(), reply.Get("error").Get("message").Text());
             if (process.ExitCode != 0) throw new BridgeException("HELPER_EXIT", "The engine exited with code " + process.ExitCode);
-            return reply.Get("value").Clone();
+            var value = reply.Get("value").Clone();
+            // Isolated native QA can withhold a verified real helper reply before
+            // its caller receives any descriptor. Normal requests have no gate.
+            if (beforeReplyForSmoke is not null) await beforeReplyForSmoke(value, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested(); return value;
         }
-        catch
+        catch (Exception error)
         {
             try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } catch (System.ComponentModel.Win32Exception) { }
             outputStop.Cancel();
             try { await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); } catch (Exception) { }
             try { await Task.WhenAll(outputTask, errorTask).ConfigureAwait(false); } catch (Exception) { }
-            token.ThrowIfCancellationRequested(); throw;
+            token.ThrowIfCancellationRequested();
+            if (error is JsonException || error is BridgeException helper && helper.Code is "PROTOCOL_MISMATCH" or "HELPER_EXIT" or "HELPER_OUTPUT_LIMIT")
+            {
+                var path = WriteDiagnostics(error, stderr.ToString());
+                throw new BridgeException("HELPER_PROTOCOL", "The engine returned an invalid or incomplete response." + (path is null ? "" : " Diagnostic log: " + path));
+            }
+            throw;
         }
     }
+
+    private string? WriteDiagnostics(Exception error, string stderr)
+    {
+        try
+        {
+            var folder = Path.Combine(Path.GetDirectoryName(Library) ?? Library, "logs"); Directory.CreateDirectory(folder); var path = Path.Combine(folder, "helper-error.log");
+            // Plain text only, bounded and overwritten. No source/output is executed,
+            // interpolated into commands or interpreted as a format string.
+            var text = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture) + "\n" + error.GetType().Name + "\n" + (stderr.Length > 65536 ? stderr[^65536..] : stderr);
+            File.WriteAllText(path, new string(text.Select(character => char.IsControl(character) && character is not ('\n' or '\r' or '\t') ? '�' : character).ToArray()), new UTF8Encoding(false)); return path;
+        }
+        catch (Exception errorWriting) when (errorWriting is IOException or UnauthorizedAccessException) { return null; }
+    }
+    internal Task<JsonElement> ProtocolControlForSmoke(string trustedScript) => Execute(StartInfo(trustedScript), new { }, CancellationToken.None, null, null, null);
 
     private static async Task<string> ReadBounded(StreamReader reader, int maximum, CancellationToken token)
     {

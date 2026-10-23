@@ -8,12 +8,19 @@ import PDFDocument from 'pdfkit';
 import {DesktopService} from '../../packages/desktop/service.js';
 import {pagePreview} from '../../packages/desktop/preview.js';
 import {makePptx} from '../../scripts/generate-fixtures.js';
+import {renderPdf} from '../../packages/render/index.js';
 
 async function pdfBytes(){
   const pdf=new PDFDocument({size:[720,405]}),chunks:Buffer[]=[];
   const done=new Promise<Buffer>((ok,fail)=>{pdf.on('data',(b:Buffer)=>chunks.push(b));pdf.on('end',()=>ok(Buffer.concat(chunks)));pdf.on('error',fail);});
   pdf.fontSize(24).text('Revenue 120',40,40);pdf.end();return done;
 }
+test('native PDF preview rejects excessive pixel area before raster allocation',async()=>{
+  const pdf=new PDFDocument({size:[720,14_400],margin:40}),chunks:Buffer[]=[];
+  const done=new Promise<Buffer>((ok,fail)=>{pdf.on('data',(b:Buffer)=>chunks.push(b));pdf.on('end',()=>ok(Buffer.concat(chunks)));pdf.on('error',fail);});
+  pdf.fontSize(20).text('Synthetic preview pixel boundary',40,40);pdf.end();
+  await assert.rejects(renderPdf(await done,1,2048),{code:'RENDER_LIMIT'});
+});
 test('native page preview binds a verified source to fixed report/page and preserves report bytes',async()=>{
   const root=await mkdtemp(join(tmpdir(),'reviset-native-preview-')),library=join(root,'library'),service=new DesktopService(library);
   try{

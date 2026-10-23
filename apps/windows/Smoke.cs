@@ -41,12 +41,18 @@ internal static class Smoke
                 try { using var stopped = Process.GetProcessById(startedPid); Require(stopped.HasExited, "Cancelled helper remained alive"); } catch (ArgumentException) { }
                 Require((await bridge.Call("projects")).ValueKind == JsonValueKind.Array, "Running cancellation poisoned the next request"); checks.Add("started_engine_process_cancellation_and_next_request");
             }
+            var protocolControl = Path.Combine(output, "helper-protocol-control.cjs"); await File.WriteAllTextAsync(protocolControl, "process.stdin.resume();process.stdin.on('end',()=>{process.stderr.write('bounded opaque diagnostics {0}% 한글\\n');process.stdout.write('not json');});\n");
+            try { await bridge.ProtocolControlForSmoke(protocolControl); throw new InvalidOperationException("Malformed helper control unexpectedly parsed"); } catch (BridgeException error) { Require(error.Code == "HELPER_PROTOCOL", "Malformed helper did not produce typed HELPER_PROTOCOL"); }
+            var helperLog = Path.Combine(Path.GetDirectoryName(bridge.Library)!, "logs", "helper-error.log"); Require(File.Exists(helperLog) && new FileInfo(helperLog).Length < 270000 && (await File.ReadAllTextAsync(helperLog)).Contains("bounded opaque diagnostics {0}% 한글", StringComparison.Ordinal), "Bounded helper diagnostics did not preserve opaque stderr"); checks.Add("malformed_helper_typed_protocol_error_and_bounded_local_diagnostics");
+            await window.CheckFirstImportForSmoke("Cancelled document draft", documents, true); checks.Add("cancelled_first_document_import_refreshes_saved_draft_without_dead_retry");
             await window.ImportAndAnalyze(request.Get("documents").Get("title").Text(), documents);
             Require(window.ProjectId.Length > 0 && window.ReportId.Length > 0 && window.ReportId != "latest", "Document report was not pinned");
             result["document_project_id"] = window.ProjectId; result["document_report_id"] = window.ReportId;
             result["document_revisions"] = window.Report.Get("revisions").Items().Count;
             var documentProject = window.ProjectId; var documentReport = window.ReportId;
             checks.Add("document_create_analyze_staged_commit_fixed_report");
+            result["document_lost_reply_recovery"] = await window.CheckLostAnalysisReplyForSmoke(); checks.Add("document_real_staged_reply_lost_cancel_then_same_session_reanalyze_retires_orphan_preserves_fixed_report");
+            await window.CheckModesForSmoke(false); checks.Add("document_native_net_history_modes_preserve_explicit_interval_and_event_pair");
             await window.CheckIntermediateEventForSmoke(); checks.Add("document_intermediate_event_exact_source_pair_preserves_list_interval");
             await window.CheckOrderAndAbsenceForSmoke(); checks.Add("document_reversed_interval_is_invalid_not_empty"); await window.CheckIntermediateEventForSmoke();
             await SaveConfig(window, Path.Combine(output, "document-mcp.json")); checks.Add("actual_document_mcp_configuration");
@@ -89,13 +95,16 @@ internal static class Smoke
             window.SetLanguage("ko"); await Tick(window); Screenshot(window, Path.Combine(output, "document-ko.png")); window.SetLanguage("en"); await Tick(window); Screenshot(window, Path.Combine(output, "document-en.png"));
             await window.ExportForSmoke(Path.Combine(output, "document-export")); checks.Add("document_pinned_export");
             Require(Equal(documentAssets, await AssetHashes(bridge.Library)), "Source assets changed during UI/layout/export"); checks.Add("document_source_assets_preserved");
+            await window.CheckWorkspaceListForSmoke(); checks.Add("held_workspace_project_refresh_rejects_stale_native_row_before_scope_commit_and_recovers_membership");
             var staleGeneration = window.Generation; var superseded = window.ReloadComparison(); await window.SwitchWorkspace(true);
             try { await superseded; } catch (OperationCanceledException) { }
             Require(window.Generation > staleGeneration && window.IsWorkbook && window.ReportId.Length == 0, "A stale document read mutated workbook state"); checks.Add("superseded_document_read_scope");
+            var firstStage = Path.Combine(bridge.Library, "workbook-staging-v1"); Require(!Directory.Exists(firstStage) && !File.Exists(firstStage), "First workbook staging control requires its isolated empty profile");
+            try { await window.CheckFirstImportForSmoke("Failed workbook draft", books, false, () => File.WriteAllText(firstStage, "synthetic first import failure")); } finally { File.Delete(firstStage); } checks.Add("failed_first_workbook_import_refreshes_saved_draft_without_dead_retry");
             await window.ImportAndAnalyze(request.Get("workbook").Get("title").Text(), books);
             Require(window.ProjectId.StartsWith("wprj_", StringComparison.Ordinal) && window.ReportId.StartsWith("wreport_", StringComparison.Ordinal), "Workbook report was not pinned");
             result["workbook_project_id"] = window.ProjectId; result["workbook_report_id"] = window.ReportId; result["workbook_revisions"] = window.Report.Get("revisions").Items().Count;
-            checks.Add("workbook_create_analyze_staged_commit_fixed_report"); await SaveConfig(window, Path.Combine(output, "workbook-mcp.json")); checks.Add("actual_workbook_mcp_configuration");
+            checks.Add("workbook_create_analyze_staged_commit_fixed_report"); result["workbook_lost_reply_recovery"] = await window.CheckLostAnalysisReplyForSmoke(); checks.Add("workbook_real_staged_reply_lost_cancel_then_same_session_reanalyze_retires_orphan_preserves_fixed_report"); await window.CheckMissingVersionSheetForSmoke(); checks.Add("explicit_version_change_preserves_missing_sheet_absence_until_native_sheet_selection"); await window.CheckModesForSmoke(true); checks.Add("workbook_native_history_includes_temporary_row_net_excludes_and_interval_remains_fixed"); await SaveConfig(window, Path.Combine(output, "workbook-mcp.json")); checks.Add("actual_workbook_mcp_configuration");
             await window.CheckIntermediateEventForSmoke(); checks.Add("workbook_intermediate_event_exact_source_pair_preserves_list_interval");
             Require(window.Before.Cells.Items.Count == 50 && window.After.Cells.Items.Count == 50, "Native sparse grid viewport was not populated"); checks.Add("native_virtualized_sparse_grid");
             await window.Before.GoForSmoke("B2"); Require(window.Before.SelectedRow == 2 && window.Before.SelectedColumn == 2, "Grid address navigation failed"); checks.Add("grid_physical_address_and_raw_cell_detail");
@@ -104,11 +113,15 @@ internal static class Smoke
             Require(await window.ReadCellForSmoke(3, "B3", "value") == expectedLong.Get("csv_b3").Text(), "Native raw Unicode source continuation failed exact reconstruction");
             Require(await window.ReadCellForSmoke(3, "C3", "value") == expectedLong.Get("csv_c3").Text(), "Native formula-looking CSV source was changed or truncated");
             Require(await window.ReadCellForSmoke(1, "D4", "formula") == expectedLong.Get("xlsx_d4_formula").Text(), "Native raw formula continuation failed exact reconstruction"); checks.Add("native_long_unicode_value_and_formula_exact_utf16_continuation_first_next");
+            foreach (var marker in new[] { ("B4", "—"), ("C4", "…"), ("D4", "ends…") }) { Require(await window.ReadCellForSmoke(3, marker.Item1, "value") == marker.Item2, "Literal marker source changed in the raw reader"); window.Before.CheckLiteralMarkerForSmoke(marker.Item2); }
+            await window.ReadCellForSmoke(3, "B3", "value"); window.Before.CheckTruncationForSmoke(); checks.Add("literal_grid_markers_are_source_normal_and_sparse_truncation_annotations_are_distinct");
+            await window.ReadCellForSmoke(1, "D4", "formula");
             JsonElement backup = default;
             async Task Corrupt() { backup = await IndexControl(bridge, output, new { operation = "corrupt", report_id = window.ReportId, revision = window.Before.RevisionId, sheet = window.Before.SheetId, row = window.Before.SelectedRow, column = window.Before.SelectedColumn }); }
             async Task Restore() { if (backup.ValueKind != JsonValueKind.Undefined) await IndexControl(bridge, output, new { operation = "restore", backup }); }
             await window.CheckFailedDetailForSmoke(Corrupt, Restore); checks.Add("failed_raw_continuation_removes_authority_and_scoped_first_retry");
-            await window.CheckFailedGridForSmoke(Corrupt, Restore); checks.Add("failed_grid_clears_cells_selection_changes_inspector_and_exact_retry");
+            await window.SelectSourcePairForSmoke(0, 2); await window.CheckIntermediateEventForSmoke(); await window.Before.GoForSmoke("B2");
+            await window.CheckFailedGridForSmoke(Corrupt, Restore); checks.Add("failed_B2_grid_clears_authority_and_retries_exact_event_pair_window_and_separate_interval");
             await window.SelectSourcePairForSmoke(0, 1); await window.Before.GoForSmoke("B2");
             await window.CheckAnalysisCancellationForSmoke(); checks.Add("actual_analysis_during_pending_read_busy_evidence_blocked_cancel_restores_scope");
             await window.CheckPostCommitAdmissionForSmoke(); checks.Add("post_commit_refresh_retains_single_writer_rejects_nested_analysis_import_and_owns_cancel");
@@ -168,7 +181,7 @@ internal static class Smoke
         window.SetLayout(new()); window.Preferences.For(window.IsWorkbook).Current = window.Preferences.For(window.IsWorkbook).Named["smoke saved"]; window.ApplyLayout(); window.ReloadPreferencesForSmoke();
         Require(window.Layout == expected && window.Preferences.For(window.IsWorkbook).Named.ContainsKey("smoke saved"), "Saved layout did not reload");
         Require(window.ReportId == report && window.Before.PageId == page && window.Before.SelectedRow == row, "Preference reload changed source scope");
-        checks.Add(name + "_all_presets_retained_native_pane_and_state"); checks.Add(name + "_custom_docking_named_save_apply_reload");
+        checks.Add(name + "_all_presets_retained_native_pane_and_state"); checks.Add(name + "_custom_docking_named_save_apply_reload"); window.CheckLayoutDialogForSmoke(); checks.Add(name + "_production_named_layout_save_cancel_apply_and_exclusive_language_menus");
         var preferred = window.Layout; var wide = window.Width; window.Width = 1000; await Tick(window); Require(window.Layout == preferred, "Narrow layout overwrote user preferred dimensions"); window.Width = wide; await Tick(window); Require(window.Layout == preferred, "Widening failed to retain preferred dimensions"); checks.Add(name + "_narrow_window_preserves_preferred_layout");
         window.SetLayout(WorkspaceLayout.Preset("balanced")); await Tick(window); Screenshot(window, Path.Combine(output, name + "-balanced.png"));
         foreach (var splitter in window.NativeSplitters()) Require(!string.IsNullOrWhiteSpace(AutomationProperties.GetName(splitter)), "An active native splitter lacks an accessibility name");
@@ -177,6 +190,7 @@ internal static class Smoke
         var keyboardBefore = DividerGeometry(); divider.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, presentation, Environment.TickCount, Key.Right) { RoutedEvent = Keyboard.KeyDownEvent }); divider.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, presentation, Environment.TickCount, Key.Right) { RoutedEvent = Keyboard.KeyUpEvent }); await Tick(window); await File.WriteAllTextAsync(Path.Combine(output, name + "-keyboard-resize.json"), JsonSerializer.Serialize(new { before = keyboardBefore, after = DividerGeometry() }, new JsonSerializerOptions { WriteIndented = true }));
         Require(Math.Abs(window.Layout.ComparisonRatio - ratio) > .001, "Native keyboard splitter resize did not persist"); Require(AppPreferences.Load(window.PreferencesPath).For(window.IsWorkbook).Current.ComparisonRatio == window.Layout.ComparisonRatio, "Keyboard splitter ratio was not saved"); checks.Add(name + "_named_native_splitters_and_keyboard_resize_persistence");
         window.SetLayout(WorkspaceLayout.Preset("balanced")); var oldWidth = window.Width; var oldHeight = window.Height; window.Width = 1024; window.Height = 768; await Tick(window);
+        await window.CheckNarrowSidebarForSmoke(); await Tick(window); checks.Add(name + "_narrow_native_layout_menu_sidebar_toggle_and_existing_project_access");
         if (window.IsWorkbook)
         {
             Require(window.Before.Cells.ActualHeight >= 150 && window.After.Cells.ActualHeight >= 150, "Balanced 1024x768 native grids have insufficient visible height");
@@ -185,6 +199,14 @@ internal static class Smoke
         }
         object Measurements() => new { actual_window_width = window.ActualWidth, actual_window_height = window.ActualHeight, before_width = window.Before.Host.ActualWidth, before_height = window.Before.Host.ActualHeight, before_grid_height = window.Before.Cells.ActualHeight, before_grid_visible_rows = window.Before.GridScroll?.ViewportHeight, after_width = window.After.Host.ActualWidth, after_height = window.After.Host.ActualHeight, after_grid_height = window.After.Cells.ActualHeight, after_grid_visible_rows = window.After.GridScroll?.ViewportHeight };
         var narrow = Measurements(); Screenshot(window, Path.Combine(output, name + "-1024x768.png")); window.Width = oldWidth; window.Height = oldHeight; await Tick(window); await File.WriteAllTextAsync(Path.Combine(output, name + "-viewport-measurements.json"), JsonSerializer.Serialize(new { narrow, available_wide = Measurements() }, new JsonSerializerOptions { WriteIndented = true }));
+        var savedLayout = window.Layout; var heightBefore = window.Height; var actualWidth = window.ActualWidth;
+        var preferredHeight = Math.Clamp(window.WorkspaceHeightForSmoke - 260, 150, 400); window.SetLayout(window.Layout with { Changes = "bottom", ChangesVisible = true, ChangesHeight = preferredHeight }); await Tick(window);
+        var layoutIntent = window.Layout; var preferenceBytes = await File.ReadAllBytesAsync(window.PreferencesPath); var tallHeight = window.ChangesPane.ActualHeight;
+        window.Height = 640; await Tick(window); var shortHeight = window.ChangesPane.ActualHeight; window.Height = heightBefore; await Tick(window);
+        var restoredPreferenceBytes = await File.ReadAllBytesAsync(window.PreferencesPath); Require(window.Layout == layoutIntent && preferenceBytes.SequenceEqual(restoredPreferenceBytes), "Height-only temporary clamp changed persisted preferred layout intent");
+        Require(Math.Abs(window.ActualWidth - actualWidth) <= 1 && Math.Abs(window.ChangesPane.ActualHeight - window.EffectiveChangesHeightForSmoke) <= 2 && Math.Abs(window.ChangesPane.ActualHeight - tallHeight) <= 2 && window.ChangesPane.ActualHeight > shortHeight + 5, "Height-only expansion did not restore the effective preferred bottom changes height");
+        Require(window.Before.Host.ActualHeight >= 100 && window.After.Host.ActualHeight >= 100 && window.Layout.ComparisonRatio == layoutIntent.ComparisonRatio, "Height-only resize lost comparison geometry or source visibility");
+        await File.WriteAllTextAsync(Path.Combine(output, name + "-height-restore.json"), JsonSerializer.Serialize(new { preferred_height = preferredHeight, actual_width = window.ActualWidth, actual_window_height = window.ActualHeight, initial_effective_height = tallHeight, short_height = shortHeight, restored_height = window.ChangesPane.ActualHeight, effective_expected_height = window.EffectiveChangesHeightForSmoke, preference_bytes_unchanged = true })); window.SetLayout(savedLayout); await Tick(window); checks.Add(name + "_height_only_shrink_expand_restores_bottom_changes_without_rewriting_preferred_bytes");
         if (window.IsWorkbook && window.ActualHeight >= 900) Require(window.Before.GridScroll?.ViewportHeight >= 9 && window.After.GridScroll?.ViewportHeight >= 9, "Wide native grids do not show nine source rows"); checks.Add(name + "_source_viewport_visible_at_1024x768_and_available_wide_bounds");
     }
     private static async Task Tick(MainWindow window) { window.UpdateLayout(); await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); }

@@ -22,7 +22,7 @@ await deck.writeFile({fileName:join(folder,'v3.pptx')});
 await generateWorkbookDemo(join(folder,'workbooks'));
 const longValue='한글😀{0}% opaque '.repeat(600),longFormula='CONCAT("'+'한글😀{0}%'.repeat(900)+'")',longLiteral='='+longFormula;
 const csvQuote=(text:string)=>'"'+text.replaceAll('"','""')+'"';
-await writeFile(join(folder,'workbooks/v4.csv'),'SKU,항목,단가,수량,합계\nSKU001,한글 검토,130,2,260\nLONG,'+csvQuote(longValue)+','+csvQuote(longLiteral)+',1,0\n');
+await writeFile(join(folder,'workbooks/v4.csv'),'SKU,항목,단가,수량,합계\nSKU001,한글 검토,130,2,260\nLONG,'+csvQuote(longValue)+','+csvQuote(longLiteral)+',1,0\nMARKERS,—,…,ends…,0\n');
 const xlsxPath=join(folder,'workbooks/v2.xlsx'),xlsx=unzipSync(await readFile(xlsxPath)),sheetKey='xl/worksheets/sheet1.xml';
 const sheetXML=strFromU8(xlsx[sheetKey]);
 if((sheetXML.match(/<c r="D4">/gu)??[]).length!==1)throw new Error('Expected one synthetic D4 cell');

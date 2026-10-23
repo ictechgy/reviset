@@ -1,4 +1,5 @@
 using System.IO;
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -11,11 +12,19 @@ using System.Windows.Media.Imaging;
 
 namespace Reviset.Windows;
 
-internal sealed record GridRow(int Row, string[] Values)
+internal sealed record GridCell(string Text, bool Annotation, string TooltipKey, Copy Copy) : INotifyPropertyChanged
+{
+    public string ToolTip => Copy[TooltipKey];
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public void Localize() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToolTip)));
+    public Brush Foreground => Annotation ? Brushes.Gray : Brushes.Black;
+    public FontStyle FontStyle => Annotation ? FontStyles.Italic : FontStyles.Normal;
+}
+internal sealed record GridRow(int Row, GridCell[] Values)
 {
     public string Number => Row.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
-internal sealed record PaneSelection(string Revision, string Sheet, string Page, int Row, int Column, double Zoom, string Absence);
+internal sealed record PaneSelection(string Revision, string Sheet, string Page, int Row, int Column, double Zoom, string Absence, string RequestedSheet = "");
 
 internal sealed class ComparePane
 {
@@ -50,6 +59,8 @@ internal sealed class ComparePane
     private (string Project, string Report, string Revision, string Sheet, int Row, int Column)? loadedGridScope;
     internal string ReadState { get; private set; } = "empty";
     private string evidenceAbsence = "";
+    private string requestedSheetName = "";
+    private Task selectionRequest = Task.CompletedTask;
     private string previewSource = "";
     private string previewReason = "";
     private string previewText = "";
@@ -85,9 +96,9 @@ internal sealed class ComparePane
         var bottom = new StackPanel(); bottom.Children.Add(source); bottom.Children.Add(sparse); bottom.Children.Add(retry); DockPanel.SetDock(bottom, Dock.Bottom); dock.Children.Add(bottom);
         PageScroll.Content = PageImage; visual.Children.Add(PageScroll); visual.Children.Add(fallback); visual.Children.Add(Cells); dock.Children.Add(visual);
         VirtualizingPanel.SetVirtualizationMode(Cells, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(Cells, true);
-        revision.SelectionChanged += async (_, _) => { if (binding) return; SetRevisionContents(); await owner.Guard(owner.ReloadComparison); };
+        revision.SelectionChanged += async (_, _) => { if (binding) return; SetRevisionContents(true); selectionRequest = owner.ReloadComparison(); await owner.Guard(() => selectionRequest); };
         page.SelectionChanged += async (_, _) => { if (!binding && !owner.IsWorkbook) await owner.Guard(() => Load(owner.Generation, owner.ReadToken)); };
-        sheet.SelectionChanged += async (_, _) => { if (!binding && owner.IsWorkbook) { evidenceAbsence = ""; Invalidate(); row = 1; column = 1; await owner.Guard(owner.ReloadComparison); } };
+        sheet.SelectionChanged += async (_, _) => { if (!binding && owner.IsWorkbook) { evidenceAbsence = ""; requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? ""; Invalidate(); row = 1; column = 1; selectionRequest = owner.ReloadSourceWindow(); await owner.Guard(() => selectionRequest); } };
         zoom.ValueChanged += (_, _) => { PageImage.LayoutTransform = new ScaleTransform(zoom.Value, zoom.Value); };
         Host.SizeChanged += (_, _) => ResizePreview();
         showFormula.Checked += (_, _) => RenderGrid(); showFormula.Unchecked += (_, _) => RenderGrid();
@@ -104,24 +115,24 @@ internal sealed class ComparePane
     internal void Localize()
     {
         heading.Text = owner.Copy[after ? "after" : "before"]; pageCaption.Text = owner.Copy["pages"]; sheetCaption.Text = owner.Copy["sheet"]; showFormula.Content = owner.Copy["showFormula"]; sparse.Text = owner.Copy["sparseShort"]; sparse.ToolTip = owner.Copy["sparse"]; address.ToolTip = owner.Copy["address"];
-        AutomationProperties.SetName(Cells, owner.Copy[after ? "after" : "before"] + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(revision, heading.Text + " · " + owner.Copy["label"]); AutomationProperties.SetName(sheet, heading.Text + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(address, heading.Text + " · " + owner.Copy["address"]);
+        AutomationProperties.SetName(Cells, owner.Copy[after ? "after" : "before"] + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(revision, heading.Text + " · " + owner.Copy["label"]); AutomationProperties.SetName(sheet, heading.Text + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(page, heading.Text + " · " + owner.Copy["pages"]); AutomationProperties.SetName(address, heading.Text + " · " + owner.Copy["address"]);
         foreach (var arrow in arrows) { arrow.Button.ToolTip = owner.Copy[arrow.Key]; AutomationProperties.SetName(arrow.Button, heading.Text + " · " + owner.Copy[arrow.Key]); }
         docControls.Visibility = owner.IsWorkbook ? Visibility.Collapsed : Visibility.Visible; workbookControls.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed; sparse.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
-        RerenderPresentation();
+        RerenderPresentation(); foreach (var cells in Cells.Items.OfType<GridRow>()) foreach (var cell in cells.Values) cell.Localize();
     }
     internal void NavigationEnabled(bool enabled) { foreach (var control in navigation) control.IsEnabled = enabled; showFormula.IsEnabled = enabled && ReadState == "ready" && loadedGridScope is not null; }
-    internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence);
+    internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence, requestedSheetName);
     internal void RestoreSelection(PaneSelection saved)
     {
         if (saved.Revision.Length == 0) { Clear(); return; } SetEvidenceRevision(saved.Revision); binding = true;
         if (sheet.ItemsSource is List<Choice> sheets) sheet.SelectedItem = sheets.Find(value => value.Id == saved.Sheet);
         if (page.ItemsSource is List<Choice> pages) page.SelectedItem = pages.Find(value => value.Id == saved.Page);
-        row = saved.Row; column = saved.Column; Zoom = saved.Zoom; evidenceAbsence = saved.Absence; binding = false;
+        row = saved.Row; column = saved.Column; Zoom = saved.Zoom; evidenceAbsence = saved.Absence; requestedSheetName = saved.RequestedSheet; binding = false;
     }
     internal void Clear()
     {
         pageRead.Cancel(); ++pageGeneration; ++gridGeneration;
-        Invalidate("empty"); binding = true; revision.ItemsSource = null; page.ItemsSource = null; sheet.ItemsSource = null; fallback.Text = owner.Copy["selectPage"]; evidenceAbsence = ""; binding = false;
+        Invalidate("empty"); binding = true; revision.ItemsSource = null; page.ItemsSource = null; sheet.ItemsSource = null; fallback.Text = owner.Copy["selectPage"]; evidenceAbsence = ""; requestedSheetName = ""; binding = false;
     }
     internal void Invalidate(string state = "loading")
     {
@@ -132,16 +143,16 @@ internal sealed class ComparePane
     internal bool AuthorizesCell(int requestedRow, int requestedColumn) => ReadState == "ready" && loadedGridScope is { } scope && scope.Project == owner.ProjectId && scope.Report == owner.ReportId && scope.Revision == RevisionId && scope.Sheet == SheetId && scope.Row == row && scope.Column == column && requestedRow >= row && requestedRow < row + 50 && requestedColumn >= column && requestedColumn < Math.Min(16385, column + 8);
     internal void SetRevisions(List<JsonElement> items, int index)
     {
-        revisions = items; binding = true; revision.ItemsSource = items.Select(v => Choice.From(v, "revision_occurrence_id", "label")).ToList(); revision.SelectedIndex = items.Count > 0 ? Math.Clamp(index, 0, items.Count - 1) : -1; binding = false; SetRevisionContents(); Localize();
+        revisions = items; requestedSheetName = ""; binding = true; revision.ItemsSource = items.Select(v => Choice.From(v, "revision_occurrence_id", "label")).ToList(); revision.SelectedIndex = items.Count > 0 ? Math.Clamp(index, 0, items.Count - 1) : -1; binding = false; SetRevisionContents(); Localize();
     }
-    private void SetRevisionContents()
+    private void SetRevisionContents(bool explicitVersionChange = false)
     {
         Invalidate(); evidenceAbsence = "";
-        var selected = revisions.Find(v => v.Get("revision_occurrence_id").Text() == RevisionId); var oldPage = PageId; var oldSheet = (sheet.SelectedItem as Choice)?.Label;
+        var selected = revisions.Find(v => v.Get("revision_occurrence_id").Text() == RevisionId); var oldPage = PageId; var oldSheet = (sheet.SelectedItem as Choice)?.Label ?? requestedSheetName;
         binding = true;
         if (owner.IsWorkbook)
         {
-            var sheets = selected.Get("sheets").Items().Select(v => Choice.From(v, "sheet_id", "name")).ToList(); sheet.ItemsSource = sheets; sheet.SelectedItem = sheets.Find(v => v.Label == oldSheet) ?? sheets.FirstOrDefault(); row = 1; column = 1;
+            var sheets = selected.Get("sheets").Items().Select(v => Choice.From(v, "sheet_id", "name")).ToList(); sheet.ItemsSource = sheets; var matching = sheets.Find(v => v.Label == oldSheet); sheet.SelectedItem = matching ?? (explicitVersionChange && oldSheet.Length > 0 ? null : sheets.FirstOrDefault()); requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? oldSheet; if (explicitVersionChange && oldSheet.Length > 0 && matching is null) evidenceAbsence = "missingSelectedSheet"; row = 1; column = 1;
         }
         else
         {
@@ -233,7 +244,7 @@ internal sealed class ComparePane
         Invalidate(); var sequence = gridGeneration;
         if (evidenceAbsence.Length > 0)
         {
-            ReadState = "absent"; fallback.Text = owner.Copy[evidenceAbsence];
+            ReadState = "absent"; fallback.Text = owner.Copy[evidenceAbsence] + (evidenceAbsence == "missingSelectedSheet" ? "\n\n" + requestedSheetName : "");
             if (evidenceAbsence == "sheetMetadata" && sheet.SelectedItem is Choice observedSheet) fallback.Text += "\n\n" + observedSheet.Label + "\n" + owner.Copy["row"] + ": " + observedSheet.Value.Get("row_count").Text() + "\n" + owner.Copy["column"] + ": " + observedSheet.Value.Get("column_count").Text();
             return;
         }
@@ -257,19 +268,34 @@ internal sealed class ComparePane
         if (ReadState != "ready" || loadedGridScope is null || gridValue.ValueKind == JsonValueKind.Undefined) return; binding = true; Cells.Columns.Clear();
         Cells.Columns.Add(new DataGridTextColumn { Header = "#", Binding = new Binding(nameof(GridRow.Number)), Width = 65, IsReadOnly = true });
         var columnCount = Math.Min(8, 16385 - column);
-        for (var index = 0; index < columnCount; index++) Cells.Columns.Add(new DataGridTextColumn { Header = ColumnName(column + index), Binding = new Binding("Values[" + index + "]"), Width = 115, IsReadOnly = true });
+        for (var index = 0; index < columnCount; index++)
+        {
+            var path = "Values[" + index + "]"; var style = new Style(typeof(TextBlock)); style.Setters.Add(new Setter(TextBlock.ForegroundProperty, new Binding(path + ".Foreground"))); style.Setters.Add(new Setter(TextBlock.FontStyleProperty, new Binding(path + ".FontStyle"))); style.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(path + ".ToolTip")));
+            Cells.Columns.Add(new DataGridTextColumn { Header = ColumnName(column + index), Binding = new Binding(path + ".Text"), ElementStyle = style, Width = 115, IsReadOnly = true });
+        }
         var observed = gridValue.Get("items").Items().ToDictionary(v => (v.Get("row").Number(), v.Get("column").Number()), v => v);
         var values = new List<GridRow>();
         for (var r = row; r < Math.Min(1_048_577, row + 50); r++)
         {
-            var cells = new string[columnCount]; for (var index = 0; index < columnCount; index++)
+            var cells = new GridCell[columnCount]; for (var index = 0; index < columnCount; index++)
             {
-                if (!observed.TryGetValue((r, column + index), out var cell)) { cells[index] = "—"; continue; }
-                var formula = cell.Get("formula").Text(); var value = showFormula.IsChecked == true && formula.Length > 0 ? formula : cell.Get("value").Text(); cells[index] = value + (cell.Get("text_truncated").Flag() ? "…" : "");
+                if (!observed.TryGetValue((r, column + index), out var cell)) { cells[index] = new("—", true, "sparseCell", owner.Copy); continue; }
+                var formula = cell.Get("formula").Text(); var value = showFormula.IsChecked == true && formula.Length > 0 ? formula : cell.Get("value").Text(); var truncated = cell.Get("text_truncated").Flag(); cells[index] = new(value + (truncated ? "…" : ""), truncated, truncated ? "truncatedCell" : "literalCell", owner.Copy);
             }
             values.Add(new(r, cells));
         }
         Cells.ItemsSource = values; binding = false;
+    }
+    internal void CheckLiteralMarkerForSmoke(string literal)
+    {
+        if (Cells.Items.OfType<GridRow>().FirstOrDefault()?.Values.FirstOrDefault() is not { } cell || cell.Text != literal || cell.Annotation || cell.FontStyle != FontStyles.Normal || cell.Foreground != Brushes.Black) throw new InvalidOperationException("A literal source marker was styled as a generated annotation.");
+        var sparseCell = Cells.Items.OfType<GridRow>().SelectMany(item => item.Values).FirstOrDefault(cell => cell.TooltipKey == "sparseCell");
+        if (sparseCell is null || !sparseCell.Annotation || sparseCell.FontStyle != FontStyles.Italic || sparseCell.Foreground != Brushes.Gray || sparseCell.ToolTip == cell.ToolTip) throw new InvalidOperationException("Sparse absence does not have a distinct annotation style and explanation.");
+    }
+    internal void CheckTruncationForSmoke()
+    {
+        var truncated = Cells.Items.OfType<GridRow>().SelectMany(item => item.Values).FirstOrDefault(cell => cell.TooltipKey == "truncatedCell");
+        if (truncated is null || !truncated.Annotation || truncated.FontStyle != FontStyles.Italic || truncated.ToolTip != owner.Copy["truncatedCell"]) throw new InvalidOperationException("Truncated source preview lacks its distinct style and full-source reader guidance.");
     }
     private async Task LoadCoordinates()
     {
@@ -282,7 +308,7 @@ internal sealed class ComparePane
         var r = int.Parse(found.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture); if (c > 16384 || r > 1048576) throw new BridgeException("ADDRESS", "A1–XFD1048576");
         evidenceAbsence = ""; row = r; column = c; await ReloadGrid(); await owner.SelectCell(this, r, c);
     }
-    private Task ReloadGrid() => owner.ReloadComparison();
+    private Task ReloadGrid() => owner.ReloadSourceWindow();
     internal (double X, double Y, string Page, ImageSource? Image) CaptureViewport() => (PageScroll.HorizontalOffset, PageScroll.VerticalOffset, PageId, PageImage.Source);
     internal void RestoreViewport((double X, double Y, string Page, ImageSource? Image) saved)
     {
@@ -310,7 +336,7 @@ internal sealed class ComparePane
         if (ReadState == "empty") { fallback.Text = owner.Copy["selectPage"]; return; }
         if (ReadState == "absent")
         {
-            fallback.Text = owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : owner.IsWorkbook ? "absentSheet" : "absentPage"];
+            fallback.Text = owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : owner.IsWorkbook ? "absentSheet" : "absentPage"] + (evidenceAbsence == "missingSelectedSheet" ? "\n\n" + requestedSheetName : "");
             if (evidenceAbsence == "sheetMetadata" && sheet.SelectedItem is Choice observed) fallback.Text += "\n\n" + observed.Label + "\n" + owner.Copy["row"] + ": " + observed.Value.Get("row_count").Text() + "\n" + owner.Copy["column"] + ": " + observed.Value.Get("column_count").Text(); return;
         }
         if (!owner.IsWorkbook && ReadState == "ready")
@@ -324,6 +350,8 @@ internal sealed class ComparePane
     internal string PresentedSourceCaption => source.Text;
     internal string PresentedFallback => fallback.Text;
     internal Task SelectPageForSmoke(string id, Func<CancellationToken, Task>? beforeInstall = null) { SetEventPage(id); return LoadPage(owner.Generation, owner.ReadToken, beforeInstall); }
+    internal async Task SelectRevisionForSmoke(int index) { revision.SelectedIndex = index; await selectionRequest; }
+    internal async Task SelectAvailableSheetForSmoke() { sheet.SelectedIndex = 0; await selectionRequest; }
     internal static string ColumnName(int column) { var name = ""; while (column > 0) { column--; name = (char)('A' + column % 26) + name; column /= 26; } return name; }
     internal async Task GoForSmoke(string cell) { address.Text = cell; await GoAddress(); }
 }
