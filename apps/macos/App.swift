@@ -129,6 +129,10 @@ private struct SmokeStructureView: View {
             // MainView's startup task may still be loading; wait cooperatively without blocking the app.
             for _ in 0..<200 {if !model.initializing{break};try await Task.sleep(nanoseconds:50_000_000)}
             guard !model.initializing else{throw BridgeError(code:"STARTUP_TIMEOUT",message:"초기화가 완료되지 않았습니다.")}
+            if request["expect_library_locked"].bool {
+                try await documentLockProbe(model,request:request,output:output)
+                NSApp.terminate(nil);return
+            }
             let startedAt=Date()
             if !request["existing_project_id"].string.isEmpty {
                 await model.selectProject(request["existing_project_id"].string,snapshot:request["existing_report_id"].string)
@@ -603,6 +607,7 @@ private struct SmokeStructureView: View {
     static func exerciseLayout(_ model:AppModel,layout:WorkspaceLayoutStore,output:URL) async throws->[String:Any] {
         let originalLayout=layout.configuration,originalZoom=model.zoom
         defer{layout.update{$0=originalLayout};model.zoom=originalZoom}
+        let chromeChecks=try await exerciseDocumentChrome(model,layout:layout)
         layout.reset();model.tab="compare";model.focus=false;model.showChanges=true;try await model.updateChanges()
         try await Task.sleep(nanoseconds:300_000_000)
         func pane(_ view:NSView)->NSSplitView? {
@@ -664,7 +669,46 @@ private struct SmokeStructureView: View {
         }
         layout.apply(.balanced);layout.update{$0.pageArrangement = .vertical};try await qualify("stacked")
         layout.reset()
-        return ["default_change_pane_points":initial,"default_document_pane_points":canvas,"resized_change_pane_points":resized,"reopened_change_pane_points":remembered,"native_divider_and_height_reopen":true,"existing_snapshot_reopen":!model.report.isNull,"custom_layout_transitions":checks,"actual_dock_geometry":geometry,"retained_pdf_views":originalPDFs.count,"report_selection_page_zoom_and_pdf_identity_preserved":true,"captures":captures,"interaction_scope":"production layout actions and native public AppKit geometry; no OS gestures; PDF viewport may clamp naturally when its available size changes"]
+        return ["document_chrome_checks":chromeChecks,"default_change_pane_points":initial,"default_document_pane_points":canvas,"resized_change_pane_points":resized,"reopened_change_pane_points":remembered,"native_divider_and_height_reopen":true,"existing_snapshot_reopen":!model.report.isNull,"custom_layout_transitions":checks,"actual_dock_geometry":geometry,"retained_pdf_views":originalPDFs.count,"report_selection_page_zoom_and_pdf_identity_preserved":true,"captures":captures,"interaction_scope":"production layout actions and native public AppKit geometry; no OS gestures; PDF viewport may clamp naturally when its available size changes"]
+    }
+    private static func exerciseDocumentChrome(_ model:AppModel,layout:WorkspaceLayoutStore)async throws->Int {
+        var checks=0
+        for tab in ["compare","history"] {
+            model.tab=tab
+            for preset in WorkspaceLayoutPreset.allCases {
+                layout.apply(preset)
+                try await check()
+            }
+            layout.reset();layout.update{$0.sidebarVisible=false};try await check()
+            layout.update{$0.sidebarVisible=true};try await check()
+        }
+        func check()async throws {
+            try await Task.sleep(nanoseconds:180_000_000)
+            let names=Set(NSApp.windows.compactMap(\.contentView).flatMap{workspaceLayoutMarkers(in:$0)}.compactMap{$0.identifier?.rawValue})
+            let report=names.contains("Reviset.document.reportBar"),versions=names.contains("Reviset.document.versionBar")
+            guard report == !layout.isFocused,versions == (!layout.isFocused && model.tab != "compare") else{throw BridgeError(code:"LAYOUT_REPORT_CHROME",message:"A projects-panel or preset action incorrectly hid the saved-report or history-version controls.")}
+            checks+=1
+        }
+        return checks
+    }
+    private static func documentLockProbe(_ model:AppModel,request:JSON,output:URL)async throws {
+        let database=model.bridge.library.appendingPathComponent("docver.sqlite"),before=try fileDigest(database)
+        try await Task.sleep(nanoseconds:350_000_000)
+        let windows=NSApp.windows.filter{$0.isVisible && $0.contentView != nil}
+        let markers=windows.compactMap(\.contentView).flatMap{workspaceLayoutMarkers(in:$0)}
+        guard let sidebar=markers.first(where:{$0.identifier?.rawValue=="Reviset.document.sidebar"}),let window=sidebar.window else{throw BridgeError(code:"LOCK_DOCUMENT_VIEW",message:"The actual document sidebar is unavailable.")}
+        var visited=Set<ObjectIdentifier>(),buttons:[NSAccessibilityProtocol]=[]
+        func visit(_ element:NSAccessibilityProtocol) {
+            guard visited.count<10_000,visited.insert(ObjectIdentifier(element as AnyObject)).inserted else{return}
+            if ["Reviset.document.import.plus","Reviset.document.import.sidebar"].contains(element.accessibilityIdentifier()) {buttons.append(element)}
+            for child in element.accessibilityChildren() ?? [] {if let accessible=child as? NSAccessibilityProtocol {visit(accessible)}}
+        }
+        visit(window)
+        let disabled=buttons.count==2 && buttons.allSatisfy{!$0.isAccessibilityEnabled()}
+        let unchanged=try fileDigest(database)==before
+        guard !model.libraryAvailable,!model.initializing,!sidebar.contentEnabled,disabled,unchanged else{throw BridgeError(code:"LOCK_DOCUMENT_CONTROLS",message:"The locked document workspace exposed enabled controls or changed library bytes (import controls found: \(buttons.count)).")}
+        try captureView(window,output.appendingPathComponent("native-document-library-locked.png"))
+        try JSON(["completed":true,"checks":["library_lock_denied":true,"sidebar_environment_disabled":true,"import_controls_disabled":true,"disabled_import_controls":buttons.count,"database_bytes_unchanged":true,"hosted_locale":sidebar.contentLocale.identifier],"smoke_invocation_id":request["smoke_invocation_id"].string,"interaction_scope":"actual second app process and document import-control accessibility state; no OS gestures"]).data().write(to:output.appendingPathComponent("validation.json"))
     }
     static func captureView(_ window:NSWindow,_ url:URL) throws {
         guard let view=window.contentView,let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) else { throw BridgeError(code:"CAPTURE_FAILED",message:"앱 화면을 캡처할 수 없습니다.") }

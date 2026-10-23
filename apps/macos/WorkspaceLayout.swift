@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import CoreFoundation
 
 enum WorkspaceLayoutScope:String,Codable {case document,workbook}
 enum WorkspaceChangesDock:String,Codable,CaseIterable {case bottom,left,right}
@@ -42,11 +43,6 @@ private struct WorkspaceLayoutEnvelope:Codable {
     let schemaVersion:Int
     let current:WorkspaceLayoutConfiguration
     let saved:[SavedWorkspaceLayout]
-    var isValid:Bool {
-        guard schemaVersion==1,current.isValid,saved.count<=12,Set(saved.map(\.id)).count==saved.count else{return false}
-        let names=saved.map{WorkspaceLayoutStore.normalizedName($0.name)}
-        return Set(names).count==names.count && saved.allSatisfy{WorkspaceLayoutStore.validName($0.name) && $0.configuration.isValid}
-    }
 }
 // These preferences contain UI geometry only. Test libraries never touch the user's defaults.
 @MainActor enum WorkspaceLayoutPreferences {
@@ -67,14 +63,54 @@ private struct WorkspaceLayoutEnvelope:Codable {
     @Published private(set) var saved:[SavedWorkspaceLayout]=[]
     @Published var settingsPresented=false
     private(set) var persistenceReadOnly=false
+    private var preFocusConfiguration:WorkspaceLayoutConfiguration?
+    var isFocused:Bool {!configuration.sidebarVisible && !configuration.inspectorVisible && !configuration.changesVisible}
     init(scope:WorkspaceLayoutScope) {
         self.scope=scope
         configuration = .preset(.balanced,scope:scope)
         if let data=WorkspaceLayoutPreferences.data(scope) {
-            if data.count>65_536 {persistenceReadOnly=true}
-            else if let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any],let version=object["schemaVersion"] as? Int,version>1 {persistenceReadOnly=true}
-            else if let envelope=try? JSONDecoder().decode(WorkspaceLayoutEnvelope.self,from:data),envelope.isValid {configuration=envelope.current;saved=envelope.saved}
+            if data.count>65_536 || Self.excessivelyNested(data) {persistenceReadOnly=true}
+            else if let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any],Self.currentSchema(object["schemaVersion"]) {
+                configuration=Self.recoveredConfiguration(object["current"],scope:scope) ?? configuration
+                for case let entry as [String:Any] in object["saved"] as? [Any] ?? [] {
+                    guard saved.count<12,let rawID=entry["id"] as? String,let id=UUID(uuidString:rawID),let name=entry["name"] as? String,Self.validName(name),let value=Self.recoveredConfiguration(entry["configuration"],scope:scope),!saved.contains(where:{$0.id==id || Self.normalizedName($0.name)==Self.normalizedName(name)}) else{continue}
+                    saved.append(SavedWorkspaceLayout(id:id,name:name,configuration:value))
+                }
+            } else {persistenceReadOnly=true}
         }
+    }
+    private static func currentSchema(_ raw:Any?)->Bool {
+        guard let number=raw as? NSNumber,CFGetTypeID(number) != CFBooleanGetTypeID(),["c","s","i","l","q","C","S","I","L","Q"].contains(String(cString:number.objCType)) else{return false}
+        return number.int64Value==1
+    }
+    // Bound nesting before Foundation parses the payload. Preserve unfamiliar or
+    // pathological files instead of replacing them with an older app's defaults.
+    private static func excessivelyNested(_ data:Data)->Bool {
+        var depth=0,inString=false,escaped=false
+        for byte in data {
+            if inString {if escaped {escaped=false} else if byte==92 {escaped=true} else if byte==34 {inString=false}}
+            else if byte==34 {inString=true}
+            else if byte==123 || byte==91 {depth+=1;if depth>16{return true}}
+            else if byte==125 || byte==93 {depth-=1}
+        }
+        return false
+    }
+    private static func recoveredConfiguration(_ raw:Any?,scope:WorkspaceLayoutScope)->WorkspaceLayoutConfiguration? {
+        guard let object=raw as? [String:Any] else{return nil}
+        var value=WorkspaceLayoutConfiguration.preset(.balanced,scope:scope)
+        func field<T:Decodable>(_ key:String,_ fallback:T)->T {
+            guard let raw=object[key],let data=try? JSONSerialization.data(withJSONObject:raw,options:.fragmentsAllowed),let decoded=try? JSONDecoder().decode(T.self,from:data) else{return fallback}
+            return decoded
+        }
+        func number(_ key:String,_ fallback:Double,_ range:ClosedRange<Double>)->Double {
+            let candidate:Double=field(key,fallback);return candidate.isFinite && range.contains(candidate) ? candidate:fallback
+        }
+        value.sidebarVisible=field("sidebarVisible",value.sidebarVisible);value.sidebarWidth=number("sidebarWidth",value.sidebarWidth,180...380)
+        value.changesVisible=field("changesVisible",value.changesVisible);value.changesDock=field("changesDock",value.changesDock)
+        value.changesHeight=number("changesHeight",value.changesHeight,110...600);value.changesWidth=number("changesWidth",value.changesWidth,260...600)
+        value.inspectorVisible=field("inspectorVisible",value.inspectorVisible);value.inspectorDock=field("inspectorDock",value.inspectorDock);value.inspectorWidth=number("inspectorWidth",value.inspectorWidth,260...480)
+        value.pageArrangement=field("pageArrangement",value.pageArrangement);value.pageFraction=number("pageFraction",value.pageFraction,0.2...0.8)
+        return value
     }
     nonisolated static func normalizedName(_ name:String)->String {name.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"en_US_POSIX"))}
     nonisolated static func validName(_ name:String)->Bool {
@@ -83,22 +119,33 @@ private struct WorkspaceLayoutEnvelope:Codable {
     }
     private func persist() {
         guard !persistenceReadOnly else{return}
-        if let data=try? JSONEncoder().encode(WorkspaceLayoutEnvelope(schemaVersion:1,current:configuration,saved:saved)) {WorkspaceLayoutPreferences.save(data,scope:scope)}
+        if let data=try? JSONEncoder().encode(WorkspaceLayoutEnvelope(schemaVersion:1,current:preFocusConfiguration ?? configuration,saved:saved)) {WorkspaceLayoutPreferences.save(data,scope:scope)}
     }
     func update(_ edit:(inout WorkspaceLayoutConfiguration)->Void) {
         var next=configuration;edit(&next)
         guard next.isValid,next != configuration else{return}
-        configuration=next;persist()
+        preFocusConfiguration=nil;configuration=next;persist()
     }
-    func apply(_ preset:WorkspaceLayoutPreset) {update{$0 = .preset(preset,scope:scope)}}
+    func apply(_ preset:WorkspaceLayoutPreset) {
+        if preset == .focus {setFocus(true)} else {preFocusConfiguration=nil;update{$0 = .preset(preset,scope:scope)}}
+    }
     func apply(_ savedLayout:SavedWorkspaceLayout) {
         guard saved.contains(where:{$0.id==savedLayout.id}),savedLayout.configuration.isValid else{return}
         update{$0=savedLayout.configuration}
     }
     func reset() {apply(.balanced)}
     func toggleFocus() {
-        let focused = !configuration.sidebarVisible && !configuration.inspectorVisible && !configuration.changesVisible
-        apply(focused ? .balanced:.focus)
+        setFocus(!isFocused)
+    }
+    func setFocus(_ focused:Bool) {
+        if focused {
+            guard !isFocused else{return}
+            preFocusConfiguration=configuration
+            var next=configuration;next.sidebarVisible=false;next.inspectorVisible=false;next.changesVisible=false
+            configuration=next
+        } else if let previous=preFocusConfiguration {
+            preFocusConfiguration=nil;configuration=previous
+        } else if isFocused {apply(.balanced)}
     }
     func canSave(_ name:String)->Bool {
         let trimmed=name.trimmingCharacters(in:.whitespacesAndNewlines)
@@ -115,6 +162,8 @@ private struct WorkspaceLayoutEnvelope:Codable {
 // In particular a PDFView, NSScrollView, grid coordinator, or draft is never replaced by a preset.
 enum WorkspacePaneExtent:Equatable {case points(Double),fraction(Double)}
 struct WorkspacePaneSplit<Primary:View,Auxiliary:View>:NSViewControllerRepresentable {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.locale) private var locale
     let name:String
     var isVertical=true
     var auxiliaryFirst=false
@@ -127,23 +176,47 @@ struct WorkspacePaneSplit<Primary:View,Auxiliary:View>:NSViewControllerRepresent
     @ViewBuilder let primary:()->Primary
     @ViewBuilder let auxiliary:()->Auxiliary
     func makeNSViewController(context:Context)->WorkspacePaneSplitController<Primary,Auxiliary> {
-        let controller=WorkspacePaneSplitController(name:name,primary:primary(),auxiliary:auxiliary())
+        let controller=WorkspacePaneSplitController(name:name,primary:primary(),auxiliary:auxiliary(),isEnabled:isEnabled,locale:locale)
         configure(controller);return controller
     }
     func updateNSViewController(_ controller:WorkspacePaneSplitController<Primary,Auxiliary>,context:Context) {
-        controller.primary.rootView=primary();controller.auxiliary.rootView=auxiliary();configure(controller)
+        controller.primary.rootView=WorkspaceHostedRoot(content:primary(),isEnabled:isEnabled,locale:locale)
+        controller.auxiliary.rootView=WorkspaceHostedRoot(content:auxiliary(),isEnabled:isEnabled,locale:locale);configure(controller)
     }
     private func configure(_ controller:WorkspacePaneSplitController<Primary,Auxiliary>) {
         controller.configure(isVertical:isVertical,auxiliaryFirst:auxiliaryFirst,primaryVisible:primaryVisible,auxiliaryVisible:auxiliaryVisible,extent:extent,primaryMinimum:primaryMinimum,auxiliaryMinimum:auxiliaryMinimum,onResize:onResize)
     }
     static func dismantleNSViewController(_ controller:WorkspacePaneSplitController<Primary,Auxiliary>,coordinator:()) {controller.detach()}
 }
+// Each NSHostingController starts a new SwiftUI environment. Re-inject these
+// inherited values at every boundary, including nested panes and subsequent updates.
+struct WorkspaceHostedRoot<Content:View>:View {
+    let content:Content
+    let isEnabled:Bool
+    let locale:Locale
+    var body:some View {content.environment(\.isEnabled,isEnabled).environment(\.locale,locale)}
+}
+final class WorkspaceLayoutMarkerView:NSView {
+    var contentEnabled=true
+    var contentLocale=Locale.current
+    override func hitTest(_ point:NSPoint)->NSView? {nil}
+}
+@MainActor func workspaceLayoutMarkers(in view:NSView)->[WorkspaceLayoutMarkerView] {
+    ((view as? WorkspaceLayoutMarkerView).map{[$0]} ?? []) + view.subviews.flatMap{workspaceLayoutMarkers(in:$0)}
+}
+struct WorkspaceLayoutMarker:NSViewRepresentable {
+    let name:String
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.locale) private var locale
+    func makeNSView(context:Context)->WorkspaceLayoutMarkerView {let view=WorkspaceLayoutMarkerView();view.identifier=NSUserInterfaceItemIdentifier(name);return view}
+    func updateNSView(_ view:WorkspaceLayoutMarkerView,context:Context) {view.contentEnabled=isEnabled;view.contentLocale=locale}
+}
 @MainActor protocol WorkspacePaneSizing:AnyObject {
     var splitView:NSSplitView {get}
     func resizeAuxiliary(to points:CGFloat,commit:Bool)
 }
 @MainActor final class WorkspacePaneSplitController<Primary:View,Auxiliary:View>:NSSplitViewController,WorkspacePaneSizing {
-    let primary:NSHostingController<Primary>,auxiliary:NSHostingController<Auxiliary>
+    let primary:NSHostingController<WorkspaceHostedRoot<Primary>>,auxiliary:NSHostingController<WorkspaceHostedRoot<Auxiliary>>
     let primaryItem:NSSplitViewItem,auxiliaryItem:NSSplitViewItem
     private let name:String
     private var extent=WorkspacePaneExtent.fraction(0.5)
@@ -154,9 +227,9 @@ struct WorkspacePaneSplit<Primary:View,Auxiliary:View>:NSViewControllerRepresent
     private var isTrackingDivider=false
     private var geometryScheduled=false
     private var onResize:(WorkspacePaneExtent)->Void={_ in}
-    init(name:String,primary:Primary,auxiliary:Auxiliary) {
+    init(name:String,primary:Primary,auxiliary:Auxiliary,isEnabled:Bool=true,locale:Locale = .current) {
         self.name=name
-        self.primary=NSHostingController(rootView:primary);self.auxiliary=NSHostingController(rootView:auxiliary)
+        self.primary=NSHostingController(rootView:WorkspaceHostedRoot(content:primary,isEnabled:isEnabled,locale:locale));self.auxiliary=NSHostingController(rootView:WorkspaceHostedRoot(content:auxiliary,isEnabled:isEnabled,locale:locale))
         // Split items own their bounds. A Text-only host's default maxSize would
         // otherwise constrain the entire split to its 16-point intrinsic height.
         self.primary.sizingOptions=[];self.auxiliary.sizingOptions=[]

@@ -7,6 +7,18 @@ import PDFKit
     static var grids:[String:NSScrollView]=[:]
     static var coordinators:[String:AnyObject]=[:]
     static var draft:NSTextField?
+    static var buttons:[String:NSButton]=[:]
+}
+@MainActor private final class LayoutEnvironment:ObservableObject {
+    @Published var enabled=true
+    @Published var locale=Locale(identifier:"en_GB")
+}
+private struct LayoutButton:NSViewRepresentable {
+    let name:String
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.locale) private var locale
+    func makeNSView(context:Context)->NSButton {let button=NSButton(title:name,target:nil,action:nil);LayoutProbeRegistry.buttons[name]=button;return button}
+    func updateNSView(_ view:NSButton,context:Context) {view.isEnabled=isEnabled;view.title=locale.identifier}
 }
 private struct LayoutPDF:NSViewRepresentable {
     let name:String
@@ -39,6 +51,7 @@ private struct LayoutDraft:NSViewRepresentable {
 }
 private struct LayoutHarness:View {
     @ObservedObject var layout:WorkspaceLayoutStore
+    @ObservedObject var environment:LayoutEnvironment
     var body:some View {
         WorkspacePaneSplit(name:"probe.projects",auxiliaryFirst:true,auxiliaryVisible:layout.configuration.sidebarVisible,extent:.points(layout.configuration.sidebarWidth),primaryMinimum:760,auxiliaryMinimum:180,onResize:{value in if case .points(let width)=value {layout.update{$0.sidebarWidth=min(380,max(180,width))}}}) {
             WorkspacePaneSplit(name:"probe.inspector",auxiliaryFirst:layout.configuration.inspectorDock == .left,auxiliaryVisible:layout.configuration.inspectorVisible,extent:.points(layout.configuration.inspectorWidth),primaryMinimum:500,auxiliaryMinimum:260) {
@@ -47,17 +60,20 @@ private struct LayoutHarness:View {
                         WorkspacePaneSplit(name:"probe.pages",isVertical:layout.configuration.pageArrangement == .horizontal,extent:.fraction(layout.configuration.pageFraction),primaryMinimum:100,auxiliaryMinimum:100) {LayoutPDF(name:"before")} auxiliary:{LayoutPDF(name:"after")}
                         LayoutGrid(name:"cells").frame(height:120)
                         LayoutDraft().frame(height:28)
+                        LayoutButton(name:"nested").frame(height:24)
                     }.frame(maxWidth:.infinity,maxHeight:.infinity)
                 } auxiliary:{Text("Changes")}
             } auxiliary:{Text("Evidence")}
-        } auxiliary:{Text("Projects")}
+        } auxiliary:{VStack{Text("Projects");LayoutButton(name:"sidebar")}}
+        .disabled(!environment.enabled).environment(\.locale,environment.locale)
     }
 }
 @main struct NativeWorkspaceLayoutProbe:App {
     @StateObject private var layout=WorkspaceLayoutStore(scope:.document)
+    @StateObject private var environment=LayoutEnvironment()
     var body:some Scene {
         Window("Reviset Layout Probe",id:"probe") {
-            LayoutHarness(layout:layout).frame(minWidth:1100,minHeight:740).task{await LayoutChecks.run(layout)}
+            LayoutHarness(layout:layout,environment:environment).frame(minWidth:1100,minHeight:740).task{await LayoutChecks.run(layout,environment:environment)}
         }.defaultSize(width:1440,height:960)
     }
 }
@@ -90,7 +106,7 @@ private struct LayoutHarness:View {
         while let view=current {let identity=ObjectIdentifier(view);result.append(identity);if roots.contains(identity){break};current=view.superview}
         return result
     }
-    static func run(_ layout:WorkspaceLayoutStore)async {
+    static func run(_ layout:WorkspaceLayoutStore,environment:LayoutEnvironment)async {
         guard !started else{return};started=true
         do {
             await settle();await settle()
@@ -110,6 +126,12 @@ private struct LayoutHarness:View {
             }
             try require(namedSplitters>=3,"Visible native splitters were not exposed with names: \(namedSplitters)")
             let hosts=hostingIdentities(),pdfs=LayoutProbeRegistry.pdfs,grid=LayoutProbeRegistry.grids["cells"]!,coordinator=LayoutProbeRegistry.coordinators["cells"]!,draft=LayoutProbeRegistry.draft!
+            try require(LayoutProbeRegistry.buttons.count==2 && LayoutProbeRegistry.buttons.values.allSatisfy{$0.isEnabled && $0.title=="en_GB"},"Initial hosted button environment lost")
+            environment.enabled=false;environment.locale=Locale(identifier:"ko_KR");await settle()
+            try require(LayoutProbeRegistry.buttons.values.allSatisfy{!$0.isEnabled && $0.title=="ko_KR"},"Outer disabled/locale environment did not cross every hosting boundary")
+            environment.enabled=true;environment.locale=Locale(identifier:"en_GB");await settle()
+            try require(LayoutProbeRegistry.buttons.values.allSatisfy{$0.isEnabled && $0.title=="en_GB"},"Hosted environment did not refresh after unlocking/locale update")
+            try require(hostingIdentities()==hosts,"Environment propagation replaced native hosting controllers")
             let ancestry=pdfs.mapValues(ancestors)
             for pdf in pdfs.values {pdf.go(to:pdf.document!.page(at:1)!);pdf.scaleFactor=1.5}
             grid.contentView.scroll(to:NSPoint(x:345,y:678));grid.reflectScrolledClipView(grid.contentView)
@@ -149,6 +171,15 @@ private struct LayoutHarness:View {
                     }
                 }
             }
+            layout.update{$0.sidebarVisible=true;$0.sidebarWidth=279;$0.inspectorVisible=true;$0.inspectorDock = .left;$0.inspectorWidth=341;$0.changesVisible=true;$0.changesDock = .right;$0.changesWidth=389;$0.changesHeight=233;$0.pageArrangement = .vertical;$0.pageFraction=0.37}
+            await settle()
+            let custom=layout.configuration,customBytes=WorkspaceLayoutPreferences.data(.document)
+            layout.toggleFocus();await settle();try assertIdentity("temporary focus")
+            try require(layout.isFocused && layout.configuration.changesDock==custom.changesDock && layout.configuration.pageFraction==custom.pageFraction,"Focus did not retain custom geometry")
+            layout.toggleFocus();await settle();try assertIdentity("restored custom focus")
+            try require(layout.configuration==custom && WorkspaceLayoutPreferences.data(.document)==customBytes,"Focus toggle lost custom layout or rewrote persisted bytes")
+            layout.update{$0.sidebarVisible=false};try require(!layout.isFocused,"Hiding projects incorrectly enabled focus")
+            layout.apply(.review);try require(!layout.isFocused,"Review incorrectly enabled focus")
             layout.reset();await settle()
             let changes=controllers()["Reviset.workspace.probe.changes"]!,sizing=changes as! WorkspacePaneSizing
             sizing.resizeAuxiliary(to:210,commit:true);await settle()
@@ -183,15 +214,45 @@ private struct LayoutHarness:View {
             current["changesDock"]="bottom";current["sidebarWidth"]=99999;corrupt["current"]=current
             WorkspaceLayoutPreferences.save(try JSONSerialization.data(withJSONObject:corrupt),scope:.document)
             try require(WorkspaceLayoutStore(scope:.document).configuration == .preset(.balanced,scope:.document),"Out of range stored geometry fallback")
+            current["changesDock"]="left";current["pageFraction"]=0.37;current["sidebarWidth"]=true;corrupt["current"]=current
+            var entries=raw["saved"] as! [[String:Any]],first=entries[0],savedConfiguration=first["configuration"] as! [String:Any]
+            savedConfiguration["inspectorWidth"]=99999;first["configuration"]=savedConfiguration;entries[0]=first
+            entries.insert(["name":"malformed entry","configuration":[:]],at:0);corrupt["saved"]=entries
+            WorkspaceLayoutPreferences.save(try JSONSerialization.data(withJSONObject:corrupt),scope:.document)
+            let recovered=WorkspaceLayoutStore(scope:.document)
+            try require(recovered.configuration.sidebarWidth==220 && recovered.configuration.changesDock == .left && recovered.configuration.pageFraction==0.37,"Per-field recovery discarded valid current geometry or accepted a Boolean dimension")
+            try require(recovered.saved.map(\.id)==layout.saved.map(\.id) && recovered.saved.map(\.name)==layout.saved.map(\.name),"One malformed current/saved field discarded unrelated named layouts")
+            try require(recovered.saved[0].configuration.inspectorWidth==300,"Corrupt saved geometry was not recovered per field")
+            recovered.update{$0.sidebarVisible.toggle()}
+            let recoveredAgain=WorkspaceLayoutStore(scope:.document)
+            try require(recoveredAgain.saved==recovered.saved && recoveredAgain.configuration==recovered.configuration,"Recovered named layouts were lost on the next write/reopen")
             WorkspaceLayoutPreferences.save(Data("{broken".utf8),scope:.document)
             try require(WorkspaceLayoutStore(scope:.document).configuration == .preset(.balanced,scope:.document),"Malformed JSON fallback")
+            for marker in ["\"2\"","\"1\"","true","false","null","2","0","-1","1.1","1.0","1e0"] {
+                let bytes=Data(("{\"schemaVersion\":"+marker+",\"current\":{},\"saved\":[]}").utf8)
+                WorkspaceLayoutPreferences.save(bytes,scope:.document)
+                let unknown=WorkspaceLayoutStore(scope:.document);unknown.apply(.review)
+                try require(unknown.persistenceReadOnly && !unknown.saveCurrent(named:"overwrite") && WorkspaceLayoutPreferences.data(.document)==bytes,"Unknown/noninteger schema marker overwritten: "+marker)
+            }
+            let missingVersion=Data("{\"current\":{},\"saved\":[]}".utf8)
+            WorkspaceLayoutPreferences.save(missingVersion,scope:.document)
+            let missing=WorkspaceLayoutStore(scope:.document);missing.apply(.review)
+            try require(missing.persistenceReadOnly && WorkspaceLayoutPreferences.data(.document)==missingVersion,"Missing schema marker overwritten")
+            let oversized=Data(repeating:32,count:65_537)
+            WorkspaceLayoutPreferences.save(oversized,scope:.document)
+            let bounded=WorkspaceLayoutStore(scope:.document);bounded.apply(.review)
+            try require(bounded.persistenceReadOnly && WorkspaceLayoutPreferences.data(.document)==oversized,"Oversized preferences overwritten")
+            let deep=Data(("{\"schemaVersion\":1,\"extra\":"+String(repeating:"[",count:20)+"0"+String(repeating:"]",count:20)+"}").utf8)
+            WorkspaceLayoutPreferences.save(deep,scope:.document)
+            let nested=WorkspaceLayoutStore(scope:.document);nested.apply(.review)
+            try require(nested.persistenceReadOnly && WorkspaceLayoutPreferences.data(.document)==deep,"Deep preferences overwritten")
             var future=raw;future["schemaVersion"]=99;let futureData=try JSONSerialization.data(withJSONObject:future)
             WorkspaceLayoutPreferences.save(futureData,scope:.document)
             let oldApp=WorkspaceLayoutStore(scope:.document);oldApp.apply(.focus);_ = oldApp.saveCurrent(named:"session")
             try require(oldApp.persistenceReadOnly && WorkspaceLayoutPreferences.data(.document)==futureData,"Future schema overwritten")
             let book=WorkspaceLayoutStore(scope:.workbook);book.apply(.review)
             try require(WorkspaceLayoutPreferences.data(.document)==futureData && book.configuration.inspectorVisible,"Workspace preferences crossed scopes")
-            print("PASS native customizable layouts: \(transitions) transitions, persistent hosts/PDF ancestry/grid coordinator/draft/page/zoom/manual viewport, divider/reopen/clamp, named presets/schema/corrupt preferences/test isolation")
+            print("PASS native customizable layouts: \(transitions) transitions, persistent hosts/PDF ancestry/grid coordinator/draft/page/zoom/manual viewport, hosted disabled/locale, reversible focus, divider/reopen/clamp, named presets/per-field recovery/deep/schema/test isolation")
             fflush(stdout);NSApp.terminate(nil)
         }catch{fputs("Native layout failed: \(error)\n",stderr);exit(1)}
     }

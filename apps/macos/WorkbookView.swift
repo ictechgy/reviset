@@ -706,7 +706,7 @@ struct WorkbookWorkspace: View {
         .onChange(of:layout.configuration.inspectorVisible){model.inspectorVisible=layout.configuration.inspectorVisible}
         .sheet(isPresented:$model.importPresented) { WorkbookImportSheet(model:model) }
         .sheet(isPresented:$model.publishPresented) { WorkbookPublishSheet(model:model) }
-        .task { model.inspectorVisible=layout.configuration.inspectorVisible;await model.start(); await WorkbookNativeSmoke.runIfRequested(model) }
+        .task { model.inspectorVisible=layout.configuration.inspectorVisible;await model.start(); await WorkbookNativeSmoke.runIfRequested(model,layout:layout) }
         .onDisappear { model.closeReads() }
     }
     private var sidebar: some View {
@@ -841,12 +841,14 @@ struct WorkbookWorkspace: View {
             arrangement {
                 Text(model.changesMode == "history" ? L("workbook.changes.historyTitle") : L("workbook.changes.netTitle")).font(.headline)
                 Text(L("workbook.changes.page",.integer(model.changePageNumber),.count(model.changes.count),.count(model.changeTotal))).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button { Task { await model.stepChange(-1) } } label: { Image(systemName:"chevron.up") }.accessibilityLabel(L("workbook.changes.previous"))
-                Button { Task { await model.stepChange(1) } } label: { Image(systemName:"chevron.down") }.accessibilityLabel(L("workbook.changes.next"))
-                if model.changePageNumber > 1 { Button(L("workbook.paging.first")) { Task { await model.loadChanges(preserveEndpoints:true) } } }
-                if !model.changePreviousCursors.isEmpty { Button(L("workbook.paging.previous")) { Task { await model.loadChanges(previous:true) } } }
-                if !model.changeCursor.isEmpty { Button(L("workbook.paging.next")) { Task { await model.loadChanges(next:true) } } }
+                if !compact {Spacer()}
+                HStack(spacing:6) {
+                    Button { Task { await model.stepChange(-1) } } label: { Image(systemName:"chevron.up") }.accessibilityLabel(L("workbook.changes.previous"))
+                    Button { Task { await model.stepChange(1) } } label: { Image(systemName:"chevron.down") }.accessibilityLabel(L("workbook.changes.next"))
+                    if model.changePageNumber > 1 { Button { Task { await model.loadChanges(preserveEndpoints:true) } } label: {if compact {Image(systemName:"backward.end")} else {Text(L("workbook.paging.first"))}}.accessibilityLabel(L("workbook.paging.first")).help(L("workbook.paging.first")) }
+                    if !model.changePreviousCursors.isEmpty { Button { Task { await model.loadChanges(previous:true) } } label: {if compact {Image(systemName:"chevron.left")} else {Text(L("workbook.paging.previous"))}}.accessibilityLabel(L("workbook.paging.previous")).help(L("workbook.paging.previous")) }
+                    if !model.changeCursor.isEmpty { Button { Task { await model.loadChanges(next:true) } } label: {if compact {Image(systemName:"chevron.right")} else {Text(L("workbook.paging.next"))}}.accessibilityLabel(L("workbook.paging.next")).help(L("workbook.paging.next")) }
+                }.controlSize(compact ? .small:.regular)
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready || model.loadingChanges)
             Text(verbatim:L("workbook.changes.intervalPrefix") + model.versionLabel(model.changesFromID) + " → " + model.versionLabel(model.changesToID)).font(.caption).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
             if !model.changesFromID.isEmpty,!model.changesToID.isEmpty,(model.changesFromID != model.beforeID || model.changesToID != model.afterID) { Text(L("workbook.changes.intervalDifference")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
@@ -872,7 +874,7 @@ struct WorkbookWorkspace: View {
                             Text(verbatim:WorkbookLabels.association(change["association"].string)).font(.caption).foregroundStyle(change["association"].string == "needs_review" ? .orange : .secondary)
                         }.tag(change["change_id"].string)
                     }
-                }.listStyle(.inset).disabled(!model.ready)
+                }.listStyle(.inset).disabled(!model.ready).background(WorkspaceLayoutMarker(name:"Reviset.workbook.changes.list"))
             }
         }
     }
@@ -1518,7 +1520,7 @@ struct WorkbookGrid: NSViewRepresentable {
 // service. Only an explicit environment request enables it.
 @MainActor enum WorkbookNativeSmoke {
     private static var started = false
-    static func runIfRequested(_ model: WorkbookModel) async {
+    static func runIfRequested(_ model: WorkbookModel,layout:WorkspaceLayoutStore) async {
         guard !started,let path = ProcessInfo.processInfo.environment["DOCVER_WORKBOOK_SMOKE_REQUEST"] else { return }
         started = true
         var output: URL?
@@ -1604,6 +1606,7 @@ struct WorkbookGrid: NSViewRepresentable {
             guard let window = NSApp.windows.first(where:{$0.isVisible && containsGrid($0.contentView)}) else { throw BridgeError(code:"WORKBOOK_SMOKE_WINDOW",message:"실제 네이티브 통합 문서 그리드 창이 없습니다.") }
             checks["pane_evidence"] = try assertPanes(model,window:window)
             checks["header_scroll_geometry"] = try await exerciseHeaderScrollGeometry(model,window:window)
+            if request["layout_checks"].bool {checks["layout_checks"] = try await exerciseLayouts(model,layout:layout,window:window,folder:folder)}
             if request.dictionary.keys.contains("expected_blank_formatting_warning") { checks["rendered_blank_formatting_warning"] = try checkBlankFormattingWarning(model,request:request) }
             try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-compare.png"))
             if request["require_dense_raw_proof"].bool {
@@ -1703,6 +1706,44 @@ struct WorkbookGrid: NSViewRepresentable {
     // Optional shipped-app qualification. The locale mutation, seeded draft,
     // AppKit scroll, and captures are explicit programmatic operations. This is
     // not an OS input/VoiceOver automation claim and does not submit the draft.
+    private static func exerciseLayouts(_ model:WorkbookModel,layout:WorkspaceLayoutStore,window:NSWindow,folder:URL)async throws->[String:Any] {
+        let original=layout.configuration
+        defer{layout.update{$0=original}}
+        guard let content=window.contentView,!model.changes.isEmpty else{throw BridgeError(code:"WORKBOOK_LAYOUT_FIXTURE",message:"A rendered workbook with changes is required for layout qualification.")}
+        let identity=[model.projectID,model.reportID,model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.selectedChangeID,String(model.selectedRow),String(model.selectedColumn)]
+        let rawBefore=try model.beforeCell.data(),rawAfter=try model.afterCell.data()
+        struct Pane {let table:NSTableView;let coordinator:WorkbookGrid.Coordinator;let reveal:String;let selected:Int;let origin:NSPoint}
+        var panes:[String:Pane]=[:]
+        for name in ["before","after"] {
+            guard let table=grid(content,pane:name),let coordinator=table.dataSource as? WorkbookGrid.Coordinator,let scroll=table.enclosingScrollView else{continue}
+            panes[name]=Pane(table:table,coordinator:coordinator,reveal:coordinator.parent.revealIntent,selected:table.selectedRow,origin:scroll.contentView.bounds.origin)
+        }
+        guard !panes.isEmpty else{throw BridgeError(code:"WORKBOOK_LAYOUT_GRID",message:"No live workbook grid is available.")}
+        var geometry:[[String:Any]]=[]
+        for dock in [WorkspaceChangesDock.left,.right] {
+            layout.apply(.review);layout.update{$0.changesDock=dock;$0.inspectorDock=dock == .left ? .right:.left}
+            try await Task.sleep(nanoseconds:350_000_000);content.layoutSubtreeIfNeeded()
+            let current=[model.projectID,model.reportID,model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.selectedChangeID,String(model.selectedRow),String(model.selectedColumn)]
+            guard current==identity,try model.beforeCell.data()==rawBefore,try model.afterCell.data()==rawAfter else{throw BridgeError(code:"WORKBOOK_LAYOUT_STATE",message:"Docking changed the selected report, cell or raw evidence.")}
+            for (name,pane) in panes {
+                guard let table=grid(content,pane:name),let coordinator=table.dataSource as? WorkbookGrid.Coordinator,let scroll=table.enclosingScrollView,table === pane.table,coordinator === pane.coordinator,coordinator.parent.revealIntent==pane.reveal,table.selectedRow==pane.selected else{throw BridgeError(code:"WORKBOOK_LAYOUT_IDENTITY",message:"Docking replaced a grid/coordinator or reset its selection/reveal authority.")}
+                let maximum=NSPoint(x:max(0,scroll.documentView!.frame.width-scroll.contentView.bounds.width),y:max(0,scroll.documentView!.frame.height-scroll.contentView.bounds.height))
+                guard abs(scroll.contentView.bounds.minX-min(pane.origin.x,maximum.x))<1,abs(scroll.contentView.bounds.minY-min(pane.origin.y,maximum.y))<1 else{throw BridgeError(code:"WORKBOOK_LAYOUT_VIEWPORT",message:"Docking moved the manual grid viewport beyond native size clamping.")}
+            }
+            func split(_ view:NSView)->NSSplitView? {
+                if let candidate=view as? NSSplitView,candidate.identifier?.rawValue=="Reviset.workspace.workbook.changes" {return candidate}
+                return view.subviews.lazy.compactMap(split).first
+            }
+            guard let changes=split(content),let list=workspaceLayoutMarkers(in:content).first(where:{$0.identifier?.rawValue=="Reviset.workbook.changes.list"}),changes.arrangedSubviews.count==2 else{throw BridgeError(code:"WORKBOOK_LAYOUT_LIST",message:"The docked change list is unavailable.")}
+            let pane=changes.arrangedSubviews[dock == .left ? 0:1],fraction=list.bounds.height/pane.bounds.height
+            guard list.visibleRect.height>=pane.bounds.height*0.6,fraction>=0.6 else{throw BridgeError(code:"WORKBOOK_LAYOUT_LIST_HEIGHT",message:"The \(dock.rawValue) change list occupies only \(fraction) of its pane height.")}
+            let file="native-workbook-layout-"+LanguagePreferences.shared.effectiveLanguage+"-changes-"+dock.rawValue+".png"
+            try Smoke.captureView(window,folder.appendingPathComponent(file))
+            geometry.append(["dock":dock.rawValue,"pane_height":pane.bounds.height,"list_height":list.bounds.height,"visible_list_height":list.visibleRect.height,"list_fraction":fraction,"capture":file])
+        }
+        layout.update{$0=original};try await Task.sleep(nanoseconds:250_000_000)
+        return ["transitions":geometry,"minimum_visible_list_fraction":0.6,"report_selection_raw_cells_grid_coordinator_and_viewport_preserved":true,"interaction_scope":"actual packaged production layout actions and native geometry; no OS gestures"]
+    }
     private static func exerciseLanguageSwitch(_ model: WorkbookModel,window: NSWindow,folder: URL,originals: [WorkbookImportRow]) async throws -> [String:Any] {
         let preferences = LanguagePreferences.shared,defaults = UserDefaults.standard
         let originalSelection = preferences.selection

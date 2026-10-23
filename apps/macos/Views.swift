@@ -120,7 +120,7 @@ struct MainView: View {
                 VStack(spacing:0) {
                     if model.report.isNull { EmptyWorkspace() }
                     else {
-                        if !model.focus { ReportBar();Divider();if model.tab != "compare" { VersionBar();Divider() } }
+                        if !layout.isFocused { ReportBar().background(WorkspaceLayoutMarker(name:"Reviset.document.reportBar"));Divider();if model.tab != "compare" { VersionBar().background(WorkspaceLayoutMarker(name:"Reviset.document.versionBar"));Divider() } }
                         if model.tab=="export" { ExportView() }
                         else if model.tab=="history" { HistoryView() }
                         else { CompareWorkspace() }
@@ -141,7 +141,7 @@ struct MainView: View {
                 }
             }
         }.focusedSceneObject(layout)
-        .onChange(of:model.focus){layout.update{$0.sidebarVisible = !model.focus}}
+        .onChange(of:model.focus){if model.focus != layout.isFocused {layout.setFocus(model.focus)}}
         .onChange(of:model.inspector){layout.update{$0.inspectorVisible=model.inspector}}
         .onChange(of:model.showChanges){layout.update{$0.changesVisible=model.showChanges}}
         .onChange(of:layout.configuration){syncLayoutFlags()}
@@ -153,14 +153,14 @@ struct MainView: View {
         .task {syncLayoutFlags();await model.start()}
     }
     private func syncLayoutFlags() {
-        model.focus = !layout.configuration.sidebarVisible;model.inspector=layout.configuration.inspectorVisible;model.showChanges=layout.configuration.changesVisible
+        model.focus=layout.isFocused;model.inspector=layout.configuration.inspectorVisible;model.showChanges=layout.configuration.changesVisible
     }
 }
 struct SidebarView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack{Text(L("doc.project.heading")).font(.caption).foregroundStyle(.secondary);Spacer();Button{model.importSheet=true}label:{Image(systemName:"plus")}.buttonStyle(.borderless).disabled(model.busy || model.loading)}.padding(.horizontal,14).padding(.top,18)
+            HStack{Text(L("doc.project.heading")).font(.caption).foregroundStyle(.secondary);Spacer();Button{model.importSheet=true}label:{Image(systemName:"plus")}.buttonStyle(.borderless).disabled(model.busy || model.loading).accessibilityIdentifier("Reviset.document.import.plus")}.padding(.horizontal,14).padding(.top,18)
             List(model.projects){p in Button{Task{await model.selectProject(p["project_id"].string)}}label:{HStack{Image(systemName:"folder.fill").foregroundStyle(.blue);VStack(alignment:.leading,spacing:3){Text(p["title"].string).lineLimit(1);Text(p["unreadable"].bool ? L("doc.project.unreadableBadge"):(p["dirty"].bool ? L("doc.project.revisionsPending", .verbatim(LC("doc.project.revisionCount",p["revisions"].array.count))) : LC("doc.project.revisionCount",p["revisions"].array.count))).font(.caption2).foregroundStyle(.secondary)}}.padding(.vertical,5)}.buttonStyle(.plain).disabled(model.busy||model.loading).help(p["unreadable"].bool ? L("doc.project.unreadableHelp"):p["title"].string).listRowBackground(p["project_id"].string==model.projectID ? Color.blue.opacity(0.12):Color.clear)}.listStyle(.sidebar).frame(minHeight:80,maxHeight:220)
             if !model.project.isNull {
                 if model.project["unreadable"].bool {
@@ -173,8 +173,8 @@ struct SidebarView: View {
                 }
             }
             Spacer(minLength:5)
-            Button{model.importSheet=true}label:{Label {Text(L("doc.import.documents")).lineLimit(2).fixedSize(horizontal:false,vertical:true)} icon:{Image(systemName:"plus")}}.disabled(model.busy || model.loading).frame(maxWidth:.infinity).padding(14)
-        }.background(Color(nsColor:.underPageBackgroundColor))
+            Button{model.importSheet=true}label:{Label {Text(L("doc.import.documents")).lineLimit(2).fixedSize(horizontal:false,vertical:true)} icon:{Image(systemName:"plus")}}.disabled(model.busy || model.loading).accessibilityIdentifier("Reviset.document.import.sidebar").frame(maxWidth:.infinity).padding(14)
+        }.background(Color(nsColor:.underPageBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.document.sidebar"))
     }
 }
 struct EmptyWorkspace: View {
