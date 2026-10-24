@@ -264,7 +264,7 @@ struct PageColumn: View {
     var evidence: JSON { model.selected["evidence"].array.first { $0["page_id"].string == pageID || (!current["appearance"]["source_page_id"].string.isEmpty && $0["page_id"].string == current["appearance"]["source_page_id"].string) } ?? JSON() }
     var body: some View {
         VStack(spacing: 9) {
-            HStack { Text(side + " · " + revision["label"].string).font(.headline); Spacer()
+            HStack { Text(side + " · " + (model.revisions.firstIndex(where:{$0["revision_occurrence_id"].string==revision["revision_occurrence_id"].string}).map{versionDisplayName($0,revision)} ?? revision["label"].string)).font(.caption.weight(.semibold)); Spacer()
                 Picker(L("doc.common.page"), selection: Binding(get:{pageID},set:{model.navigatePage($0,in:revision["revision_occurrence_id"].string)})) { Text(L("doc.tail.source.noSourceText")).tag(""); ForEach(pages) { p in Text("p.\(p["page"].int) · \(p["text"].string.prefix(24))").tag(p["page_id"].string) } }.labelsHidden().frame(maxWidth:260)
             }
             HStack(spacing: 8) {

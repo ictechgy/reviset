@@ -82,6 +82,9 @@ struct ReorderConfirmation:Identifiable {
     @Published var inspector = false
     @Published var showChanges = true
     @Published var pageMode = "both"
+    @Published var diffMode = "source"
+    @Published var lineageSheet = false
+    @Published var toolsSheet = false
     @Published var zoom = 0.0
     @Published var search = ""
     @Published var kind = "all"
@@ -118,6 +121,18 @@ struct ReorderConfirmation:Identifiable {
     }
     var project: JSON { projects.first { $0["project_id"].string == projectID } ?? JSON() }
     var revisions: [JSON] { report["revisions"].array }
+    // Query endpoints stay fixed while a history event supplies its own source pair.
+    var sourceFrom:Int { sourceIndices.0 }
+    var sourceTo:Int { sourceIndices.1 }
+    private var sourceIndices:(Int,Int) {
+        if tab == "history", !selected.isNull,
+           let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==selected["from_occurrence"].string}),
+           let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==selected["to_occurrence"].string}), a<b, a>=from, b<=to {return (a,b)}
+        return (from,to)
+    }
+    var readingSingleVersion:Bool {sourceFrom==sourceTo || revisions.count<2}
+    var eventInsideQuery:Bool {sourceFrom != from || sourceTo != to}
+    var manuallyBrowsing:Bool {guard let n=pageNavigation else{return false};return n.report==report["report_id"].string && n.from==sourceFrom && n.to==sourceTo}
     var selected: JSON { changes.first { $0["change_id"].string == selectedChangeID } ?? JSON() }
     var filteredChanges: [JSON] { changes.filter { (kind == "all" || $0["kind"].string == kind) && (search.isEmpty || ($0["before"].string + " " + $0["after"].string).localizedCaseInsensitiveContains(search)) } }
     var currentMCPConfig:String? {libraryAvailable && !initializing && !loading && mcpProjectID==projectID && !mcp.isEmpty ? mcp:nil}
@@ -125,7 +140,7 @@ struct ReorderConfirmation:Identifiable {
         if busy && changes.isEmpty {return L("doc.changes.analysisPending")}
         if loadingChanges || loading {return L("doc.changes.loadingEllipsis")}
         if !changesFailure.isEmpty {return changesFailureMessage==UIMessage("doc.changes.interrupted") ? changesFailure:L("doc.changes.failed")}
-        if revisions.count<2 {return L("doc.changes.needRevisions")}
+        if revisions.count<2 || from==to {return L("doc.changes.needRevisions")}
         if changes.isEmpty {return L("doc.changes.none")}
         return L("doc.changes.filteredNone")
     }
@@ -135,7 +150,7 @@ struct ReorderConfirmation:Identifiable {
     }
     func revision(_ index: Int) -> JSON { revisions.indices.contains(index) ? revisions[index] : JSON() }
     var mappingSelection: JSON {
-        report["mapping_relations"].array.first { $0["from_occurrence"].string == revision(from)["revision_occurrence_id"].string && $0["to_occurrence"].string == revision(to)["revision_occurrence_id"].string && $0["from_page_ids"].array.map(\.string).contains(leftPageID) && $0["to_page_ids"].array.map(\.string).contains(rightPageID) } ?? JSON(["kind":"continuation","from_page_ids":[leftPageID],"to_page_ids":[rightPageID],"reason":""])
+        report["mapping_relations"].array.first { $0["from_occurrence"].string == revision(sourceFrom)["revision_occurrence_id"].string && $0["to_occurrence"].string == revision(sourceTo)["revision_occurrence_id"].string && $0["from_page_ids"].array.map(\.string).contains(leftPageID) && $0["to_page_ids"].array.map(\.string).contains(rightPageID) } ?? JSON(["kind":"continuation","from_page_ids":[leftPageID],"to_page_ids":[rightPageID],"reason":""])
     }
     func fail(_ e: Error) { errorMessage = bridgeErrorMessage(e) }
     func refresh() async throws { projects = try await bridge.call("projects").array }
@@ -162,7 +177,7 @@ struct ReorderConfirmation:Identifiable {
             let reportID = snapshot ?? project["last_report_id"].string
             if reportID.isEmpty { report = JSON(); changes = [] }
             else {
-                let loadedReport = try await bridge.call("view", ["project_id": id, "report_id": reportID]);guard generation==selectionGeneration else{return};report=loadedReport; from = 0; to = min(1, revisions.count - 1)
+                let loadedReport = try await bridge.call("view", ["project_id": id, "report_id": reportID]);guard generation==selectionGeneration else{return};report=loadedReport; from = max(0,revisions.count-2); to = max(0,revisions.count-1)
                 leftPageID = primaryPages(revision(from)).first?["page_id"].string ?? ""
                 rightPageID = primaryPages(revision(to)).first?["page_id"].string ?? ""
                 try await updateChanges()
@@ -172,8 +187,11 @@ struct ReorderConfirmation:Identifiable {
     }
     func updateChanges() async throws {
         guard !report.isNull else { return }
-        if revisions.count < 2 { changes = []; selectedChangeID = ""; selectEvidence(); return }
-        let history = tab == "history", start = history ? 0 : from, end = history ? revisions.count - 1 : to
+        if revisions.count < 2 || from == to {
+            rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loadingChanges=false;changesFailure=""
+            changes = []; selectedChangeID = "";selectEvidence(); return
+        }
+        let history = tab == "history", start = from, end = to
         let project=projectID,reportID=report["report_id"].string,before=revision(start)["revision_occurrence_id"].string,after=revision(end)["revision_occurrence_id"].string
         let mode=history ? "history" : end == start+1 ? "adjacent" : "range_net"
         let key=[project,reportID,before,after,mode].joined(separator:"|")
@@ -205,22 +223,23 @@ struct ReorderConfirmation:Identifiable {
     }
 
     func selectEvidence() {
-        if let n=pageNavigation,n.report==report["report_id"].string,n.from==from,n.to==to {
-            leftPageID=normalizedPage(n.left,in:revision(from),preserveAbsent:true)
-            rightPageID=normalizedPage(n.right,in:revision(to),preserveAbsent:true)
+        let a=sourceFrom,b=sourceTo
+        if let n=pageNavigation,n.report==report["report_id"].string,n.from==a,n.to==b {
+            leftPageID=normalizedPage(n.left,in:revision(a),preserveAbsent:true)
+            rightPageID=normalizedPage(n.right,in:revision(b),preserveAbsent:true)
             return
         }
         guard !selected.isNull else {
+            if selectedChangeID==nil && !evidenceWarning.isEmpty {return}
             evidenceWarning=""
-            leftPageID=normalizedPage(leftPageID,in:revision(from))
-            rightPageID=normalizedPage(rightPageID,in:revision(to))
+            leftPageID=normalizedPage(leftPageID,in:revision(a))
+            rightPageID=normalizedPage(rightPageID,in:revision(b))
             return
         }
-        if tab == "history" { return }
         evidenceWarning=""
         let evidence = selected["evidence"].array
-        leftPageID = evidenceSelection(evidence, in:revision(from), current:leftPageID)
-        rightPageID = evidenceSelection(evidence, in:revision(to), current:rightPageID)
+        leftPageID = evidenceSelection(evidence, in:revision(a), current:leftPageID)
+        rightPageID = evidenceSelection(evidence, in:revision(b), current:rightPageID)
     }
     private func normalizedPage(_ id:String,in revision:JSON,preserveAbsent:Bool = false)->String {
         let pages=primaryPages(revision)
@@ -241,29 +260,40 @@ struct ReorderConfirmation:Identifiable {
         primaryPages(revision).first { $0["appearance"]["source_page_id"].string == sourcePageID }?["page_id"].string ?? sourcePageID
     }
     func navigatePage(_ id:String,in occurrence:String) {
-        let before=revision(from),after=revision(to)
+        let before=revision(sourceFrom),after=revision(sourceTo)
         guard occurrence==before["revision_occurrence_id"].string || occurrence==after["revision_occurrence_id"].string else{return}
         let target=occurrence==before["revision_occurrence_id"].string ? before:after
         guard id.isEmpty || primaryPages(target).contains(where:{$0["page_id"].string==id}) else{evidenceWarningMessage = UIMessage("doc.evidence.selectionUnavailable");return}
         if occurrence==before["revision_occurrence_id"].string{leftPageID=id}
         if occurrence==after["revision_occurrence_id"].string{rightPageID=id}
-        evidenceWarning="";pageNavigation=(report["report_id"].string,from,to,leftPageID,rightPageID)
+        evidenceWarning="";pageNavigation=(report["report_id"].string,sourceFrom,sourceTo,leftPageID,rightPageID)
     }
     func chooseChange(_ id:String){
-        guard !loadingChanges else{return}
-        if tab=="history",let change=changes.first(where:{$0["change_id"].string==id}),let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["from_occurrence"].string}),let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["to_occurrence"].string}),a<b {
-            from=a;to=b;tab="compare";inspector=true;evidenceWarning="";pageNavigation=nil
-            Task {
-                do{try await updateChanges();guard from==a,to==b,changes.contains(where:{$0["change_id"].string==id})else{return};selectedChangeID=id;selectEvidence()}
-                catch{fail(error)}
+        guard !loadingChanges, changes.contains(where:{$0["change_id"].string==id}) else{return}
+        if tab=="history",let change=changes.first(where:{$0["change_id"].string==id}) {
+            guard let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["from_occurrence"].string}),let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["to_occurrence"].string}),a<b,a>=from,b<=to else {
+                selectedChangeID=nil;pageNavigation=nil;leftPageID="";rightPageID="";evidenceWarningMessage=UIMessage("doc.evidence.selectionUnavailable");return
             }
-            return
         }
         evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence()
     }
+    func stepChange(_ offset:Int) {
+        let rows=filteredChanges
+        guard !loadingChanges,!rows.isEmpty else{return}
+        let index=rows.firstIndex(where:{$0["change_id"].string==selectedChangeID}) ?? (offset>0 ? -1:rows.count)
+        let next=index+offset
+        guard rows.indices.contains(next) else{return}
+        chooseChange(rows[next]["change_id"].string)
+    }
+    func returnToChange() {pageNavigation=nil;selectEvidence()}
+    func selectVersion(_ index:Int) {
+        guard revisions.indices.contains(index),!busy,!loading else{return}
+        from=max(0,index-1);to=index;selectedChangeID=nil;pageNavigation=nil;evidenceWarning="";changeRange()
+    }
     func openHistoryPage(_ index:Int,_ pageID:String){
-        evidenceWarning=""
-        from=max(0,index-1);to=min(revisions.count-1,max(1,index))
+        guard revisions.indices.contains(index),primaryPages(revision(index)).contains(where:{$0["page_id"].string==pageID}) else{return}
+        evidenceWarning="";selectedChangeID=nil
+        from=max(0,index-1);to=min(revisions.count-1,index)
         let edges=report["matches"].array
         let parents=edges.filter { $0["to_page_id"].string == pageID }.map { $0["from_page_id"].string }
         let children=edges.filter { $0["from_page_id"].string == pageID }.map { $0["to_page_id"].string }
@@ -395,17 +425,17 @@ struct ReorderConfirmation:Identifiable {
     func navigateEvidence(_ evidence: JSON) {
         guard !loadingChanges else{return}
         let occurrence=evidence["revision_occurrence_id"].string
-        if occurrence == revision(from)["revision_occurrence_id"].string {
-            let id=displayPageID(evidence["page_id"].string,in:revision(from))
-            guard primaryPages(revision(from)).contains(where:{$0["page_id"].string==id}) else{evidenceWarningMessage = UIMessage("doc.evidence.pageUnavailable");return}
+        if occurrence == revision(sourceFrom)["revision_occurrence_id"].string {
+            let id=displayPageID(evidence["page_id"].string,in:revision(sourceFrom))
+            guard primaryPages(revision(sourceFrom)).contains(where:{$0["page_id"].string==id}) else{evidenceWarningMessage = UIMessage("doc.evidence.pageUnavailable");return}
             leftPageID=id
         }
-        if occurrence == revision(to)["revision_occurrence_id"].string {
-            let id=displayPageID(evidence["page_id"].string,in:revision(to))
-            guard primaryPages(revision(to)).contains(where:{$0["page_id"].string==id}) else{evidenceWarningMessage = UIMessage("doc.evidence.pageUnavailable");return}
+        if occurrence == revision(sourceTo)["revision_occurrence_id"].string {
+            let id=displayPageID(evidence["page_id"].string,in:revision(sourceTo))
+            guard primaryPages(revision(sourceTo)).contains(where:{$0["page_id"].string==id}) else{evidenceWarningMessage = UIMessage("doc.evidence.pageUnavailable");return}
             rightPageID=id
         }
-        evidenceWarning="";pageNavigation=(report["report_id"].string,from,to,leftPageID,rightPageID)
+        evidenceWarning="";pageNavigation=(report["report_id"].string,sourceFrom,sourceTo,leftPageID,rightPageID)
     }
     func applyRelation(project: String, report: String, draftHash: String, before: String, after: String, left: [String], right: [String], kind: String, reason: String) async throws {
         guard !busy && project == projectID && report == self.report["report_id"].string else { throw BridgeError(code: "STALE_REPORT", message: UIMessage("doc.error.staleMapping")) }
@@ -618,4 +648,34 @@ func changeTextRuns(_ text:String,comparedWith other:String)->[ChangeTextRun] {
     let id=revisions[index]["revision_occurrence_id"].string
     let side=id==change["from_occurrence"].string ? L("doc.common.before"):id==change["to_occurrence"].string ? L("doc.common.after"):L("doc.tail.version.differentVersion")
     return "\(side) · v\(index+1) · p.\(evidence["page"].int)"
+}
+
+struct UnifiedTextDiffLine:Equatable {let prefix:String;let text:String}
+struct UnifiedTextDiff {
+    let lines:[UnifiedTextDiffLine]
+    let bounded:Bool
+    let semantic:Bool
+}
+func unifiedTextDiff(before:String,after:String,semantic:Bool)->UnifiedTextDiff {
+    // Never truncate a source and then present that fragment as a complete diff.
+    guard before.utf16.count<=4096,after.utf16.count<=4096 else{return UnifiedTextDiff(lines:[],bounded:false,semantic:false)}
+    let old=before.components(separatedBy:"\n"),new=after.components(separatedBy:"\n")
+    guard old.count<=128,new.count<=128 else{return UnifiedTextDiff(lines:[],bounded:false,semantic:false)}
+    guard semantic else{return UnifiedTextDiff(lines:old.map{UnifiedTextDiffLine(prefix:"",text:$0)}+[UnifiedTextDiffLine(prefix:"",text:"→")]+new.map{UnifiedTextDiffLine(prefix:"",text:$0)},bounded:true,semantic:false)}
+    let difference=new.difference(from:old)
+    let removed=Set(difference.compactMap{entry->Int? in if case let .remove(offset,_,_)=entry{return offset};return nil})
+    let added=Set(difference.compactMap{entry->Int? in if case let .insert(offset,_,_)=entry{return offset};return nil})
+    var result:[UnifiedTextDiffLine]=[],a=0,b=0
+    while a<old.count || b<new.count {
+        if a<old.count,removed.contains(a) {result.append(UnifiedTextDiffLine(prefix:"−",text:old[a]));a+=1}
+        else if b<new.count,added.contains(b) {result.append(UnifiedTextDiffLine(prefix:"+",text:new[b]));b+=1}
+        else if a<old.count,b<new.count {result.append(UnifiedTextDiffLine(prefix:" ",text:old[a]));a+=1;b+=1}
+        else if a<old.count {result.append(UnifiedTextDiffLine(prefix:"−",text:old[a]));a+=1}
+        else {result.append(UnifiedTextDiffLine(prefix:"+",text:new[b]));b+=1}
+    }
+    return UnifiedTextDiff(lines:result,bounded:true,semantic:true)
+}
+func documentTextDiff(_ change:JSON)->UnifiedTextDiff {
+    let semantic=change["kind"].string=="text_modified" && change["topology"].isNull && !change["before"].isNull && !change["after"].isNull
+    return unifiedTextDiff(before:change["before"].string,after:change["after"].string,semantic:semantic)
 }

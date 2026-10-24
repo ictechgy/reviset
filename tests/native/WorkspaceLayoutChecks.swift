@@ -110,6 +110,9 @@ private struct LayoutHarness:View {
     static func run(_ layout:WorkspaceLayoutStore,environment:LayoutEnvironment)async {
         guard !started else{return};started=true
         do {
+            // This harness exercises three visible native dividers; product defaults
+            // are independently qualified as Source First in GitDiffWorkspace.
+            layout.update{$0.sidebarVisible=true}
             await settle();await settle()
             if let window=NSApp.windows.first(where:{$0.isVisible}) {window.setContentSize(NSSize(width:1440,height:960))}
             await settle()
@@ -248,7 +251,7 @@ private struct LayoutHarness:View {
             try require(!savedHiddenReopened.isFocused && savedHiddenReopened.configuration==manuallyHidden,"Saved all-hidden layout reopened as Focus")
             layout.remove(hiddenSaved.id)
             layout.apply(.review);try require(!layout.isFocused,"Review incorrectly enabled focus")
-            layout.reset();await settle()
+            layout.reset();layout.update{$0.changesDock = .bottom};await settle()
             let changes=controllers()["Reviset.workspace.probe.changes"]!,sizing=changes as! WorkspacePaneSizing
             sizing.resizeAuxiliary(to:210,commit:true);await settle()
             try require(abs(layout.configuration.changesHeight-210)<2,"Divider choice was not saved: \(layout.configuration.changesHeight) actual \(changes.splitView.arrangedSubviews.map{ $0.frame.height })")
@@ -281,7 +284,8 @@ private struct LayoutHarness:View {
             try require(WorkspaceLayoutStore(scope:.document).configuration == .preset(.balanced,scope:.document),"Unknown enum fallback")
             current["changesDock"]="bottom";current["sidebarWidth"]=99999;corrupt["current"]=current
             WorkspaceLayoutPreferences.save(try JSONSerialization.data(withJSONObject:corrupt),scope:.document)
-            try require(WorkspaceLayoutStore(scope:.document).configuration == .preset(.balanced,scope:.document),"Out of range stored geometry fallback")
+            var recoveredBottom=WorkspaceLayoutConfiguration.preset(.balanced,scope:.document);recoveredBottom.changesDock = .bottom
+            try require(WorkspaceLayoutStore(scope:.document).configuration == recoveredBottom,"Out of range field fallback discarded the valid saved bottom dock")
             current["changesDock"]="left";current["pageFraction"]=0.37;current["sidebarWidth"]=true;corrupt["current"]=current
             var entries=raw["saved"] as! [[String:Any]],first=entries[0],savedConfiguration=first["configuration"] as! [String:Any]
             savedConfiguration["inspectorWidth"]=99999;first["configuration"]=savedConfiguration;entries[0]=first
@@ -319,7 +323,7 @@ private struct LayoutHarness:View {
             let oldApp=WorkspaceLayoutStore(scope:.document);oldApp.apply(.focus);_ = oldApp.saveCurrent(named:"session")
             try require(oldApp.persistenceReadOnly && WorkspaceLayoutPreferences.data(.document)==futureData,"Future schema overwritten")
             let book=WorkspaceLayoutStore(scope:.workbook);book.apply(.review)
-            try require(WorkspaceLayoutPreferences.data(.document)==futureData && book.configuration.inspectorVisible,"Workspace preferences crossed scopes")
+            try require(WorkspaceLayoutPreferences.data(.document)==futureData && book.configuration.inspectorVisible && !book.configuration.sidebarVisible && book.configuration.changesDock == .left,"Workspace preferences crossed scopes")
             print("PASS native customizable layouts: \(transitions) transitions, persistent hosts/PDF ancestry/grid coordinator/draft/page/zoom/manual viewport, hosted disabled/locale, reversible focus, divider/reopen/clamp, named presets/per-field recovery/deep/schema/test isolation")
             fflush(stdout);NSApp.terminate(nil)
         }catch{fputs("Native layout failed: \(error)\n",stderr);exit(1)}

@@ -2,7 +2,7 @@
 
 Use **Layout / 화면 배치** in either native workspace to arrange its source comparison and supporting panels. Document and spreadsheet layouts are saved separately.
 
-- Start with Balanced, Document Focus, or Review. Reset restores Balanced without deleting a project or report.
+- Start with **Source first**: Changes on the left, large source comparison, projects and evidence closed. This is the new default and reset target. Balanced, Document Focus, Review and saved layouts remain available. Existing saved preferences are retained; apply Source first explicitly to try the new arrangement. Reset never deletes a project or report.
 - Drag the native splitters to change panel sizes and the before/after ratio.
 - Place Changes below, left, or right of the comparison. Hide supporting panels when you need more document space; place the evidence inspector on either side.
 - Switch between horizontal and vertical source comparison.
@@ -14,6 +14,8 @@ Layout changes retain the existing report, source hosts, selected pages/cells an
 On macOS, the View menu shortcuts act on the active document or spreadsheet window: `⌘⌥F` for focus, `⌘⌥I` for evidence, `⌘⌥S` for projects, `⌘⌥C` for changes, and `⌘⌥0` for reset. The toolbar layout menu exposes docking, presets and named layouts. Windows provides native menus and keyboard-focusable splitters.
 
 Settings are versioned and size-limited. Unsupported positions and invalid dimensions recover to safe defaults. Future-schema settings are preserved without overwrite. Window size constraints can temporarily limit visible space without replacing the user's preferred panel dimensions.
+
+The fixed report and query controls stay available in Focus. The comparison interval belongs to the change list; source headers identify the selected event's actual versions/pages/cells. Selecting an intermediate event keeps the wider query interval. Previous/next change actions stay in the same list. A text-diff view provides bounded before/after snippets with `−/+` markers while retaining the native source hosts; appearance observations and unavailable content use neutral labels rather than semantic deletion markers. Detailed source evidence remains available separately.
 
 On Windows, a visible project panel remains accessible in narrow windows. Hide it explicitly from Layout or choose Document Focus to give the source more room. The change-mode selector switches between net changes and intermediate history while preserving the selected version interval.
 

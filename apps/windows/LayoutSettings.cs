@@ -6,21 +6,23 @@ namespace Reviset.Windows;
 
 internal sealed record WorkspaceLayout
 {
-    public bool Sidebar { get; init; } = true;
-    public bool Inspector { get; init; } = true;
+    public bool Sidebar { get; init; }
+    public bool Inspector { get; init; }
     public bool ChangesVisible { get; init; } = true;
-    public string Changes { get; init; } = "bottom";
+    public string Changes { get; init; } = "left";
     public string InspectorSide { get; init; } = "right";
     public bool VerticalComparison { get; init; }
     public double SidebarWidth { get; init; } = 225;
     public double InspectorWidth { get; init; } = 290;
     public double ChangesHeight { get; init; } = 135;
-    public double ChangesWidth { get; init; } = 290;
+    public double ChangesWidth { get; init; } = 250;
     public double ComparisonRatio { get; init; } = .5;
     public static WorkspaceLayout Preset(string name) => name switch
     {
+        "sourceFirst" => new(),
         "focus" => new() { Sidebar = false, Inspector = false, ChangesVisible = false },
-        "review" => new() { Sidebar = false, Changes = "left", ChangesWidth = 300, InspectorWidth = 340 },
+        "review" => new() { Sidebar = false, Inspector = true, Changes = "left", ChangesWidth = 300, InspectorWidth = 340 },
+        "balanced" => new() { Sidebar = true, Inspector = true, Changes = "bottom", ChangesWidth = 290 },
         _ => new()
     };
     public WorkspaceLayout Bounded() => this with

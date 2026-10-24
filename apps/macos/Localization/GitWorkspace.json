@@ -1,0 +1,94 @@
+{
+  "git.query": {
+    "en": "Query",
+    "ko": "조회"
+  },
+  "git.net": {
+    "en": "Two-version diff",
+    "ko": "두 버전 차이"
+  },
+  "git.history": {
+    "en": "Intermediate history",
+    "ko": "중간 변경 이력"
+  },
+  "git.mode": {
+    "en": "Comparison mode",
+    "ko": "조회 방식"
+  },
+  "git.versions": {
+    "en": "Version history · predecessor → selected",
+    "ko": "버전 이력 · 직전 → 선택"
+  },
+  "git.view": {
+    "en": "View",
+    "ko": "보기"
+  },
+  "git.original": {
+    "en": "Original source",
+    "ko": "원문"
+  },
+  "git.textDiff": {
+    "en": "Extracted text diff",
+    "ko": "추출 텍스트 diff"
+  },
+  "git.reportDetails": {
+    "en": "Fixed report details",
+    "ko": "고정 분석 결과 상세"
+  },
+  "git.aiTools": {
+    "en": "AI tools and export",
+    "ko": "AI 도구 연결 및 내보내기"
+  },
+  "git.actions": {
+    "en": "Actions",
+    "ko": "작업"
+  },
+  "git.manageVersions": {
+    "en": "Manage imported versions…",
+    "ko": "가져온 버전 관리…"
+  },
+  "git.lineage": {
+    "en": "Page lineage…",
+    "ko": "페이지 계보…"
+  },
+  "git.eventInsideQuery": {
+    "en": "Event within query",
+    "ko": "조회 구간 안 변경"
+  },
+  "git.previousChange": {
+    "en": "Previous change",
+    "ko": "이전 변경"
+  },
+  "git.nextChange": {
+    "en": "Next change",
+    "ko": "다음 변경"
+  },
+  "git.returnToChange": {
+    "en": "Return to selected change",
+    "ko": "선택 변경으로 복귀"
+  },
+  "git.reading": {
+    "en": "Reading one version",
+    "ko": "한 버전 읽기"
+  },
+  "git.diffBound": {
+    "en": "Text diff is limited to 4,096 UTF-16 units and 128 lines per side. Open source evidence for the full text.",
+    "ko": "텍스트 diff는 한쪽당 UTF-16 4,096단위·128행까지 표시합니다. 전체 내용은 원문 근거에서 확인하세요."
+  },
+  "git.neutralDiff": {
+    "en": "Neutral source observations. Appearance, missing observations and structural changes do not establish text deletion.",
+    "ko": "중립 원문 관측입니다. 표시 상태·관측 없음·구조 변경으로 텍스트 삭제를 단정하지 않습니다."
+  },
+  "git.sheets": {
+    "en": "Sheets",
+    "ko": "시트"
+  },
+  "git.storedDiff": {
+    "en": "Raw formula / saved value diff · no recalculation",
+    "ko": "원문 수식 / 저장값 diff · 재계산 안 함"
+  },
+  "git.reportScope": {
+    "en": "UI report selection does not pin an MCP client. Reuse the fixed ID returned by MCP.",
+    "ko": "UI 보고서 선택은 MCP 클라이언트를 고정하지 않습니다. MCP 응답의 고정 ID를 이어 사용하세요."
+  }
+}

@@ -51,6 +51,12 @@ internal static class Smoke
             result["document_revisions"] = window.Report.Get("revisions").Items().Count;
             var documentProject = window.ProjectId; var documentReport = window.ReportId;
             checks.Add("document_create_analyze_staged_commit_fixed_report");
+            await window.CheckGitWorkflowForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "document-git-" + name + ".png")); }); checks.Add("document_source_first_native_version_log_v1_read_history_query_event_context_bounded_text_diff_focus_and_retained_hosts");
+            var revertedFixture = Path.Combine(fixtures, "v3-reverted.pdf"); Require(File.Exists(revertedFixture), "Missing byte-identical reverted PDF fixture.");
+            var beforeRevertedLayout = window.Layout;
+            await window.ImportAndAnalyze("Reverted 100→120→100", new[] { new ImportRow { Label = "100", Paths = [Path.Combine(fixtures, "v1.pdf")] }, new ImportRow { Label = "120", Paths = [Path.Combine(fixtures, "v2.pdf")] }, new ImportRow { Label = "100 restored", Paths = [revertedFixture] } });
+            await window.CheckRevertedHistoryForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "document-git-" + name + ".png")); }); checks.Add("real_pdf_100_120_100_endpoint_identity_zero_net_and_two_intermediate_observations_preserve_wide_query_and_exact_source_pair");
+            await window.OpenProject((await bridge.Call("projects")).Items().First(p => p.Get("project_id").Text() == documentProject)); await window.OpenReport(documentReport); window.SetLayout(beforeRevertedLayout);
             result["document_lost_reply_recovery"] = await window.CheckLostAnalysisReplyForSmoke(); checks.Add("document_real_staged_reply_lost_cancel_then_same_session_reanalyze_retires_orphan_preserves_fixed_report");
             await window.CheckProjectTransitionAuthorityForSmoke(async () => (await IndexControl(bridge, output, new { operation = "counts" })).GetRawText()); checks.Add("held_real_candidate_reports_and_failed_transition_revoke_previous_writer_target_without_new_runs_or_reports");
             await window.CheckIndependentProjectRefreshForSmoke(); checks.Add("document_project_list_refresh_survives_same_workspace_mode_and_source_generation_changes");
@@ -107,6 +113,7 @@ internal static class Smoke
             await window.ImportAndAnalyze(request.Get("workbook").Get("title").Text(), books);
             Require(window.ProjectId.StartsWith("wprj_", StringComparison.Ordinal) && window.ReportId.StartsWith("wreport_", StringComparison.Ordinal), "Workbook report was not pinned");
             result["workbook_project_id"] = window.ProjectId; result["workbook_report_id"] = window.ReportId; result["workbook_revisions"] = window.Report.Get("revisions").Items().Count;
+            await window.CheckGitWorkflowForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "workbook-git-" + name + ".png")); }); checks.Add("workbook_source_first_native_version_log_v1_read_history_query_event_context_stored_formula_address_text_diff_focus_and_retained_hosts");
             checks.Add("workbook_create_analyze_staged_commit_fixed_report"); result["workbook_lost_reply_recovery"] = await window.CheckLostAnalysisReplyForSmoke(); checks.Add("workbook_real_staged_reply_lost_cancel_then_same_session_reanalyze_retires_orphan_preserves_fixed_report"); await window.CheckMissingVersionSheetForSmoke(); checks.Add("explicit_version_change_preserves_missing_sheet_absence_until_native_sheet_selection"); await window.CheckIndependentProjectRefreshForSmoke(); checks.Add("workbook_project_list_refresh_survives_same_workspace_mode_and_source_generation_changes"); await window.CheckModesForSmoke(true); checks.Add("workbook_native_history_includes_temporary_row_net_excludes_and_interval_remains_fixed"); await SaveConfig(window, Path.Combine(output, "workbook-mcp.json")); checks.Add("actual_workbook_mcp_configuration");
             await window.CheckIntermediateEventForSmoke(); checks.Add("workbook_intermediate_event_exact_source_pair_preserves_list_interval");
             Require(window.Before.Cells.Items.Count == 50 && window.After.Cells.Items.Count == 50, "Native sparse grid viewport was not populated"); checks.Add("native_virtualized_sparse_grid");
@@ -171,6 +178,7 @@ internal static class Smoke
         var nativeRows = window.Before.Cells.ItemsSource; var sourceImage = window.Before.PageImage.Source;
         var layouts = new[]
         {
+            (Name: "source-first", Layout: WorkspaceLayout.Preset("sourceFirst")),
             (Name: "focus", Layout: WorkspaceLayout.Preset("focus")),
             (Name: "review", Layout: WorkspaceLayout.Preset("review")),
             (Name: "changes-left", Layout: WorkspaceLayout.Preset("balanced") with { Changes = "left", Sidebar = false, Inspector = false }),

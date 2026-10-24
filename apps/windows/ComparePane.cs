@@ -34,6 +34,7 @@ internal sealed class ComparePane
     private readonly ComboBox page = new() { Margin = new Thickness(5), MinWidth = 100 };
     private readonly ComboBox sheet = new() { Margin = new Thickness(5), MinWidth = 100 };
     private readonly TextBlock heading = new() { FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 8, 10, 2) };
+    private readonly TextBlock versionCaption = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 3, 6, 3), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock source = new() { TextTrimming = TextTrimming.CharacterEllipsis, MaxHeight = 21, Margin = new Thickness(6, 2, 6, 2), Foreground = Brushes.DimGray };
     private readonly TextBlock sparse = new() { TextWrapping = TextWrapping.Wrap, MaxHeight = 32, FontSize = 11, Margin = new Thickness(6, 1, 6, 3), Foreground = Brushes.DimGray };
     private readonly TextBlock pageCaption = new() { Margin = new Thickness(7, 2, 4, 0) };
@@ -78,6 +79,7 @@ internal sealed class ComparePane
     internal string PageId => (page.SelectedItem as Choice)?.Id ?? "";
     internal int SelectedRow => row;
     internal int SelectedColumn => column;
+    internal string LocationCaption => owner.IsWorkbook ? ((sheet.SelectedItem as Choice)?.Label ?? owner.Copy["missing"]) + (row > 0 && column > 0 ? "!" + ColumnName(column) + row.ToString(System.Globalization.CultureInfo.InvariantCulture) : " · " + owner.Copy["sheetMetadata"]) : PageId.Length == 0 ? owner.Copy["absentPage"] : owner.Copy["pages"] + " " + ((page.SelectedItem as Choice)?.Value.Get("page").Number() ?? 0);
     internal double Zoom { get => zoom.Value; set => zoom.Value = value; }
 
     public ComparePane(MainWindow owner, bool after)
@@ -86,9 +88,8 @@ internal sealed class ComparePane
         retry = Button("retry", owner.RetryComparison); retry.Visibility = Visibility.Collapsed;
         var dock = new DockPanel(); Host.Child = dock;
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); dock.Children.Add(top);
-        var versionRow = new DockPanel(); DockPanel.SetDock(heading, Dock.Left); versionRow.Children.Add(heading); versionRow.Children.Add(revision); top.Children.Add(versionRow);
-        docControls.Children.Add(page);
-        var zoomRow = new StackPanel { Orientation = Orientation.Horizontal }; var zoomLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 2, 0) }; owner.BindText(zoomLabel, "zoom"); zoomRow.Children.Add(zoomLabel); zoomRow.Children.Add(zoom); docControls.Children.Add(zoomRow); top.Children.Add(docControls);
+        var versionRow = new DockPanel(); DockPanel.SetDock(heading, Dock.Left); versionRow.Children.Add(heading); versionRow.Children.Add(versionCaption); top.Children.Add(versionRow);
+        var pageRow = new DockPanel(); var zoomRow = new StackPanel { Orientation = Orientation.Horizontal }; zoom.Width = 70; zoomRow.Children.Add(zoom); DockPanel.SetDock(zoomRow, Dock.Right); pageRow.Children.Add(zoomRow); pageRow.Children.Add(page); docControls.Children.Add(pageRow); top.Children.Add(docControls);
         workbookControls.Children.Add(sheet);
         var coordinates = new WrapPanel(); var rowLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }; owner.BindText(rowLabel, "row"); coordinates.Children.Add(rowLabel); coordinates.Children.Add(rowStart); var columnLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center }; owner.BindText(columnLabel, "column"); coordinates.Children.Add(columnLabel); coordinates.Children.Add(colStart); coordinates.Children.Add(Button("go", LoadCoordinates));
         var navigationRow = new StackPanel { Orientation = Orientation.Horizontal }; var previous = Arrow("previous", "◀", async () => { row = Math.Max(1, row - 50); await ReloadGrid(); }); var next = Arrow("next", "▶", async () => { row = Math.Min(1_048_527, row + 50); await ReloadGrid(); }); navigationRow.Children.Add(previous); navigationRow.Children.Add(next); address.Width = 65; navigationRow.Children.Add(address); navigationRow.Children.Add(Button("go", GoAddress)); workbookControls.Children.Add(navigationRow); workbookControls.Children.Add(showFormula);
@@ -97,7 +98,7 @@ internal sealed class ComparePane
         PageScroll.Content = PageImage; visual.Children.Add(PageScroll); visual.Children.Add(fallback); visual.Children.Add(Cells); dock.Children.Add(visual);
         VirtualizingPanel.SetVirtualizationMode(Cells, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(Cells, true);
         revision.SelectionChanged += async (_, _) => { if (binding) return; SetRevisionContents(true); selectionRequest = owner.ReloadComparison(); await owner.Guard(() => selectionRequest); };
-        page.SelectionChanged += async (_, _) => { if (!binding && !owner.IsWorkbook) await owner.Guard(() => Load(owner.Generation, owner.ReadToken)); };
+        page.SelectionChanged += async (_, _) => { if (!binding && !owner.IsWorkbook) { var request = Load(owner.Generation, owner.ReadToken); owner.SourcePresentationChanged(); await owner.Guard(() => request); owner.SourcePresentationChanged(); } };
         sheet.SelectionChanged += async (_, _) => { if (!binding && owner.IsWorkbook) { evidenceAbsence = ""; requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? ""; Invalidate(); row = 1; column = 1; selectionRequest = owner.ReloadSourceWindow(); await owner.Guard(() => selectionRequest); } };
         zoom.ValueChanged += (_, _) => { PageImage.LayoutTransform = new ScaleTransform(zoom.Value, zoom.Value); };
         Host.SizeChanged += (_, _) => ResizePreview();
@@ -115,6 +116,7 @@ internal sealed class ComparePane
     internal void Localize()
     {
         heading.Text = owner.Copy[after ? "after" : "before"]; pageCaption.Text = owner.Copy["pages"]; sheetCaption.Text = owner.Copy["sheet"]; showFormula.Content = owner.Copy["showFormula"]; sparse.Text = owner.Copy["sparseShort"]; sparse.ToolTip = owner.Copy["sparse"]; address.ToolTip = owner.Copy["address"];
+        versionCaption.Text = (revision.SelectedItem as Choice)?.Label ?? ""; versionCaption.ToolTip = RevisionId; zoom.ToolTip = owner.Copy["zoom"] + " · 50–200%";
         AutomationProperties.SetName(Cells, owner.Copy[after ? "after" : "before"] + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(revision, heading.Text + " · " + owner.Copy["label"]); AutomationProperties.SetName(sheet, heading.Text + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(page, heading.Text + " · " + owner.Copy["pages"]); AutomationProperties.SetName(address, heading.Text + " · " + owner.Copy["address"]);
         foreach (var arrow in arrows) { arrow.Button.ToolTip = owner.Copy[arrow.Key]; AutomationProperties.SetName(arrow.Button, heading.Text + " · " + owner.Copy[arrow.Key]); }
         docControls.Visibility = owner.IsWorkbook ? Visibility.Collapsed : Visibility.Visible; workbookControls.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed; sparse.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
@@ -144,6 +146,11 @@ internal sealed class ComparePane
     internal void SetRevisions(List<JsonElement> items, int index)
     {
         revisions = items; requestedSheetName = ""; binding = true; revision.ItemsSource = items.Select(v => Choice.From(v, "revision_occurrence_id", "label")).ToList(); revision.SelectedIndex = items.Count > 0 ? Math.Clamp(index, 0, items.Count - 1) : -1; binding = false; SetRevisionContents(); Localize();
+    }
+    internal void SetSourceRevision(string id, bool preserveMissingSheet = true)
+    {
+        if (revision.ItemsSource is not List<Choice> choices || !choices.Any(v => v.Id == id)) return;
+        binding = true; revision.SelectedItem = choices.Find(v => v.Id == id); binding = false; SetRevisionContents(preserveMissingSheet); Localize();
     }
     private void SetRevisionContents(bool explicitVersionChange = false)
     {
@@ -402,7 +409,7 @@ internal sealed class ComparePane
     internal string VerifiedPreviewText => PreviewMatchesSelection ? previewText : "";
     internal string PresentedSourceCaption => source.Text;
     internal string PresentedFallback => fallback.Text;
-    internal Task SelectPageForSmoke(string id, Func<CancellationToken, Task>? beforeInstall = null) { SetEventPage(id); return LoadPage(owner.Generation, owner.ReadToken, beforeInstall); }
+    internal async Task SelectPageForSmoke(string id, Func<CancellationToken, Task>? beforeInstall = null) { SetEventPage(id); var request = LoadPage(owner.Generation, owner.ReadToken, beforeInstall); owner.SourcePresentationChanged(); try { await request; } finally { owner.SourcePresentationChanged(); } }
     internal async Task SelectRevisionForSmoke(int index) { revision.SelectedIndex = index; await selectionRequest; }
     internal async Task SelectAvailableSheetForSmoke() { sheet.SelectedIndex = 0; await selectionRequest; }
     internal static string ColumnName(int column) { var name = ""; while (column > 0) { column--; name = (char)('A' + column % 26) + name; column /= 26; } return name; }

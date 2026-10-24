@@ -10,12 +10,12 @@ enum WorkspacePageArrangement:String,Codable,CaseIterable {case horizontal,verti
 enum WorkspaceLayoutPreset:String,CaseIterable {case balanced,focus,review}
 
 struct WorkspaceLayoutConfiguration:Codable,Equatable {
-    var sidebarVisible=true
+    var sidebarVisible=false
     var sidebarWidth:Double=220
     var changesVisible=true
-    var changesDock=WorkspaceChangesDock.bottom
+    var changesDock=WorkspaceChangesDock.left
     var changesHeight:Double=140
-    var changesWidth:Double=320
+    var changesWidth:Double=280
     var inspectorVisible=false
     var inspectorDock=WorkspaceInspectorDock.right
     var inspectorWidth:Double=300
@@ -25,7 +25,7 @@ struct WorkspaceLayoutConfiguration:Codable,Equatable {
         sidebarWidth.isFinite && (180...380).contains(sidebarWidth) && changesHeight.isFinite && (110...600).contains(changesHeight) && changesWidth.isFinite && (260...600).contains(changesWidth) && inspectorWidth.isFinite && (260...480).contains(inspectorWidth) && pageFraction.isFinite && (0.2...0.8).contains(pageFraction)
     }
     static func preset(_ preset:WorkspaceLayoutPreset,scope:WorkspaceLayoutScope)->Self {
-        var value=Self();value.inspectorVisible=scope == .workbook;value.changesHeight=scope == .workbook ? 200:140
+        var value=Self();value.changesHeight=scope == .workbook ? 200:140
         switch preset {
         case .balanced:break
         case .focus:value.sidebarVisible=false;value.inspectorVisible=false;value.changesVisible=false
@@ -430,4 +430,11 @@ struct WorkspaceLayoutSettings:View {
             HStack {Button(L("layout.reset")){layout.reset()};Spacer();Button(L("layout.done")){dismiss()}.keyboardShortcut(.defaultAction)}
         }.padding(24).frame(width:580).fixedSize(horizontal:false,vertical:true)
     }
+}
+
+struct NativeDetailSheet<Content:View>:View {
+    @Environment(\.dismiss) private var dismiss
+    let title:String
+    @ViewBuilder var content:()->Content
+    var body:some View {VStack(spacing:0){HStack{Text(title).font(.headline);Spacer();Button(L("doc.common.close")){dismiss()}.keyboardShortcut(.cancelAction)}.padding(16);Divider();content()}.frame(width:940,height:680)}
 }

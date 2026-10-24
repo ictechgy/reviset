@@ -1,10 +1,10 @@
 # Design
 
 ## Source of truth
-- Status: Active — 사용자가 A(고요한 스튜디오)를 선택. 중앙 문서 영역 확대와 수백 페이지 처리 요구 반영.
-- Last refreshed: 2026-10-23
-- Primary product surfaces: macOS 데스크톱 앱의 프로젝트·버전 입력, 타임라인, 원문 비교, 대응 검토, 내보내기.
-- Evidence reviewed: PLAN.md §5~9, PROGRESS.md, packages/schema 및 query. 기존 UI/브랜드/컴포넌트/시각 기준은 없다.
+- Status: Active — 사용자가 2026-10-24 B 중심의 Git식 탐색 구조 구현을 승인했다. 기존 A(밝고 차분한 macOS형) 시각 방향과 중앙 원문 확대 요구를 유지한다. 네이티브 구현·검증 상태는 아래 기록과 실제 결과로 구분한다.
+- Last refreshed: 2026-10-24
+- Primary product surfaces: macOS·Windows 네이티브 앱의 프로젝트·버전 입력, 이력, 문서·통합문서 비교, 대응 검토, 내보내기·읽기 전용 MCP 연결.
+- Evidence reviewed: 현재 소스 `37c603c91df568d65a50ff664eef61d266e2ea67`, apps/macos의 App·Views·Model·WorkbookView·WorkspaceLayout, apps/windows의 MainWindow·ComparePane, docs/WORKSPACE-LAYOUTS.md·MCP.md, 실행 소스 `29f3a8ad`의 실제 문서·통합문서 캡처. 이전 계획과 검증 기록은 각 원래 소스 범위를 유지한다.
 
 ## Brand
 - Product name: **Reviset / 리비셋** — 사용자가 2026-10-22 확정. 이전 이름 Docver. 표시 브랜드와 호환성 식별자의 경계는 [리네이밍 기록](docs/RENAMING.md)을 따른다.
@@ -18,12 +18,12 @@
 - Success signals: 5버전 합성 작업, 재실행 복원, 부분 실패/취소, 같은 report의 MCP/export 일치, 패키지 .app 실제 실행.
 
 ## Personas and jobs
-- Primary personas: 여러 차례 수정된 발표자료를 검토하는 작성자·리뷰어.
+- Primary personas: 여러 차례 수정된 발표자료·문서·통합문서를 검토하는 작성자·리뷰어. Git을 모르는 업무 사용자도 주요 대상으로 가정한다.
 - User jobs: 숫자가 언제 바뀌었는지, 중간 삽입/삭제와 재배치, 원문 근거 확인.
-- Key contexts of use: 오프라인 macOS 데스크톱, 파일 형식이 섞인 여러 버전.
+- Key contexts of use: 로컬 macOS·Windows 데스크톱, 파일 형식이 섞인 여러 버전, 수백 페이지와 넓은 시트.
 
 ## Information architecture
-- Primary navigation: 프로젝트 목록, 전체 이력, 비교/대응 검토, AI·내보내기.
+- Implementation target: 큰 원문 + 좁은 변경 목록을 기본으로, 버전 이력과 상세 근거는 필요할 때 연다. 조회 구간과 선택 이벤트 쌍을 각각 한 곳에 표시한다. 프로젝트·전체 계보·대응 검토·내보내기·MCP는 발견 가능한 보조 경로를 유지한다.
 - Core routes/screens: 빈 상태/가져오기 sheet, 활성 report 타임라인·비교, 관측 한계, MCP 연결 안내.
 - Content hierarchy: 프로젝트 → 고정 보고서 → 비교 구간 → 변경 → 원문/근거.
 
@@ -41,7 +41,7 @@
 - Imagery/iconography: 실제 문서 preview 또는 명시적 구조 보기. 차트/숫자 생성으로 원문을 채우지 않는다.
 
 ## Components
-- Existing components to reuse: 없음. 공통 query/report 계약을 재사용.
+- Existing components to reuse: 공통 query/report 계약, macOS의 기존 PDFKit·AppKit 원문/그리드 host와 WorkspacePaneSplit, Windows의 ComparePane·native splitter·가상화 그리드. 구조 시안은 이 host와 선택·요청 소유권을 유지하는 방향으로 설계한다.
 - New/changed components: AppShell, ProjectList, ImportSheet, VersionBar, HistoryList, ComparePane, PageView, MappingControls, ExportPanel. PageView는 원본 PDF/변환 PPTX 출처, OCR 추정 점수·원문 확인, 글꼴 대체/누락 경고를 한국어로 제공한다. 화면 변경은 의미상 삭제와 구분한다.
 - Variants and states: 선택/비활성/처리 중/오류/부분 성공/관측 공백.
 - Token/component ownership: apps/macos의 SwiftUI·AppKit view와 시스템 색상/폰트.
@@ -73,7 +73,7 @@
 - OCR 근거: 최초 판독과 문맥 재판독을 따로 표시한다. 재판독이 비교에 쓰여도 최초 문자열·점수와 각 조건의 결과를 열어 볼 수 있다. 보류한 재판독을 숨은 원문으로 표시하지 않는다. 수많은 추출 행은 지연 생성한다. 조건별 언어·확대 배율·문맥 범위·판독 점수와 상태를 함께 표시하며, 최초 판독 연결이 검증되지 않은 기록은 명시한다.
 
 ## Implementation constraints
-- Framework/styling system: SwiftUI + AppKit + PDFKit. 별도 Node helper가 TypeScript 공통 엔진을 실행. 외부 CDN·폰트 없음.
+- Framework/styling system: macOS는 SwiftUI + AppKit + PDFKit, Windows는 WPF native controls. 별도 Node helper가 TypeScript 공통 엔진을 실행. 외부 CDN·폰트 없음. HTML 시안은 구조 논의를 위한 별도 산출물이며 앱의 웹 셸 전환을 뜻하지 않는다.
 - Design-token constraints: 사용자 선택 후 palette 고정, 근거 없는 theme 혼합 금지.
 - Performance constraints: 분석 별도 프로세스, 전체 결과는 디스크 stage, UI에는 작은 projection. 페이지별 원문 요청·PDFKit 지연 렌더·변경/계보 LazyVStack. 300페이지씩 3버전의 패키지 앱 검증.
 - Compatibility constraints: 우선 현재 arm64 Mac용 로컬 .app/zip. 서명·공증·다른 아키텍처는 검증 범위 별도.
@@ -192,3 +192,16 @@ Actual48fivecaptureClaude review confirms largerdocumentcanvas/pageedges/compact
 - Windows uses native file dialogs, virtualized data grids and bounded page previews. Import, staged analysis/commit, fixed report navigation, source/evidence, export and project-scoped MCP reuse the existing contracts. UI language is English/Korean and does not translate source data.
 - Platform capabilities remain explicit. Apple Vision/PDFKit OCR and the macOS-confined LibreOffice renderer are unavailable on Windows until a qualified Windows adapter exists. Never run an Office converter without its required confinement, or substitute structural reconstruction for an original render without a visible label. Portable PDF text/appearance extraction, PPTX structure and XLSX/ODS/CSV analysis remain available.
 - Qualify macOS native host/viewport preservation, preference corruption/reopen and actual layouts. Cross-compiling Windows is a build check; actual Windows process, engine, preview, grid, export, cancellation and layout checks require a Windows runner. Preserve separate raw Claude/Devin/Grok design and implementation-review records without attributing a design suggestion as approval.
+
+## Git-inspired information architecture proposal — 2026-10-24
+
+- Status: **Active / implementation authorized**. 사용자가 최신 화면 구조가 복잡하고 읽기 불편하다고 지적한 뒤 2026-10-24 추천안 구현을 지시했다. 기존 밝은 A 시각 방향과 큰 원문 요구를 유지한다. HTML은 구조 비교용 합성 시안이며 실제 네이티브 구현·검증의 증거로 대신하지 않는다.
+- Decision record: [독립 자문·구조 비교·도입 제안](docs/UX-GIT-DIFF-2026-10-24.md). [A/B/C 상호작용 시안](docs/design/git-diff-review/index.html)은 합성 자료이며 B로 시작한다.
+- Evidence: 소스 `37c603c`, 런타임 `29f3a8ad`의 실제 Mac 문서/통합문서·Windows 문서 캡처. Claude는 실제 PNG 3장과 코드·설명을, Devin과 Grok은 코드·설명만 검토했다. 세 의견 모두 HYBRID지만 Claude는 한 캔버스의 읽기/비교/이력 보기, Devin은 작업 구분, Grok은 단일 비교 막대와 이력 서랍을 선호한다. 구현 승인이나 동일한 상세안 합의는 아니다.
+- Owner recommendation: **B의 원문 중심 기본 화면 + A의 버전 → 변경 → diff 흐름**. 좁은 변경 목록은 열고, 버전 이력·근거는 접는다. 집중 모드에서도 고정 분석 결과 칩과 선택 변경의 관측 공백/추정은 유지한다. 읽기/비교/이력을 각각 별도 전체 화면으로 강제하는 안은 우선 채택하지 않는다.
+- Scope hierarchy: 프로젝트 → 고정 분석 결과 → 조회 구간/방식 → 선택 이벤트 → 양쪽 실제 페이지/시트/셀 → 근거. 이벤트 선택으로 조회 구간이나 목록을 교체하지 않는다. 최신 버전의 직전→선택을 기본으로 하되 명시적 A/B와 한 버전 읽기를 제공하는 방향이다.
+- Diff meaning: 두 버전 차이와 중간 변경 이력은 서로 다른 질문이다. 100→120→100의 끝점 값은 같아도 중간 변경은 남는다. Git의 버전 선택·변경 목록·텍스트 diff를 참고하며 저자·커밋 시각·브랜치·스테이징 조작을 도입하지 않는다.
+- Progressive detail: 내보내기는 메뉴 행동, MCP는 AI 도구 연결, 전체 해시/긴 한계는 보고서 칩 상세, 대응 수정은 명시적 검토 경로에 둔다. 출처·물리 주소·선택 변경의 불확실성은 원문 가까이에 남긴다. 가림/취소선/사용 불가는 의미상 삭제와 구분한다. 수식 원문과 저장값은 별개이고 재계산을 주장하지 않는다.
+- Preservation: 네이티브 원문·그리드 인스턴스와 보고서/구간/이벤트/페이지/셀/확대/스크롤을 보존한다. UI 보고서 고정은 프로젝트 범위 MCP 설정 복사만으로 클라이언트에 전파되지 않는다. MCP는 응답의 고정 ID를 이어 사용한다. 레이아웃·언어 선호는 보고서 밖에 둔다.
+- Open questions: 읽기 보기의 진입 방식, 이력 서랍의 발견 가능성, 좁은 창에서 변경 목록의 도킹 방식. 원문 면적 수치는 실측 전 목표이며 패널을 모두 연 상태의 비율로 약속하지 않는다.
+- Qualification: HTML 시안의 상호작용 확인은 네이티브 키보드·VoiceOver/Narrator·150% 배율·대형 코퍼스 성능 검증과 별개다. 후속 네이티브 구현에서 기존 선택·CAS·부분 실패 계약과 이전 레이아웃 선호를 함께 검증한다.

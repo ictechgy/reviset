@@ -8,8 +8,8 @@
     "ko": "보던 위치를 유지하면서 패널 배치 변경"
   },
   "layout.preset.balanced": {
-    "en": "Balanced",
-    "ko": "균형 배치"
+    "en": "Source First",
+    "ko": "원문 중심"
   },
   "layout.preset.focus": {
     "en": "Document Focus",

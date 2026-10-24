@@ -146,6 +146,7 @@ private struct SmokeStructureView: View {
             let assetFacts=try FileManager.default.contentsOfDirectory(at:assets,includingPropertiesForKeys:nil).filter{$0.lastPathComponent.range(of:"^[a-f0-9]{64}$",options:.regularExpression) != nil}.map{url in
                 (url:url,sha:try fileDigest(url),modified:try FileManager.default.attributesOfItem(atPath:url.path)[.modificationDate] as? Date)
             }
+            let gitDiffChecks=request["git_diff_checks"].bool ? try await exerciseGitDiffWorkspace(model,layout:layout,output:output,expectReversion:request["git_diff_reversion"].bool):[:]
             let aspectChecks=request["aspect_ratio_checks"].bool ? try await exerciseAspectRatios(model,output):[]
             if request["bundle_sheet_page"].int>0 {
                 let revision=model.revision(0),number=request["bundle_sheet_page"].int
@@ -174,28 +175,27 @@ private struct SmokeStructureView: View {
                 guard let sheet=NSApp.windows.compactMap({$0.sheets.first}).first else { throw BridgeError(code:"LARGE_MAPPING_SHEET",message:"수백 페이지 대응 창 표시 실패") }
                 try captureView(sheet,output.appendingPathComponent("native-mapping-page240.png"));model.mappingSheet=false;model.inspector=false
             }
-            model.tab="history";model.focus=false;try await model.updateChanges()
+            model.from=0;model.to=max(0,model.revisions.count-1);model.tab="history";model.focus=false;try await model.updateChanges()
             try await Task.sleep(nanoseconds:300_000_000);try capture(output.appendingPathComponent("native-history.png"))
             var historyChangeCheck:[String:Any]=[:]
             if let change=model.changes.last(where:{$0["kind"].string=="text_modified"}) {
                 let id=change["change_id"].string,before=change["from_occurrence"].string,after=change["to_occurrence"].string
-                let evidence=change["evidence"].array,selectionStarted=Date()
+                let evidence=change["evidence"].array,selectionStarted=Date(),queryFrom=model.from,queryTo=model.to,queryRows=try JSON(model.changes.map(\.raw)).data()
                 var observedLoading=false
                 let loadingObservation=model.$loadingChanges.dropFirst().sink { if $0 { observedLoading=true } }
                 defer { loadingObservation.cancel() }
                 func selectionReady()->Bool {
-                    !model.loadingChanges && model.tab=="compare" && model.selectedChangeID==id && model.revision(model.from)["revision_occurrence_id"].string==before && model.revision(model.to)["revision_occurrence_id"].string==after &&
-                    evidence.contains(where:{$0["revision_occurrence_id"].string==before && model.displayPageID($0["page_id"].string,in:model.revision(model.from))==model.leftPageID}) &&
-                    evidence.contains(where:{$0["revision_occurrence_id"].string==after && model.displayPageID($0["page_id"].string,in:model.revision(model.to))==model.rightPageID})
+                    !model.loadingChanges && model.tab=="history" && model.from==queryFrom && model.to==queryTo && model.selectedChangeID==id && model.revision(model.sourceFrom)["revision_occurrence_id"].string==before && model.revision(model.sourceTo)["revision_occurrence_id"].string==after &&
+                    evidence.contains(where:{$0["revision_occurrence_id"].string==before && model.displayPageID($0["page_id"].string,in:model.revision(model.sourceFrom))==model.leftPageID}) &&
+                    evidence.contains(where:{$0["revision_occurrence_id"].string==after && model.displayPageID($0["page_id"].string,in:model.revision(model.sourceTo))==model.rightPageID})
                 }
                 model.chooseChange(id)
                 for _ in 0..<200 {
-                    // chooseChange schedules its range read; the old selected ID can
-                    // still match before that task begins, so require a real load cycle.
+                    // Event selection keeps the query rows and does not start another read.
                     try await Task.sleep(nanoseconds:20_000_000)
-                    if observedLoading && selectionReady() {break}
+                    if !observedLoading && selectionReady() {break}
                 }
-                guard observedLoading && selectionReady() else {
+                guard !observedLoading && selectionReady(),try JSON(model.changes.map(\.raw)).data()==queryRows else {
                     try? JSON(["requested_change_id":id,"selected_change_id":model.selectedChangeID ?? "","loading_cycle_observed":observedLoading,"loading_changes":model.loadingChanges,"tab":model.tab,"expected_from_occurrence":before,"actual_from_occurrence":model.revision(model.from)["revision_occurrence_id"].string,"expected_to_occurrence":after,"actual_to_occurrence":model.revision(model.to)["revision_occurrence_id"].string,"left_page_id":model.leftPageID,"right_page_id":model.rightPageID,"changes_failure":model.changesFailure]).data().write(to:output.appendingPathComponent("history-selection-failure.json"))
                     throw BridgeError(code:"HISTORY_CHANGE_SELECTION",message:"실제 이력 선택과 비교 구간·원문 근거가 다릅니다.")
                 }
@@ -212,7 +212,7 @@ private struct SmokeStructureView: View {
             model.tab="history";try await model.updateChanges()
             await model.loadMCP()
             let numeric=model.changes.filter{$0["kind"].string=="text_modified"}
-            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"reference_appearance_checks":referenceChecks,"import_draft_checks":importChecks,"bundle_mapping_checks":bundleChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
+            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"git_diff_checks":gitDiffChecks,"reference_appearance_checks":referenceChecks,"import_draft_checks":importChecks,"bundle_mapping_checks":bundleChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
             var complete=result;complete["aspect_ratio_checks"]=aspectChecks
             for fact in assetFacts {
                 let modified=try FileManager.default.attributesOfItem(atPath:fact.url.path)[.modificationDate] as? Date
@@ -355,6 +355,40 @@ private struct SmokeStructureView: View {
         guard structureCaptures.count==2,structureCaptures[0] != structureCaptures[1] else {throw BridgeError(code:"L10N_STRUCTURE",message:"Fallback placeholder labels did not redraw")}
         guard stages[0]["status"] as? String != stages[1]["status"] as? String else{throw BridgeError(code:"L10N_STATUS",message:"Stored typed status did not rerender")}
         return ["passed":true,"stages":stages,"prepared_selection":preparedFacts,"mounted_sources":mountedSources,"draft_opaque_text":opaque,"interaction_scope":"actual app; model-driven language, production import/settings hosts and native NSMenu tracking with timed cancellation; no OS keyboard/mouse or full VoiceOver claim"]
+    }
+    private static func exerciseGitDiffWorkspace(_ model:AppModel,layout:WorkspaceLayoutStore,output:URL,expectReversion:Bool)async throws->[String:Any] {
+        let report=try model.report.data(),reportID=model.report["report_id"].string
+        let defaultPair=model.from==max(0,model.revisions.count-2) && model.to==max(0,model.revisions.count-1)
+        guard defaultPair else{throw BridgeError(code:"GIT_DEFAULT_PAIR",message:"New report did not open predecessor → latest.")}
+        layout.reset();model.tab="compare";model.pageMode="both";model.diffMode="source"
+        guard !layout.configuration.sidebarVisible,!layout.configuration.inspectorVisible,layout.configuration.changesVisible,layout.configuration.changesDock == .left else{throw BridgeError(code:"GIT_DEFAULT_LAYOUT",message:"Source First default has incorrect panel visibility.")}
+        try await Task.sleep(nanoseconds:400_000_000);try capture(output.appendingPathComponent("native-git-source-first.png"))
+        model.from=0;model.to=max(0,model.revisions.count-1);try await model.updateChanges()
+        let netText=model.changes.filter{$0["kind"].string=="text_modified"}
+        model.tab="history";try await model.updateChanges()
+        let historyText=model.changes.filter{$0["kind"].string=="text_modified"},queryFrom=model.from,queryTo=model.to,rows=try JSON(model.changes.map(\.raw)).data()
+        if expectReversion {guard netText.isEmpty,historyText.count>=2 else{throw BridgeError(code:"GIT_REVERSION",message:"Reverted endpoints and intermediate events were conflated.")}}
+        guard let change=historyText.first else{throw BridgeError(code:"GIT_HISTORY_EVIDENCE",message:"Qualification needs at least one text event.")}
+        var loaded=false;let observation=model.$loadingChanges.dropFirst().sink{if $0{loaded=true}};defer{observation.cancel()}
+        model.chooseChange(change["change_id"].string)
+        try await Task.sleep(nanoseconds:100_000_000)
+        guard !loaded,model.tab=="history",model.from==queryFrom,model.to==queryTo,try JSON(model.changes.map(\.raw)).data()==rows,model.revision(model.sourceFrom)["revision_occurrence_id"].string==change["from_occurrence"].string,model.revision(model.sourceTo)["revision_occurrence_id"].string==change["to_occurrence"].string else{throw BridgeError(code:"GIT_HISTORY_SCOPE",message:"Event selection replaced query scope or rows.")}
+        _ = try await captureSelectedPages(model,output,selectionReady:{model.tab=="history" && model.selectedChangeID==change["change_id"].string})
+        try capture(output.appendingPathComponent("native-git-history.png"))
+        func pdfs(_ view:NSView)->[PDFView] {(view as? PDFView).map{[$0]} ?? view.subviews.flatMap{pdfs($0)}}
+        guard let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}),let content=window.contentView else{throw BridgeError(code:"GIT_WINDOW",message:"No native source window.")}
+        let mounted=pdfs(content),identities=Set(mounted.map(ObjectIdentifier.init))
+        let state=mounted.map{($0,$0.document,$0.currentPage,$0.scaleFactor,$0.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero)}
+        model.diffMode="text";try await Task.sleep(nanoseconds:250_000_000);try capture(output.appendingPathComponent("native-git-unified.png"));model.diffMode="source";try await Task.sleep(nanoseconds:250_000_000)
+        guard !mounted.isEmpty,Set(pdfs(content).map(ObjectIdentifier.init))==identities else{throw BridgeError(code:"GIT_HOST",message:"Text mode recreated PDF hosts.")}
+        for (view,document,page,zoom,origin) in state {let now=view.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero;guard view.document===document,view.currentPage===page,abs(view.scaleFactor-zoom)<0.001,abs(now.x-origin.x)<1,abs(now.y-origin.y)<1 else{throw BridgeError(code:"GIT_VIEWPORT",message:"Text mode changed source page, zoom or viewport.")}}
+        layout.setFocus(true);try await Task.sleep(nanoseconds:200_000_000)
+        guard workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.document.reportBar"}) else{throw BridgeError(code:"GIT_REPORT_FOCUS",message:"Focus hid fixed report identity.")}
+        try capture(output.appendingPathComponent("native-git-focus.png"));layout.setFocus(false)
+        model.selectVersion(0);try await model.updateChanges();guard model.readingSingleVersion,model.changes.isEmpty else{throw BridgeError(code:"GIT_V1_READ",message:"First version did not enter single-source reading.")}
+        model.selectVersion(max(0,model.revisions.count-1));try await model.updateChanges();model.tab="compare";try await model.updateChanges()
+        guard model.report["report_id"].string==reportID,try model.report.data()==report else{throw BridgeError(code:"GIT_REPORT_MUTATION",message:"Workspace navigation modified report data.")}
+        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":!loaded,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"focus_fixed_report_visible":true,"first_version_single_read":true,"fixed_report_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
     }
     static func captureSelectedPages(_ model:AppModel,_ output:URL,selectionReady:()->Bool) async throws->[String:Any] {
         let report=model.report["report_id"].string,mode=model.pageMode,left=model.leftPageID,right=model.rightPageID,started=Date()
@@ -588,7 +622,7 @@ private struct SmokeStructureView: View {
         try await model.applyRelation(project:project,report:model.report["report_id"].string,draftHash:model.report["draft_hash"].string,before:model.revision(1)["revision_occurrence_id"].string,after:model.revision(2)["revision_occurrence_id"].string,left:[b[0]["page_id"].string,b[1]["page_id"].string],right:[c[0]["page_id"].string],kind:"merge",reason:"원문 확인: 설계·구현 페이지를 다시 병합")
         await model.run(project)
         guard model.error.isEmpty && model.report["mapping_relations"].array.count==2 else { throw BridgeError(code:"MANUAL_MERGE",message:model.error.isEmpty ? "확정 관계 저장 실패":model.error) }
-        model.tab="history"
+        model.from=0;model.to=max(0,model.revisions.count-1);model.tab="history"
         async let first:Void=model.updateChanges();async let second:Void=model.updateChanges();_=try await(first,second)
         guard model.changes.filter({$0["kind"].string=="page_split"}).count==1 && model.changes.filter({$0["kind"].string=="page_merged"}).count==1 else { throw BridgeError(code:"MANUAL_EVENTS",message:"분할·병합 이벤트 조회 실패") }
         try await Task.sleep(nanoseconds:300_000_000);try capture(output.appendingPathComponent("native-manual-history.png"))
@@ -609,7 +643,7 @@ private struct SmokeStructureView: View {
         defer{layout.update{$0=originalLayout};model.zoom=originalZoom}
         model.zoom=1.5
         let chromeChecks=try await exerciseDocumentChrome(model,layout:layout,output:output)
-        layout.reset();model.tab="compare";model.focus=false;model.showChanges=true;try await model.updateChanges()
+        layout.reset();layout.update{$0.changesDock = .bottom};model.tab="compare";model.focus=false;model.showChanges=true;try await model.updateChanges()
         try await Task.sleep(nanoseconds:300_000_000)
         func pane(_ view:NSView)->NSSplitView? {
             if let split=view as? NSSplitView,split.identifier?.rawValue=="Reviset.workspace.document.changes" {return split}
@@ -678,7 +712,7 @@ private struct SmokeStructureView: View {
             try await Task.sleep(nanoseconds:180_000_000)
             let names=Set(NSApp.windows.compactMap(\.contentView).flatMap{workspaceLayoutMarkers(in:$0)}.compactMap{$0.identifier?.rawValue})
             let report=names.contains("Reviset.document.reportBar"),versions=names.contains("Reviset.document.versionBar")
-            guard layout.isFocused==focused,model.focus==focused,report == !focused,versions == (!focused && model.tab != "compare") else{throw BridgeError(code:"LAYOUT_REPORT_CHROME",message:"A panel or Focus action incorrectly changed the report/history controls or explicit focus state.")}
+            guard layout.isFocused==focused,model.focus==focused,report,versions else{throw BridgeError(code:"LAYOUT_REPORT_CHROME",message:"A panel or Focus action incorrectly changed the report/history controls or explicit focus state.")}
             observations.append(["tab":model.tab,"action":action,"focused":focused,"report_bar":report,"history_version_bar":versions])
             checks+=1
         }

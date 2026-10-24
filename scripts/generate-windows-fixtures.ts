@@ -16,6 +16,9 @@ for(const [version,value] of [[1,100],[2,120]] as const){
   pdf.addPage({size:[720,405],margin:40});pdf.fontSize(26).text(`Second page evidence ${version} / ${value}`,40,50);pdf.fontSize(14).text('Distinct source for pending page and language transitions',40,110);pdf.end();
   await writeFile(join(folder,`v${version}.pdf`),await done);
 }
+// A third occurrence of the first source exercises endpoint equality separately
+// from the two intermediate changes (100 → 120 → 100).
+await writeFile(join(folder,'v3-reverted.pdf'),await readFile(join(folder,'v1.pdf')));
 const deck=new (pptxgen as unknown as typeof pptxgen.default)();deck.layout='LAYOUT_WIDE';
 deck.addSlide().addText('Revenue 110',{x:1,y:1,w:10,h:1,fontSize:28});
 await deck.writeFile({fileName:join(folder,'v3.pptx')});

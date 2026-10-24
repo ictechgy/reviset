@@ -120,25 +120,29 @@ struct MainView: View {
                 VStack(spacing:0) {
                     if model.report.isNull { EmptyWorkspace() }
                     else {
-                        if !layout.isFocused { ReportBar().background(WorkspaceLayoutMarker(name:"Reviset.document.reportBar"));Divider();if model.tab != "compare" { VersionBar().background(WorkspaceLayoutMarker(name:"Reviset.document.versionBar"));Divider() } }
-                        if model.tab=="export" { ExportView() }
-                        else if model.tab=="history" { HistoryView() }
-                        else { CompareWorkspace() }
+                        ReportBar().background(WorkspaceLayoutMarker(name:"Reviset.document.reportBar"));Divider()
+                        CompareWorkspace()
                     }
                 }.frame(maxWidth:.infinity,maxHeight:.infinity).environmentObject(model).environmentObject(layout)
             } auxiliary:{SidebarView().environmentObject(model)}
             Divider();HStack { Label(L("doc.privacy.localMac"),systemImage:"internaldrive");Spacer();Text(!model.evidenceWarning.isEmpty ? model.evidenceWarning:model.status.isEmpty ? L("doc.evidence.footer") : model.status);Spacer();Text("Reviset · Native macOS") }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,5)
         }.disabled(!model.libraryAvailable || model.initializing).preferredColorScheme(.light).background(Color(nsColor:.windowBackgroundColor)).frame(minWidth:1100,minHeight:740)
         .toolbar {
-            ToolbarItem(placement:.navigation){Button {layout.toggleFocus()} label:{Image(systemName:model.focus ? "sidebar.left" : "arrow.up.left.and.arrow.down.right")}.help(model.focus ? L("doc.workspace.standard") : L("doc.workspace.focus"))}
+            ToolbarItem(placement:.navigation){Button {layout.toggleFocus()} label:{Image(systemName:layout.isFocused ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")}.help(layout.isFocused ? L("doc.workspace.standard") : L("doc.workspace.focus"))}
             ToolbarItem { WorkspaceLayoutMenu(layout:layout) }
-            ToolbarItem { Text(model.project["title"].string.isEmpty ? "Reviset" : model.project["title"].string).font(.headline) }
+            ToolbarItem { Menu {ForEach(model.projects){project in Button(project["title"].string){Task{await model.selectProject(project["project_id"].string)}}};Divider();Button(L("git.manageVersions")){layout.update{$0.sidebarVisible=true}}} label:{Label(model.project["title"].string.isEmpty ? "Reviset":model.project["title"].string,systemImage:"folder")}.disabled(model.busy || model.loading) }
             ToolbarItemGroup(placement:.primaryAction) {
-                Button{openWindow(id:"workbooks")}label:{Label(L("doc.workspace.spreadsheets"),systemImage:"tablecells")}.help(L("doc.workspace.spreadsheetsHelp")).disabled(!model.libraryAvailable || model.initializing)
-                if !model.report.isNull {
-                    Picker(L("doc.workspace.task"),selection:$model.tab){Text(L("doc.workspace.compare")).tag("compare");Text(L("doc.workspace.history")).tag("history");Text(L("doc.workspace.export")).tag("export")}.pickerStyle(.segmented).frame(minWidth:265,idealWidth:320,maxWidth:360)
-                    Button {Task{await model.exportReport()}} label:{Label(L("doc.common.export"),systemImage:"square.and.arrow.up")}
-                }
+                Button{model.importSheet=true}label:{Label(L("doc.import.documents"),systemImage:"plus")}.disabled(model.busy || model.loading)
+                Menu {
+                    Button(L("doc.workspace.spreadsheets")){openWindow(id:"workbooks")}
+                    if !model.report.isNull {
+                        Button(L("doc.common.export")){Task{await model.exportReport()}}
+                        Button(L("git.aiTools")){model.toolsSheet=true}
+                        Divider()
+                        Button(L("git.lineage")){model.lineageSheet=true}
+                        Button(L("doc.mapping.reviewHeading")){model.inspector=true}
+                    }
+                } label:{Label(L("git.actions"),systemImage:"ellipsis.circle")}
             }
         }.focusedSceneObject(layout)
         .onChange(of:model.focus){if model.focus != layout.isFocused {layout.setFocus(model.focus)}}
@@ -146,7 +150,9 @@ struct MainView: View {
         .onChange(of:model.showChanges){layout.update{$0.changesVisible=model.showChanges}}
         .onChange(of:layout.configuration){syncLayoutFlags()}
         .onChange(of:layout.isFocused){syncLayoutFlags()}
-        .onChange(of:model.tab){if model.tab != "export"{model.changeRange()}}
+        .onChange(of:model.tab){if model.tab == "export" {model.toolsSheet=true} else {model.changeRange()}}
+        .sheet(isPresented:$model.toolsSheet){NativeDetailSheet(title:L("git.aiTools")){ExportView().environmentObject(model)}}
+        .sheet(isPresented:$model.lineageSheet){NativeDetailSheet(title:L("git.lineage")){VStack(spacing:0){VersionBar().environmentObject(model);HistoryGraphView().environmentObject(model)}}}
         .sheet(isPresented:$model.importSheet){ImportView()}
         .alert(item:$model.reorderConfirmation){request in Alert(title:Text(L("doc.reorder.title")),message:Text(request.message),primaryButton:.destructive(Text(L("doc.reorder.confirm"))){Task{await model.confirmReorder(request)}},secondaryButton:.cancel(Text(L("doc.common.cancel"))))}
         .sheet(item:$model.sidecarRequest){request in OnlyOfficeSidecarSheet(request:request).environmentObject(model)}
@@ -184,19 +190,31 @@ struct EmptyWorkspace: View {
 }
 struct ReportBar: View {
     @EnvironmentObject var model: AppModel
-    var body: some View {HStack{Label(L("doc.report.saved"),systemImage:"lock.doc").font(.caption);Picker(L("doc.report.label"),selection:Binding(get:{model.report["report_id"].string},set:{id in Task{await model.selectProject(model.projectID,snapshot:id)}})){ForEach(model.reports){r in Text(String(r["report_id"].string.dropFirst(4).prefix(12))+" · "+localizedISODate(r["created_at"].string)).tag(r["report_id"].string)}}.labelsHidden().frame(width:300).disabled(model.busy || model.loading);Spacer();if model.project["dirty"].bool{Text(L("doc.report.pending")).font(.caption).foregroundStyle(.orange)};Text(LC("doc.project.revisionCount", model.revisions.count)).font(.caption).foregroundStyle(.secondary)}.padding(.horizontal,16).padding(.vertical,8)}
+    @State private var details=false
+    var body: some View {
+        HStack(spacing:10){
+            Menu {
+                ForEach(model.reports){r in Button(localizedISODate(r["created_at"].string)+" · "+String(r["report_id"].string.suffix(12))){Task{await model.selectProject(model.projectID,snapshot:r["report_id"].string)}}}
+                Divider();Button(L("git.reportDetails")){details=true}
+            } label:{Label(String(model.report["report_id"].string.suffix(12)),systemImage:"lock.doc")}.help(L("doc.report.saved")).disabled(model.busy || model.loading)
+            Text(LC("doc.project.revisionCount",model.revisions.count)).font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            if model.project["dirty"].bool {Label(L("doc.report.pending"),systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)}
+        }.controlSize(.small).padding(.horizontal,14).padding(.vertical,5)
+        .sheet(isPresented:$details){NativeDetailSheet(title:L("git.reportDetails")){ScrollView{VStack(alignment:.leading,spacing:16){Text(model.report["report_id"].string).font(.system(.body,design:.monospaced)).textSelection(.enabled);Text(localizedISODate(model.report["created_at"].string));Text(L("doc.limitations.appearance"));Text(L("doc.limitations.ocr"));Button(L("doc.common.export")){Task{await model.exportReport()}}}.padding(24).frame(maxWidth:.infinity,alignment:.leading)}}}
+    }
 }
 struct VersionBar: View {
     @EnvironmentObject var model: AppModel
-    var body: some View {ScrollView(.horizontal,showsIndicators:false){HStack(spacing:12){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in Button{model.from=min(i,max(0,model.revisions.count-2));model.to=min(model.revisions.count-1,model.from+1);model.changeRange()}label:{VStack(spacing:5){Circle().fill(i==model.from||i==model.to ? Color.blue:Color.gray.opacity(0.3)).frame(width:11,height:11);Text(versionDisplayName(i,r)).font(.caption.weight(.semibold));Text(L("doc.revision.pagesAndFormats", .verbatim(LC("doc.revision.pageCount",model.primaryPages(r).count)), .verbatim(r["assets"].array.map{$0["format"].string.uppercased()}.joined(separator:"+")))).font(.caption2).foregroundStyle(.secondary);if r["status"].string != "success"{Text(L("doc.revision.partial")).font(.caption2).foregroundStyle(.orange)}}.frame(minWidth:135).padding(7)}.buttonStyle(.plain)}}.padding(.horizontal,15).padding(.vertical,9)}}
+    var body: some View {ScrollView(.horizontal,showsIndicators:false){HStack(spacing:12){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in Button{model.selectVersion(i)}label:{VStack(spacing:5){Circle().fill(i==model.from||i==model.to ? Color.blue:Color.gray.opacity(0.3)).frame(width:11,height:11);Text(versionDisplayName(i,r)).font(.caption.weight(.semibold));Text(L("doc.revision.pagesAndFormats", .verbatim(LC("doc.revision.pageCount",model.primaryPages(r).count)), .verbatim(r["assets"].array.map{$0["format"].string.uppercased()}.joined(separator:"+")))).font(.caption2).foregroundStyle(.secondary);if r["status"].string != "success"{Text(L("doc.revision.partial")).font(.caption2).foregroundStyle(.orange)}}.frame(minWidth:135).padding(7)}.buttonStyle(.plain)}}.padding(.horizontal,15).padding(.vertical,9)}}
 }
 struct ComparePagesView:View {
     @EnvironmentObject var model:AppModel
     @EnvironmentObject var layout:WorkspaceLayoutStore
     var body:some View {
-        WorkspacePaneSplit(name:"document.pages",isVertical:layout.configuration.pageArrangement == .horizontal,primaryVisible:model.revisions.count<2 || model.pageMode != "after",auxiliaryVisible:model.revisions.count>1 && model.pageMode != "before",extent:.fraction(layout.configuration.pageFraction),primaryMinimum:150,auxiliaryMinimum:150,onResize:{value in if case .fraction(let fraction)=value {layout.update{$0.pageFraction=min(0.8,max(0.2,fraction))}}}) {
-            PageColumn(revision:model.revisions.count<2 ? model.revision(0):model.revision(model.from),side:model.revisions.count<2 ? L("doc.common.source"):L("doc.common.before"),pageID:$model.leftPageID).environmentObject(model)
-        } auxiliary:{PageColumn(revision:model.revision(model.to),side:L("doc.common.after"),pageID:$model.rightPageID).environmentObject(model)}
+        WorkspacePaneSplit(name:"document.pages",isVertical:layout.configuration.pageArrangement == .horizontal,primaryVisible:model.readingSingleVersion || model.pageMode != "after",auxiliaryVisible:!model.readingSingleVersion && model.pageMode != "before",extent:.fraction(layout.configuration.pageFraction),primaryMinimum:150,auxiliaryMinimum:150,onResize:{value in if case .fraction(let fraction)=value {layout.update{$0.pageFraction=min(0.8,max(0.2,fraction))}}}) {
+            PageColumn(revision:model.revision(model.sourceFrom),side:model.readingSingleVersion ? L("doc.common.source"):L("doc.common.before"),pageID:$model.leftPageID).environmentObject(model)
+        } auxiliary:{PageColumn(revision:model.revision(model.sourceTo),side:L("doc.common.after"),pageID:$model.rightPageID).environmentObject(model)}
         .frame(maxWidth:.infinity,maxHeight:.infinity)
     }
 }
@@ -206,26 +224,66 @@ struct CompareWorkspace: View {
     @EnvironmentObject var layout:WorkspaceLayoutStore
     var body: some View {
         VStack(spacing:0){
-            HStack(spacing:10){
-                if model.revisions.count>1 {
-                Picker(L("doc.common.before"),selection:$model.from){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i<model.to{Text(versionDisplayName(i,r)).tag(i)}}}.frame(maxWidth:220)
+            HStack(spacing:8){
+                Text(L("git.query")).font(.caption).foregroundStyle(.secondary)
+                Menu {ForEach(Array(model.revisions.enumerated()),id:\.offset){index,revision in Button(versionDisplayName(index,revision)){model.selectVersion(index)}}} label:{Image(systemName:"clock.arrow.circlepath")}.help(L("git.versions"))
+                Picker(L("doc.common.before"),selection:$model.from){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i<=model.to{Text(versionDisplayName(i,r)).tag(i)}}}.labelsHidden().frame(maxWidth:170)
                 Image(systemName:"arrow.right").foregroundStyle(.secondary)
-                Picker(L("doc.common.after"),selection:$model.to){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i>model.from{Text(versionDisplayName(i,r)).tag(i)}}}.frame(maxWidth:220)
-                Text(model.to==model.from+1 ? L("doc.compare.adjacent"):L("doc.compare.range")).font(.caption).foregroundStyle(.secondary);Spacer()
-                }else{Text(L("doc.compare.sourceRevision", .verbatim(versionDisplayName(0,model.revision(0))))).font(.headline);Spacer()}
-                Button{model.inspector.toggle()}label:{Label(L("doc.compare.evidence"),systemImage:"sidebar.right")}
-            }.padding(.horizontal,16).padding(.top,12).onChange(of:model.from){model.changeRange()}.onChange(of:model.to){model.changeRange()}
-            HStack{
-                if model.revisions.count>1 {HStack(spacing:8){Text(L("doc.compare.documentView")).lineLimit(1).fixedSize();Picker(L("doc.compare.documentView"),selection:$model.pageMode){Text(L("doc.compare.both")).tag("both");Text(L("doc.compare.beforeOnly")).tag("before");Text(L("doc.compare.afterOnly")).tag("after")}.labelsHidden().pickerStyle(.segmented).frame(minWidth:210,idealWidth:250,maxWidth:300)}}
-                Picker(L("doc.common.zoom"),selection:$model.zoom){Text(L("doc.common.fit")).tag(0.0);Text("100%").tag(1.0);Text("150%").tag(1.5);Text("200%").tag(2.0)}.frame(width:160)
-                Spacer();Button(model.showChanges ? L("doc.changes.collapse"):L("doc.changes.expand")){model.showChanges.toggle()}
-            }.controlSize(.small).padding(.horizontal,16).padding(.vertical,10)
+                Picker(L("doc.common.after"),selection:$model.to){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i>=model.from{Text(versionDisplayName(i,r)).tag(i)}}}.labelsHidden().frame(maxWidth:170)
+                Picker(L("git.mode"),selection:$model.tab){Text(L("git.net")).tag("compare");Text(L("git.history")).tag("history")}.labelsHidden().pickerStyle(.segmented).frame(width:275).disabled(model.from==model.to)
+                Spacer(minLength:4)
+                Menu {
+                    Picker(L("git.view"),selection:$model.diffMode){Text(L("git.original")).tag("source");Text(L("git.textDiff")).tag("text")}
+                    Picker(L("doc.compare.documentView"),selection:$model.pageMode){Text(L("doc.compare.both")).tag("both");Text(L("doc.compare.beforeOnly")).tag("before");Text(L("doc.compare.afterOnly")).tag("after")}
+                    Picker(L("doc.common.zoom"),selection:$model.zoom){Text(L("doc.common.fit")).tag(0.0);Text("100%").tag(1.0);Text("150%").tag(1.5);Text("200%").tag(2.0)}
+                } label:{Label(L("git.view"),systemImage:"rectangle.split.2x1")}
+                Button{model.showChanges.toggle()}label:{Image(systemName:"list.bullet")}.help(L("layout.panel.changes"))
+                Button{model.inspector.toggle()}label:{Image(systemName:"sidebar.right")}.help(L("doc.compare.evidence"))
+            }.controlSize(.small).padding(.horizontal,12).padding(.vertical,7).background(WorkspaceLayoutMarker(name:"Reviset.document.versionBar")).onChange(of:model.from){model.changeRange()}.onChange(of:model.to){model.changeRange()}
+            SelectedChangeContext().environmentObject(model)
             WorkspacePaneSplit(name:"document.inspector",auxiliaryFirst:layout.configuration.inspectorDock == .left,auxiliaryVisible:layout.configuration.inspectorVisible,extent:.points(layout.configuration.inspectorWidth),primaryMinimum:layout.configuration.changesVisible && layout.configuration.changesDock != .bottom ? 500:300,auxiliaryMinimum:260,onResize:{value in if case .points(let width)=value {layout.update{$0.inspectorWidth=min(480,max(260,width))}}}) {
                 WorkspacePaneSplit(name:"document.changes",isVertical:layout.configuration.changesDock != .bottom,auxiliaryFirst:layout.configuration.changesDock == .left,auxiliaryVisible:layout.configuration.changesVisible,extent:.points(layout.configuration.changesDock == .bottom ? layout.configuration.changesHeight:layout.configuration.changesWidth),primaryMinimum:240,auxiliaryMinimum:layout.configuration.changesDock == .bottom ? 110:260,onResize:{value in if case .points(let size)=value {layout.update{if $0.changesDock == .bottom {$0.changesHeight=min(600,max(110,size))}else{$0.changesWidth=min(600,max(260,size))}}}}) {
                     ComparePagesView().environmentObject(model).environmentObject(layout)
+                        .opacity(model.diffMode=="source" ? 1:0).allowsHitTesting(model.diffMode=="source").accessibilityHidden(model.diffMode != "source")
+                        .overlay {if model.diffMode=="text" {DocumentUnifiedDiff().environmentObject(model)}}
                 } auxiliary:{ChangeListView().environmentObject(model).environmentObject(layout)}
             } auxiliary:{InspectorView().environmentObject(model)}
         }.onChange(of:model.selectedChangeID){Task {await Task.yield();model.selectEvidence()}}
+    }
+}
+struct SelectedChangeContext:View {
+    @EnvironmentObject var model:AppModel
+    var body:some View {
+        HStack(spacing:10){
+            if !model.selected.isNull {
+                Text(changeDisplayName(model.selected)).font(.caption.weight(.medium)).lineLimit(1)
+                if model.eventInsideQuery {Text(L("git.eventInsideQuery")).font(.caption2).foregroundStyle(.secondary)}
+                if model.selected["text_assessment"].string=="inferred" || model.selected["region_pairing_assessment"].string=="inferred" {Label(L("doc.ocr.inferredReview"),systemImage:"exclamationmark.circle").font(.caption2).foregroundStyle(.orange)}
+                if !model.selected["appearance_assessment"].string.isEmpty {Text(L("doc.coverage.noSemanticDeletion")).font(.caption2).foregroundStyle(.secondary).lineLimit(2)}
+                if !model.selected["coverage_gaps"].array.isEmpty {Menu {ForEach(Array(model.selected["coverage_gaps"].array.enumerated()),id:\.offset){_,gap in Text(coverageReasonName(gap["reason"].string))}}label:{Label(L("doc.coverage.heading"),systemImage:"exclamationmark.circle")}.font(.caption2)}
+                Spacer(minLength:4)
+                if model.manuallyBrowsing {Button(L("git.returnToChange")){model.returnToChange()}.font(.caption)}
+            }else {Text(model.readingSingleVersion ? L("git.reading"):model.emptyChangesMessage).font(.caption).foregroundStyle(.secondary);Spacer()}
+        }.padding(.horizontal,14).padding(.vertical,5).frame(minHeight:28).background(Color(nsColor:.controlBackgroundColor))
+    }
+}
+struct DocumentUnifiedDiff:View {
+    @EnvironmentObject var model:AppModel
+    var body:some View {
+        let diff=documentTextDiff(model.selected)
+        VStack(alignment:.leading,spacing:12){
+            Text(L("git.textDiff")).font(.headline)
+            Text(versionDisplayName(model.sourceFrom,model.revision(model.sourceFrom))+" → "+versionDisplayName(model.sourceTo,model.revision(model.sourceTo))+" · "+evidencePageSummary(model.selected)).font(.caption).foregroundStyle(.secondary)
+            if model.selected.isNull {Text(L("doc.tail.change.selectPrompt")).foregroundStyle(.secondary)}
+            else if !diff.bounded {Text(L("git.diffBound")).foregroundStyle(.secondary)}
+            else {
+                if !diff.semantic {Text(L("git.neutralDiff")).font(.caption).foregroundStyle(.secondary)}
+                if model.selected["before"].isNull {Text(L("doc.common.before")+" · "+L("doc.inspector.noSource")).font(.caption).foregroundStyle(.secondary)}
+                if model.selected["after"].isNull {Text(L("doc.common.after")+" · "+L("doc.inspector.noSource")).font(.caption).foregroundStyle(.secondary)}
+                ScrollView([.horizontal,.vertical]){LazyVStack(alignment:.leading,spacing:1){ForEach(Array(diff.lines.enumerated()),id:\.offset){_,line in HStack(alignment:.top,spacing:8){Text(line.prefix).frame(width:18);Text(verbatim:line.text).textSelection(.enabled)}.font(.system(.body,design:.monospaced)).foregroundStyle(!diff.semantic ? Color.primary:line.prefix=="−" ? Color.red:line.prefix=="+" ? Color.green:Color.primary).frame(maxWidth:.infinity,alignment:.leading)}}}
+            }
+            Spacer(minLength:0)
+        }.padding(20).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading).background(Color(nsColor:.textBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.document.unifiedDiff"))
     }
 }
 struct ChangeListView: View {
@@ -238,7 +296,7 @@ struct ChangeListView: View {
             VStack(alignment:.leading,spacing:8){filters;changeCount}
         }.padding(.horizontal,12).padding(.top,8)
         if model.filteredChanges.isEmpty {Text(model.emptyChangesMessage).font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity).padding(12)}
-        else {ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c,compact:compact).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges || !model.changesFailure.isEmpty).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear) } }.padding(6) }}
+        else {ScrollViewReader {reader in ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c,compact:compact).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges || !model.changesFailure.isEmpty).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear).id(c["change_id"].string) } }.padding(6) }.onChange(of:model.selectedChangeID){if let id=model.selectedChangeID{reader.scrollTo(id,anchor:.center)}}}}
     }}
     private var filters:some View {
         let arrangement=compact ? AnyLayout(VStackLayout(alignment:.leading,spacing:6)):AnyLayout(HStackLayout(spacing:8))
@@ -247,7 +305,7 @@ struct ChangeListView: View {
             TextField(L("doc.changes.search"),text:$model.search).textFieldStyle(.roundedBorder).frame(maxWidth:250)
         }
     }
-    private var changeCount:some View {HStack{if model.loadingChanges{ProgressView().controlSize(.small)};Text(LC("doc.changes.count",model.filteredChanges.count)).font(.caption).foregroundStyle(.secondary)}}
+    private var changeCount:some View {HStack{Button{model.stepChange(-1)}label:{Image(systemName:"chevron.up")}.help(L("git.previousChange"));Button{model.stepChange(1)}label:{Image(systemName:"chevron.down")}.help(L("git.nextChange"));if model.loadingChanges{ProgressView().controlSize(.small)};Text(LC("doc.changes.count",model.filteredChanges.count)).font(.caption).foregroundStyle(.secondary)}}
 }
 
 struct ChangeRow: View {
@@ -280,8 +338,8 @@ struct InspectorView: View {
         if model.project["dirty"].bool { return L("doc.mapping.analyzePending") }
         if model.project["last_report_id"].string != model.report["report_id"].string { return L("doc.mapping.chooseLatest") }
         if model.revisions.count<2 {return L("doc.mapping.needRevisions")}
-        if model.to != model.from+1 { return L("doc.mapping.chooseAdjacent") }
-        if !model.primaryPages(model.revision(model.from)).contains(where:{$0["page_id"].string==model.leftPageID}) || !model.primaryPages(model.revision(model.to)).contains(where:{$0["page_id"].string==model.rightPageID}) { return L("doc.mapping.selectBoth") }
+        if model.sourceTo != model.sourceFrom+1 { return L("doc.mapping.chooseAdjacent") }
+        if !model.primaryPages(model.revision(model.sourceFrom)).contains(where:{$0["page_id"].string==model.leftPageID}) || !model.primaryPages(model.revision(model.sourceTo)).contains(where:{$0["page_id"].string==model.rightPageID}) { return L("doc.mapping.selectBoth") }
         return nil
     }
     var editable: Bool { mappingUnavailableReason == nil }
@@ -321,12 +379,10 @@ struct InspectorView: View {
                 Text(L("doc.mapping.reviewDescription")).font(.caption).foregroundStyle(.secondary)
                 Button(L("doc.mapping.edit")) { model.mappingSheet=true }.disabled(!editable).accessibilityHint(Text(mappingUnavailableReason ?? L("doc.mapping.editHint")))
                 if let message=mappingUnavailableReason { Text(message).font(.caption).foregroundStyle(.secondary) }
-                Divider();Label(L("doc.limitations.heading"),systemImage:"exclamationmark.triangle").font(.headline)
-                Text(L("doc.limitations.appearance")).font(.caption)
-                Text(L("doc.limitations.ocr")).font(.caption).foregroundStyle(.secondary)
+
             }.padding(17).frame(maxWidth:.infinity,alignment:.leading)
         }.sheet(isPresented:$model.mappingSheet) {
-            MappingSheet(projectID:model.projectID,reportID:model.report["report_id"].string,draftHash:model.report["draft_hash"].string,before:model.revision(model.from),after:model.revision(model.to),left:Set(model.mappingSelection["from_page_ids"].array.map(\.string)),right:Set(model.mappingSelection["to_page_ids"].array.map(\.string)),mode:model.mappingSelection["kind"].string,reason:model.mappingSelection["reason"].string).environmentObject(model)
+            MappingSheet(projectID:model.projectID,reportID:model.report["report_id"].string,draftHash:model.report["draft_hash"].string,before:model.revision(model.sourceFrom),after:model.revision(model.sourceTo),left:Set(model.mappingSelection["from_page_ids"].array.map(\.string)),right:Set(model.mappingSelection["to_page_ids"].array.map(\.string)),mode:model.mappingSelection["kind"].string,reason:model.mappingSelection["reason"].string).environmentObject(model)
         }
     }
 }
@@ -395,7 +451,7 @@ struct ExportView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {ScrollView{VStack(alignment:.leading,spacing:22){Text(L("doc.export.heading")).font(.largeTitle.weight(.semibold));Text(L("doc.export.description")).foregroundStyle(.secondary)
         GroupBox(L("doc.export.filesHeading")){VStack(alignment:.leading,spacing:12){Text(L("doc.export.filesDescription"));Button(L("doc.export.files")){Task{await model.exportReport()}}.buttonStyle(.borderedProminent)}.padding(12).frame(maxWidth:.infinity,alignment:.leading)}
-        GroupBox(L("doc.export.mcpHeading")){VStack(alignment:.leading,spacing:12){Text(L("doc.export.mcpDescription")).font(.caption).foregroundStyle(.secondary);Text(model.currentMCPConfig ?? (model.mcpFailure.isEmpty ? L("doc.export.mcpLoading"):L("doc.export.mcpFailure", .verbatim(model.mcpFailure)))).font(.system(.caption,design:.monospaced)).textSelection(.enabled).padding(14).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor));Button(L("doc.export.copyConfig")){guard let config=model.currentMCPConfig else{return};NSPasteboard.general.clearContents();NSPasteboard.general.setString(config,forType:.string);model.statusMessage=UIMessage("doc.export.configCopied")}.disabled(model.currentMCPConfig == nil);if !model.mcpFailure.isEmpty {Button(L("doc.export.reloadConfig")){Task{await model.loadMCP()}}}}.padding(12)}
+        GroupBox(L("doc.export.mcpHeading")){VStack(alignment:.leading,spacing:12){Text(L("doc.export.mcpDescription")).font(.caption).foregroundStyle(.secondary);Text(L("git.reportScope")).font(.caption).foregroundStyle(.secondary);Text(model.currentMCPConfig ?? (model.mcpFailure.isEmpty ? L("doc.export.mcpLoading"):L("doc.export.mcpFailure", .verbatim(model.mcpFailure)))).font(.system(.caption,design:.monospaced)).textSelection(.enabled).padding(14).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor));Button(L("doc.export.copyConfig")){guard let config=model.currentMCPConfig else{return};NSPasteboard.general.clearContents();NSPasteboard.general.setString(config,forType:.string);model.statusMessage=UIMessage("doc.export.configCopied")}.disabled(model.currentMCPConfig == nil);if !model.mcpFailure.isEmpty {Button(L("doc.export.reloadConfig")){Task{await model.loadMCP()}}}}.padding(12)}
         GroupBox(L("doc.export.limitsHeading")){Text(L("doc.export.limitsDescription")).font(.callout).padding(12).frame(maxWidth:.infinity,alignment:.leading)}
     }.padding(35).frame(maxWidth:1000,alignment:.leading)}.task(id:model.projectID){await model.loadMCP()}}
 }

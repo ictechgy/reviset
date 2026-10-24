@@ -34,7 +34,7 @@ import SwiftUI
   model.projectID="prj_a";await model.confirmReorder(confirmation);try require(!records().contains(where:{$0["action"].string=="reorder"}),"StaleConfirmationWroteOtherProject")
   model.projectID="prj_history";model.error="";model.report=JSON(["report_id":"rpt_history","revisions":["a","b","c"].map{k in ["revision_occurrence_id":"occ_"+k,"label":k,"assets":[["asset_id":"asset_"+k,"format":"pdf"]],"pages":[["page_id":"page_"+k,"asset_id":"asset_"+k,"page":1]]]},"matches":[]]);model.from=0;model.to=2;model.tab="history";model.changes=[JSON(["change_id":"chg_history","from_occurrence":"occ_b","to_occurrence":"occ_c"])];model.chooseChange("chg_history");model.changeRange()
   for _ in 0..<200 {if model.selectedChangeID=="chg_history"&&model.leftPageID=="page_b"&&model.rightPageID=="page_c"{break};try await Task.sleep(nanoseconds:5_000_000)}
-  try require(model.tab=="compare"&&model.from==1&&model.to==2&&model.leftPageID=="page_b"&&model.rightPageID=="page_c"&&model.inspector,"HistoryDidNotOpenExactIntervalAndEvidence")
+  try require(model.tab=="history"&&model.from==0&&model.to==2&&model.sourceFrom==1&&model.sourceTo==2&&model.leftPageID=="page_b"&&model.rightPageID=="page_c","HistoryReplacedQueryOrLostEventEvidence")
   let validReport=model.report
   for mode in ["run","cancel","create"] {
    model.projectID="prj_pending_"+mode;model.report=validReport;model.error="";let pending=Task{try? await model.updateChanges()};try await started("changes",model.projectID)
