@@ -92,6 +92,7 @@ internal sealed class MainWindow : Window
     private readonly TextBlock intervalCaption = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(10, 2, 10, 6), Foreground = Brushes.DimGray };
     private readonly ProgressBar progress = new() { Height = 3, IsIndeterminate = true, Visibility = Visibility.Collapsed };
     private readonly Menu menus = new();
+    private readonly MenuItem evidenceMenu = new() { IsCheckable = true };
     private readonly Dictionary<string, MenuItem> languageItems = [];
     private readonly Dictionary<string, MenuItem> actionItems = [];
     private readonly ComboBox comparisonMode = new() { Width = 160, Margin = new Thickness(4, 2, 8, 2) };
@@ -185,7 +186,9 @@ internal sealed class MainWindow : Window
         mcpButton = Command("mcp", CopyMcp);
         var reportCaption = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }; BindText(reportCaption, "report"); toolbar.Children.Add(reportCaption); toolbar.Children.Add(reports);
         reportDetailsButton = Command("reportDetails", () => { CreateReportDetailsDialog().ShowDialog(); return Task.CompletedTask; }); toolbar.Children.Add(reportDetailsButton);
-        toolbar.Children.Add(Command("evidence", () => { SetLayout(Layout with { Inspector = !Layout.Inspector }); return Task.CompletedTask; }));
+        // The evidence action belongs in the native menu: its long caption can
+        // otherwise create an entire extra toolbar row at a 1024 px window.
+        BindText(evidenceMenu, "evidence"); evidenceMenu.Click += (_, _) => SetLayout(Layout with { Inspector = !Layout.Inspector }); menus.Items.Add(evidenceMenu);
         DockPanel.SetDock(toolbar, Dock.Top); root.Children.Add(toolbar);
         versionsButton = Command("versions", ShowVersions); reportBar.Children.Add(versionsButton);
         var intervalLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center }; BindText(intervalLabel, "interval"); reportBar.Children.Add(intervalLabel); reportBar.Children.Add(queryBefore); reportBar.Children.Add(new TextBlock { Text = "→", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5) }); reportBar.Children.Add(queryAfter); reportBar.Children.Add(comparisonMode);
@@ -307,6 +310,7 @@ internal sealed class MainWindow : Window
         foreach (var child in new UIElement[] { SidebarPane, ChangesPane, InspectorPane, Before.Host, After.Host, sourceStage }) if (System.Windows.Media.VisualTreeHelper.GetParent(child) is Panel parent) parent.Children.Remove(child);
         workspace.Children.Clear(); workspace.ColumnDefinitions.Clear(); workspace.RowDefinitions.Clear(); comparison.Children.Clear(); comparison.ColumnDefinitions.Clear(); comparison.RowDefinitions.Clear();
         var layout = Layout.Bounded();
+        evidenceMenu.IsChecked = layout.Inspector;
         lastLayoutWidth = workspace.ActualWidth; lastLayoutHeight = workspace.ActualHeight;
         var center = new Grid();
         if (layout.ChangesVisible && layout.Changes == "bottom")
@@ -624,7 +628,14 @@ internal sealed class MainWindow : Window
     }
     private async Task FinishMutation(CancellationTokenSource owned, ComparisonSelection previous, bool completed)
     {
-        try { if (ReferenceEquals(operation, owned)) { if (!completed) await RestoreAfterMutation(previous); try { await RefreshProjects(); } catch (Exception error) when (error is BridgeException or IOException or OperationCanceledException) { status.Text = Copy["projectRefreshFailed"]; } } }
+        try
+        {
+            if (ReferenceEquals(operation, owned))
+            {
+                if (!completed) { await RestoreAfterMutation(previous); if (ComparisonState == "ready") status.Text = Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"]; }
+                try { await RefreshProjects(); } catch (Exception error) when (error is BridgeException or IOException or OperationCanceledException) { status.Text = Copy["projectRefreshFailed"]; }
+            }
+        }
         finally { if (ReferenceEquals(operation, owned)) { operation = null; SetBusy(false); } owned.Dispose(); }
     }
     private async Task RestoreAfterMutation(ComparisonSelection saved)
@@ -1029,6 +1040,28 @@ internal sealed class MainWindow : Window
     }
     internal int ActionableChanges => changesReady && changeList.IsEnabled ? changes.Count : 0;
     internal string DetailText => detail.Text;
+    internal async Task<object> CheckCompactHeaderForSmoke()
+    {
+        var language = Copy.Language; var expected = Layout; var report = reportId; var before = Before.CaptureSelection(); var after = After.CaptureSelection();
+        var observations = new List<object>();
+        try
+        {
+            foreach (var locale in new[] { "en", "ko" })
+            {
+                SetLanguage(locale); UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                var children = toolbar.Children.OfType<FrameworkElement>().Where(child => child.Visibility != Visibility.Collapsed).ToArray();
+                if (toolbar.ActualHeight > children.Max(child => child.DesiredSize.Height) + 1) throw new InvalidOperationException("The compact native header wrapped into another toolbar row in " + locale);
+                if (!evidenceMenu.IsVisible || evidenceMenu.Header as string != Copy["evidence"] || evidenceMenu.IsChecked != Layout.Inspector) throw new InvalidOperationException("The native Evidence menu is not discoverable or does not reflect its pane in " + locale);
+                evidenceMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, evidenceMenu)); UpdateLayout();
+                if (Layout.Inspector == expected.Inspector || InspectorPane.IsVisible != Layout.Inspector || evidenceMenu.IsChecked != Layout.Inspector) throw new InvalidOperationException("The native Evidence menu did not toggle the retained inspector in " + locale);
+                evidenceMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent, evidenceMenu)); UpdateLayout();
+                if (Layout != expected || reportId != report || Before.CaptureSelection() != before || After.CaptureSelection() != after || evidenceMenu.IsChecked != expected.Inspector) throw new InvalidOperationException("The native Evidence menu changed saved layout dimensions or source selections in " + locale);
+                observations.Add(new { language = locale, toolbar_height = toolbar.ActualHeight, single_row_height = children.Max(child => child.DesiredSize.Height), query_bar_height = reportBar.ActualHeight, source_notice_height = sourceNotice.ActualHeight, evidence_menu_reachable = true, evidence_toggle_preserves_source_and_layout = true });
+            }
+        }
+        finally { SetLanguage(language); UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        return observations;
+    }
     internal async Task CheckNarrowSidebarForSmoke()
     {
         var fixedReport = reportId; var project = projectId;
@@ -1179,6 +1212,7 @@ internal sealed class MainWindow : Window
             }
             catch (OperationCanceledException) when (cancel) { }
             catch (IOException) when (!cancel) { }
+            if (status.Text != Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"]) throw new InvalidOperationException("Restored saved report retained a stale import/progress status after a cancelled or failed new import.");
             if (created.Length == 0 || cancel && started <= 0 || busy || projectId != project || reportId != fixedReport || ComparisonState != "ready" || Before.CaptureSelection() != before || After.CaptureSelection() != after || intervalFrom != from || intervalTo != to || queryBefore.Items.Count != revisions.Count || queryAfter.Items.Count != revisions.Count || (queryBefore.SelectedItem as Choice)?.Id != from || (queryAfter.SelectedItem as Choice)?.Id != to || !queryBefore.IsEnabled || !queryAfter.IsEnabled || !projectList.Items.OfType<Choice>().Any(item => item.Id == created)) throw new InvalidOperationException("Cancelled/failed new import did not restore populated exact saved-report query selectors and source selections.");
             var reread = await Bridge.Call(IsWorkbook ? "workbookView" : "view", Json.Scope(project, fixedReport)); if (reread.GetRawText() != reportBytes) throw new InvalidOperationException("New-import recovery changed the fixed report.");
         }

@@ -84,6 +84,17 @@ func canHighlightEvidence(_ evidence:JSON,page:JSON)->Bool {
     return observation.isEmpty || !page["elements"].array.contains { $0["observation_id"].string==observation && hasEstimatedPDFGeometry($0) }
 }
 
+// Read-only native-host diagnostics for the opt-in packaged-app probe. These
+// record the actual supplied evidence and installed annotation, never invent a
+// rectangle when source/geometry guards reject it.
+final class OriginalPDFHostView:PDFView {
+    var representedPageID=""
+    var representedEvidencePageID=""
+    var qualifiedEvidence=false
+    var sourceTransformCount=0
+    weak var ownedEvidenceAnnotation:PDFAnnotation?
+}
+
 struct OriginalPDFView: NSViewRepresentable {
     var keyboardEnabled=true
     let path: String
@@ -168,7 +179,7 @@ struct OriginalPDFView: NSViewRepresentable {
         deinit { NotificationCenter.default.removeObserver(self) }
     }
     func makeNSView(context: Context) -> PDFView {
-        let view = PDFView(); view.displayMode = .singlePage; view.displayDirection = .vertical
+        let view = OriginalPDFHostView(); view.displayMode = .singlePage; view.displayDirection = .vertical
         view.displaysPageBreaks = true; view.pageShadowsEnabled = true; view.backgroundColor = NSColor.underPageBackgroundColor
         view.minScaleFactor = 0.1; view.maxScaleFactor = 8
         context.coordinator.observe(view); return view
@@ -194,6 +205,10 @@ struct OriginalPDFView: NSViewRepresentable {
         }
         context.coordinator.observeViewport(view)
         let b = evidence["bbox"].array.map(\.number), t = page["source_transform"].array.map(\.number)
+        if let host=view as? OriginalPDFHostView {
+            host.representedPageID=page["page_id"].string;host.representedEvidencePageID=evidence["page_id"].string
+            host.qualifiedEvidence=canHighlightEvidence(evidence,page:page);host.sourceTransformCount=t.count;host.ownedEvidenceAnnotation=nil
+        }
         if canHighlightEvidence(evidence,page:page) && t.count == 6 {
             let det = t[0] * t[3] - t[1] * t[2]
             if abs(det) > 0.000001 {
@@ -207,7 +222,7 @@ struct OriginalPDFView: NSViewRepresentable {
                 let mark = PDFAnnotation(bounds: rect, forType: .square, withProperties: nil)
                 mark.shouldDisplay=true;current.displaysAnnotations=true
                 mark.color = NSColor.systemBlue.withAlphaComponent(0.85); let border = PDFBorder(); border.lineWidth = 1.5; mark.border = border
-                current.addAnnotation(mark); context.coordinator.marks.append((current,mark));view.annotationsChanged(on:current);view.needsDisplay=true
+                current.addAnnotation(mark); context.coordinator.marks.append((current,mark));(view as? OriginalPDFHostView)?.ownedEvidenceAnnotation=mark;view.annotationsChanged(on:current);view.needsDisplay=true
             }
         }
     }
@@ -289,7 +304,7 @@ struct PageColumn: View {
                 else if !failure.isEmpty { ContentUnavailableView(L("doc.tail.page.openFailed"),systemImage:"exclamationmark.triangle",description:Text(failure)) }
                 else if payload.isNull { ProgressView(L("doc.tail.sourcePage.loading")).frame(maxWidth:.infinity,maxHeight:.infinity) }
                 else if payload["source"]["kind"].string == "pdf" {
-                    OriginalPDFView(keyboardEnabled:model.diffMode=="source",path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:payloadReady && payload["source"]["origin"].string == "original" ? evidence : JSON(),page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
+                    OriginalPDFView(keyboardEnabled:model.effectiveDiffMode=="source",path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:payloadReady && payload["source"]["origin"].string == "original" ? evidence : JSON(),page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
                 } else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size,inset:8) {
                     ScrollView([.horizontal,.vertical]) {
                         let scale = model.zoom == 0 ? 1 : model.zoom

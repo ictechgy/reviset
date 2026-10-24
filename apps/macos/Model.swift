@@ -132,6 +132,10 @@ struct ReorderConfirmation:Identifiable {
         return (from,to)
     }
     var readingSingleVersion:Bool {sourceFrom==sourceTo || revisions.count<2}
+    var effectiveDiffMode:String {readingSingleVersion ? "source":diffMode}
+    func setDiffMode(_ value:String) {diffMode = readingSingleVersion || value != "text" ? "source":"text"}
+    private func enforceSingleSourcePresentation() {if readingSingleVersion {diffMode="source"}}
+
     var eventInsideQuery:Bool {sourceFrom != from || sourceTo != to}
     var manuallyBrowsing:Bool {guard let n=pageNavigation else{return false};return n.report==report["report_id"].string && n.from==sourceFrom && n.to==sourceTo}
     var selected: JSON { changes.first { $0["change_id"].string == selectedChangeID } ?? JSON() }
@@ -189,6 +193,7 @@ struct ReorderConfirmation:Identifiable {
     func updateChanges() async throws {
         guard !report.isNull else { return }
         if revisions.count < 2 || from == to {
+            enforceSingleSourcePresentation()
             rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loadingChanges=false;changesFailure=""
             changes = []; selectedChangeID = "";selectEvidence(); return
         }
@@ -290,7 +295,7 @@ struct ReorderConfirmation:Identifiable {
     func returnToChange() {pageNavigation=nil;selectEvidence()}
     func selectVersion(_ index:Int) {
         guard revisions.indices.contains(index),!busy,!loading else{return}
-        from=max(0,index-1);to=index;selectedChangeID=nil;pageNavigation=nil;evidenceWarning="";changeRange()
+        from=max(0,index-1);to=index;selectedChangeID=nil;pageNavigation=nil;evidenceWarning="";enforceSingleSourcePresentation();changeRange()
     }
     func openHistoryPage(_ index:Int,_ pageID:String){
         guard revisions.indices.contains(index),primaryPages(revision(index)).contains(where:{$0["page_id"].string==pageID}) else{return}
@@ -699,4 +704,19 @@ func documentSelectedContext(_ change:JSON)->[DocumentSelectedContextItem] {
         if !change[field].string.isEmpty {result.append(DocumentSelectedContextItem(category:category,status:change[field].string,reasons:[]))}
     }
     return result
+}
+
+struct DocumentReportQualityCount:Equatable {let key:String;let count:Int}
+struct DocumentReportDetailsProjection {
+    let totalCoverageGaps:Int
+    let gaps:[JSON]
+    let quality:[DocumentReportQualityCount]
+    var coverageTruncated:Bool {totalCoverageGaps>gaps.count}
+}
+func documentReportDetails(_ report:JSON)->DocumentReportDetailsProjection {
+    let all=report["coverage_gaps"].array
+    let count=report["coverage_gap_count"].isNull ? all.count:max(all.count,report["coverage_gap_count"].int)
+    let qualityKeys=["ocr_inferred_pages","ocr_failed_pages","unresolved_comparison_pages","reference_pdf_pages","human_reference_pdf_pages","inferred_reference_pdf_pages","pptx_without_render"]
+    let quality=qualityKeys.filter{!report["quality_counts"][$0].isNull}.map{DocumentReportQualityCount(key:$0,count:max(0,report["quality_counts"][$0].int))}
+    return DocumentReportDetailsProjection(totalCoverageGaps:count,gaps:Array(all.prefix(50)),quality:quality)
 }

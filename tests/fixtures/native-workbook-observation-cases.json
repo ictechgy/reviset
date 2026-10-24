@@ -2934,6 +2934,86 @@
       "expected_formula_eligible": false,
       "expected_value_state_before": "unavailable",
       "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-complete-empty-string-state",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "total_length": 0,
+            "next_offset": null
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
     }
   ]
 }

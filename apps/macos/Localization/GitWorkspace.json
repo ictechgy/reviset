@@ -158,5 +158,53 @@
   "git.excerptNote": {
     "en": "Selected change excerpts · not the complete pages. Extracted source line breaks are preserved.",
     "ko": "선택 변경의 발췌문 · 전체 페이지가 아닙니다. 추출 원문의 줄바꿈을 유지합니다."
+  },
+  "git.reportQuality": {
+    "en": "Report observation quality",
+    "ko": "보고서 관측 품질"
+  },
+  "git.reportGapCount": {
+    "en": "Report observation limits · {0}",
+    "ko": "보고서 관측 한계 · {0}개"
+  },
+  "git.reportGapsEmpty": {
+    "en": "No report-wide observation limits recorded. This is not a complete-fidelity certification.",
+    "ko": "보고서 전체 관측 한계가 기록되지 않았습니다. 완전한 원본 충실도를 인증하는 뜻은 아닙니다."
+  },
+  "git.reportGapProjection": {
+    "en": "Showing {0} of {1} limits. Export the complete fixed report for every entry.",
+    "ko": "관측 한계 {1}개 중 {0}개를 표시합니다. 모든 항목은 전체 고정 보고서 내보내기로 확인하세요."
+  },
+  "git.exportCompleteReport": {
+    "en": "Export complete fixed report…",
+    "ko": "전체 고정 보고서 내보내기…"
+  },
+  "git.quality.ocr_inferred_pages": {
+    "en": "OCR-inferred pages · {0}",
+    "ko": "OCR 추정 페이지 · {0}"
+  },
+  "git.quality.ocr_failed_pages": {
+    "en": "OCR failed/unavailable pages · {0}",
+    "ko": "OCR 실패·확인 불가 페이지 · {0}"
+  },
+  "git.quality.unresolved_comparison_pages": {
+    "en": "Pages with unresolved comparison text · {0}",
+    "ko": "비교 텍스트 미확정 페이지 · {0}"
+  },
+  "git.quality.reference_pdf_pages": {
+    "en": "Reference PDF pages · {0}",
+    "ko": "참고 PDF 페이지 · {0}"
+  },
+  "git.quality.human_reference_pdf_pages": {
+    "en": "User-associated reference pages · {0}",
+    "ko": "사용자 연결 참고 페이지 · {0}"
+  },
+  "git.quality.inferred_reference_pdf_pages": {
+    "en": "Inferred reference associations · {0}",
+    "ko": "추정 연결 참고 페이지 · {0}"
+  },
+  "git.quality.pptx_without_render": {
+    "en": "PPTX pages without original render · {0}",
+    "ko": "원본 렌더 없는 PPTX 페이지 · {0}"
   }
 }

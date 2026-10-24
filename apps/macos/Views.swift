@@ -201,7 +201,37 @@ struct ReportBar: View {
             Spacer()
             if model.project["dirty"].bool {Label(L("doc.report.pending"),systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)}
         }.controlSize(.small).padding(.horizontal,14).padding(.vertical,5)
-        .sheet(isPresented:$details){NativeDetailSheet(title:L("git.reportDetails")){ScrollView{VStack(alignment:.leading,spacing:16){Text(model.report["report_id"].string).font(.system(.body,design:.monospaced)).textSelection(.enabled);Text(localizedISODate(model.report["created_at"].string));Text(L("doc.limitations.appearance"));Text(L("doc.limitations.ocr"));Button(L("doc.common.export")){Task{await model.exportReport()}}}.padding(24).frame(maxWidth:.infinity,alignment:.leading)}}}
+        .sheet(isPresented:$details){NativeDetailSheet(title:L("git.reportDetails")){DocumentReportDetailsView().environmentObject(model)}}
+    }
+}
+struct DocumentReportDetailsView:View {
+    @EnvironmentObject var model:AppModel
+    private func qualityLabel(_ count:DocumentReportQualityCount)->String {
+        switch count.key {
+        case "ocr_inferred_pages":return L("git.quality.ocr_inferred_pages",.count(count.count))
+        case "ocr_failed_pages":return L("git.quality.ocr_failed_pages",.count(count.count))
+        case "unresolved_comparison_pages":return L("git.quality.unresolved_comparison_pages",.count(count.count))
+        case "reference_pdf_pages":return L("git.quality.reference_pdf_pages",.count(count.count))
+        case "human_reference_pdf_pages":return L("git.quality.human_reference_pdf_pages",.count(count.count))
+        case "inferred_reference_pdf_pages":return L("git.quality.inferred_reference_pdf_pages",.count(count.count))
+        case "pptx_without_render":return L("git.quality.pptx_without_render",.count(count.count))
+        default:return ""
+        }
+    }
+    var body:some View {
+        let details=documentReportDetails(model.report)
+        ScrollView{LazyVStack(alignment:.leading,spacing:14){
+            Text(model.report["report_id"].string).font(.system(.body,design:.monospaced)).textSelection(.enabled)
+            Text(localizedISODate(model.report["created_at"].string)).font(.caption).foregroundStyle(.secondary)
+            Text(L("git.reportQuality")).font(.headline)
+            ForEach(details.quality,id:\.key){count in Text(qualityLabel(count)).font(.callout)}
+            Text(L("git.reportGapCount",.count(details.totalCoverageGaps))).font(.headline)
+            if details.gaps.isEmpty {Text(L("git.reportGapsEmpty")).font(.caption).foregroundStyle(.secondary)}
+            ForEach(Array(details.gaps.enumerated()),id:\.offset){_,gap in VStack(alignment:.leading,spacing:3){Text(coverageReasonName(gap["reason"].string)).font(.callout);if !gap["feature"].string.isEmpty {Text(gap["feature"].string).font(.caption).foregroundStyle(.secondary)};if !gap["revision_occurrence_id"].string.isEmpty || !gap["page_id"].string.isEmpty {Text(gap["revision_occurrence_id"].string+" · "+gap["page_id"].string).font(.system(.caption,design:.monospaced)).textSelection(.enabled)}}}
+            if details.coverageTruncated {Text(L("git.reportGapProjection",.count(details.gaps.count),.count(details.totalCoverageGaps))).font(.caption).foregroundStyle(.secondary)}
+            Divider();Text(L("doc.limitations.appearance"));Text(L("doc.limitations.ocr"))
+            Button(L("git.exportCompleteReport")){Task{await model.exportReport()}}
+        }.padding(24).frame(maxWidth:.infinity,alignment:.leading)}
     }
 }
 struct VersionBar: View {
@@ -233,7 +263,7 @@ struct CompareWorkspace: View {
                 Picker(L("git.mode"),selection:$model.tab){Text(L("git.net")).tag("compare");Text(L("git.history")).tag("history")}.labelsHidden().pickerStyle(.segmented).frame(width:275).disabled(model.from==model.to)
                 Spacer(minLength:4)
                 Menu {
-                    Picker(L("git.view"),selection:$model.diffMode){Text(L("git.original")).tag("source");Text(L("git.textDiff")).tag("text")}
+                    Picker(L("git.view"),selection:Binding(get:{model.effectiveDiffMode},set:{model.setDiffMode($0)})){Text(L("git.original")).tag("source");Text(L("git.textDiff")).tag("text")}.disabled(model.readingSingleVersion)
                     Picker(L("doc.compare.documentView"),selection:$model.pageMode){Text(L("doc.compare.both")).tag("both");Text(L("doc.compare.beforeOnly")).tag("before");Text(L("doc.compare.afterOnly")).tag("after")}
                     Picker(L("doc.common.zoom"),selection:$model.zoom){Text(L("doc.common.fit")).tag(0.0);Text("100%").tag(1.0);Text("150%").tag(1.5);Text("200%").tag(2.0)}
                 } label:{Label(L("git.view"),systemImage:"rectangle.split.2x1")}
@@ -244,8 +274,8 @@ struct CompareWorkspace: View {
             WorkspacePaneSplit(name:"document.inspector",auxiliaryFirst:layout.configuration.inspectorDock == .left,auxiliaryVisible:layout.configuration.inspectorVisible,extent:.points(layout.configuration.inspectorWidth),primaryMinimum:layout.configuration.changesVisible && layout.configuration.changesDock != .bottom ? 500:300,auxiliaryMinimum:260,onResize:{value in if case .points(let width)=value {layout.update{$0.inspectorWidth=min(480,max(260,width))}}}) {
                 WorkspacePaneSplit(name:"document.changes",isVertical:layout.configuration.changesDock != .bottom,auxiliaryFirst:layout.configuration.changesDock == .left,auxiliaryVisible:layout.configuration.changesVisible,extent:.points(layout.configuration.changesDock == .bottom ? layout.configuration.changesHeight:layout.configuration.changesWidth),primaryMinimum:240,auxiliaryMinimum:layout.configuration.changesDock == .bottom ? 110:260,onResize:{value in if case .points(let size)=value {layout.update{if $0.changesDock == .bottom {$0.changesHeight=min(600,max(110,size))}else{$0.changesWidth=min(600,max(260,size))}}}}) {
                     ComparePagesView().environmentObject(model).environmentObject(layout)
-                        .opacity(model.diffMode=="source" ? 1:0).allowsHitTesting(model.diffMode=="source").accessibilityHidden(model.diffMode != "source")
-                        .overlay {if model.diffMode=="text" {DocumentUnifiedDiff().environmentObject(model)}}
+                        .opacity(model.effectiveDiffMode=="source" ? 1:0).allowsHitTesting(model.effectiveDiffMode=="source").accessibilityHidden(model.effectiveDiffMode != "source")
+                        .overlay {if model.effectiveDiffMode=="text" {DocumentUnifiedDiff().environmentObject(model)}}
                 } auxiliary:{ChangeListView().environmentObject(model).environmentObject(layout)}
             } auxiliary:{InspectorView().environmentObject(model)}
         }.onChange(of:model.selectedChangeID){Task {await Task.yield();model.selectEvidence()}}

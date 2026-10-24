@@ -125,6 +125,11 @@ private extension JSON {
     }
     init(bridge: Bridge) { self.bridge = bridge }
     var revisions: [JSON] { report["revisions"].array }
+    var readingSingleVersion:Bool {beforeID==afterID || revisions.count<2}
+    var effectiveDiffMode:String {readingSingleVersion ? "source":diffMode}
+    func setDiffMode(_ value:String) {diffMode = readingSingleVersion || value != "text" ? "source":"text"}
+    private func enforceSingleSourcePresentation() {if readingSingleVersion {diffMode="source"}}
+
     var scope: String { projectID + "|" + reportID }
     var rangeScope: String { [scope,beforeID,afterID,beforeSheetID,afterSheetID,String(beforeRowStart),String(beforeColumnStart),String(afterRowStart),String(afterColumnStart)].joined(separator:"|") }
     var comparisonScope: String { [scope,changesFromID,changesToID,changesMode].joined(separator:"|") }
@@ -275,7 +280,7 @@ private extension JSON {
         guard let leftIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == left}),let rightIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == right}) else { return }
         if leftIndex > rightIndex { swap(&left,&right); statusContent = UIMessage("workbook.status.sortedVersions") }
         clearCells(); invalidate("changes")
-        beforeID = left; afterID = right; comparisonNotice = ""; blankFormattingWarningScope = ""
+        beforeID = left; afterID = right;enforceSingleSourcePresentation(); comparisonNotice = ""; blankFormattingWarningScope = ""
         changes = []; resetChangePaging(); changeTotal = 0
         rowStart = 1; columnStart = 1; addressInput = "A1"; selectInitialSheets()
         let identity = rangeScope
@@ -326,6 +331,7 @@ private extension JSON {
         guard ready, !beforeID.isEmpty, !afterID.isEmpty else { return }
         guard !(next && previous),!next || !changeCursor.isEmpty,!previous || !changePreviousCursors.isEmpty else { return }
         if beforeID==afterID, !preserveEndpoints {
+            enforceSingleSourcePresentation()
             invalidate("changes");changes=[];selectedChangeID="";resetChangePaging();changeTotal=0;changesFailure="";loadingChanges=false
             changesFromID=beforeID;changesToID=afterID;changesMode=mode;return
         }
@@ -797,8 +803,8 @@ struct WorkbookWorkspace: View {
             WorkspacePaneSplit(name:"workbook.changes",isVertical:layout.configuration.changesDock != .bottom,auxiliaryFirst:layout.configuration.changesDock == .left,auxiliaryVisible:layout.configuration.changesVisible,extent:.points(layout.configuration.changesDock == .bottom ? layout.configuration.changesHeight:layout.configuration.changesWidth),primaryMinimum:240,auxiliaryMinimum:layout.configuration.changesDock == .bottom ? 110:260,onResize:{value in if case .points(let size)=value {layout.update{if $0.changesDock == .bottom {$0.changesHeight=min(600,max(110,size))}else{$0.changesWidth=min(600,max(260,size))}}}}) {
                 VStack(spacing:0) {
                     WorkspacePaneSplit(name:"workbook.pages",isVertical:layout.configuration.pageArrangement == .horizontal,auxiliaryVisible:model.beforeID != model.afterID,extent:.fraction(layout.configuration.pageFraction),primaryMinimum:150,auxiliaryMinimum:150,onResize:{value in if case .fraction(let fraction)=value {layout.update{$0.pageFraction=min(0.8,max(0.2,fraction))}}}) {gridPane(before:true)} auxiliary:{gridPane(before:false)}
-                    .frame(minHeight:160,maxHeight:.infinity).opacity(model.diffMode=="source" ? 1:0).allowsHitTesting(model.diffMode=="source").accessibilityHidden(model.diffMode != "source")
-                    .overlay {if model.diffMode=="text" {WorkbookUnifiedDiff(model:model)}}
+                    .frame(minHeight:160,maxHeight:.infinity).opacity(model.effectiveDiffMode=="source" ? 1:0).allowsHitTesting(model.effectiveDiffMode=="source").accessibilityHidden(model.effectiveDiffMode != "source")
+                    .overlay {if model.effectiveDiffMode=="text" {WorkbookUnifiedDiff(model:model)}}
                     .overlay { if model.loadingRange { ZStack { Color(nsColor:.windowBackgroundColor).opacity(0.94); ProgressView(L("workbook.status.loadingRange")) } } }
                     Text(model.independentPaneCoordinates ? L("workbook.nav.independentDetail") : L("workbook.nav.sameAddressDetail")).font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)
                     WorkbookSelectedWarnings(model:model).padding(.horizontal,12).padding(.bottom,4)
@@ -815,7 +821,7 @@ struct WorkbookWorkspace: View {
             Image(systemName:"arrow.right").foregroundStyle(.secondary)
             versionPicker(title:L("workbook.after"),selection:model.changesToID.isEmpty ? model.afterID:model.changesToID,before:false)
             Picker(L("workbook.comparison.mode"),selection:Binding(get:{model.mode},set:{value in Task { await model.changeMode(value) }})) { Text(L("git.net")).tag("range_net"); Text(L("git.history")).tag("history") }.labelsHidden().pickerStyle(.segmented).frame(width:275).disabled(model.changesFromID==model.changesToID)
-            Menu {Picker(L("git.view"),selection:$model.diffMode){Text(L("git.original")).tag("source");Text(L("git.textDiff")).tag("text")}} label:{Label(L("git.view"),systemImage:"rectangle.split.2x1")}
+            Menu {Picker(L("git.view"),selection:Binding(get:{model.effectiveDiffMode},set:{model.setDiffMode($0)})){Text(L("git.original")).tag("source");Text(L("git.textDiff")).tag("text")}.disabled(model.readingSingleVersion)} label:{Label(L("git.view"),systemImage:"rectangle.split.2x1")}
             Button{layout.update{$0.changesVisible.toggle()}}label:{Image(systemName:"list.bullet")}.help(L("layout.panel.changes")).accessibilityLabel(L("layout.panel.changes"))
             Button{model.inspectorVisible.toggle()}label:{Image(systemName:"sidebar.right")}.help(L("workbook.inspector.title")).accessibilityLabel(L("workbook.inspector.title"))
         }.controlSize(.small).padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready)
@@ -849,7 +855,7 @@ struct WorkbookWorkspace: View {
                 if let coordinate { Text(L("workbook.pane.evidence",.verbatim(WorkbookGrid.address(coordinate.row,coordinate.column)))).font(.system(.caption,design:.monospaced)).foregroundStyle(.blue) }
             }.padding(.horizontal,8).padding(.bottom,5)
             if id.isEmpty { WorkbookStatus(title:L("workbook.sheet.unmatched"),detail:L("workbook.sheet.unmatchedDetail"),loading:false) }
-            else { WorkbookGrid(keyboardEnabled:model.diffMode=="source",language:language.effectiveLanguage,pane:before ? "before" : "after",revealIntent:[model.scope,occurrence,id,String(model.revealGeneration)].joined(separator:"|"),cells:cells,rowStart:row,columnStart:column,rowCount:model.rowLimit,columnCount:model.columnLimit,selectedRow:coordinate?.row ?? 0,selectedColumn:coordinate?.column ?? 0,onSelect:{row,column in Task { await model.selectCell(row,column) }}).disabled(!model.ready || model.loadingRange) }
+            else { WorkbookGrid(keyboardEnabled:model.effectiveDiffMode=="source",language:language.effectiveLanguage,pane:before ? "before" : "after",revealIntent:[model.scope,occurrence,id,String(model.revealGeneration)].joined(separator:"|"),cells:cells,rowStart:row,columnStart:column,rowCount:model.rowLimit,columnCount:model.columnLimit,selectedRow:coordinate?.row ?? 0,selectedColumn:coordinate?.column ?? 0,onSelect:{row,column in Task { await model.selectCell(row,column) }}).disabled(!model.ready || model.loadingRange) }
         }.frame(minWidth:280,maxWidth:.infinity,maxHeight:.infinity)
     }
     private var changesPane: some View {
@@ -953,7 +959,7 @@ func workbookRawField(_ cell:JSON,field:String)->WorkbookRawFieldObservation {
     switch state {
     case "empty":return text.isEmpty && total==0 && offset==0 && next==nil ? result(.empty,text):result(.invalid)
     case "complete":
-        guard offset==0,next==nil,total==text.utf16.count else{return result(.invalid)}
+        guard offset==0,next==nil,total>0,total==text.utf16.count else{return result(.invalid)}
         return result(text.isEmpty ? .empty:.complete,text,offset,total)
     case "truncated":
         let end=offset+text.utf16.count
@@ -1930,9 +1936,17 @@ struct WorkbookGrid: NSViewRepresentable {
         layout.setFocus(true);try await Task.sleep(nanoseconds:200_000_000)
         guard workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.reportBar"}) else{throw BridgeError(code:"WORKBOOK_GIT_REPORT",message:"Focus hid workbook fixed report.")}
         try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-git-focus.png"));layout.setFocus(false)
-        await model.selectVersion(first);guard model.beforeID==first,model.afterID==first,model.changes.isEmpty else{throw BridgeError(code:"WORKBOOK_GIT_V1",message:"First workbook version did not enter single-source reading.")}
+        model.diffMode="text";await model.selectVersion(first)
+        guard model.beforeID==first,model.afterID==first,model.changes.isEmpty,model.diffMode=="source",model.effectiveDiffMode=="source" else{throw BridgeError(code:"WORKBOOK_GIT_V1",message:"First workbook version from text mode did not show the original source.")}
+        model.setDiffMode("text");guard model.diffMode=="source" else{throw BridgeError(code:"WORKBOOK_GIT_V1_TEXT",message:"Single workbook source accepted change-only text mode.")}
+        model.diffMode="text";await model.changeVersions(before:first,after:first)
+        guard model.diffMode=="source",model.effectiveDiffMode=="source" else{throw BridgeError(code:"WORKBOOK_GIT_EQUAL_TEXT",message:"Equal workbook endpoints kept a text overlay.")}
+        try await Task.sleep(nanoseconds:200_000_000)
+        let visibleTables=tables.filter{!$0.isHiddenOrHasHiddenAncestor && !$0.visibleRect.isEmpty}
+        guard visibleTables.count==1,!workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.unifiedDiff"}),Set(["before","after"].compactMap{grid(content,pane:$0)}.map(ObjectIdentifier.init))==Set(tables.map(ObjectIdentifier.init)) else{throw BridgeError(code:"WORKBOOK_GIT_SINGLE_SOURCE_VISIBLE",message:"Single workbook source was covered or its grid hosts were replaced.")}
+        try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-git-single-source.png"))
         await model.selectVersion(last);await model.changeMode("range_net")
-        return ["passed":true,"default_predecessor_latest":true,"source_first_default":true,"query_interval_and_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"physical_addresses_preserved":true,"native_grid_hosts_preserved":tables.count,"coordinator_and_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"focus_fixed_report_visible":true,"first_version_single_read":true,"captures":["native-workbook-git-source-first.png","native-workbook-git-history.png","native-workbook-git-unified.png","native-workbook-git-focus.png"]]
+        return ["passed":true,"default_predecessor_latest":true,"source_first_default":true,"query_interval_and_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"physical_addresses_preserved":true,"native_grid_hosts_preserved":tables.count,"coordinator_and_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"focus_fixed_report_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"captures":["native-workbook-git-source-first.png","native-workbook-git-history.png","native-workbook-git-unified.png","native-workbook-git-focus.png","native-workbook-git-single-source.png"]]
     }
     private static func exerciseLayouts(_ model:WorkbookModel,layout:WorkspaceLayoutStore,window:NSWindow,folder:URL)async throws->[String:Any] {
         let original=layout.configuration

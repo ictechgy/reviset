@@ -67,7 +67,7 @@ enum Smoke { @MainActor static func captureView(_ window:NSWindow,_ url:URL)thro
             }
         }
         let golden=JSON(try JSONSerialization.jsonObject(with:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[2]))))["cases"].array
-        try require(golden.count>=37,"SharedPresentationCasesMissing")
+        try require(golden.count>=38,"SharedPresentationCasesMissing")
         for item in golden {
             let scope=item["scope"],before=item["before"],after=item["after"]
             let current=WorkbookSelectedEventScope(beforeOccurrence:scope["before_occurrence"].string,afterOccurrence:scope["after_occurrence"].string,beforeSheet:scope["before_sheet"].string,afterSheet:scope["after_sheet"].string)
@@ -117,9 +117,21 @@ enum Smoke { @MainActor static func captureView(_ window:NSWindow,_ url:URL)thro
         model.chooseChange("foreign");try require(model.selected.isNull && model.leftPageID.isEmpty && model.rightPageID.isEmpty && !model.evidenceWarning.isEmpty && model.from==0 && model.to==2,"UnknownHistoryEvidenceKeptStaleSource")
         model.from=1;model.to=2;model.selectEvidence();try require(model.leftPageID=="page_1" && model.rightPageID=="page_2","NewIntervalKeptRejectedEventBlankPages")
         model.selectedChangeID=nil;model.leftPageID="stale";model.rightPageID="stale";model.evidenceWarning="Page unavailable";model.selectEvidence();try require(model.leftPageID=="page_1" && model.rightPageID=="page_2","OrdinaryWarningPreventedPageNormalization")
-        model.from=0;model.to=0;model.tab="compare";try await model.updateChanges();try require(model.readingSingleVersion && model.changes.isEmpty && model.leftPageID=="page_0","SingleVersionReadRequestedDiff")
+        model.diffMode="text";model.selectVersion(0);try require(model.effectiveDiffMode=="source" && model.diffMode=="source","DocumentVersionMenuKeptTextOverlay")
+        try await model.updateChanges();try require(model.readingSingleVersion && model.changes.isEmpty && model.leftPageID=="page_0","SingleVersionReadRequestedDiff")
+        model.from=0;model.to=2;model.diffMode="text";model.from=1;model.to=1
+        try require(model.effectiveDiffMode=="source","EqualEndpointsDidNotImmediatelyShowSource")
+        try await model.updateChanges();try require(model.diffMode=="source" && model.leftPageID=="page_1","DocumentEndpointPickerKeptTextOverlay")
+        model.setDiffMode("text");try require(model.effectiveDiffMode=="source" && model.diffMode=="source","SingleDocumentReadAllowedTextPicker")
         let workbook=WorkbookModel(bridge:model.bridge);await workbook.start();workbook.projectID="workbook";workbook.reportID="workbook_report";workbook.report=JSON(["report_id":"workbook_report","revisions":[["revision_occurrence_id":"w0","index":0,"sheets":[]],["revision_occurrence_id":"w1","index":1,"sheets":[]]]]);workbook.beforeID="w0";workbook.afterID="w1";workbook.changesFromID="w0";workbook.changesToID="w1"
-        await workbook.selectVersion("w0");try require(workbook.beforeID=="w0" && workbook.afterID=="w0" && workbook.changesFromID=="w0" && workbook.changesToID=="w0" && workbook.changes.isEmpty && !workbook.loadingChanges && workbook.changesFailure.isEmpty,"WorkbookFirstVersionDidNotReadSingleSource")
+        workbook.diffMode="text";await workbook.selectVersion("w0");try require(workbook.diffMode=="source" && workbook.effectiveDiffMode=="source","WorkbookVersionMenuKeptTextOverlay")
+        try require(workbook.beforeID=="w0" && workbook.afterID=="w0" && workbook.changesFromID=="w0" && workbook.changesToID=="w0" && workbook.changes.isEmpty && !workbook.loadingChanges && workbook.changesFailure.isEmpty,"WorkbookFirstVersionDidNotReadSingleSource")
+        workbook.beforeID="w0";workbook.afterID="w1";workbook.changesFromID="w0";workbook.changesToID="w1";workbook.diffMode="text"
+        await workbook.changeVersions(before:"w0",after:"w0");try require(workbook.diffMode=="source" && workbook.effectiveDiffMode=="source" && workbook.beforeID==workbook.afterID,"WorkbookEndpointPickerKeptTextOverlay")
+        workbook.setDiffMode("text");try require(workbook.diffMode=="source","SingleWorkbookReadAllowedTextPicker")
+        let reportProjection=documentReportDetails(JSON(["coverage_gap_count":750,"coverage_gaps":(0..<500).map{["reason":"gap_\($0)"]},"quality_counts":["ocr_inferred_pages":3,"ocr_failed_pages":1,"pptx_without_render":4,"unknown_future_key":999]]))
+        try require(reportProjection.totalCoverageGaps==750 && reportProjection.gaps.count==50 && reportProjection.coverageTruncated && reportProjection.gaps.first?["reason"].string=="gap_0" && reportProjection.gaps.last?["reason"].string=="gap_49","ReportLimitProjectionLostCountOrBound")
+        try require(reportProjection.quality.contains(DocumentReportQualityCount(key:"ocr_inferred_pages",count:3)) && reportProjection.quality.count==3,"ReportQualityProjectionLostKnownCounts")
         print("PASS native Git diff workspace: bounded exact Unicode diff, neutral appearance/unavailable/topology, Source First defaults, old custom layouts retained, query/event/manual navigation separation, previous/next, unknown evidence guard, document/workbook v1 reading")
     }
 }

@@ -225,14 +225,21 @@ internal static class Smoke
         Require(Math.Abs(window.Layout.ComparisonRatio - ratio) > .001, "Native keyboard splitter resize did not persist"); Require(AppPreferences.Load(window.PreferencesPath).For(window.IsWorkbook).Current.ComparisonRatio == window.Layout.ComparisonRatio, "Keyboard splitter ratio was not saved"); checks.Add(name + "_named_native_splitters_and_keyboard_resize_persistence");
         window.SetLayout(WorkspaceLayout.Preset("balanced")); var oldWidth = window.Width; var oldHeight = window.Height; window.Width = 1024; window.Height = 768; await Tick(window);
         await window.CheckNarrowSidebarForSmoke(); await Tick(window); checks.Add(name + "_narrow_native_layout_menu_sidebar_toggle_and_existing_project_access");
+        var compactHeader = await window.CheckCompactHeaderForSmoke(); await Tick(window);
+        checks.Add(name + "_narrow_en_ko_single_row_toolbar_and_native_evidence_menu_toggle_preserve_source_and_saved_dimensions");
+        object Measurements() => new { actual_window_width = window.ActualWidth, actual_window_height = window.ActualHeight, before_width = window.Before.Host.ActualWidth, before_height = window.Before.Host.ActualHeight, before_grid_height = window.Before.Cells.ActualHeight, before_grid_visible_rows = window.Before.GridScroll?.ViewportHeight, after_width = window.After.Host.ActualWidth, after_height = window.After.Host.ActualHeight, after_grid_height = window.After.Cells.ActualHeight, after_grid_visible_rows = window.After.GridScroll?.ViewportHeight };
+        var narrow = Measurements();
+        // Preserve the actual failing geometry and pixels before asserting. A
+        // runtime failure must leave evidence, not only the previous wide view.
+        await File.WriteAllTextAsync(Path.Combine(output, name + "-narrow-viewport-observed.json"), JsonSerializer.Serialize(new { narrow, compact_header = compactHeader }, new JsonSerializerOptions { WriteIndented = true }));
+        Screenshot(window, Path.Combine(output, name + "-1024x768.png"));
         if (window.IsWorkbook)
         {
             Require(window.Before.Cells.ActualHeight >= 150 && window.After.Cells.ActualHeight >= 150, "Balanced 1024x768 native grids have insufficient visible height");
             Require(window.Before.GridScroll?.ViewportHeight >= 5 && window.After.GridScroll?.ViewportHeight >= 5, "Balanced 1024x768 native grids do not show at least five source rows");
             Require(window.Before.Cells.ActualWidth >= 180 && window.After.Cells.ActualWidth >= 180, "Balanced source panes do not retain useful native grid width");
         }
-        object Measurements() => new { actual_window_width = window.ActualWidth, actual_window_height = window.ActualHeight, before_width = window.Before.Host.ActualWidth, before_height = window.Before.Host.ActualHeight, before_grid_height = window.Before.Cells.ActualHeight, before_grid_visible_rows = window.Before.GridScroll?.ViewportHeight, after_width = window.After.Host.ActualWidth, after_height = window.After.Host.ActualHeight, after_grid_height = window.After.Cells.ActualHeight, after_grid_visible_rows = window.After.GridScroll?.ViewportHeight };
-        var narrow = Measurements(); Screenshot(window, Path.Combine(output, name + "-1024x768.png")); window.Width = oldWidth; window.Height = oldHeight; await Tick(window); await File.WriteAllTextAsync(Path.Combine(output, name + "-viewport-measurements.json"), JsonSerializer.Serialize(new { narrow, available_wide = Measurements() }, new JsonSerializerOptions { WriteIndented = true }));
+        window.Width = oldWidth; window.Height = oldHeight; await Tick(window); await File.WriteAllTextAsync(Path.Combine(output, name + "-viewport-measurements.json"), JsonSerializer.Serialize(new { narrow, available_wide = Measurements() }, new JsonSerializerOptions { WriteIndented = true }));
         var savedLayout = window.Layout; var heightBefore = window.Height; var actualWidth = window.ActualWidth;
         var preferredHeight = Math.Clamp(window.WorkspaceHeightForSmoke - 260, 150, 400); window.SetLayout(window.Layout with { Changes = "bottom", ChangesVisible = true, ChangesHeight = preferredHeight }); await Tick(window);
         var layoutIntent = window.Layout; var preferenceBytes = await File.ReadAllBytesAsync(window.PreferencesPath); var tallHeight = window.ChangesPane.ActualHeight;

@@ -385,6 +385,12 @@ private struct SmokeStructureView: View {
         try capture(output.appendingPathComponent("native-git-history.png"))
         func pdfs(_ view:NSView)->[PDFView] {(view as? PDFView).map{[$0]} ?? view.subviews.flatMap{pdfs($0)}}
         guard let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}),let content=window.contentView else{throw BridgeError(code:"GIT_WINDOW",message:"No native source window.")}
+        let annotationScope=pdfs(content).compactMap{view->[String:Any]? in
+            guard let host=view as? OriginalPDFHostView,let page=host.currentPage else{return nil}
+            let annotation=host.ownedEvidenceAnnotation
+            return ["page_id":host.representedPageID,"evidence_page_id":host.representedEvidencePageID,"qualified_bbox":host.qualifiedEvidence,"source_transform_count":host.sourceTransformCount,"annotation_count":page.annotations.count,"owned_annotation_on_current_page":annotation.map{mark in page.annotations.contains{$0===mark}} ?? false,"annotation_bounds":annotation.map{[Double($0.bounds.minX),Double($0.bounds.minY),Double($0.bounds.width),Double($0.bounds.height)]} ?? [],"source_path":page.document?.documentURL?.path ?? ""]
+        }
+        try JSON(["selected_change_id":model.selectedChangeID ?? "","report_id":model.report["report_id"].string,"sources":annotationScope,"scope":"actual native PDFKit input and annotation ownership; bitmap capture does not certify annotation-layer visibility"]).data().write(to:output.appendingPathComponent("native-git-annotation-scope.json"))
         let mounted=pdfs(content),identities=Set(mounted.map(ObjectIdentifier.init))
         let state=mounted.map{($0,$0.document,$0.currentPage,$0.scaleFactor,$0.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero)}
         guard let focusedPDF=mounted.first,window.makeFirstResponder(focusedPDF) else{throw BridgeError(code:"GIT_SOURCE_FOCUS",message:"Actual PDF host could not take keyboard focus for qualification.")}
@@ -397,15 +403,23 @@ private struct SmokeStructureView: View {
         guard workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.document.reportBar"}) else{throw BridgeError(code:"GIT_REPORT_FOCUS",message:"Focus hid fixed report identity.")}
         guard workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.document.selectedContext"}) else{throw BridgeError(code:"GIT_CONTEXT_FOCUS",message:"Focus hid selected correspondence/observation context.")}
         try capture(output.appendingPathComponent("native-git-focus.png"));layout.setFocus(false)
-        model.selectVersion(0);try await model.updateChanges();guard model.readingSingleVersion,model.changes.isEmpty else{throw BridgeError(code:"GIT_V1_READ",message:"First version did not enter single-source reading.")}
+        model.diffMode="text";model.selectVersion(0);try await model.updateChanges()
+        guard model.readingSingleVersion,model.changes.isEmpty,model.diffMode=="source",model.effectiveDiffMode=="source" else{throw BridgeError(code:"GIT_V1_READ",message:"First version from text mode did not show the original source.")}
+        model.setDiffMode("text");guard model.diffMode=="source" else{throw BridgeError(code:"GIT_V1_TEXT_PICKER",message:"Single-source reading accepted the change-only text view.")}
+        _ = try await captureSelectedPages(model,output,selectionReady:{model.readingSingleVersion && model.effectiveDiffMode=="source"})
+        model.diffMode="text";model.from=min(1,max(0,model.revisions.count-1));model.to=model.from;try await model.updateChanges()
+        guard model.diffMode=="source",model.effectiveDiffMode=="source" else{throw BridgeError(code:"GIT_EQUAL_ENDPOINT_TEXT",message:"Equal endpoints kept the text overlay.")}
+        _ = try await captureSelectedPages(model,output,selectionReady:{model.readingSingleVersion && model.effectiveDiffMode=="source"})
+        guard !workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.document.unifiedDiff"}) else{throw BridgeError(code:"GIT_SINGLE_SOURCE_COVERED",message:"Single document source remained covered by the change-only text view.")}
+        try capture(output.appendingPathComponent("native-git-single-source.png"))
         model.selectVersion(max(0,model.revisions.count-1));try await model.updateChanges();model.tab="compare";try await model.updateChanges()
         let reread=try await model.bridge.call("view",["project_id":model.projectID,"report_id":reportID])
         guard model.report["report_id"].string==reportID,try model.report.data()==report,try reread.data()==report else{throw BridgeError(code:"GIT_REPORT_MUTATION",message:"Workspace navigation modified the in-memory or stored fixed report.")}
-        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"focus_fixed_report_visible":true,"focus_selected_context_visible":true,"first_version_single_read":true,"fixed_report_unchanged":true,"stored_report_reread_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
+        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"focus_fixed_report_visible":true,"focus_selected_context_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"native_annotation_scope":annotationScope,"fixed_report_unchanged":true,"stored_report_reread_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png","native-git-single-source.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
     }
     static func captureSelectedPages(_ model:AppModel,_ output:URL,selectionReady:()->Bool) async throws->[String:Any] {
         let report=model.report["report_id"].string,mode=model.pageMode,left=model.leftPageID,right=model.rightPageID,started=Date()
-        let pageIDs=mode=="before" ? [left]:mode=="after" ? [right]:[left,right]
+        let pageIDs=model.readingSingleVersion ? [left]:mode=="before" ? [left]:mode=="after" ? [right]:[left,right]
         var expected:[[String:Any]]=[]
         for id in pageIDs {
             let payload=try await model.page(id)
