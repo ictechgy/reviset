@@ -145,7 +145,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     func openNewComparisonImport() {guard ready else{return};importPresented=true}
     var showingSheetMetadata:Bool {
         let event=selectedChange,kind=event["kind"].string
-        return !event.isNull && (kind.hasPrefix("sheet_") || ["merges","date_system","calculation_settings"].contains(kind)) && event["before_address"].string.isEmpty && event["after_address"].string.isEmpty && event["from_revision_occurrence_id"].string==beforeID && event["to_revision_occurrence_id"].string==afterID && event["from_sheet_id"].string==beforeSheetID && event["to_sheet_id"].string==afterSheetID
+        return !event.isNull && selectedRow==0 && beforeAddress.isEmpty && afterAddress.isEmpty && (kind.hasPrefix("sheet_") || ["merges","date_system","calculation_settings"].contains(kind)) && event["before_address"].string.isEmpty && event["after_address"].string.isEmpty && event["from_revision_occurrence_id"].string==beforeID && event["to_revision_occurrence_id"].string==afterID && event["from_sheet_id"].string==beforeSheetID && event["to_sheet_id"].string==afterSheetID
     }
     var selectedSourceWarnings:[String] {
         guard !showingSheetMetadata else{return []}
@@ -960,7 +960,7 @@ struct WorkbookWorkspace: View {
             Text(model.changeListProvenance).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
             Text(verbatim:model.versionLabel(model.changesFromID)+" → "+model.versionLabel(model.changesToID)).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
             }
-            if !model.sourceScopeDescription.isEmpty { Text(verbatim:model.sourceScopeDescription).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            if !model.sourceScopeDescription.isEmpty { WorkbookSourceScopeCaption(text:model.sourceScopeDescription).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.changeCursor.isEmpty { Text(L("workbook.paging.more")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             else if !model.changePreviousCursors.isEmpty { Text(L("workbook.paging.last")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.comparisonNotice.isEmpty { Text(verbatim:model.comparisonNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
@@ -1270,7 +1270,7 @@ private struct WorkbookUnifiedDiff:View {
         }}()
         VStack(alignment:.leading,spacing:3){
             Text(side+" · "+status).font(.caption).foregroundStyle(.secondary)
-            if showSource,let text=value.text,!text.isEmpty {Text(verbatim:text).font(.system(.body,design:.monospaced)).fixedSize(horizontal:true,vertical:true).textSelection(.enabled).background(WorkspaceLayoutMarker(name:"Reviset.workbook.rawField."+field+"."+(before ? "before":"after")))}
+            if showSource,let text=value.text,!text.isEmpty {NativeNeutralSourceText(text:text,lines:neutralSourceLines(text,complete:value.complete)?.map{(text:$0.text,terminator:$0.terminator)}).background(WorkspaceLayoutMarker(name:"Reviset.workbook.rawField."+field+"."+(before ? "before":"after")))}
         }
     }
 }
@@ -1288,6 +1288,17 @@ private struct WorkbookCellDetailsButton:NSViewRepresentable {
     func makeCoordinator()->Coordinator {Coordinator()}
     func makeNSView(context:Context)->NSButton {let button=NSButton(title:"",target:context.coordinator,action:#selector(Coordinator.open(_:)));button.bezelStyle = .rounded;button.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.cellDetailsAction");return button}
     func updateNSView(_ button:NSButton,context:Context) {context.coordinator.model=model;button.title=L("workbook.action.cellDetails");button.setAccessibilityLabel(button.title);button.isEnabled=model.canOpenCellDetails}
+}
+private struct WorkbookSourceScopeCaption:NSViewRepresentable {
+    let text:String
+    func makeNSView(context:Context)->NSTextField {
+        let field=NSTextField(wrappingLabelWithString:"");field.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.queryEventScopeCopy");field.font = .systemFont(ofSize:NSFont.smallSystemFontSize);field.textColor = .secondaryLabelColor;field.setContentHuggingPriority(.defaultLow,for:.horizontal);return field
+    }
+    func updateNSView(_ field:NSTextField,context:Context) {field.stringValue=text;field.setAccessibilityLabel(text)}
+    func sizeThatFits(_ proposal:ProposedViewSize,nsView:NSTextField,context:Context)->CGSize? {
+        let width=max(1,proposal.width ?? 280),bounds=nsView.attributedStringValue.boundingRect(with:NSSize(width:width,height:.greatestFiniteMagnitude),options:[.usesLineFragmentOrigin,.usesFontLeading])
+        return CGSize(width:width,height:ceil(bounds.height)+2)
+    }
 }
 private struct WorkbookInspector: View {
     @State private var language = LanguagePreferences.shared
@@ -2201,8 +2212,13 @@ struct WorkbookGrid: NSViewRepresentable {
         guard query==[model.changesFromID,model.changesToID,model.changesMode],try JSON(model.changes.map(\.raw)).data()==rows,!queried,model.beforeID==change["from_revision_occurrence_id"].string,model.afterID==change["to_revision_occurrence_id"].string,model.beforeAddress==change["before_address"].string,model.afterAddress==change["after_address"].string else{throw BridgeError(code:"WORKBOOK_GIT_SCOPE",message:"Workbook event selection replaced query/list or physical addresses.")}
         observation.cancel();let selectionDidNotQuery = !queried
         try await Task.sleep(nanoseconds:200_000_000);try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-git-history.png"))
+        func scopeFields(_ view:NSView)->[NSTextField] {(view as? NSTextField).map{[$0]} ?? view.subviews.flatMap{scopeFields($0)}}
+        let scopeField=scopeFields(content).first(where:{$0.identifier?.rawValue=="Reviset.workbook.queryEventScopeCopy"})
+        if !model.sourceScopeDescription.isEmpty {
+            guard let scopeField,!scopeField.isHiddenOrHasHiddenAncestor,!scopeField.visibleRect.isEmpty,scopeField.stringValue.utf16.elementsEqual(model.sourceScopeDescription.utf16) else{throw BridgeError(code:"WORKBOOK_GIT_SCOPE_COPY",message:"Mounted native query/event caption is unavailable or differs from the displayed source scope.")}
+        }
         try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-query-event-scope.png"))
-        let scopeCopy:[String:Any] = ["query_from":model.changesFromID,"query_to":model.changesToID,"source_from":model.beforeID,"source_to":model.afterID,"selected_event_id":model.selectedChangeID,"visible_copy":model.sourceScopeDescription,"capture":"native-workbook-query-event-scope.png"]
+        let scopeCopy:[String:Any] = ["query_from":model.changesFromID,"query_to":model.changesToID,"source_from":model.beforeID,"source_to":model.afterID,"selected_event_id":model.selectedChangeID,"visible_copy":scopeField?.stringValue ?? "","qualified":!model.sourceScopeDescription.isEmpty,"mounted_native_label_verified":!model.sourceScopeDescription.isEmpty,"native_identifier":scopeField?.identifier?.rawValue ?? "","capture":"native-workbook-query-event-scope.png"]
         let cellDetails=try await exerciseCellDetails(model,layout:layout,window:window,folder:folder)
         let rawCellFacts=try rawSavedValueCellFacts(model,content:content)
         var manualQueried=false;let manualObservation=model.$loadingChanges.dropFirst().sink{if $0{manualQueried=true}};defer{manualObservation.cancel()}

@@ -47,7 +47,10 @@ private struct SoleDocumentImportProbeHarness:View {
             let inside=String(repeating:"x"+ending,count:128),outside=String(repeating:"x"+ending,count:129)
             let accepted=unifiedTextDiff(before:inside,after:inside,semantic:true),refused=unifiedTextDiff(before:outside,after:outside,semantic:true)
             try require(accepted.bounded && accepted.lines.count==128 && accepted.lines.map(\.rawText).joined().utf16.elementsEqual(inside.utf16) && !refused.bounded && refused.lines.isEmpty,"TerminatedLineBudgetBoundaryOrRawSourceChanged")
+            let neutral=neutralSourceLines(inside,complete:true)
+            try require(neutral?.count==128 && neutral?.map(\.rawText).joined().utf16.elementsEqual(inside.utf16)==true && neutralSourceLines(outside,complete:true)==nil,"NeutralAnnotationChangedLineBudgetOrRawSource")
         }
+        try require(neutralSourceLines("partial\r",complete:false)==nil && neutralSourceLines(String(repeating:"x",count:4097),complete:true)==nil,"IncompleteOrOverBudgetNeutralTextClaimedEOF")
         for kind in ["text_occluded","text_struck_through","text_revealed","coverage_gap","page_deleted","page_merged","visual_region_changed"] {
             let diff=documentTextDiff(JSON(["kind":kind,"before":"hidden 100","after":"hidden 120"]))
             try require(!diff.semantic && diff.lines.allSatisfy{$0.prefix.isEmpty},"AppearanceInterpretedAsTextDeletion")
@@ -225,6 +228,7 @@ private struct SoleDocumentImportProbeHarness:View {
         try await checkReviewRefinements()
         guard let sheetEvent=engineCases.first(where:{$0["change"]["kind"].string=="date_system"}) else{throw NSError(domain:"ActualEngineSheetEventMissing",code:1)}
         try await checkSource16Presentation(sheetEvent["change"])
+        try await checkNeutralObservationHosting(eligible)
         try await checkOneSidedSheetReads()
         guard let formatCase=golden.first(where:{$0["name"].string=="neutral-number-format-observation"}) else{throw NSError(domain:"NeutralNumberFormatFixtureMissing",code:1)}
         try await checkRawFieldHosting(change:eligible["change"],before:JSON(longOld),after:JSON(longNew),format:formatCase)
@@ -529,6 +533,48 @@ private struct SoleDocumentImportProbeHarness:View {
         if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["scope":"production workbook text overlay raw fallback/number-format geometry with synthetic complete cells, and actual secondary AppKit terminator labels; no extraction or OS input claim","complete_value_utf16":before["value"].string.utf16.count,"raw_source_marker_heights":heights,"number_format_raw_sections":formats.count,"actual_visible_secondary_terminator_labels":labels.map(\.stringValue),"raw_utf16_preserved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("raw-fallback-proof.json"))}
     }
 
+    @MainActor static func checkNeutralObservationHosting(_ fixture:JSON)async throws {
+        func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
+        func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
+        func labels(_ view:NSView)->[String] {views(view).compactMap{$0 as? NSTextField}.filter{$0.identifier?.rawValue=="Reviset.diff.terminator" && !$0.isHiddenOrHasHiddenAncestor && !$0.visibleRect.isEmpty}.map(\.stringValue)}
+        func settle(_ window:NSWindow)async throws {try await Task.sleep(nanoseconds:100_000_000);window.contentView?.layoutSubtreeIfNeeded()}
+        let owner=AppModel(),model=WorkbookModel(bridge:owner.bridge),event=fixture["change"],scope=fixture["scope"]
+        model.reportID="report";model.report=JSON(["report_id":"report","revisions":[["revision_occurrence_id":scope["before_occurrence"].string,"index":0,"sheets":[["sheet_id":scope["before_sheet"].string,"name":"Before"]]],["revision_occurrence_id":scope["after_occurrence"].string,"index":1,"sheets":[["sheet_id":scope["after_sheet"].string,"name":"After"]]]]])
+        model.beforeID=scope["before_occurrence"].string;model.afterID=scope["after_occurrence"].string;model.beforeSheetID=scope["before_sheet"].string;model.afterSheetID=scope["after_sheet"].string;model.changesFromID=model.beforeID;model.changesToID=model.afterID
+        var withheld=event.dictionary;withheld["kind"]="cell_observation";model.changes=[JSON(withheld)];model.selectedChangeID=event["change_id"].string;model.beforeAddress=event["before_address"].string;model.afterAddress=event["after_address"].string;model.diffMode="text"
+        func source(_ original:JSON,_ text:String?,partialOffset:Int?=nil)->JSON {
+            var value=original.dictionary;value["value"]=text ?? NSNull();value["formula"]=NSNull();value["number_format"]=NSNull();value["value_type"]="string";value["cached_result"]="not_applicable";value["formula_interpretation"]="not_formula"
+            let partial=partialOffset != nil,offset=partialOffset ?? 0,total=partial ? offset+(text?.utf16.count ?? 0)+3:(text?.utf16.count ?? 0)
+            let next:Any=partial ? offset+(text?.utf16.count ?? 0) as Any:NSNull()
+            value["text_continuations"]=["value":["state":text==nil ? "missing":partial ? "truncated":text!.isEmpty ? "empty":"complete","offset":offset,"total_length":total,"next_offset":next],"formula":["state":"missing","offset":0,"total_length":0,"next_offset":NSNull()],"number_format":["state":"missing","offset":0,"total_length":0,"next_offset":NSNull()]]
+            return JSON(value)
+        }
+        let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1280,height:800),styleMask:[.titled],backing:.buffered,defer:false);window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:WorkbookWorkspace(model:model));window.orderFront(nil);defer{window.close()};try await settle(window)
+        model.projectID="neutral-project"
+        var cases:[[String:Any]]=[]
+        for (name,before,after,offset,expected) in [("crlf-to-lf","a\r\nx","a\nx",nil as Int?,["⟦CRLF⟧","⟦EOF⟧","⟦LF⟧","⟦EOF⟧"]),("terminated-to-eof","a\n","a",nil,["⟦LF⟧","⟦EOF⟧"]),("literal-marker","⟦LF⟧\r","⟦LF⟧",nil,["⟦CR⟧","⟦EOF⟧"]),("partial-fragment","a\r\nx",nil,0,[]),("continued-partial-fragment","a\r",nil,6,[]),("missing-before",nil,"a\n",nil,["⟦LF⟧"]),("empty-observation","",nil,nil,[])] as [(String,String?,String?,Int?,[String])] {
+            model.beforeCell=source(fixture["before"],before,partialOffset:offset);model.afterCell=source(fixture["after"],after);model.cellTextOffset=offset ?? 0;try await settle(window)
+            let actual=labels(window.contentView!),old=workbookRawField(model.beforeCell,field:"value"),new=workbookRawField(model.afterCell,field:"value")
+            try require(actual.sorted()==expected.sorted(),"NeutralWorkbookTerminatorLabels-"+name+"-"+actual.joined(separator:","))
+            try require(old.text?.utf16.elementsEqual((before ?? "").utf16)==(before == nil ? nil:true) && new.text?.utf16.elementsEqual((after ?? "").utf16)==(after == nil ? nil:true),"NeutralWorkbookChangedRawUTF16-"+name)
+            if offset != nil {try require(old.state == .partial && !old.complete && workspaceLayoutMarkers(in:window.contentView!).contains{$0.identifier?.rawValue=="Reviset.workbook.rawField.value.before"},"PartialRawReaderWasSuppressedOrClaimedComplete")}
+            let context=WorkbookSelectedEventScope(beforeOccurrence:model.beforeID,afterOccurrence:model.afterID,beforeSheet:model.beforeSheetID,afterSheet:model.afterSheetID)
+            try require(workbookFieldDiffEligibility(change:model.selectedChange,before:model.beforeCell,after:model.afterCell,scope:context) == .neutral,"NeutralObservationClaimedFieldEdit")
+            cases.append(["name":name,"native_secondary_labels":actual,"before_raw_utf16":Array((before ?? "").utf16).map(Int.init),"after_raw_utf16":Array((after ?? "").utf16).map(Int.init),"before_state":old.state.rawValue,"after_state":new.state.rawValue,"neutral":true])
+        }
+        let document=AppModel();document.report=JSON(["report_id":"fixed","revisions":[["revision_occurrence_id":"a"],["revision_occurrence_id":"b"]]]);document.from=0;document.to=1;document.diffMode="text"
+        let docWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:800,height:500),styleMask:[.titled],backing:.buffered,defer:false);docWindow.isReleasedWhenClosed=false;docWindow.contentView=NSHostingView(rootView:DocumentUnifiedDiff().environmentObject(document));docWindow.orderFront(nil);defer{docWindow.close()}
+        var docCases:[[String:Any]]=[]
+        for (before,after,expected) in [("a\r\nx","a\nx",["⟦CRLF⟧","⟦EOF⟧","⟦LF⟧","⟦EOF⟧"]),("a\n","a",["⟦LF⟧","⟦EOF⟧"])] {
+            document.changes=[JSON(["change_id":"neutral","kind":"text_struck_through","before":before,"after":after])];document.selectedChangeID="neutral";try await settle(docWindow)
+            let actual=labels(docWindow.contentView!),diff=documentTextDiff(document.selected)
+            try require(actual.sorted()==expected.sorted() && !diff.semantic && diff.lines.allSatisfy{$0.prefix.isEmpty},"NeutralDocumentTerminatorLabelsMissingOrSemantic")
+            try require(document.selected["before"].string.utf16.elementsEqual(before.utf16) && document.selected["after"].string.utf16.elementsEqual(after.utf16),"NeutralDocumentSourceChanged")
+            docCases.append(["native_secondary_labels":actual,"before_raw_utf16":Array(before.utf16).map(Int.init),"after_raw_utf16":Array(after.utf16).map(Int.init),"neutral":true])
+        }
+        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["scope":"mounted production neutral WorkbookUnifiedDiff and DocumentUnifiedDiff secondary native terminator labels; no OS input or extraction claim","workbook_cases":cases,"document_cases":docCases,"partial_and_missing_not_claimed_eof":true,"raw_utf16_preserved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("source17-proof.json"))}
+    }
+
     @MainActor static func checkSource16Presentation(_ metadataEvent:JSON)async throws {
         func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
         func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
@@ -557,14 +603,15 @@ private struct SoleDocumentImportProbeHarness:View {
             try require((try model.report.data())==fixed && (try JSON(model.changes.map(\.raw)).data())==rows && model.comparisonScope==query && identity==[model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress,model.selectedChangeID] && (try model.beforeCell.data())==before && (try model.afterCell.data())==after && (try Data(contentsOf:library.appendingPathComponent("read-events.jsonl")))==requestsBefore,"OpeningCellDetailsChangedFixedScopeRawSourceOrQueriedAgain")
             for (table,coordinator,origin,row) in states {let actual=table.enclosingScrollView!.contentView.bounds.origin;try require(views(host).contains{$0===table} && (table.dataSource as AnyObject?) === coordinator && actual==origin && table.selectedRow==row,"OpeningCellDetailsRecreatedGridOrMovedManualViewport")}
             let expected=L("workbook.changes.intervalDifference",.verbatim(model.versionLabel("old")),.verbatim(model.versionLabel("later")),.verbatim(model.versionLabel("old")),.verbatim(model.versionLabel("new")))
-            try require(model.sourceScopeDescription==expected,"QueryAndSelectedEventScopeCopyWasAmbiguous")
+            guard let scopeLabel=views(host).compactMap({$0 as? NSTextField}).first(where:{$0.identifier?.rawValue=="Reviset.workbook.queryEventScopeCopy"}) else{throw NSError(domain:"MountedQueryEventScopeLabelMissing",code:1)}
+            try require(model.sourceScopeDescription==expected && scopeLabel.stringValue.utf16.elementsEqual(expected.utf16) && !scopeLabel.isHiddenOrHasHiddenAncestor && !scopeLabel.visibleRect.isEmpty,"QueryAndSelectedEventScopeCopyWasAmbiguousOrUnmounted")
             model.diffMode="text";try await settle(window)
             try require(model.sourceIdentity(before:true).contains("Old source · A2") && model.sourceIdentity(before:false).contains("New source · A2") && workspaceLayoutMarkers(in:host).contains{$0.identifier?.rawValue=="Reviset.workbook.textSourceIdentity"},"CrossSheetTextIdentityLostNamesOrPhysicalAddresses")
             let savedSheet=model.beforeSheetID;model.beforeSheetID="missing-physical-sheet";try await settle(window)
             try require(model.sourceIdentity(before:true).contains("missing-physical-sheet") && model.missingSourceSheetCaptions.count==1 && model.afterCells.first?["value"].string==raw,"AbsentSheetTextIdentityHidIDOrDiscardedAvailableOppositeSource");model.beforeSheetID=savedSheet;try await settle(window)
             try require(!views(host).compactMap({$0 as? NSTextField}).contains{$0.isEditable && $0.accessibilityIdentifier()=="Docver.workbook.addressInput"} && workspaceLayoutMarkers(in:host).contains{$0.identifier?.rawValue=="Reviset.workbook.showOriginal" && !$0.visibleRect.isEmpty},"TextModeOfferedInvisibleGridNavigation")
             model.setDiffMode("source");try await settle(window)
-            observations.append(["language":language.rawValue,"native_details_action_visible_and_performed":true,"existing_inspector_visible":true,"query_event_copy":model.sourceScopeDescription,"raw_literal":raw,"raw_utf16_preserved":true,"no_new_bridge_requests_or_list_replacement":true,"grid_hosts_and_viewports_retained":true,"text_navigation_explicit_original_route":true])
+            observations.append(["language":language.rawValue,"native_details_action_visible_and_performed":true,"existing_inspector_visible":true,"query_event_copy":scopeLabel.stringValue,"mounted_native_scope_label_verified":true,"raw_literal":raw,"raw_utf16_preserved":true,"no_new_bridge_requests_or_list_replacement":true,"grid_hosts_and_viewports_retained":true,"text_navigation_explicit_original_route":true])
         }
         model.beforeID="old";model.afterID="old";model.afterSheetID="sheet-old";model.beforeAddress="A2";model.afterAddress="A2";model.beforeCell=JSON(["address":"A2","cached_result":"missing","value":NSNull()]);model.afterCell=model.beforeCell
         try require(model.selectedSourceWarnings.count==1 && model.selectedSourceWarnings[0].hasPrefix(L("doc.common.source")) && model.navigationDetail==L("workbook.nav.singleSourceDetail"),"SingleSourceRetainedPairedWarningsOrFooter")
@@ -572,12 +619,27 @@ private struct SoleDocumentImportProbeHarness:View {
         model.report=JSON(["report_id":"report","revisions":[["revision_occurrence_id":metadataEvent["from_revision_occurrence_id"].string,"index":0],["revision_occurrence_id":metadataEvent["to_revision_occurrence_id"].string,"index":1]]]);model.changes=[metadataEvent];model.changesFromID=metadataEvent["from_revision_occurrence_id"].string;model.changesToID=metadataEvent["to_revision_occurrence_id"].string;await model.chooseChange(metadataEvent["change_id"].string);model.diffMode="text";try await settle(window)
         try require(model.showingSheetMetadata && model.selectedSourceWarnings.isEmpty && model.beforeCell.isNull && model.afterCell.isNull && workspaceLayoutMarkers(in:host).contains{$0.identifier?.rawValue=="Reviset.workbook.sheetMetadataDiff"} && !workspaceLayoutMarkers(in:host).contains{$0.identifier?.rawValue.hasPrefix("Reviset.workbook.rawField.")==true},"ActualMetadataEventMislabelledUnmaterializedCell")
         var cellEvent=metadataEvent.dictionary;cellEvent["kind"]="cell_observation";model.changes=[JSON(cellEvent)];try require(!model.showingSheetMetadata && model.selectedSourceWarnings.count==2,"NullCellEventLostUnmaterializedObservationWarnings")
+        // Normal manual cell selection retires event authority and keeps only a
+        // Return anchor. Also guard a stale metadata ID paired with real focus.
+        let sheetEvent=JSON(["change_id":"sheet-metadata","kind":"sheet_name","from_revision_occurrence_id":"old","to_revision_occurrence_id":"new","from_sheet_id":"sheet-old","to_sheet_id":"sheet-new","before_address":"","after_address":""])
+        model.report=JSON(["report_id":"report","revisions":[["revision_occurrence_id":"old","index":0,"sheets":[["sheet_id":"sheet-old","name":"Old source"]]],["revision_occurrence_id":"new","index":1,"sheets":[["sheet_id":"sheet-new","name":"New source"]]],["revision_occurrence_id":"later","index":2,"sheets":[]]]]);model.changes=[sheetEvent];model.changesFromID="old";model.changesToID="later";await model.chooseChange("sheet-metadata");model.setDiffMode("source");try await settle(window)
+        let metadataRows=try JSON(model.changes.map(\.raw)).data(),metadataQuery=model.comparisonScope
+        try require(model.showingSheetMetadata && model.selectedRow==0 && model.beforeAddress.isEmpty && model.afterAddress.isEmpty,"MetadataInitialFocusNotNeutral")
+        await model.selectCell(2,1);try await settle(window)
+        try require(model.selectedChange.isNull && model.canReturnToChange && !model.showingSheetMetadata && model.beforeCell["value"].string==raw,"MetadataCellSelectionKeptEventAuthorityOrHidRawCell")
+        model.selectedChangeID="sheet-metadata";try require(!model.showingSheetMetadata,"StaleMetadataEventHidCurrentPhysicalFocus");model.selectedChangeID=""
+        model.inspectorVisible=false;try await settle(window)
+        guard let cellButton=views(host).compactMap({$0 as? NSButton}).first(where:{$0.identifier?.rawValue=="Reviset.workbook.cellDetailsAction"}),cellButton.isEnabled else{throw NSError(domain:"MetadataManualCellDetailsUnavailable",code:1)}
+        cellButton.performClick(nil);try await settle(window)
+        try require(workspaceLayoutMarkers(in:host).contains{$0.identifier?.rawValue=="Reviset.workbook.inspector.raw.value" && !$0.visibleRect.isEmpty} && model.beforeCell["value"].string.utf16.elementsEqual(raw.utf16),"MetadataManualCellDetailsHidFocusedRawSource")
+        await model.returnToChange();model.setDiffMode("text");try await settle(window)
+        try require(model.showingSheetMetadata && model.selectedRow==0 && model.beforeAddress.isEmpty && model.afterAddress.isEmpty && model.comparisonScope==metadataQuery && (try JSON(model.changes.map(\.raw)).data())==metadataRows && workspaceLayoutMarkers(in:host).contains{$0.identifier?.rawValue=="Reviset.workbook.sheetMetadataDiff"},"MetadataReturnLostQueryRowsOrMetadataPresentation")
         let document=AppModel();document.report=JSON(["report_id":"fixed","revisions":[["revision_occurrence_id":"a"],["revision_occurrence_id":"b"]]]);document.from=0;document.to=1;document.diffMode="text"
         let docWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:800,height:500),styleMask:[.titled],backing:.buffered,defer:false);docWindow.isReleasedWhenClosed=false;docWindow.contentView=NSHostingView(rootView:DocumentUnifiedDiff().environmentObject(document));docWindow.orderFront(nil);defer{docWindow.close()};try await settle(docWindow)
         try require(!workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"UnselectedDocumentDiffClaimedSelectedEvent")
         document.changes=[JSON(["change_id":"selected","kind":"text_modified","before":"100","after":"120"])];document.selectedChangeID="selected";try await settle(docWindow)
         try require(workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"SelectedDocumentEventHeaderMissing")
-        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"selected_null_document_header_hidden":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
+        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
     }
 
 }

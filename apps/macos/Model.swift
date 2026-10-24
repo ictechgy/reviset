@@ -705,6 +705,14 @@ private func storedDiffLines(_ text:String)->[StoredDiffLine] {
     }
     if start<units.count || result.isEmpty {result.append(StoredDiffLine(text:String(decoding:units[start..<units.count],as:UTF16.self),terminator:""))};return result
 }
+// Annotation is a projection of a complete observed string, never of an unread
+// continuation. Keep its display work inside the same source/line budget as diff.
+func neutralSourceLines(_ text:String,complete:Bool)->[UnifiedTextDiffLine]? {
+    guard complete,text.utf16.count<=4096 else{return nil}
+    let lines=storedDiffLines(text)
+    guard lines.count<=128 else{return nil}
+    return lines.map{UnifiedTextDiffLine(prefix:"",text:$0.text,terminator:$0.terminator)}
+}
 func unifiedTextDiff(before:String,after:String,semantic:Bool)->UnifiedTextDiff {
     // Never truncate a source and then present that fragment as a complete diff.
     guard before.utf16.count<=4096,after.utf16.count<=4096 else{return UnifiedTextDiff(lines:[],bounded:false,semantic:false)}

@@ -394,9 +394,10 @@ struct DocumentUnifiedDiff:View {
         }.padding(20).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading).background(Color(nsColor:.textBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.document.unifiedDiff"))
     }
     private func neutralSource(_ source:JSON,title:String)->some View {
-        VStack(alignment:.leading,spacing:5){Text(title).font(.caption).foregroundStyle(.secondary);if source.isNull {Text(L("doc.inspector.noSource")).font(.caption).foregroundStyle(.secondary)}else if source.string.isEmpty {Text(L("workbook.cell.emptyString")).font(.caption).foregroundStyle(.secondary)}else {Text(verbatim:source.string).font(.system(.body,design:.monospaced)).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)}}
+        VStack(alignment:.leading,spacing:5){Text(title).font(.caption).foregroundStyle(.secondary);if source.isNull {Text(L("doc.inspector.noSource")).font(.caption).foregroundStyle(.secondary)}else if source.string.isEmpty {Text(L("workbook.cell.emptyString")).font(.caption).foregroundStyle(.secondary)}else {NativeNeutralSourceText(text:source.string,lines:neutralSourceLines(source.string,complete:true)?.map{(text:$0.text,terminator:$0.terminator)})}}
     }
 }
+
 struct ChangeListView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var layout:WorkspaceLayoutStore

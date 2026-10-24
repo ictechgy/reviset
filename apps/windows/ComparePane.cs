@@ -24,7 +24,7 @@ internal sealed record GridRow(int Row, GridCell[] Values)
 {
     public string Number => Row.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
-internal sealed record PaneSelection(string Revision, string Sheet, string Page, int Row, int Column, double Zoom, string Absence, string RequestedSheet = "", int? FocusedRow = null, int? FocusedColumn = null);
+internal sealed record PaneSelection(string Revision, string Sheet, string Page, int Row, int Column, double Zoom, string Absence, string RequestedSheet = "", int? FocusedRow = null, int? FocusedColumn = null, string MetadataKind = "");
 
 internal sealed class ComparePane
 {
@@ -81,6 +81,8 @@ internal sealed class ComparePane
     private SourceTextObservation previewObservation = new(SourceTextState.Missing, "");
     private (string Project, string Report, string Revision, string Page)? previewScope;
     private bool binding;
+    private bool lastNavigationEnabled;
+    private string metadataKind = "";
     private int row = 1;
     private int column = 1;
     private int focusedRow;
@@ -134,7 +136,7 @@ internal sealed class ComparePane
         VirtualizingPanel.SetVirtualizationMode(Cells, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(Cells, true);
         revision.SelectionChanged += async (_, _) => { if (binding) return; SetRevisionContents(true); selectionRequest = owner.ReloadComparison(); await owner.Guard(() => selectionRequest); };
         page.SelectionChanged += async (_, _) => { if (!binding && !owner.IsWorkbook) { var request = Load(owner.Generation, owner.ReadToken); owner.SourcePresentationChanged(); await owner.Guard(() => request); owner.SourcePresentationChanged(); } };
-        sheet.SelectionChanged += async (_, _) => { if (!binding && owner.IsWorkbook) { evidenceAbsence = ""; requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? ""; Invalidate(); row = 1; column = 1; SetFocusCoordinates(row, column); selectionRequest = owner.ReloadSourceWindow(); await owner.Guard(() => selectionRequest); } };
+        sheet.SelectionChanged += async (_, _) => { if (!binding && owner.IsWorkbook) { evidenceAbsence = ""; metadataKind = ""; requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? ""; Invalidate(); row = 1; column = 1; SetFocusCoordinates(row, column); selectionRequest = owner.ReloadSourceWindow(); await owner.Guard(() => selectionRequest); } };
         zoom.ValueChanged += (_, _) => { if (!applyingFit) fittingWidth = false; PageImage.LayoutTransform = new ScaleTransform(zoom.Value, zoom.Value); UpdateZoomCaption(); };
         Host.SizeChanged += (_, _) => ResizePreview();
         PageScroll.SizeChanged += (_, _) => { if (fittingWidth) ResizePreview(); };
@@ -172,14 +174,14 @@ internal sealed class ComparePane
         if (versionCaption.Text != ((revision.SelectedItem as Choice)?.Label ?? "") || versionCaption.ToolTip as string != RevisionId || heading.Text != expected || SourceAutomationNameForSmoke != expectedSourceName || AutomationProperties.GetName(sheet) != expected + " · " + owner.Copy["sheet"] || AutomationProperties.GetName(page) != expected + " · " + owner.Copy["pages"]) throw new InvalidOperationException("The native source heading or automation names do not match the current paired/single-source reading state and locale.");
         return new { single_source_reading = owner.SingleSourceReading, mounted_after_side = after, heading = heading.Text, source_automation_name = SourceAutomationNameForSmoke, native_control = owner.IsWorkbook ? "DataGrid" : "ScrollViewer", observation_scope = "Production native control properties; not an OS screen-reader traversal" };
     }
-    internal void NavigationEnabled(bool enabled) { foreach (var control in navigation) control.IsEnabled = enabled; showFormula.IsEnabled = enabled && ReadState == "ready" && loadedGridScope is not null; RefreshCellDetails(); }
-    internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence, requestedSheetName, focusedRow, focusedColumn);
+    internal void NavigationEnabled(bool enabled) { lastNavigationEnabled = enabled; foreach (var control in navigation) control.IsEnabled = enabled; showFormula.IsEnabled = enabled && ReadState == "ready" && loadedGridScope is not null; RefreshCellDetails(); }
+    internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence, requestedSheetName, focusedRow, focusedColumn, metadataKind);
     internal void RestoreSelection(PaneSelection saved)
     {
         if (saved.Revision.Length == 0) { Clear(); return; } SetEvidenceRevision(saved.Revision); binding = true;
         if (sheet.ItemsSource is List<Choice> sheets) sheet.SelectedItem = sheets.Find(value => value.Id == saved.Sheet);
         if (page.ItemsSource is List<Choice> pages) page.SelectedItem = pages.Find(value => value.Id == saved.Page);
-        row = saved.Row; column = saved.Column; SetFocusCoordinates(saved.FocusedRow ?? saved.Row, saved.FocusedColumn ?? saved.Column); Zoom = saved.Zoom; evidenceAbsence = saved.Absence; requestedSheetName = saved.RequestedSheet; binding = false;
+        row = saved.Row; column = saved.Column; SetFocusCoordinates(saved.FocusedRow ?? saved.Row, saved.FocusedColumn ?? saved.Column); Zoom = saved.Zoom; evidenceAbsence = saved.Absence; requestedSheetName = saved.RequestedSheet; metadataKind = saved.MetadataKind; binding = false;
     }
     internal void Clear()
     {
@@ -200,14 +202,15 @@ internal sealed class ComparePane
     }
     private void RefreshCellDetails()
     {
-        cellDetailsCaption.Text = FocusedAddress + " · " + owner.Copy["cellPreviewNotice"];
+        cellDetailsCaption.Text = (FocusedAddress.Length > 0 ? FocusedAddress + " · " : "") + owner.Copy["cellPreviewNotice"];
         var materialized = TryGetFocusedMaterializedCell(out var cell);
         cellValue.Text = materialized && cell.Get("value").ValueKind == JsonValueKind.String ? cell.Get("value").Text() : "";
         cellFormula.Text = materialized && cell.Get("formula").ValueKind == JsonValueKind.String ? cell.Get("formula").Text() : "";
-        var unavailable = ReadState == "ready" && AuthorizesCell(focusedRow, focusedColumn) ? owner.Copy["cellNotMaterialized"] : owner.Copy[ReadState == "failed" ? "failed" : ReadState == "absent" && evidenceAbsence.Length > 0 ? evidenceAbsence : "loading"];
-        cellValueLabel.Text = owner.Copy["cached"] + (materialized && cell.Get("value").ValueKind == JsonValueKind.Null ? " · " + owner.Copy[cell.Get("cached_result").Text() == "missing" ? "resultMissingShort" : cell.Get("value_type").Text() == "blank" ? "valueBlankShort" : "valueUnrecordedShort"] : !materialized ? " · " + unavailable : "");
-        cellFormulaLabel.Text = owner.Copy["formula"] + (materialized && cell.Get("formula").ValueKind == JsonValueKind.Null ? " · " + owner.Copy["formulaAbsent"] : "");
-        if (openCellSource is not null) { openCellSource.IsEnabled = owner.AllowsEvidence && AuthorizesCell(focusedRow, focusedColumn); AutomationProperties.SetName(openCellSource, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["openCellSource"]); }
+        var unavailable = ReadState == "ready" && AuthorizesCell(focusedRow, focusedColumn) ? owner.Copy["cellNotMaterialized"] : owner.Copy[ReadState switch { "failed" => "failed", "invalid" => "reverse", "empty" => "selectCell", "absent" => evidenceAbsence.Length > 0 ? evidenceAbsence : "cellNotMaterialized", _ => "loading" }];
+        string Qualifier(string field) => " · " + string.Join(" · ", SourceDiffPolicy.WorkbookPreviewKeys(cell, field).Select(key => owner.Copy[key]));
+        cellValueLabel.Text = owner.Copy["cached"] + (materialized ? SourceDiffPolicy.WorkbookPreviewKeys(cell, "value").Count > 0 ? Qualifier("value") : "" : " · " + unavailable);
+        cellFormulaLabel.Text = owner.Copy["formula"] + (materialized ? SourceDiffPolicy.WorkbookPreviewKeys(cell, "formula").Count > 0 ? Qualifier("formula") : "" : " · " + unavailable);
+        if (openCellSource is not null) { openCellSource.IsEnabled = lastNavigationEnabled && owner.AllowsEvidence && AuthorizesCell(focusedRow, focusedColumn); AutomationProperties.SetName(openCellSource, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["openCellSource"]); }
         AutomationProperties.SetName(cellValue, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["cached"]); AutomationProperties.SetName(cellFormula, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["formula"]);
     }
     internal async Task<object> OpenCellDetailsForSmoke(string expectedValue)
@@ -217,6 +220,25 @@ internal sealed class ComparePane
         var selection = CaptureSelection(); openCellSource.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); await cellDetailsRequest;
         if (CaptureSelection() != selection || cellValue.Text != expectedValue) throw new InvalidOperationException("Opening full source segments changed the focused physical cell or bounded source text.");
         return new { address = FocusedAddress, heading = cellDetails.Header, selectable_value = cellValue.Text, formula_preview = cellFormula.Text, bounded_notice = cellDetailsCaption.Text, full_source_action = openCellSource.Content, source_selection_unchanged = true };
+    }
+    internal object CheckCellDetailLabelsForSmoke()
+    {
+        if (!TryGetFocusedMaterializedCell(out var actual)) throw new InvalidOperationException("Cell-details label QA needs an actual scoped focused cell.");
+        var saved = gridValue; var enabled = lastNavigationEnabled; var raw = actual.GetRawText();
+        var results = new List<object>();
+        try
+        {
+            foreach (var control in new[] { (Value: "", Formula: "=SYNTHETIC preview", ValueLength: 0, FormulaLength: 5000, ValueKey: "observationEmpty"), (Value: "", Formula: "", ValueLength: 5000, FormulaLength: 0, ValueKey: "partialSourceSegment") })
+            {
+                var fields = actual.EnumerateObject().ToDictionary(item => item.Name, item => (object?)item.Value); fields["value"] = control.Value; fields["formula"] = control.Formula; fields["source_lengths"] = new { value = control.ValueLength, formula = control.FormulaLength };
+                var projection = saved.EnumerateObject().ToDictionary(item => item.Name, item => (object?)item.Value); projection["items"] = saved.Get("items").Items().Select(item => item.Get("address").Text() == FocusedAddress ? JsonSerializer.SerializeToElement(fields) : item).ToArray(); gridValue = JsonSerializer.SerializeToElement(projection); RefreshCellDetails();
+                if (cellValue.Text != control.Value || cellFormula.Text != control.Formula || !cellValueLabel.Text.Contains(owner.Copy[control.ValueKey], StringComparison.Ordinal) || !cellFormulaLabel.Text.Contains(owner.Copy[control.FormulaLength > control.Formula.Length ? "partialSourceSegment" : "observationEmpty"], StringComparison.Ordinal)) throw new InvalidOperationException("Native field labels hid explicit empty source or independent preview truncation.");
+                NavigationEnabled(false); RefreshReadingChrome(); if (openCellSource.IsEnabled) throw new InvalidOperationException("A local Cell details refresh re-enabled disabled source navigation."); NavigationEnabled(true);
+                results.Add(new { value_label = cellValueLabel.Text, formula_label = cellFormulaLabel.Text, disabled_navigation_retained = true });
+            }
+            return new { scope = "Synthetic bounded preview controls on actual WPF labels, not canonical engine cells", address = FocusedAddress, cases = results };
+        }
+        finally { gridValue = saved; NavigationEnabled(enabled); RefreshCellDetails(); if (!TryGetFocusedMaterializedCell(out var restored) || restored.GetRawText() != raw) throw new InvalidOperationException("Cell-details label controls did not restore the exact scoped grid observation."); }
     }
     internal void CloseCellDetailsForSmoke() => cellDetails.IsExpanded = false;
     internal void FocusCell(int requestedRow, int requestedColumn)
@@ -257,7 +279,7 @@ internal sealed class ComparePane
     }
     private void SetRevisionContents(bool explicitVersionChange = false)
     {
-        Invalidate(); evidenceAbsence = "";
+        Invalidate(); evidenceAbsence = ""; metadataKind = "";
         var selected = revisions.Find(v => v.Get("revision_occurrence_id").Text() == RevisionId); var oldPage = PageId; var oldSheet = (sheet.SelectedItem as Choice)?.Label ?? requestedSheetName;
         binding = true;
         if (owner.IsWorkbook)
@@ -287,8 +309,8 @@ internal sealed class ComparePane
         binding = true; revision.SelectedItem = choices.Find(v => v.Id == id); binding = false; SetRevisionContents();
         if (owner.IsWorkbook)
         {
-            binding = true;
-            if (sheetId.Length == 0) { sheet.SelectedItem = null; evidenceAbsence = "absentSheet"; }
+            binding = true; metadataKind = eventKind;
+            if (sheetId.Length == 0) { sheet.SelectedItem = null; evidenceAbsence = SourceDiffPolicy.WorkbookScoped(eventKind) ? "workbookMetadata" : "absentSheet"; }
             else if (sheet.ItemsSource is List<Choice> sheets && sheets.Any(v => v.Id == sheetId)) sheet.SelectedItem = sheets.Find(v => v.Id == sheetId);
             else { sheet.SelectedItem = null; evidenceAbsence = "unsupportedSheet"; }
             requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? "";
@@ -369,7 +391,7 @@ internal sealed class ComparePane
         if (evidenceAbsence.Length > 0)
         {
             ReadState = "absent"; fallback.Text = owner.Copy[evidenceAbsence] + (evidenceAbsence == "missingSelectedSheet" ? "\n\n" + requestedSheetName : "");
-            if (evidenceAbsence == "sheetMetadata" && sheet.SelectedItem is Choice observedSheet) fallback.Text += "\n\n" + observedSheet.Label + "\n" + owner.Copy["row"] + ": " + observedSheet.Value.Get("row_count").Text() + "\n" + owner.Copy["column"] + ": " + observedSheet.Value.Get("column_count").Text();
+            if (evidenceAbsence is "sheetMetadata" or "workbookMetadata") fallback.Text += "\n\n" + MetadataPreview();
             return;
         }
         if (RevisionId.Length == 0 || SheetId.Length == 0) { ReadState = "absent"; fallback.Text = owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : "absentSheet"]; return; }
@@ -510,14 +532,14 @@ internal sealed class ComparePane
     }
     private async Task LoadCoordinates()
     {
-        if (!int.TryParse(rowStart.Text, out var r) || !int.TryParse(colStart.Text, out var c) || r is < 1 or > 1_048_576 || c is < 1 or > 16_384) throw new BridgeException("ADDRESS", "Row 1–1048576; column 1–16384."); evidenceAbsence = ""; row = r; column = c; SetFocusCoordinates(row, column); await ReloadGrid();
+        if (!int.TryParse(rowStart.Text, out var r) || !int.TryParse(colStart.Text, out var c) || r is < 1 or > 1_048_576 || c is < 1 or > 16_384) throw new BridgeException("ADDRESS", "Row 1–1048576; column 1–16384."); evidenceAbsence = ""; metadataKind = ""; row = r; column = c; SetFocusCoordinates(row, column); await ReloadGrid();
     }
     private async Task GoAddress()
     {
         var found = Regex.Match(address.Text.Trim(), "^([A-Za-z]{1,3})([1-9][0-9]{0,6})$", RegexOptions.CultureInvariant); if (!found.Success) throw new BridgeException("ADDRESS", "A1–XFD1048576");
         var c = 0; foreach (var letter in found.Groups[1].Value.ToUpperInvariant()) c = c * 26 + letter - 'A' + 1;
         var r = int.Parse(found.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture); if (c > 16384 || r > 1048576) throw new BridgeException("ADDRESS", "A1–XFD1048576");
-        evidenceAbsence = ""; row = r; column = c; SetFocusCoordinates(row, column); await ReloadGrid(); await owner.SelectCell(this, r, c);
+        evidenceAbsence = ""; metadataKind = ""; row = r; column = c; SetFocusCoordinates(row, column); await ReloadGrid(); await owner.SelectCell(this, r, c);
     }
     private Task ReloadGrid() => owner.ReloadSourceWindow();
     internal (double X, double Y, string Page, ImageSource? Image) CaptureViewport() => (PageScroll.HorizontalOffset, PageScroll.VerticalOffset, PageId, PageImage.Source);
@@ -568,6 +590,11 @@ internal sealed class ComparePane
         public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => value is string text ? text.Replace("\r\n", " ", StringComparison.Ordinal).Replace('\r', ' ').Replace('\n', ' ') : "";
         public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
     }
+    private string MetadataPreview()
+    {
+        var value = SourceDiffPolicy.WorkbookMetadata(revisions.Find(item => item.Get("revision_occurrence_id").Text() == RevisionId), SheetId, metadataKind);
+        return owner.Copy["metadataObservation"] + "\n" + value.Pretty() + (value.Get("metadata_truncated").Flag() ? "\n" + owner.Copy["metadataBounded"] : "");
+    }
     private void RerenderPresentation()
     {
         if (ReadState == "invalid") { fallback.Text = owner.Copy["reverse"]; return; }
@@ -577,7 +604,7 @@ internal sealed class ComparePane
         if (ReadState == "absent")
         {
             fallback.Text = owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : owner.IsWorkbook ? "absentSheet" : "absentPage"] + (evidenceAbsence == "missingSelectedSheet" ? "\n\n" + requestedSheetName : "");
-            if (evidenceAbsence == "sheetMetadata" && sheet.SelectedItem is Choice observed) fallback.Text += "\n\n" + observed.Label + "\n" + owner.Copy["row"] + ": " + observed.Value.Get("row_count").Text() + "\n" + owner.Copy["column"] + ": " + observed.Value.Get("column_count").Text(); return;
+            if (evidenceAbsence is "sheetMetadata" or "workbookMetadata") fallback.Text += "\n\n" + MetadataPreview(); return;
         }
         if (!owner.IsWorkbook && ReadState == "ready")
         {

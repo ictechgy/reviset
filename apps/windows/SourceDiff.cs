@@ -76,6 +76,35 @@ internal sealed record WorkbookSourceScope(string BeforeOccurrence, string After
 internal static class SourceDiffPolicy
 {
     internal static bool SheetScoped(string kind) => kind.StartsWith("sheet_", StringComparison.Ordinal) || kind is "merges" or "date_system" or "calculation_settings";
+    internal static bool WorkbookScoped(string kind) => kind is "date_system" or "calculation_settings";
+    internal static bool WorkbookMetadataContext(JsonElement change, WorkbookSourceScope scope) => SheetScoped(change.Get("kind").Text())
+        && change.Get("before_address").ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
+        && change.Get("after_address").ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
+        && scope.BeforeAddress.Length == 0 && scope.AfterAddress.Length == 0
+        && change.Get("from_revision_occurrence_id").Text() == scope.BeforeOccurrence && change.Get("to_revision_occurrence_id").Text() == scope.AfterOccurrence
+        && change.Get("from_sheet_id").Text() == scope.BeforeSheet && change.Get("to_sheet_id").Text() == scope.AfterSheet;
+    internal static JsonElement WorkbookMetadata(JsonElement revision, string sheetId, string kind)
+    {
+        var sheet = revision.Get("sheets").Items().Find(item => item.Get("sheet_id").Text() == sheetId);
+        var source = WorkbookScoped(kind) ? revision : sheet;
+        var keys = kind switch
+        {
+            "date_system" => new[] { "date_system" }, "calculation_settings" => ["calc_flags"], "sheet_name" => ["name"], "sheet_position" => ["index"], "sheet_visibility" => ["hidden"],
+            "merges" => ["merges", "merge_count", "metadata_truncated", "metadata_query"], "sheet_dimensions" => ["row_count", "column_count", "row_metadata", "row_metadata_count", "column_metadata", "column_metadata_count", "metadata_truncated", "metadata_query"],
+            _ => ["name", "index", "hidden", "row_count", "column_count", "cell_count"]
+        };
+        if (source.ValueKind != JsonValueKind.Object) return default;
+        return JsonSerializer.SerializeToElement(keys.Where(key => source.Get(key).ValueKind != JsonValueKind.Undefined).ToDictionary(key => key, key => source.Get(key)));
+    }
+    internal static IReadOnlyList<string> WorkbookPreviewKeys(JsonElement cell, string field)
+    {
+        if (cell.ValueKind != JsonValueKind.Object) return ["cellNotMaterialized"];
+        var value = cell.Get(field); var total = cell.Get("source_lengths").Get(field);
+        if (value.ValueKind == JsonValueKind.Null) return [field == "formula" ? "formulaAbsent" : cell.Get("cached_result").Text() == "missing" ? "resultMissingShort" : cell.Get("value_type").Text() == "blank" ? "valueBlankShort" : "valueUnrecordedShort"];
+        if (value.ValueKind != JsonValueKind.String) return ["observationMissing"];
+        var partial = total.ValueKind == JsonValueKind.Number && total.TryGetInt32(out var length) && length > value.Text().Length;
+        return partial ? value.Text().Length == 0 ? ["partialSourceSegment", "fragmentEmpty"] : ["partialSourceSegment"] : value.Text().Length == 0 ? ["observationEmpty"] : [];
+    }
     internal static int WorkbookRow(JsonElement change, bool after)
     {
         var address = change.Get(after ? "after_address" : "before_address").Text(); var index = 0;

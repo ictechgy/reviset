@@ -8,7 +8,7 @@ import {execFileSync,spawnSync} from 'node:child_process';
 import {diffWorkbooks, WorkbookRevision} from '../../packages/workbook/diff.js';
 import {boundedWorkbookCell} from '../../packages/workbook/query.js';
 
-test('native Git-inspired workspace preserves query/event scope, source semantics, bounded diffs and existing layouts', {skip:process.platform !== 'darwin', timeout:60_000}, async () => {
+test('native Git-inspired workspace preserves query/event scope, source semantics, bounded diffs and existing layouts', {skip:process.platform !== 'darwin', timeout:75_000}, async () => {
   const root=await mkdtemp(join(tmpdir(), 'reviset-git-workspace-'));
   try {
     await prepareLegacyNativeLocalization(root);
@@ -38,11 +38,15 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
     ];
     const contexts=join(root,'engine-contexts.json');await writeFile(contexts,JSON.stringify(cases));
     const oneSidedResources=join(root,'one-sided','Resources');await mkdir(join(oneSidedResources,'backend'),{recursive:true});await mkdir(join(root,'one-sided','Helpers'),{recursive:true});await symlink(process.execPath,join(root,'one-sided','Helpers','node'));await copyFile(resolve('tests/native/workbook-read-fixture.mjs'),join(oneSidedResources,'backend','bridge.mjs'));
-    const run=spawnSync(executable,[contexts,resolve("tests/fixtures/native-workbook-observation-cases.json")],{encoding:'utf8',timeout:25_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata'),DOCVER_TEST_ONE_SIDED_RESOURCES:oneSidedResources}});
+    const run=spawnSync(executable,[contexts,resolve("tests/fixtures/native-workbook-observation-cases.json")],{encoding:'utf8',timeout:40_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata'),DOCVER_TEST_ONE_SIDED_RESOURCES:oneSidedResources}});
     assert.equal(run.status,0,run.error?.message ?? run.stderr);assert.match(run.stdout,/PASS native Git diff workspace:/u,run.stderr);
     const source16Evidence=await readFile(join(root,'userdata','source16-proof.json'),'utf8');
     const source16=JSON.parse(source16Evidence) as {observations:unknown[];metadata_caption_has_no_cell_warning_or_field_rows:boolean};assert.equal(source16.observations.length,2);assert.equal(source16.metadata_caption_has_no_cell_warning_or_field_rows,true);
     if(process.env.DOCVER_TEST_SOURCE16_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_SOURCE16_EVIDENCE_OUT,source16Evidence);
+    const source17Evidence=await readFile(join(root,'userdata','source17-proof.json'),'utf8');
+    const source17=JSON.parse(source17Evidence) as {workbook_cases:unknown[];document_cases:unknown[];partial_and_missing_not_claimed_eof:boolean;raw_utf16_preserved:boolean};
+    assert.equal(source17.workbook_cases.length,7);assert.equal(source17.document_cases.length,2);assert.equal(source17.partial_and_missing_not_claimed_eof,true);assert.equal(source17.raw_utf16_preserved,true);
+    if(process.env.DOCVER_TEST_SOURCE17_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_SOURCE17_EVIDENCE_OUT,source17Evidence);
     const contextEvidence=await readFile(join(root,'userdata','context-geometry.json'),'utf8');
     const context=JSON.parse(contextEvidence) as {summary_height:number;source_height:number;reason_utf16_count:number;full_reader_utf16:number[];expected_utf16:number[];reader_height:number;reader_viewport_height:number};
     assert.ok(context.summary_height>=46 && context.summary_height<=140 && context.source_height>400);

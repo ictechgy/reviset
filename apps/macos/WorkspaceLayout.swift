@@ -469,6 +469,18 @@ struct NativeDiffSourceLine:View {
     }
 }
 
+struct NativeNeutralSourceText:View {
+    let text:String
+    let lines:[(text:String,terminator:String)]?
+    var body:some View {
+        if let lines {
+            VStack(alignment:.leading,spacing:1){ForEach(Array(lines.enumerated()),id:\.offset){_,line in NativeDiffSourceLine(prefix:"",text:line.text,semantic:false,terminator:line.terminator)}}
+        } else {
+            Text(verbatim:text).font(.system(.body,design:.monospaced)).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)
+        }
+    }
+}
+
 // Persistent context is a summary, not an unbounded raw-text canvas. The full
 // exact reason remains available in the independent scrolling native reader.
 struct NativeContextSummaryLine:View {
