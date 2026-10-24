@@ -407,6 +407,9 @@ internal sealed class ComparePane
     }
     private bool PreviewMatchesSelection => previewScope is { } scope && scope.Project == owner.ProjectId && scope.Report == owner.ReportId && scope.Revision == RevisionId && scope.Page == PageId;
     internal string VerifiedPreviewText => PreviewMatchesSelection ? previewText : "";
+    internal bool DiffTextAvailable => PreviewMatchesSelection && ReadState == "ready" && (page.SelectedItem as Choice)?.Value.Get("capabilities").Get("text").Text() == "available";
+    internal bool StructuralPreview => PreviewMatchesSelection && PageImage.Source is null;
+    internal SourceTextObservation PreviewObservation => !PreviewMatchesSelection || ReadState != "ready" || !DiffTextAvailable && previewText.Length == 0 ? new(SourceTextState.Missing, "") : new(previewText.Length == 0 ? SourceTextState.Empty : SourceTextState.Present, previewText);
     internal string PresentedSourceCaption => source.Text;
     internal string PresentedFallback => fallback.Text;
     internal async Task SelectPageForSmoke(string id, Func<CancellationToken, Task>? beforeInstall = null) { SetEventPage(id); var request = LoadPage(owner.Generation, owner.ReadToken, beforeInstall); owner.SourcePresentationChanged(); try { await request; } finally { owner.SourcePresentationChanged(); } }

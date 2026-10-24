@@ -1,9 +1,58 @@
+using System.Text.Json;
+
 namespace Reviset.Windows;
 
 // Presentation-only, bounded comparison of stored text. It does not infer
 // document deletion, recalculate cells or change the canonical report.
 internal sealed record SourceDiffLine(char Prefix, string Text);
 internal sealed record SourceDiffResult(IReadOnlyList<SourceDiffLine> Lines, bool Truncated, bool Coarse);
+internal enum SourceTextState { Missing, Null, Empty, Present }
+internal sealed record SourceTextObservation(SourceTextState State, string Text)
+{
+    internal bool Available => State is SourceTextState.Empty or SourceTextState.Present;
+    internal static SourceTextObservation Read(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => new(value.GetString()!.Length == 0 ? SourceTextState.Empty : SourceTextState.Present, value.GetString()!),
+        JsonValueKind.Null => new(SourceTextState.Null, ""),
+        _ => new(SourceTextState.Missing, "")
+    };
+}
+internal sealed record SourceDiffField(string Key, SourceTextObservation Before, SourceTextObservation After, bool Eligible, string Reason);
+internal static class SourceDiffPolicy
+{
+    // Eligibility is decided on typed observations before any string conversion.
+    // A null, absent observation or display-state event cannot become a +/- edit.
+    internal static SourceDiffField Document(JsonElement change, bool pairedSourcesReady, bool structural)
+    {
+        var a = SourceTextObservation.Read(change.Get("before")); var b = SourceTextObservation.Read(change.Get("after"));
+        var eligible = pairedSourcesReady && !structural && change.Get("kind").Text() == "text_modified" && change.Get("topology").ValueKind is JsonValueKind.Undefined or JsonValueKind.Null && a.Available && b.Available;
+        return new("text", a, b, eligible, eligible ? "" : structural ? "structuralObservation" : "neutralObservation");
+    }
+    internal static IReadOnlyList<SourceDiffField> Workbook(JsonElement change, JsonElement before, JsonElement after)
+    {
+        var kind = change.Get("kind").Text(); var paired = before.ValueKind == JsonValueKind.Object && after.ValueKind == JsonValueKind.Object;
+        var result = new List<SourceDiffField>();
+        foreach (var field in new[] { "value", "formula", "number_format" })
+        {
+            var a = SourceTextObservation.Read(before.Get(field)); var b = SourceTextObservation.Read(after.Get(field));
+            var unresolved = before.Get("formula_interpretation").Text() == "unresolved" || after.Get("formula_interpretation").Text() == "unresolved";
+            var cacheMissing = field == "value" && (before.Get("cached_result").Text() is not ("present" or "not_applicable") || after.Get("cached_result").Text() is not ("present" or "not_applicable"));
+            var eligibleKind = kind == (field == "value" ? "stored_value" : field);
+            result.Add(new(field, a, b, paired && a.Available && b.Available && !unresolved && !cacheMissing && eligibleKind && change.Get("association").Text() != "needs_review", cacheMissing ? "missingCacheObservation" : unresolved ? "unresolvedObservation" : "neutralObservation"));
+        }
+        return result;
+    }
+    internal static IReadOnlyList<(string Key, string Value)> SelectedNotices(JsonElement change)
+    {
+        var result = new List<(string Key, string Value)>();
+        foreach (var key in new[] { "text_assessment", "region_pairing_assessment", "appearance_assessment" })
+            if (change.Get(key).ValueKind == JsonValueKind.String) result.Add((key, change.Get(key).Text()));
+        var lineage = change.Get("lineage"); if (lineage.Get("status").ValueKind == JsonValueKind.String) result.Add(("lineageAssessment", lineage.Get("status").Text()));
+        foreach (var gap in change.Get("coverage_gaps").Items()) result.Add(("selectedCoverage", gap.Get("feature").Text() + ": " + gap.Get("reason").Text()));
+        if (change.Get("association").ValueKind == JsonValueKind.String) result.Add(("rowAssociation", change.Get("association").Text() + " · " + change.Get("alignment_method").Text()));
+        return result;
+    }
+}
 internal static class SourceDiff
 {
     internal const int CharacterLimit = 16384;

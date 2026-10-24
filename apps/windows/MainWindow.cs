@@ -37,6 +37,7 @@ internal sealed class MainWindow : Window
     private readonly DockPanel sourceStage = new();
     private readonly RichTextBox unified = new() { IsReadOnly = true, BorderThickness = new Thickness(0), FontFamily = new FontFamily("Consolas, Segoe UI"), FontSize = 13, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, Visibility = Visibility.Collapsed };
     private readonly TextBlock sourceNotice = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(10, 3, 10, 4), Foreground = Brushes.DimGray, FontSize = 12 };
+    private Button selectedLimitsButton = new();
     private readonly ComboBox sourceView = new() { Width = 155, Margin = new Thickness(4, 2, 4, 2) };
     private readonly ComboBox queryBefore = new() { Width = 145, Margin = new Thickness(4, 2, 0, 2) };
     private readonly ComboBox queryAfter = new() { Width = 145, Margin = new Thickness(0, 2, 4, 2) };
@@ -199,7 +200,7 @@ internal sealed class MainWindow : Window
         var metadata = new Expander { Header = "Source metadata / 원본 메타데이터", IsExpanded = false, Content = detailMetadata, MaxHeight = 180 }; DockPanel.SetDock(metadata, Dock.Bottom); inspector.Children.Add(metadata); inspector.Children.Add(detail); InspectorPane.Child = inspector;
         var sourceTools = new DockPanel { Margin = new Thickness(4, 1, 4, 1), LastChildFill = true };
         var sourceActions = new StackPanel { Orientation = Orientation.Horizontal }; previousChange = Command("previousChange", () => MoveChange(-1)); nextChange = Command("nextChange", () => MoveChange(1)); returnChange = Command("returnChange", ReturnToChange); sourceActions.Children.Add(previousChange); sourceActions.Children.Add(nextChange); sourceActions.Children.Add(returnChange); sourceActions.Children.Add(sourceView); DockPanel.SetDock(sourceActions, Dock.Right); sourceTools.Children.Add(sourceActions); sourceTools.Children.Add(sourcePair); DockPanel.SetDock(sourceTools, Dock.Top); sourceStage.Children.Add(sourceTools);
-        DockPanel.SetDock(sourceNotice, Dock.Bottom); sourceStage.Children.Add(sourceNotice); var sourceBody = new Grid(); sourceBody.Children.Add(comparison); sourceBody.Children.Add(unified); sourceStage.Children.Add(sourceBody);
+        var sourceFooter = new DockPanel(); selectedLimitsButton = Command("selectedLimits", () => { CreateSelectedLimitsDialog().ShowDialog(); return Task.CompletedTask; }); DockPanel.SetDock(selectedLimitsButton, Dock.Right); sourceFooter.Children.Add(selectedLimitsButton); sourceFooter.Children.Add(sourceNotice); DockPanel.SetDock(sourceFooter, Dock.Bottom); sourceStage.Children.Add(sourceFooter); var sourceBody = new Grid(); sourceBody.Children.Add(comparison); sourceBody.Children.Add(unified); sourceStage.Children.Add(sourceBody);
         sourceView.SelectionChanged += (_, _) => { if (!binding) { textView = sourceView.SelectedIndex == 1; RenderSourceDiff(); } };
         root.Children.Add(workspace); ClearDetail(); SetBusy(false);
     }
@@ -496,6 +497,13 @@ internal sealed class MainWindow : Window
     private Task ReturnToChange() => selectedChange.ValueKind == JsonValueKind.Object && changesReady ? SelectChange(selectedChange) : Task.CompletedTask;
     internal void SourcePresentationChanged() => RenderSourceDiff();
     private bool AtSelectedChange => selectedChange.ValueKind == JsonValueKind.Object && selectedBefore is { } a && selectedAfter is { } b && Before.RevisionId == a.Revision && Before.PageId == a.Page && Before.SheetId == a.Sheet && After.RevisionId == b.Revision && After.PageId == b.Page && After.SheetId == b.Sheet && (!IsWorkbook || Before.SelectedRow == a.Row && Before.SelectedColumn == a.Column && After.SelectedRow == b.Row && After.SelectedColumn == b.Column);
+    private string SelectedNoticeText((string Key, string Value) notice) => Copy[notice.Key] + ": " + (notice.Value is "inferred" or "observed" or "human_confirmed" or "needs_review" ? Copy["assessment_" + notice.Value] : notice.Value);
+    private Window CreateSelectedLimitsDialog()
+    {
+        var notes = SourceDiffPolicy.SelectedNotices(selectedChange); var text = SourceText(); text.Text = string.Join("\n\n", notes.Select(SelectedNoticeText));
+        var content = new DockPanel { Margin = new Thickness(12) }; var scope = new TextBlock { Text = Copy["report"] + ": " + reportId + "\n" + sourcePair.Text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4, 0, 4, 12) }; DockPanel.SetDock(scope, Dock.Top); content.Children.Add(scope); content.Children.Add(text);
+        return new Window { Owner = this, Title = Copy["selectedLimits"], Width = 720, Height = 430, MinWidth = 400, MinHeight = 250, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = content };
+    }
     private void RenderSourceDiff()
     {
         // Hidden retains the native visual hosts' measured viewport while the
@@ -508,8 +516,12 @@ internal sealed class MainWindow : Window
         if (selectedChange.ValueKind == JsonValueKind.Object && !AtSelectedChange) notice.Add(Copy["outsideChange"]);
         var kind = selectedChange.Get("kind").Text(); if (kind == "row_correspondence") notice.Add(Copy["inferredRows"]);
         if (kind is "text_occluded" or "text_revealed" or "text_struck_through" or "coverage_gap") notice.Add(Copy["appearanceOnly"]);
-        if (currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count) > 0) notice.Add(Copy["coverage"] + ": " + currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count));
-        sourceNotice.Text = string.Join(" · ", notice); sourceNotice.Visibility = notice.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var selectedNotices = SourceDiffPolicy.SelectedNotices(selectedChange); var selectedGaps = selectedNotices.Where(item => item.Key == "selectedCoverage").ToArray();
+        foreach (var selectedNotice in selectedNotices.Where(item => item.Key != "selectedCoverage")) notice.Add(SelectedNoticeText(selectedNotice));
+        if (selectedGaps.Length > 0) { var first = selectedGaps[0].Value; if (first.Length > 220) first = first[..(char.IsHighSurrogate(first[219]) ? 219 : 220)] + "…"; notice.Add(Copy["selectedCoverage"] + ": " + first + (selectedGaps.Length > 1 ? " [1/" + selectedGaps.Length + "]" : "")); }
+        selectedLimitsButton.Visibility = selectedGaps.Length > 0 ? Visibility.Visible : Visibility.Collapsed; selectedLimitsButton.IsEnabled = !busy;
+        if (currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count) > 0) notice.Add(Copy["reportCoverage"] + ": " + currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count));
+        sourceNotice.Text = string.Join(" · ", notice); sourceNotice.ToolTip = string.Join("\n", selectedNotices.Select(SelectedNoticeText)); AutomationProperties.SetHelpText(sourceNotice, sourceNotice.ToolTip.ToString()); sourceNotice.Visibility = notice.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (!textView) return;
         var flow = new FlowDocument { PagePadding = new Thickness(14), FontFamily = unified.FontFamily, FontSize = 13 }; unified.Document = flow;
         void Add(string text, Brush? color = null, Brush? background = null) { flow.Blocks.Add(new Paragraph(new Run(text)) { Margin = new Thickness(0), Foreground = color ?? Brushes.Black, Background = background ?? Brushes.Transparent }); }
@@ -518,28 +530,38 @@ internal sealed class MainWindow : Window
         if (!singleSource) Add(Copy["before"] + " · " + Before.LocationCaption + " · " + Before.PresentedSourceCaption, Brushes.DimGray);
         Add(Copy["after"] + " · " + After.LocationCaption + " · " + After.PresentedSourceCaption, Brushes.DimGray);
         if (Before.ReadState is "loading" or "failed" || After.ReadState is "loading" or "failed") { Add(Copy[Before.ReadState == "failed" || After.ReadState == "failed" ? "failed" : "loading"], Brushes.DimGray); return; }
-        string a; string b;
+        void Observation(SourceTextObservation value)
+        {
+            Add(Copy[value.State switch { SourceTextState.Missing => "observationMissing", SourceTextState.Null => "observationNull", SourceTextState.Empty => "observationEmpty", _ => "observationPresent" }], Brushes.DimGray);
+            if (!value.Available) return; var bounded = SourceDiff.Build(value.Text, value.Text); if (bounded.Truncated) Add(Copy["boundedDiff"], Brushes.DarkOrange); foreach (var line in bounded.Lines) Add(line.Text);
+        }
+        void Field(SourceDiffField field)
+        {
+            Add(Copy[field.Key == "value" ? "cached" : field.Key == "text" ? "textObservation" : field.Key], Brushes.DimGray);
+            if (!field.Eligible) { Add(Copy[field.Reason], Brushes.DimGray); Add(Copy["before"], Brushes.DimGray); Observation(field.Before); Add(Copy["after"], Brushes.DimGray); Observation(field.After); return; }
+            var diff = SourceDiff.Build(field.Before.Text, field.After.Text); if (diff.Truncated) Add(Copy["boundedDiff"], Brushes.DarkOrange);
+            foreach (var line in diff.Lines) Add(line.Prefix + " " + line.Text, line.Prefix == '-' ? Brushes.DarkRed : line.Prefix == '+' ? Brushes.DarkGreen : Brushes.Black, line.Prefix == '-' ? new SolidColorBrush(Color.FromRgb(255, 241, 240)) : line.Prefix == '+' ? new SolidColorBrush(Color.FromRgb(237, 250, 240)) : null);
+        }
         if (IsWorkbook)
         {
             if (inspectorMode is "loading" or "failed") { Add(Copy[inspectorMode == "failed" ? "failed" : "loading"], Brushes.DimGray); return; }
             if (inspectorMode != "raw" || detailPayload.Get("before").ValueKind != JsonValueKind.Object) { Add(Copy["selectDiffChange"], Brushes.DimGray); return; }
-            string Cell(JsonElement cell) => cell.ValueKind != JsonValueKind.Object ? Copy["missing"] : cell.Get("address").Text() + "\n" + Copy["cached"] + ": " + cell.Get("value").Text() + "\n" + Copy["formula"] + ": " + cell.Get("formula").Text();
-            a = Cell(detailPayload.Get("before").Get("items").Items().FirstOrDefault().Get("before")); b = Cell(detailPayload.Get("after").Get("items").Items().FirstOrDefault().Get("after"));
             Add(Copy["textSegmentOnly"], Brushes.DimGray);
+            var a = detailPayload.Get("before").Get("items").Items().FirstOrDefault().Get("before"); var b = detailPayload.Get("after").Get("items").Items().FirstOrDefault().Get("after");
+            Add(Copy["before"] + " " + a.Get("address").Text() + " → " + Copy["after"] + " " + b.Get("address").Text(), Brushes.DimGray);
+            foreach (var field in SourceDiffPolicy.Workbook(selectedChange, a, b)) Field(field);
         }
         else if (AtSelectedChange && documentDetail.ValueKind == JsonValueKind.Object)
         {
-            a = documentDetail.Get("before").Text(); b = documentDetail.Get("after").Text(); Add(Copy["selectedSnippet"], Brushes.DimGray);
+            Add(Copy["selectedSnippet"], Brushes.DimGray); Field(SourceDiffPolicy.Document(documentDetail, Before.DiffTextAvailable && After.DiffTextAvailable, Before.StructuralPreview || After.StructuralPreview));
         }
         else
         {
             if (Before.ReadState != "ready" || After.ReadState != "ready") { Add(Copy["unavailableText"], Brushes.DimGray); return; }
-            a = Before.VerifiedPreviewText; b = After.VerifiedPreviewText; Add(Copy["pageText"], Brushes.DimGray);
+            Add(Copy["pageText"], Brushes.DimGray); Add(Copy["unselectedObservation"], Brushes.DimGray);
+            if (!singleSource) { Add(Copy["before"], Brushes.DimGray); Observation(Before.PreviewObservation); }
+            Add(Copy["after"], Brushes.DimGray); Observation(After.PreviewObservation);
         }
-        if (singleSource) { var source = SourceDiff.Build(b, b); if (source.Truncated) Add(Copy["boundedDiff"], Brushes.DarkOrange); foreach (var line in source.Lines) Add(line.Text); return; }
-        if (a.Length == 0 && b.Length == 0) { Add(Copy["unavailableText"], Brushes.DimGray); return; }
-        var diff = SourceDiff.Build(a, b); if (diff.Truncated) Add(Copy["boundedDiff"], Brushes.DarkOrange);
-        foreach (var line in diff.Lines) Add(line.Prefix + " " + line.Text, line.Prefix == '-' ? Brushes.DarkRed : line.Prefix == '+' ? Brushes.DarkGreen : Brushes.Black, line.Prefix == '-' ? new SolidColorBrush(Color.FromRgb(255, 241, 240)) : line.Prefix == '+' ? new SolidColorBrush(Color.FromRgb(237, 250, 240)) : null);
     }
     private void SetBusy(bool value)
     {
@@ -792,6 +814,62 @@ internal sealed class MainWindow : Window
         await SelectChange(first.Value); sourceView.SelectedIndex = 1;
         if (intervalFrom != from || intervalTo != to || Before.RevisionId != ids[0] || After.RevisionId != ids[1] || !Before.VerifiedPreviewText.Contains("Revenue 100", StringComparison.Ordinal) || !After.VerifiedPreviewText.Contains("Revenue 120", StringComparison.Ordinal)) throw new InvalidOperationException("Intermediate source selection replaced the wider reverted query or showed wrong evidence.");
         await capture("reverted-history-text-diff"); sourceView.SelectedIndex = 0;
+    }
+    internal async Task CheckTypedDiffPresentationForSmoke(Func<string, Task> capture)
+    {
+        // Explicit synthetic presentation controls over verified native source
+        // hosts. They are never committed to a report, queried as real evidence
+        // or counted as observed OCR/appearance engine behavior.
+        var fixedReport = reportId; var reportBytes = currentReport.GetRawText(); var layout = Layout; var previousView = textView;
+        await SelectSourcePairForSmoke(0, 1); SetLayout(WorkspaceLayout.Preset("sourceFirst")); sourceView.SelectedIndex = 1;
+        JsonElement J(object value) => JsonSerializer.SerializeToElement(value);
+        void Install(JsonElement change, JsonElement payload = default)
+        {
+            selectedChange = change; selectedBefore = Before.CaptureSelection(); selectedAfter = After.CaptureSelection(); documentDetail = change; detailPayload = payload; inspectorMode = IsWorkbook ? "raw" : "event"; RenderSourceDiff();
+        }
+        string Text() => new TextRange(unified.Document.ContentStart, unified.Document.ContentEnd).Text;
+        bool Colored() => unified.Document.Blocks.OfType<Paragraph>().Any(paragraph => ReferenceEquals(paragraph.Foreground, Brushes.DarkRed) || ReferenceEquals(paragraph.Foreground, Brushes.DarkGreen));
+        if (!IsWorkbook)
+        {
+            foreach (var kind in new[] { "coverage_gap", "text_occluded", "text_struck_through", "text_revealed", "page_added", "page_deleted", "page_split", "page_merged", "page_lineage_changed", "visual_region_changed" })
+            {
+                Install(J(new { kind, before = "SYNTHETIC neutral 100", after = "SYNTHETIC neutral 120" }));
+                if (Colored() || !Text().Contains("SYNTHETIC neutral 100", StringComparison.Ordinal) || !Text().Contains(Copy["neutralObservation"], StringComparison.Ordinal)) throw new InvalidOperationException("Synthetic " + kind + " became a colored text edit or lost paired observations.");
+            }
+            Install(J(new { kind = "text_modified", before = (string?)null, after = "" }));
+            if (Colored() || !Text().Contains(Copy["observationNull"], StringComparison.Ordinal) || !Text().Contains(Copy["observationEmpty"], StringComparison.Ordinal)) throw new InvalidOperationException("Native text view collapsed null observation into explicit empty/deletion.");
+            Install(J(new { kind = "text_modified", before = "SYNTHETIC inferred 100", after = "SYNTHETIC inferred 120", text_assessment = "inferred", region_pairing_assessment = "inferred", coverage_gaps = new[] { new { feature = "ocr", reason = "SYNTHETIC_ocr_requires_source_review" }, new { feature = "comparison", reason = "SYNTHETIC_other_regions_unresolved" } } }));
+            if (!Colored()) throw new InvalidOperationException("Eligible synthetic paired text edit did not reach the native +/- renderer.");
+            foreach (var name in new[] { "sourceFirst", "focus" })
+            {
+                SetLayout(WorkspaceLayout.Preset(name)); UpdateLayout();
+                foreach (var language in new[] { "ko", "en" })
+                {
+                    SetLanguage(language);
+                    var limitsDialog = CreateSelectedLimitsDialog(); var fullLimits = ((DockPanel)limitsDialog.Content).Children.OfType<TextBox>().Single().Text; limitsDialog.Close();
+                    if (!sourceNotice.IsVisible || InspectorPane.IsVisible || !sourceNotice.Text.Contains(Copy["text_assessment"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy["region_pairing_assessment"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy["assessment_inferred"], StringComparison.Ordinal) || !sourceNotice.Text.Contains("SYNTHETIC_ocr_requires_source_review", StringComparison.Ordinal) || !sourceNotice.Text.Contains("[1/2]", StringComparison.Ordinal) || !selectedLimitsButton.IsVisible || !fullLimits.Contains("SYNTHETIC_other_regions_unresolved", StringComparison.Ordinal)) throw new InvalidOperationException("Selected inference/limit reasons disappeared outside the inspector in " + name + "/" + language);
+                }
+            }
+            await capture("synthetic-inference-focus");
+            Install(J(new { kind = "coverage_gap", before = "SYNTHETIC neutral 100", after = "SYNTHETIC neutral 120" })); await capture("synthetic-neutral-coverage");
+            await SelectSourcePairForSmoke(1, 2); Install(J(new { kind = "text_modified", before = "SYNTHETIC PDF observation", after = "SYNTHETIC PPTX structure" }));
+            if (!After.StructuralPreview || Colored() || !Text().Contains(Copy["structuralObservation"], StringComparison.Ordinal) || !Text().Contains("SYNTHETIC PPTX structure", StringComparison.Ordinal)) throw new InvalidOperationException("Actual unsupported Windows PPTX source fallback received text-edit styling."); await capture("synthetic-structural-fallback-neutral");
+        }
+        else
+        {
+            var a = J(new { address = "C2", value = "SYNTHETIC stored 100", formula = "=SUM(A1:A3)", number_format = "0", cached_result = "present", formula_interpretation = "explicit" });
+            var b = J(new { address = "C3", value = (string?)null, formula = "=SUM(B1:B3)", number_format = "0", cached_result = "missing", formula_interpretation = "explicit" });
+            JsonElement Payload(JsonElement left, JsonElement right) => J(new { before = new { items = new[] { new { before = left } } }, after = new { items = new[] { new { after = right } } } });
+            foreach (var kind in new[] { "cache_availability", "stored_value", "cell_observation", "row_correspondence", "sheet_observation", "formatting_range" })
+            {
+                Install(J(new { kind, association = "inferred", alignment_method = "synthetic_control" }), Payload(a, b));
+                if (Colored() || !Text().Contains("=SUM(A1:A3)", StringComparison.Ordinal) || !Text().Contains(Copy["observationNull"], StringComparison.Ordinal) || !Text().Contains("C2", StringComparison.Ordinal) || !Text().Contains("C3", StringComparison.Ordinal)) throw new InvalidOperationException("Unavailable/structural workbook observations became colored deletion or lost exact source fields.");
+            }
+            await capture("synthetic-missing-cache-neutral");
+            Install(J(new { kind = "formula" }), Payload(a, b)); if (!Colored() || !Text().Contains(Copy["missingCacheObservation"], StringComparison.Ordinal) || !Text().Contains("=SUM(B1:B3)", StringComparison.Ordinal)) throw new InvalidOperationException("Exact eligible formulas were conflated with missing saved values."); await capture("synthetic-formula-independent-cache");
+        }
+        if (reportId != fixedReport || currentReport.GetRawText() != reportBytes) throw new InvalidOperationException("Presentation-only controls changed the fixed report.");
+        selectedChange = default; sourceView.SelectedIndex = previousView ? 1 : 0; SetLayout(layout); await SelectSourcePairForSmoke(0, currentReport.Get("revisions").Items().Count - 1); await CheckIntermediateEventForSmoke();
     }
     internal async Task SelectCell(ComparePane pane, int row, int column)
     {

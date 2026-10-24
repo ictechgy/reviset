@@ -90,5 +90,33 @@
   "git.reportScope": {
     "en": "UI report selection does not pin an MCP client. Reuse the fixed ID returned by MCP.",
     "ko": "UI 보고서 선택은 MCP 클라이언트를 고정하지 않습니다. MCP 응답의 고정 ID를 이어 사용하세요."
+  },
+  "git.cacheMissing": {
+    "en": "Saved result unavailable · differs from an empty string or a deleted cell",
+    "ko": "저장 결과 없음 · 빈 문자열이나 삭제된 셀과 다름"
+  },
+  "git.cacheUnknown": {
+    "en": "Saved result freshness unknown",
+    "ko": "저장 결과의 최신 여부 미확인"
+  },
+  "git.savedObservation": {
+    "en": "Saved value observation",
+    "ko": "저장값 관측"
+  },
+  "git.formulaAbsent": {
+    "en": "No formula source observation",
+    "ko": "수식 원문 관측 없음"
+  },
+  "git.partialDiff": {
+    "en": "No complete text diff for missing or partial observations. Source fragments remain verbatim; use the shared source pager.",
+    "ko": "누락·부분 관측은 완전한 텍스트 diff로 표시하지 않습니다. 원문 조각은 그대로 두며 공통 원문 이동을 사용하세요."
+  },
+  "git.unresolvedDiff": {
+    "en": "Neutral stored observations · cell formula roles, cache availability or value types need verification.",
+    "ko": "중립 저장 관측 · 셀의 수식 역할, 저장 결과 유무 또는 값 종류 확인이 필요합니다."
+  },
+  "git.fragmentRange": {
+    "en": "Source fragment · UTF-16 [{0}, {1}) of {2}",
+    "ko": "원문 조각 · 전체 UTF-16 {2}단위 중 [{0}, {1})"
   }
 }

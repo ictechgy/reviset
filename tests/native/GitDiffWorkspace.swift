@@ -8,11 +8,11 @@ enum Smoke { @MainActor static func captureView(_ window:NSWindow,_ url:URL)thro
     @MainActor static func main() async throws {
         configureLegacyNativeLocalization()
         func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
-        for (before,after) in [("100","120"),("a\nb\na","a\na\nb"),("", ""),("a\n","\na"),("문서 👨‍👩‍👧‍👦\r\n금액 100", "문서 👨‍👩‍👧‍👦\r\n금액 120")] {
+        for (before,after) in [("100","120"),("a\nb\na","a\na\nb"),("", ""),("a\n","\na"),("문서 👨‍👩‍👧‍👦\r\n금액 100", "문서 👨‍👩‍👧‍👦\r\n금액 120"),("é", "e\u{301}"),("e\u{301}","é"),("각\n내용", "\u{1100}\u{1161}\u{11a8}\n내용")] {
             let diff=unifiedTextDiff(before:before,after:after,semantic:true)
             try require(diff.bounded && diff.semantic,"UnexpectedDiffFallback")
-            try require(diff.lines.filter{$0.prefix != "+"}.map(\.text).joined(separator:"\n")==before,"BeforeTextChangedByDiff")
-            try require(diff.lines.filter{$0.prefix != "−"}.map(\.text).joined(separator:"\n")==after,"AfterTextChangedByDiff")
+            try require(Array(diff.lines.filter{$0.prefix != "+"}.map(\.text).joined(separator:"\n").utf16)==Array(before.utf16),"BeforeTextChangedByDiff")
+            try require(Array(diff.lines.filter{$0.prefix != "−"}.map(\.text).joined(separator:"\n").utf16)==Array(after.utf16),"AfterTextChangedByDiff")
         }
         for long in [String(repeating:"가",count:4097),String(repeating:"😀",count:2049),String(repeating:"x\n",count:128)] {
             let diff=unifiedTextDiff(before:long,after:"short",semantic:true)
@@ -26,6 +26,28 @@ enum Smoke { @MainActor static func captureView(_ window:NSWindow,_ url:URL)thro
         try require(!absent.semantic,"MissingObservationInterpretedAsEmptyText")
         let structural=documentTextDiff(JSON(["kind":"text_modified","before":"100","after":"120","topology":["semantics":"directed_reachability"]]))
         try require(!structural.semantic,"TopologyInterpretedAsTextDeletion")
+
+        // Canonical equivalence is not raw source equality: preserve each exact
+        // UTF-16 sequence even when Swift String == considers it the same text.
+        let canonical=unifiedTextDiff(before:"é",after:"e\u{301}",semantic:true)
+        try require(canonical.lines.contains(where:{$0.prefix=="−"}) && canonical.lines.contains(where:{$0.prefix=="+"}),"CanonicalEquivalentSourceDifferenceHidden")
+        func cell(_ value:Any,state:String,total:Int,offset:Int=0,cache:String="present",role:String="explicit",type:String="string")->JSON {
+            JSON(["address":"C3","source_ref":"source!C3","value":value,"value_type":type,"formula":"SUM(C1:C2)","formula_interpretation":role,"cached_result":cache,"cache_freshness":"unknown","text_continuations":["value":["state":state,"offset":offset,"next_offset":NSNull(),"total_length":total],"formula":["state":"complete","offset":0,"next_offset":NSNull(),"total_length":10]]])
+        }
+        let missing=cell(NSNull(),state:"missing",total:0,cache:"missing"),empty=cell("",state:"empty",total:0),zero=cell("0",state:"complete",total:1,type:"number")
+        try require(workbookRawField(missing,field:"value").state == .missing && workbookRawField(missing,field:"value").text == nil,"MissingCacheBecameEmptyString")
+        try require(workbookRawField(empty,field:"value").state == .empty && workbookRawField(empty,field:"value").text?.utf16.count==0,"ObservedEmptyStringBecameUnavailable")
+        try require(workbookRawField(zero,field:"value").state == .complete && workbookRawField(zero,field:"value").text=="0","ZeroBecameMissingOrEmpty")
+        try require(workbookFieldTextDiff(before:missing,after:empty,field:"value",textOffset:0)==nil,"MissingCacheDiffUsedInventedEmptyString")
+        try require(workbookSelectedWarningMessages(missing).contains(L("git.cacheMissing")) && workbookSelectedWarningMessages(empty).contains(L("git.cacheUnknown")),"SelectedCacheWarningsHiddenByInspector")
+        let unresolved=cell("100",state:"complete",total:3,role:"unresolved"),newValue=cell("120",state:"complete",total:3)
+        let unresolvedDiff=workbookFieldTextDiff(before:unresolved,after:newValue,field:"value",textOffset:0)
+        try require(unresolvedDiff?.semantic==false && unresolvedDiff?.lines.allSatisfy({$0.prefix.isEmpty})==true && workbookSelectedWarningMessages(unresolved).contains(L("workbook.cell.unresolvedFormula")),"UnresolvedFormulaClaimedSemanticValueEdit")
+        let partial=cell("abc",state:"truncated",total:10),earlier=cell("",state:"truncated",total:10,offset:10),contradictory=cell("",state:"missing",total:0)
+        try require(workbookRawField(partial,field:"value").state == .partial && workbookRawField(earlier,field:"value").state == .earlier && workbookRawField(contradictory,field:"value").state == .missing,"ContinuationStatesWereFlattened")
+        try require(workbookFieldTextDiff(before:partial,after:newValue,field:"value",textOffset:0)==nil && workbookFieldTextDiff(before:earlier,after:empty,field:"value",textOffset:10)==nil,"PartialOrEarlierFragmentPresentedAsCompleteDiff")
+        try require(workbookRawField(cell("a",state:"complete",total:2),field:"value").state == .unavailable,"InconsistentContinuationWasTrusted")
+        try require(missing["address"].string=="C3" && missing["source_ref"].string=="source!C3" && earlier["text_continuations"]["value"]["offset"].int==10,"DisplayProjectionChangedPhysicalOrFragmentIdentity")
 
         let fresh=WorkspaceLayoutStore(scope:.document),bookLayout=WorkspaceLayoutStore(scope:.workbook)
         for value in [fresh.configuration,bookLayout.configuration] {try require(!value.sidebarVisible && !value.inspectorVisible && value.changesVisible && value.changesDock == .left,"FreshWorkspaceNotSourceFirst")}

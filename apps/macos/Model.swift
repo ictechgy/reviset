@@ -637,7 +637,7 @@ func changeTextRuns(_ text:String,comparedWith other:String)->[ChangeTextRun] {
     }
     let target=tokens(text),reference=tokens(other)
     guard target.count<=512,reference.count<=512 else{return [ChangeTextRun(text:text,changed:false)]}
-    let changed=Set(target.difference(from:reference).compactMap{change->Int? in if case let .insert(offset,_,_)=change{return offset};return nil})
+    let changed=Set(target.difference(from:reference,by:{$0.utf16.elementsEqual($1.utf16)}).compactMap{change->Int? in if case let .insert(offset,_,_)=change{return offset};return nil})
     return target.enumerated().map{ChangeTextRun(text:$0.element,changed:changed.contains($0.offset))}
 }
 @MainActor func evidenceVersionLabel(_ evidence:JSON,change:JSON,revisions:[JSON])->String {
@@ -662,7 +662,7 @@ func unifiedTextDiff(before:String,after:String,semantic:Bool)->UnifiedTextDiff 
     let old=before.components(separatedBy:"\n"),new=after.components(separatedBy:"\n")
     guard old.count<=128,new.count<=128 else{return UnifiedTextDiff(lines:[],bounded:false,semantic:false)}
     guard semantic else{return UnifiedTextDiff(lines:old.map{UnifiedTextDiffLine(prefix:"",text:$0)}+[UnifiedTextDiffLine(prefix:"",text:"→")]+new.map{UnifiedTextDiffLine(prefix:"",text:$0)},bounded:true,semantic:false)}
-    let difference=new.difference(from:old)
+    let difference=new.difference(from:old,by:{$0.utf16.elementsEqual($1.utf16)})
     let removed=Set(difference.compactMap{entry->Int? in if case let .remove(offset,_,_)=entry{return offset};return nil})
     let added=Set(difference.compactMap{entry->Int? in if case let .insert(offset,_,_)=entry{return offset};return nil})
     var result:[UnifiedTextDiffLine]=[],a=0,b=0

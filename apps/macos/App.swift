@@ -373,6 +373,7 @@ private struct SmokeStructureView: View {
         model.chooseChange(change["change_id"].string)
         try await Task.sleep(nanoseconds:100_000_000)
         guard !loaded,model.tab=="history",model.from==queryFrom,model.to==queryTo,try JSON(model.changes.map(\.raw)).data()==rows,model.revision(model.sourceFrom)["revision_occurrence_id"].string==change["from_occurrence"].string,model.revision(model.sourceTo)["revision_occurrence_id"].string==change["to_occurrence"].string else{throw BridgeError(code:"GIT_HISTORY_SCOPE",message:"Event selection replaced query scope or rows.")}
+        observation.cancel();let selectionDidNotQuery = !loaded
         _ = try await captureSelectedPages(model,output,selectionReady:{model.tab=="history" && model.selectedChangeID==change["change_id"].string})
         try capture(output.appendingPathComponent("native-git-history.png"))
         func pdfs(_ view:NSView)->[PDFView] {(view as? PDFView).map{[$0]} ?? view.subviews.flatMap{pdfs($0)}}
@@ -388,7 +389,7 @@ private struct SmokeStructureView: View {
         model.selectVersion(0);try await model.updateChanges();guard model.readingSingleVersion,model.changes.isEmpty else{throw BridgeError(code:"GIT_V1_READ",message:"First version did not enter single-source reading.")}
         model.selectVersion(max(0,model.revisions.count-1));try await model.updateChanges();model.tab="compare";try await model.updateChanges()
         guard model.report["report_id"].string==reportID,try model.report.data()==report else{throw BridgeError(code:"GIT_REPORT_MUTATION",message:"Workspace navigation modified report data.")}
-        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":!loaded,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"focus_fixed_report_visible":true,"first_version_single_read":true,"fixed_report_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
+        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"focus_fixed_report_visible":true,"first_version_single_read":true,"fixed_report_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
     }
     static func captureSelectedPages(_ model:AppModel,_ output:URL,selectionReady:()->Bool) async throws->[String:Any] {
         let report=model.report["report_id"].string,mode=model.pageMode,left=model.leftPageID,right=model.rightPageID,started=Date()
