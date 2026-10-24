@@ -214,5 +214,9 @@
   "git.rawReasons": {
     "en": "Exact recorded reason",
     "ko": "기록된 사유 원문"
+  },
+  "git.singleVersionChanges": {
+    "en": "Reading one version. Select two different versions to compare changes.",
+    "ko": "한 버전의 원문을 보고 있습니다. 변경을 비교하려면 서로 다른 두 버전을 선택하세요."
   }
 }

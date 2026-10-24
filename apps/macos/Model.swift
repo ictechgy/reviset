@@ -145,7 +145,8 @@ struct ReorderConfirmation:Identifiable {
         if busy && changes.isEmpty {return L("doc.changes.analysisPending")}
         if loadingChanges || loading {return L("doc.changes.loadingEllipsis")}
         if !changesFailure.isEmpty {return changesFailureMessage==UIMessage("doc.changes.interrupted") ? changesFailure:L("doc.changes.failed")}
-        if revisions.count<2 || from==to {return L("doc.changes.needRevisions")}
+        if !revisions.isEmpty && readingSingleVersion {return L("git.singleVersionChanges")}
+        if revisions.count<2 {return L("doc.changes.needRevisions")}
         if changes.isEmpty {return L("doc.changes.none")}
         return L("doc.changes.filteredNone")
     }

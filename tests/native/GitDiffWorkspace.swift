@@ -4,6 +4,11 @@ import SwiftUI
 
 enum Smoke { @MainActor static func captureView(_ window:NSWindow,_ url:URL)throws {throw NSError(domain:"UnexpectedScreenshotInModelProbe",code:1)} }
 
+private struct PageColumnProbeHarness:View {
+    @ObservedObject var model:AppModel
+    var body:some View {PageColumn(revision:model.revision(0),side:"Source",pageID:$model.leftPageID).environmentObject(model)}
+}
+
 @main struct GitDiffWorkspaceProbe {
     @MainActor static func main() async throws {
         configureLegacyNativeLocalization()
@@ -150,6 +155,7 @@ enum Smoke { @MainActor static func captureView(_ window:NSWindow,_ url:URL)thro
         let contextEvidence:[String:Any]=["scope":"actual production SelectedChangeContext and native full-reason reader; synthetic valid human reason in Focus","summary_height":Double(contextRect.height),"query_height":Double(queryRect.height),"source_height":Double(sourceRect.height),"reason_utf16_count":reason.utf16.count,"full_reader_utf16":Array(reader.string.utf16).map(Int.init),"expected_utf16":Array(reason.utf16).map(Int.init),"reader_height":Double(reader.bounds.height),"reader_viewport_height":Double(reasonScroll.contentSize.height),"reader_selectable":reader.isSelectable,"reader_editable":reader.isEditable,"details_independent_of_focus_panels":retained.isFocused]
         if let userData=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:contextEvidence,options:[.sortedKeys]).write(to:URL(fileURLWithPath:userData).appendingPathComponent("context-geometry.json"))}
         detailWindow.close();contextWindow.close()
+        try await checkOneBasedPager()
         let workbook=WorkbookModel(bridge:model.bridge);await workbook.start();workbook.projectID="workbook";workbook.reportID="workbook_report";workbook.report=JSON(["report_id":"workbook_report","revisions":[["revision_occurrence_id":"w0","index":0,"sheets":[]],["revision_occurrence_id":"w1","index":1,"sheets":[]]]]);workbook.beforeID="w0";workbook.afterID="w1";workbook.changesFromID="w0";workbook.changesToID="w1"
         workbook.diffMode="text";await workbook.selectVersion("w0");try require(workbook.diffMode=="source" && workbook.effectiveDiffMode=="source","WorkbookVersionMenuKeptTextOverlay")
         try require(workbook.beforeID=="w0" && workbook.afterID=="w0" && workbook.changesFromID=="w0" && workbook.changesToID=="w0" && workbook.changes.isEmpty && !workbook.loadingChanges && workbook.changesFailure.isEmpty,"WorkbookFirstVersionDidNotReadSingleSource")
@@ -161,4 +167,56 @@ enum Smoke { @MainActor static func captureView(_ window:NSWindow,_ url:URL)thro
         try require(reportProjection.quality.contains(DocumentReportQualityCount(key:"ocr_inferred_pages",count:3)) && reportProjection.quality.count==3,"ReportQualityProjectionLostKnownCounts")
         print("PASS native Git diff workspace: bounded exact Unicode diff, neutral appearance/unavailable/topology, Source First defaults, old custom layouts retained, query/event/manual navigation separation, previous/next, unknown evidence guard, document/workbook v1 reading")
     }
+    @MainActor static func checkOneBasedPager()async throws {
+        func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
+        let model=AppModel();model.initializing=false;model.from=0;model.to=0;model.leftPageID="pager-page"
+        func report(_ occurrence:String,pages:[[String:Any]])->JSON {JSON(["report_id":"pager-fixed-report","revisions":[["revision_occurrence_id":occurrence,"label":"Pager source","assets":[],"pages":pages]]])}
+        let pages:[[String:Any]]=[["page_id":"pager-page","page":1],["page_id":"pager-second","page":2]]
+        model.report=report("pager-occurrence",pages:[])
+        let window=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:650),styleMask:[.titled],backing:.buffered,defer:false)
+        window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:PageColumnProbeHarness(model:model));window.orderFront(nil)
+        defer{window.close()}
+        func settle()async throws {try await Task.sleep(nanoseconds:100_000_000);window.contentView?.layoutSubtreeIfNeeded()}
+        func fields(_ view:NSView)->[NSTextField] {(view as? NSTextField).map{[$0]} ?? view.subviews.flatMap{fields($0)}}
+        try await settle()
+        guard let field=window.contentView.flatMap({fields($0).first(where:{$0.isEditable})}) else{throw NSError(domain:"ActualNativePagerFieldMissing",code:1)}
+        try require(field.stringValue.isEmpty,"UnavailablePageInventedZero_"+field.stringValue)
+        model.report=report("pager-occurrence",pages:pages);try await settle()
+        try require(field.stringValue=="1","LateQualifiedSourceDidNotResyncPager_"+field.stringValue)
+        guard let picker=window.contentView.flatMap({pageColumnControlObservations(in:$0).first(where:{$0.identifier?.rawValue=="Reviset.document.pagePicker.pager-occurrence"})}),let action=field.action else{throw NSError(domain:"EvaluatedPickerBindingOrNativeSubmitActionMissing",code:1)}
+        try require(picker.selection==model.leftPageID && picker.title.hasPrefix("p.1 · "),"EvaluatedPickerDisagreedWithQualifiedPager")
+        for invalid in ["not-a-page","0","99"] {
+            field.stringValue=invalid;field.delegate?.controlTextDidChange?(Notification(name:NSControl.textDidChangeNotification,object:field))
+            model.zoom=1.5;try await settle()
+            try require(field.stringValue==invalid,"UnchangedSourceOverwroteEditDraft")
+            field.sendAction(action,to:field.target);try await settle()
+            try require(field.stringValue=="1" && model.leftPageID=="pager-page","InvalidSubmitDidNotRestoreQualifiedPage_"+field.stringValue)
+        }
+        field.stringValue="2";field.delegate?.controlTextDidChange?(Notification(name:NSControl.textDidChangeNotification,object:field));field.sendAction(action,to:field.target);try await settle()
+        try require(model.leftPageID=="pager-second" && field.stringValue=="2" && picker.selection==model.leftPageID && picker.title.hasPrefix("p.2 · "),"ValidNativeSubmitDidNotNavigateSelectedSource")
+        model.navigatePage("pager-page",in:"pager-occurrence");try await settle()
+        let changedPages:[[String:Any]]=[["page_id":"pager-other","page":1],["page_id":"pager-page","page":2]]
+        model.report=report("another-occurrence",pages:changedPages);try await settle()
+        try require(field.stringValue=="2","ReusedSourceRevisionKeptOldPager_"+field.stringValue)
+        try require(window.contentView.map{fields($0).contains(where:{$0===field})}==true,"PagerQualificationRecreatedNativeControl")
+        let preferences=LanguagePreferences.shared,previousLanguage=LanguagePreferences.shared.selection
+        defer{preferences.selection=previousLanguage}
+        let guidanceModel=AppModel();guidanceModel.initializing=false
+        guidanceModel.report=JSON(["report_id":"guidance-fixed","revisions":(0..<3).map{["revision_occurrence_id":"guidance-\($0)","pages":[["page_id":"guidance-page-\($0)","page":1]]]}])
+        var messageObservations:[[String:Any]]=[]
+        for language in [UILanguage.en,.ko] {
+            preferences.selection=language
+            for mode in ["compare","history"] {
+                guidanceModel.tab=mode;guidanceModel.diffMode="text";guidanceModel.selectVersion(0);try await guidanceModel.updateChanges()
+                try require(guidanceModel.revisions.count==3 && guidanceModel.readingSingleVersion && guidanceModel.changes.isEmpty && guidanceModel.emptyChangesMessage==L("git.singleVersionChanges") && guidanceModel.emptyChangesMessage != L("doc.changes.needRevisions"),"VersionMenuReadingGuidanceWrong_"+language.rawValue+"_"+mode)
+                messageObservations.append(["language":language.rawValue,"mode":mode,"route":"version_menu_v1","message":guidanceModel.emptyChangesMessage,"revision_count":guidanceModel.revisions.count])
+                guidanceModel.from=1;guidanceModel.to=1;guidanceModel.diffMode="text";try await guidanceModel.updateChanges()
+                try require(guidanceModel.readingSingleVersion && guidanceModel.changes.isEmpty && guidanceModel.emptyChangesMessage==L("git.singleVersionChanges") && guidanceModel.emptyChangesMessage != L("doc.changes.needRevisions"),"EqualEndpointReadingGuidanceWrong_"+language.rawValue+"_"+mode)
+                messageObservations.append(["language":language.rawValue,"mode":mode,"route":"equal_query_endpoints","message":guidanceModel.emptyChangesMessage,"revision_count":guidanceModel.revisions.count])
+            }
+        }
+        let proof:[String:Any]=["scope":"actual retained native PageColumn edit field and evaluated SwiftUI picker binding; synthetic late page/reused occurrence, native submit actions, actual AppModel routes in English/Korean","initial_unavailable_blank":true,"late_qualified_page":1,"reused_occurrence_page":2,"native_field_identity_preserved":true,"draft_preserved_until_submit":true,"invalid_submits_restore_current_page":true,"valid_submit_updates_source_and_picker":true,"message_observations":messageObservations]
+        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:proof,options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("pager-proof.json"))}
+    }
+
 }

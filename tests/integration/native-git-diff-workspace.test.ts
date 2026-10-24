@@ -45,5 +45,11 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
     assert.equal(context.reason_utf16_count,1998);assert.deepEqual(context.full_reader_utf16,context.expected_utf16);
     assert.ok(context.reader_height>context.reader_viewport_height);
     if(process.env.DOCVER_TEST_CONTEXT_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_CONTEXT_EVIDENCE_OUT,contextEvidence);
+    const pagerEvidence=await readFile(join(root,'userdata','pager-proof.json'),'utf8');
+    const pager=JSON.parse(pagerEvidence) as {message_observations:{language:string;mode:string;route:string;revision_count:number}[]};
+    assert.equal(pager.message_observations.length,8);
+    assert.equal(new Set(pager.message_observations.map(item=>[item.language,item.mode,item.route].join('/'))).size,8);
+    assert.ok(pager.message_observations.every(item=>item.revision_count===3));
+    if(process.env.DOCVER_TEST_PAGER_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_PAGER_EVIDENCE_OUT,pagerEvidence);
   } finally {await rm(root,{recursive:true,force:true});}
 });

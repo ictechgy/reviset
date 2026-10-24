@@ -264,6 +264,36 @@ struct StructureCanvas: NSViewRepresentable {
     func makeNSView(context: Context) -> Canvas { Canvas() }
     func updateNSView(_ view: Canvas, context: Context) { view.page=page;view.evidence=evidence;view.needsDisplay=true }
 }
+// Opt-in smoke observes the evaluated SwiftUI picker binding/title separately
+// from the actual AppKit text entry; closed in-process AX omits Picker captions.
+final class PageColumnControlObservationView:NSView {
+    var occurrence=""
+    var selection=""
+    var title=""
+    override func hitTest(_ point:NSPoint)->NSView? {nil}
+}
+@MainActor func pageColumnControlObservations(in view:NSView)->[PageColumnControlObservationView] {
+    ((view as? PageColumnControlObservationView).map{[$0]} ?? [])+view.subviews.flatMap{pageColumnControlObservations(in:$0)}
+}
+private struct PageColumnControlObservation:NSViewRepresentable {
+    let kind:String
+    let occurrence:String
+    let selection:String
+    let title:String
+    func makeNSView(context:Context)->PageColumnControlObservationView {PageColumnControlObservationView()}
+    func updateNSView(_ view:PageColumnControlObservationView,context:Context) {
+        view.identifier=NSUserInterfaceItemIdentifier("Reviset.document."+kind+"."+occurrence);view.occurrence=occurrence;view.selection=selection;view.title=title
+    }
+}
+private struct PageColumnReadIdentity:Equatable {
+    let report:String
+    let occurrence:String
+    let page:String
+}
+private struct PageColumnSelectionIdentity:Equatable {
+    let source:PageColumnReadIdentity
+    let number:Int?
+}
 struct PageColumn: View {
     @EnvironmentObject var model: AppModel
     let revision: JSON; let side: String
@@ -272,21 +302,26 @@ struct PageColumn: View {
     @State private var failureMessage=UIMessage.raw("")
     private var failure:String {get{failureMessage.text} nonmutating set{failureMessage = .raw(newValue)}}
     @State private var loadingPage = false
-    @State private var loadedReport = ""
-    @State private var pageInput = "1"
+    @State private var loadedSource:PageColumnReadIdentity?
+    @State private var pageInput = ""
     @State private var rawOpen = false
     var pages: [JSON] { model.primaryPages(revision) }
-    var payloadReady:Bool {!payload.isNull && !pageID.isEmpty && !loadingPage && failure.isEmpty && loadedReport==model.report["report_id"].string && payload["page"]["page_id"].string==pageID}
+    var payloadReady:Bool {!payload.isNull && !pageID.isEmpty && !loadingPage && failure.isEmpty && loadedSource==readIdentity && payload["page"]["page_id"].string==pageID}
     var current: JSON { pages.first { $0["page_id"].string == pageID } ?? JSON() }
+    private var readIdentity:PageColumnReadIdentity {PageColumnReadIdentity(report:model.report["report_id"].string,occurrence:revision["revision_occurrence_id"].string,page:pageID)}
+    private var currentPageNumber:Int? {guard !current.isNull,current["page"].int>0 else{return nil};return current["page"].int}
+    private var selectionIdentity:PageColumnSelectionIdentity {PageColumnSelectionIdentity(source:readIdentity,number:currentPageNumber)}
+    private var currentPageInput:String {currentPageNumber.map(String.init) ?? ""}
+    private func pickerTitle(_ page:JSON)->String {"p.\(page["page"].int) · \(page["text"].string.prefix(24))"}
     var evidence: JSON { model.selected["evidence"].array.first { $0["page_id"].string == pageID || (!current["appearance"]["source_page_id"].string.isEmpty && $0["page_id"].string == current["appearance"]["source_page_id"].string) } ?? JSON() }
     var body: some View {
         VStack(spacing: 9) {
             HStack { Text(side + " · " + (model.revisions.firstIndex(where:{$0["revision_occurrence_id"].string==revision["revision_occurrence_id"].string}).map{versionDisplayName($0,revision)} ?? revision["label"].string)).font(.caption.weight(.semibold)); Spacer()
-                Picker(L("doc.common.page"), selection: Binding(get:{pageID},set:{model.navigatePage($0,in:revision["revision_occurrence_id"].string)})) { Text(L("doc.tail.source.noSourceText")).tag(""); ForEach(pages) { p in Text("p.\(p["page"].int) · \(p["text"].string.prefix(24))").tag(p["page_id"].string) } }.labelsHidden().frame(maxWidth:260)
+                Picker(L("doc.common.page"), selection: Binding(get:{pageID},set:{model.navigatePage($0,in:revision["revision_occurrence_id"].string)})) { Text(L("doc.tail.source.noSourceText")).tag(""); ForEach(pages) { p in Text(pickerTitle(p)).tag(p["page_id"].string) } }.labelsHidden().frame(maxWidth:260).background(PageColumnControlObservation(kind:"pagePicker",occurrence:revision["revision_occurrence_id"].string,selection:pageID,title:current.isNull ? L("doc.tail.source.noSourceText"):pickerTitle(current)))
             }
             HStack(spacing: 8) {
                 Button { go(current["page"].int-1) } label: { Image(systemName:"chevron.left") }.disabled(current.isNull || current["page"].int <= 1).accessibilityLabel(L("doc.tail.sourcePage.previous"))
-                TextField(L("doc.common.page"), text:$pageInput).frame(width:48).multilineTextAlignment(.center).onSubmit { go(Int(pageInput) ?? current["page"].int) }.accessibilityLabel(L("doc.page.sideNumber", .verbatim(side)))
+                TextField(L("doc.common.page"), text:$pageInput).frame(width:48).multilineTextAlignment(.center).onSubmit { if let number=Int(pageInput) {go(number)}else{pageInput=currentPageInput} }.disabled(currentPageNumber==nil).accessibilityLabel(L("doc.page.sideNumber", .verbatim(side))).background(PageColumnControlObservation(kind:"pageNumber",occurrence:revision["revision_occurrence_id"].string,selection:pageID,title:currentPageInput))
                 Text("/ \(pages.count)").foregroundStyle(.secondary).font(.caption)
                 Button { go(current["page"].int+1) } label: { Image(systemName:"chevron.right") }.disabled(current.isNull || current["page"].int>=pages.count).accessibilityLabel(L("doc.tail.sourcePage.next"))
                 Spacer(); Text(loadingPage ? (payload.isNull ? L("doc.tail.sourcePage.checking"):L("doc.tail.sourcePage.showingPreviousVerifyingNext")) : !payloadReady ? L("doc.tail.sourcePage.infoNeedsCheck") : payload["source"]["origin"].string == "reference_pdf" ? (payload["page"]["appearance"]["association"].string == "human_confirmed" ? L("doc.tail.renderSource.suppliedPdfUserLinkedReference"):L("doc.tail.renderSource.suppliedPdfPageMappingInferred")) : payload["source"]["origin"].string == "pptx_converted" ? L("doc.tail.renderSource.pptxLibreOffice") : payload["source"]["kind"].string == "pdf" ? L("doc.tail.renderSource.originalPdfPdfKit") : L("doc.tail.renderSource.structureViewNoRender")).font(.caption).foregroundStyle(.secondary)
@@ -334,14 +369,14 @@ struct PageColumn: View {
                     Text(L("doc.tail.speakerNotes")).font(.headline); Text(notesDisplayText(payload["page"]))
                 }.frame(maxWidth:.infinity,alignment:.leading) }.frame(maxHeight:220)}else{Text(loadingPage ? L("doc.tail.verifyingSelectedPageExtract"):L("doc.tail.currentPageExtractReadFailed")).foregroundStyle(.secondary)}
             }.font(.caption).disabled(!payloadReady)
-        }.padding(12).task(id:model.report["report_id"].string+pageID) {
-            let report=model.report["report_id"].string
-            if loadedReport != report {payload=JSON()}
-            failure="";pageInput=String(current["page"].int);loadingPage=true
+        }.padding(12).onChange(of:selectionIdentity,initial:true){pageInput=currentPageInput}.task(id:readIdentity) {
+            let source=readIdentity
+            if loadedSource?.report != source.report {payload=JSON()}
+            failure="";loadingPage=true
             defer{if !Task.isCancelled{loadingPage=false}}
-            guard !pageID.isEmpty else{payload=JSON();return}
-            do {let result=try await model.page(pageID);if !Task.isCancelled{payload=result;loadedReport=report}}catch{if !Task.isCancelled{payload=JSON();failureMessage=bridgeErrorMessage(error)}}
+            guard !source.page.isEmpty else{payload=JSON();return}
+            do {let result=try await model.page(source.page);if !Task.isCancelled,readIdentity==source{payload=result;loadedSource=source}}catch{if !Task.isCancelled,readIdentity==source{payload=JSON();failureMessage=bridgeErrorMessage(error)}}
         }
     }
-    func go(_ number: Int) { if let p=pages.first(where:{$0["page"].int==number}){model.navigatePage(p["page_id"].string,in:revision["revision_occurrence_id"].string);pageInput=String(number)}else{pageInput=String(current["page"].int)} }
+    func go(_ number: Int) { if number>0,let p=pages.first(where:{$0["page"].int==number}){model.navigatePage(p["page_id"].string,in:revision["revision_occurrence_id"].string);pageInput=String(number)}else{pageInput=currentPageInput} }
 }
