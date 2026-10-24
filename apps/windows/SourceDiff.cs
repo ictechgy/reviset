@@ -52,7 +52,7 @@ internal static class SourceDiffPolicy
         if (cell.Get("formula_interpretation").Text() == "unresolved") warnings.Add("formulaUnresolvedShort");
         if (missing) warnings.Add("resultMissingShort");
         if (cell.Get("cache_freshness").Text() == "unknown") warnings.Add("freshnessUnknownShort");
-        if (!missing && cell.Get("value").ValueKind == JsonValueKind.Null) warnings.Add("valueUnrecordedShort");
+        if (!missing && cell.Get("value").ValueKind == JsonValueKind.Null) warnings.Add(cell.Get("value_type").Text() == "blank" ? "valueBlankShort" : "valueUnrecordedShort");
         var empty = cell.Get("value").ValueKind == JsonValueKind.String && cell.Get("value").Text().Length == 0;
         var previewEmpty = cell.Get("source_lengths").Get("value").ValueKind == JsonValueKind.Number && cell.Get("source_lengths").Get("value").Number(-1) == 0;
         if (!missing && empty && (previewEmpty || SourceTextObservation.ReadSegment(cell.Get("value"), cell.Get("text_continuations").Get("value")).State == SourceTextState.Empty)) warnings.Add("valueEmptyShort");
@@ -143,7 +143,10 @@ internal static class SourceDiff
             if (start < value.Length || lines.Count == 0) lines.Add(new(' ', value[start..], "", cut));
             return lines.ToArray();
         }
-        var a = Split(before); if (before == after) return new(a, truncated, false); var b = Split(after); var result = new List<SourceDiffLine>();
+        var a = Split(before); if (before == after) return new(a, truncated, false); var b = Split(after);
+        // Independently clipped prefixes are reading observations, never edits.
+        if (truncated) return new([], true, true);
+        var result = new List<SourceDiffLine>();
         // The matrix is at most 301 x 301; input lines/characters are bounded.
         var table = new int[a.Length + 1, b.Length + 1];
         for (var i = a.Length - 1; i >= 0; i--) for (var j = b.Length - 1; j >= 0; j--) table[i, j] = a[i].RawText == b[j].RawText ? 1 + table[i + 1, j + 1] : Math.Max(table[i + 1, j], table[i, j + 1]);
@@ -161,4 +164,5 @@ internal static class SourceDiff
         if (count < 1) return (-1, -1);
         var after = Math.Clamp(selected, 0, count - 1); return (Math.Max(0, after - 1), after);
     }
+    internal static string DocumentQueryMode(int from, int to, bool net) => net && to > from + 1 ? "range_net" : "history";
 }

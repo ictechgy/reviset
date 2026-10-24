@@ -36,6 +36,11 @@ import SwiftUI
   for _ in 0..<200 {if model.selectedChangeID=="chg_history"&&model.leftPageID=="page_b"&&model.rightPageID=="page_c"{break};try await Task.sleep(nanoseconds:5_000_000)}
   try require(model.tab=="history"&&model.from==0&&model.to==2&&model.sourceFrom==1&&model.sourceTo==2&&model.leftPageID=="page_b"&&model.rightPageID=="page_c","HistoryReplacedQueryOrLostEventEvidence")
   let validReport=model.report
+  model.tab="compare";model.from=1;model.to=2;try await model.updateChanges()
+  try require(records().last(where:{$0["action"].string=="changes"})?["args"]["mode"].string=="adjacent" && model.tab=="compare","AdjacentNetDidNotUseStoredCanonicalPair")
+  model.from=0;model.to=2;try await model.updateChanges()
+  try require(records().last(where:{$0["action"].string=="changes"})?["args"]["mode"].string=="range_net" && model.tab=="compare","NonAdjacentNetDidNotRequestEndpointDiff")
+  model.tab="history";try await model.updateChanges()
   for mode in ["run","cancel","create"] {
    model.projectID="prj_pending_"+mode;model.report=validReport;model.error="";let pending=Task{try? await model.updateChanges()};try await started("changes",model.projectID)
    try require(model.loadingChanges,"PendingRangeDidNotOwnLoadingState");try require(model.changes.isEmpty && model.selected.isNull,"LoadingNewRangeDisplayedPriorChanges")
@@ -46,6 +51,11 @@ import SwiftUI
   model.projectID="prj_history";var bad=validReport.dictionary;bad["report_id"]="rpt_range_fail";model.report=JSON(bad);model.changes=[JSON(["change_id":"stale_change"])];model.selectedChangeID="stale_change"
   do{try await model.updateChanges();throw NSError(domain:"RangeFailureExpected",code:1)}catch{}
   try require(model.changes.isEmpty && model.selected.isNull && !model.changesFailure.isEmpty && !model.loadingChanges,"FailedRangeDisplayedPriorChanges")
+  var archived=validReport.dictionary;archived["report_id"]="rpt_archived";model.report=JSON(archived);model.from=0;model.to=2;model.tab="compare"
+  do{try await model.updateChanges();throw NSError(domain:"ArchivedEndpointFailureExpected",code:1)}catch{}
+  try require(model.canOpenStoredHistory && model.tab=="compare" && model.from==0 && model.to==2,"ArchivedEndpointSilentlyChangedModeOrLostRecovery")
+  model.from=1;try require(!model.canOpenStoredHistory,"DifferentQueryInheritedArchivedRecovery");model.from=0
+  await model.openStoredHistory();try require(model.tab=="history" && model.from==0 && model.to==2 && model.changesFailure.isEmpty && !model.canOpenStoredHistory && records().last(where:{$0["action"].string=="changes"})?["args"]["mode"].string=="history","ExplicitStoredHistoryRecoveryFailed")
   model.error="";await model.start()
   try require(!model.initializing && model.error.isEmpty && !model.workbookRecoveryWarning.isEmpty && !model.projects.isEmpty,"WorkbookCleanupFailureBlockedDocuments")
   print("PASS actual native workflow: scoped MCP late/ABA replies, copy readiness, selection/create race, reorder cancel/stale safety, history interval/evidence, locked-second-instance startup has no bridge calls, workbook cleanup warning preserves document startup")

@@ -51,5 +51,7 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
     assert.equal(new Set(pager.message_observations.map(item=>[item.language,item.mode,item.route].join('/'))).size,8);
     assert.ok(pager.message_observations.every(item=>item.revision_count===3));
     if(process.env.DOCVER_TEST_PAGER_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_PAGER_EVIDENCE_OUT,pagerEvidence);
+    const gridEvidence=await readFile(join(root,'userdata','grid-source-proof.json'),'utf8');
+    if(process.env.DOCVER_TEST_GRID_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_GRID_EVIDENCE_OUT,gridEvidence);
   } finally {await rm(root,{recursive:true,force:true});}
 });

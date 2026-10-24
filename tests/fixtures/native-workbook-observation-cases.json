@@ -3015,5 +3015,123 @@
       "expected_value_state_before": "invalid",
       "expected_value_state_after": "complete"
     }
+  ],
+  "warning_cases": [
+    {
+      "name": "not-materialized",
+      "cell": null,
+      "expected_warning_keys": [
+        "cellNotMaterialized"
+      ]
+    },
+    {
+      "name": "observed-blank",
+      "cell": {
+        "value_type": "blank",
+        "value": null,
+        "cached_result": "not_applicable"
+      },
+      "expected_warning_keys": [
+        "valueBlankShort"
+      ]
+    },
+    {
+      "name": "unrecorded-value",
+      "cell": {
+        "value_type": "number",
+        "value": null,
+        "cached_result": "not_applicable"
+      },
+      "expected_warning_keys": [
+        "valueUnrecordedShort"
+      ]
+    },
+    {
+      "name": "explicit-empty-source",
+      "cell": {
+        "value_type": "string",
+        "value": "",
+        "cached_result": "not_applicable",
+        "text_continuations": {
+          "value": {
+            "state": "empty",
+            "offset": 0,
+            "total_length": 0,
+            "next_offset": null
+          }
+        }
+      },
+      "expected_warning_keys": [
+        "valueEmptyShort"
+      ]
+    },
+    {
+      "name": "explicit-empty-grid",
+      "cell": {
+        "value_type": "string",
+        "value": "",
+        "cached_result": "not_applicable",
+        "source_lengths": {
+          "value": 0
+        }
+      },
+      "expected_warning_keys": [
+        "valueEmptyShort"
+      ]
+    },
+    {
+      "name": "missing-result-is-not-blank",
+      "cell": {
+        "value_type": "blank",
+        "value": null,
+        "cached_result": "missing",
+        "cache_freshness": "unknown"
+      },
+      "expected_warning_keys": [
+        "resultMissingShort",
+        "freshnessUnknownShort"
+      ]
+    },
+    {
+      "name": "zero-is-not-blank",
+      "cell": {
+        "value_type": "number",
+        "value": "0",
+        "cached_result": "not_applicable"
+      },
+      "expected_warning_keys": []
+    },
+    {
+      "name": "unverified-empty-fragment",
+      "cell": {
+        "value_type": "string",
+        "value": "",
+        "cached_result": "not_applicable",
+        "text_continuations": {
+          "value": {
+            "state": "truncated",
+            "offset": 10,
+            "total_length": 10,
+            "next_offset": null
+          }
+        }
+      },
+      "expected_warning_keys": []
+    },
+    {
+      "name": "independent-uncertainties",
+      "cell": {
+        "value_type": "number",
+        "value": null,
+        "formula_interpretation": "unresolved",
+        "cached_result": "missing",
+        "cache_freshness": "unknown"
+      },
+      "expected_warning_keys": [
+        "formulaUnresolvedShort",
+        "resultMissingShort",
+        "freshnessUnknownShort"
+      ]
+    }
   ]
 }

@@ -13,7 +13,7 @@ private struct PageColumnProbeHarness:View {
     @MainActor static func main() async throws {
         configureLegacyNativeLocalization()
         func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
-        for (before,after) in [("100","120"),("a\nb\na","a\na\nb"),("", ""),("a\n","\na"),("문서 👨‍👩‍👧‍👦\r\n금액 100", "문서 👨‍👩‍👧‍👦\r\n금액 120"),("é", "e\u{301}"),("e\u{301}","é"),("각\n내용", "\u{1100}\u{1161}\u{11a8}\n내용")] {
+        for (before,after) in [("100","120"),("a\nb\na","a\na\nb"),("", ""),("a\n","\na"),("문서 👨‍👩‍👧‍👦\r\n금액 100", "문서 👨‍👩‍👧‍👦\r\n금액 120"),("a\r\nb", "a\nb"),("a\rb", "a\rc"),("é", "e\u{301}"),("e\u{301}","é"),("각\n내용", "\u{1100}\u{1161}\u{11a8}\n내용")] {
             let diff=unifiedTextDiff(before:before,after:after,semantic:true)
             try require(diff.bounded && diff.semantic,"UnexpectedDiffFallback")
             try require(Array(diff.lines.filter{$0.prefix != "+"}.map(\.text).joined(separator:"\n").utf16)==Array(before.utf16),"BeforeTextChangedByDiff")
@@ -67,6 +67,10 @@ private struct PageColumnProbeHarness:View {
             for field in ["formula","value"] {
                 let diff=workbookFieldTextDiff(before:before,after:after,field:field,textOffset:0,eligibility:eligibility)
                 let expected=item["eligible_field"].string==field
+                let caption=workbookFieldCaption(change:change,before:before,after:after,field:field,textOffset:0,scope:scope)
+                if item["name"].string=="stored_value-value",field=="formula" {try require(caption == .notAsserted,"OrdinaryUnchangedFormulaInventedUncertainty")}
+                if item["name"].string=="formula-formula",field=="value" {try require(caption == .notAsserted,"OrdinarySavedValueInventedUncertainty")}
+                if item["name"].string=="cross-format-cell_observation",field=="value" {try require(caption == .withheld,"CrossFormatObservationMislabelledFormulaOrCacheIssue")}
                 try require(diff?.semantic==expected,"SelectedEngineEventEligibilityMismatch_"+item["name"].string+"_"+field)
                 if !expected {try require(diff?.lines.allSatisfy({$0.prefix.isEmpty})==true,"WithheldEngineFieldColoredAsEdit")}
             }
@@ -83,6 +87,13 @@ private struct PageColumnProbeHarness:View {
             }
             try require(workbookRawField(before,field:"value").state.rawValue==item["expected_value_state_before"].string && workbookRawField(after,field:"value").state.rawValue==item["expected_value_state_after"].string,"SharedObservationStates_"+item["name"].string)
         }
+        let sharedWarnings=JSON(try JSONSerialization.jsonObject(with:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[2]))))["warning_cases"].array
+        try require(sharedWarnings.count>=9,"SharedWarningCasesMissing")
+        for item in sharedWarnings {try require(workbookSelectedWarningKeys(item["cell"])==item["expected_warning_keys"].array.map(\.string),"SharedWarningPolicy_"+item["name"].string)}
+        var absentFormula=newValue.dictionary;absentFormula["formula"]=NSNull();absentFormula["text_continuations"]=["formula":["state":"missing","offset":0,"total_length":0,"next_offset":NSNull()]]
+        let captionScope=WorkbookSelectedEventScope(beforeOccurrence:"a",afterOccurrence:"b",beforeSheet:"sa",afterSheet:"sb")
+        try require(workbookFieldCaption(change:JSON(),before:JSON(absentFormula),after:JSON(absentFormula),field:"formula",textOffset:0,scope:captionScope) == .missing,"AbsentFormulaMislabelledPartialFragment")
+        try require(workbookFieldCaption(change:JSON(),before:partial,after:newValue,field:"value",textOffset:0,scope:captionScope) == .fragment,"PartialFragmentLostTypedCaption")
         let neutralArrow=unifiedTextDiff(before:"raw source",after:"other raw source",semantic:false)
         try require(!neutralArrow.lines.contains(where:{$0.text=="→"}),"UIAnnotationInsertedIntoVerbatimSource")
         let observedTextWithInferredPage=JSON(["kind":"text_modified","text_assessment":"observed","lineage":["status":"inferred","reasons":["normalized_text_bigrams"]]])
@@ -114,12 +125,16 @@ private struct PageColumnProbeHarness:View {
         model.chooseChange("change_1")
         try require(model.from==0 && model.to==2 && model.tab=="history" && model.sourceFrom==1 && model.sourceTo==2 && model.leftPageID=="page_1" && model.rightPageID=="page_2" && model.eventInsideQuery && !model.loadingChanges,"HistorySelectionReplacedQueryOrWrongEvidence")
         model.navigatePage("manual_1",in:"occ_1");model.selectEvidence();try require(model.manuallyBrowsing && model.leftPageID=="manual_1","ManualHistoryViewportWasOverwritten")
+        model.from=1;model.to=1;model.selectEvidence();try require(!model.manuallyBrowsing,"EqualEndpointsKeptManualPairAnchor")
+        model.from=0;model.to=2;model.selectedChangeID="change_1";model.selectEvidence();try require(model.leftPageID=="page_1","LeavingSourcePairRevivedOldManualPage")
         model.returnToChange();try require(!model.manuallyBrowsing && model.leftPageID=="page_1","ReturnToSelectedChangeLostEvidence")
         model.stepChange(-1);try require(model.selectedChangeID=="change_0" && model.sourceFrom==0 && model.sourceTo==1 && model.from==0 && model.to==2,"PreviousChangeResetInterval")
         model.search="120";model.stepChange(1);try require(model.selectedChangeID=="change_1","FilteredNextChangeFailed")
         try require(try JSON(model.changes.map(\.raw)).data()==rows && model.report.data()==report,"NavigationChangedFixedReportOrRows")
         model.changes.append(JSON(["change_id":"foreign","from_occurrence":"unknown","to_occurrence":"occ_2"]))
         model.chooseChange("foreign");try require(model.selected.isNull && model.leftPageID.isEmpty && model.rightPageID.isEmpty && !model.evidenceWarning.isEmpty && model.from==0 && model.to==2,"UnknownHistoryEvidenceKeptStaleSource")
+        try require(model.unselectedChangeMessage==model.evidenceWarning && model.unselectedChangeMessage != L("doc.changes.filteredNone"),"RejectedHistoryEventClaimedFilteredEmpty")
+        model.evidenceWarning="";try require(model.unselectedChangeMessage==L("doc.tail.change.selectPrompt"),"PopulatedUnselectedListLackedNeutralPrompt")
         model.from=1;model.to=2;model.selectEvidence();try require(model.leftPageID=="page_1" && model.rightPageID=="page_2","NewIntervalKeptRejectedEventBlankPages")
         model.selectedChangeID=nil;model.leftPageID="stale";model.rightPageID="stale";model.evidenceWarning="Page unavailable";model.selectEvidence();try require(model.leftPageID=="page_1" && model.rightPageID=="page_2","OrdinaryWarningPreventedPageNormalization")
         model.diffMode="text";model.selectVersion(0);try require(model.effectiveDiffMode=="source" && model.diffMode=="source","DocumentVersionMenuKeptTextOverlay")
@@ -156,6 +171,7 @@ private struct PageColumnProbeHarness:View {
         if let userData=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:contextEvidence,options:[.sortedKeys]).write(to:URL(fileURLWithPath:userData).appendingPathComponent("context-geometry.json"))}
         detailWindow.close();contextWindow.close()
         try await checkOneBasedPager()
+        try await checkGridSourceAndHiddenInput()
         let workbook=WorkbookModel(bridge:model.bridge);await workbook.start();workbook.projectID="workbook";workbook.reportID="workbook_report";workbook.report=JSON(["report_id":"workbook_report","revisions":[["revision_occurrence_id":"w0","index":0,"sheets":[]],["revision_occurrence_id":"w1","index":1,"sheets":[]]]]);workbook.beforeID="w0";workbook.afterID="w1";workbook.changesFromID="w0";workbook.changesToID="w1"
         workbook.diffMode="text";await workbook.selectVersion("w0");try require(workbook.diffMode=="source" && workbook.effectiveDiffMode=="source","WorkbookVersionMenuKeptTextOverlay")
         try require(workbook.beforeID=="w0" && workbook.afterID=="w0" && workbook.changesFromID=="w0" && workbook.changesToID=="w0" && workbook.changes.isEmpty && !workbook.loadingChanges && workbook.changesFailure.isEmpty,"WorkbookFirstVersionDidNotReadSingleSource")
@@ -215,8 +231,39 @@ private struct PageColumnProbeHarness:View {
                 messageObservations.append(["language":language.rawValue,"mode":mode,"route":"equal_query_endpoints","message":guidanceModel.emptyChangesMessage,"revision_count":guidanceModel.revisions.count])
             }
         }
+        for language in [UILanguage.en,.ko] {
+            preferences.selection=language
+            guidanceModel.report=JSON(["report_id":"one-revision","revisions":[["revision_occurrence_id":"only","pages":[]]]]);guidanceModel.from=0;guidanceModel.to=0
+            try await guidanceModel.updateChanges();try require(guidanceModel.emptyChangesMessage==L("doc.changes.needRevisions"),"OneRevisionOfferedImpossibleVersionPick_"+language.rawValue)
+        }
         let proof:[String:Any]=["scope":"actual retained native PageColumn edit field and evaluated SwiftUI picker binding; synthetic late page/reused occurrence, native submit actions, actual AppModel routes in English/Korean","initial_unavailable_blank":true,"late_qualified_page":1,"reused_occurrence_page":2,"native_field_identity_preserved":true,"draft_preserved_until_submit":true,"invalid_submits_restore_current_page":true,"valid_submit_updates_source_and_picker":true,"message_observations":messageObservations]
         if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:proof,options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("pager-proof.json"))}
+    }
+
+    @MainActor static func checkGridSourceAndHiddenInput()async throws {
+        func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
+        let raw="stored only; not recalculated"
+        let cells=[JSON(["address":"D4","row":4,"column":4,"value":raw,"value_type":"string","formula":NSNull(),"cached_result":"not_applicable","source_lengths":["value":raw.utf16.count]]),JSON(["address":"E4","row":4,"column":5,"value":"50","value_type":"number","formula":NSNull()])]
+        func source(_ enabled:Bool)->WorkbookGrid {WorkbookGrid(keyboardEnabled:enabled,language:"en",pane:"source-probe",revealIntent:"fixed",cells:cells,rowStart:4,columnStart:4,rowCount:10,columnCount:12,selectedRow:4,selectedColumn:4,onSelect:{_,_ in})}
+        let host=NSHostingView(rootView:source(true)),window=NSWindow(contentRect:NSRect(x:0,y:0,width:500,height:300),styleMask:[.titled],backing:.buffered,defer:false)
+        window.isReleasedWhenClosed=false;window.contentView=host;window.orderFront(nil);defer{window.close()}
+        func settle()async throws {try await Task.sleep(nanoseconds:100_000_000);host.layoutSubtreeIfNeeded()}
+        func tables(_ view:NSView)->[NSTableView] {(view as? NSTableView).map{[$0]} ?? view.subviews.flatMap{tables($0)}}
+        try await settle()
+        guard let table=tables(host).first,let cell=table.view(atColumn:1,row:0,makeIfNecessary:true) as? NSTableCellView,let text=cell.textField,let scroll=table.enclosingScrollView else{throw NSError(domain:"ActualGridSourceCellMissing",code:1)}
+        try require(text.stringValue==raw && cell.toolTip?.contains(raw)==true,"RawStoredValueReplacedOrMissingFromTooltip")
+        try require(text.maximumNumberOfLines==1 && text.lineBreakMode == .byTruncatingTail && cell.layer?.masksToBounds==true && text.frame.minX>=2 && text.frame.maxX<=cell.bounds.maxX-2,"RawGridCellNotSingleLineClippedPadded_lines_\(text.maximumNumberOfLines)_mode_\(text.lineBreakMode.rawValue)_clip_\(String(describing:cell.layer?.masksToBounds))_text_\(text.frame)_cell_\(cell.bounds)")
+        let coordinator=table.dataSource as AnyObject?,origin=scroll.contentView.bounds.origin,selected=table.selectedRow
+        try require(window.makeFirstResponder(table),"VisibleGridCouldNotTakeFocus")
+        host.rootView=source(false);try await settle()
+        try require(tables(host).first===table && (table.dataSource as AnyObject?)===coordinator && table.selectedRow==selected && scroll.contentView.bounds.origin==origin,"HiddenInputGateChangedGridHostOrViewport")
+        try require(!table.acceptsFirstResponder && !table.canBecomeKeyView && table.isAccessibilityHidden(),"HiddenGridGateAbsent")
+        _ = window.makeFirstResponder(table)
+        if let responder=window.firstResponder as? NSView {try require(responder !== table && !responder.isDescendant(of:table),"HiddenGridAllowedReacquisition")}
+        for _ in 0..<12 {window.selectNextKeyView(nil);if let responder=window.firstResponder as? NSView {try require(responder !== table && !responder.isDescendant(of:table),"NativeTraversalEnteredHiddenGrid")}}
+        host.rootView=source(true);try await settle();try require(!table.isAccessibilityHidden() && window.makeFirstResponder(table),"SourceGridGateDidNotRestore")
+        let proof:[String:Any]=["scope":"controlled native WorkbookGrid; raw fixture literal, clipping and public AppKit responder/traversal/AX properties; no OS Full Keyboard Access or VoiceOver claim","raw_value":raw,"raw_utf16":Array(raw.utf16).map(Int.init),"full_saved_value_in_tooltip":true,"single_line_clipping_padding_verified":true,"retained_host_coordinator_viewport_selection":true,"hidden_reacquisition_rejected":true,"native_next_keyview_steps":12,"source_restore_verified":true]
+        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:proof,options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("grid-source-proof.json"))}
     }
 
 }

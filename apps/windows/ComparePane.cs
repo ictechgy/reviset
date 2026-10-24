@@ -14,7 +14,7 @@ namespace Reviset.Windows;
 
 internal sealed record GridCell(string Text, bool Annotation, string TooltipKey, Copy Copy) : INotifyPropertyChanged
 {
-    public string ToolTip => Copy[TooltipKey];
+    public string ToolTip => TooltipKey == "sparseCell" || Text.Length == 0 ? Copy[TooltipKey] : Text + "\n\n" + Copy[TooltipKey];
     public event PropertyChangedEventHandler? PropertyChanged;
     public void Localize() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToolTip)));
     public Brush Foreground => Annotation ? Brushes.Gray : Brushes.Black;
@@ -70,6 +70,7 @@ internal sealed class ComparePane
     private string previewSource = "";
     private string previewReason = "";
     private string previewText = "";
+    private SourceTextObservation previewObservation = new(SourceTextState.Missing, "");
     private (string Project, string Report, string Revision, string Page)? previewScope;
     private bool binding;
     private int row = 1;
@@ -89,7 +90,17 @@ internal sealed class ComparePane
     internal int FocusedRow => focusedRow;
     internal int FocusedColumn => focusedColumn;
     internal string FocusedAddress => focusedRow > 0 && focusedColumn > 0 ? ColumnName(focusedColumn) + focusedRow.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
-    internal string LocationCaption => owner.IsWorkbook ? ((sheet.SelectedItem as Choice)?.Label ?? owner.Copy["missing"]) + (FocusedAddress.Length > 0 ? "!" + FocusedAddress : " · " + owner.Copy["sheetMetadata"]) : PageId.Length == 0 ? owner.Copy["absentPage"] : owner.Copy["pages"] + " " + ((page.SelectedItem as Choice)?.Value.Get("page").Number() ?? 0);
+    internal string LocationCaption => owner.IsWorkbook ? WorkbookLocationCaption : PageId.Length == 0 ? owner.Copy["absentPage"] : owner.Copy["pages"] + " " + ((page.SelectedItem as Choice)?.Value.Get("page").Number() ?? 0);
+    private string WorkbookLocationCaption
+    {
+        get
+        {
+            var name = (sheet.SelectedItem as Choice)?.Label ?? requestedSheetName;
+            if (evidenceAbsence.Length > 0) return (name.Length > 0 ? name + " · " : "") + owner.Copy[evidenceAbsence];
+            if (SheetId.Length == 0) return owner.Copy["absentSheet"];
+            return name + (FocusedAddress.Length > 0 ? "!" + FocusedAddress : "");
+        }
+    }
     internal double Zoom { get => zoom.Value; set { fittingWidth = false; zoom.Value = value; } }
 
     public ComparePane(MainWindow owner, bool after)
@@ -152,7 +163,7 @@ internal sealed class ComparePane
     }
     internal void Invalidate(string state = "loading")
     {
-        ++gridGeneration; ++pageGeneration; pageRead.Cancel(); ReadState = state; loadedGridScope = null; gridValue = default; previewScope = null; previewSource = ""; previewReason = ""; previewText = "";
+        ++gridGeneration; ++pageGeneration; pageRead.Cancel(); ReadState = state; loadedGridScope = null; gridValue = default; previewScope = null; previewSource = ""; previewReason = ""; previewText = ""; previewObservation = new(SourceTextState.Missing, "");
         var previous = binding; binding = true; Cells.SelectedCells.Clear(); Cells.ItemsSource = null; binding = previous; Cells.IsEnabled = false; showFormula.IsEnabled = false;
         PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; fallback.Text = owner.Copy[state == "invalid" ? "reverse" : state == "failed" ? "failed" : "loading"]; source.Text = ""; retry.Visibility = state == "failed" ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -274,7 +285,7 @@ internal sealed class ComparePane
         if (beforeInstallForSmoke is not null) await beforeInstallForSmoke(token);
         if (!owner.IsCurrent(ticket) || sequence != pageGeneration || selected != PageId || project != owner.ProjectId || report != owner.ReportId || occurrence != RevisionId) return;
         if (value.Get("page_id").Text() != selected || value.Get("report_id").Text() != report) throw new BridgeException("PAGE_SCOPE", "The preview belongs to a different page or report.");
-        var encoded = value.Get("png_base64").Text(); var origin = value.Get("source").Text(); previewSource = origin; previewReason = value.Get("unavailable_reason").Text(); previewText = value.Get("text").Text(); source.Text = owner.Copy["source"] + ": " + origin;
+        var encoded = value.Get("png_base64").Text(); var origin = value.Get("source").Text(); previewSource = origin; previewReason = value.Get("unavailable_reason").Text(); previewObservation = ReadPreviewObservation(value); previewText = previewObservation.Text; source.Text = owner.Copy["source"] + ": " + origin;
         if (encoded.Length > 0)
         {
             if (encoded.Length > 24 * 1024 * 1024) throw new BridgeException("PREVIEW_LIMIT", "The page image exceeds the desktop preview limit.");
@@ -283,8 +294,7 @@ internal sealed class ComparePane
         }
         else
         {
-            source.Text = owner.Copy["structural"] + " · " + origin + "\n" + value.Get("unavailable_reason").Text(); fallback.Text = value.Get("text").Text();
-            if (value.Get("text_truncated").Flag()) previewText += "\n… [" + value.Get("text_total_length").Text() + "]";
+            source.Text = owner.Copy["structural"] + " · " + origin + "\n" + value.Get("unavailable_reason").Text();
         }
         previewScope = (project, report, occurrence, selected); ReadState = "ready"; retry.Visibility = Visibility.Collapsed; RerenderPresentation();
         } catch
@@ -328,7 +338,11 @@ internal sealed class ComparePane
             for (var index = 0; index < columnCount; index++)
             {
                 var path = "Values[" + index + "]"; var style = new Style(typeof(TextBlock)); style.Setters.Add(new Setter(TextBlock.ForegroundProperty, new Binding(path + ".Foreground"))); style.Setters.Add(new Setter(TextBlock.FontStyleProperty, new Binding(path + ".FontStyle"))); style.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(path + ".ToolTip")));
-                Cells.Columns.Add(new DataGridTextColumn { Header = ColumnName(column + index), Binding = new Binding(path + ".Text"), ElementStyle = style, Width = 115, IsReadOnly = true });
+                // Keep the exact segment bound to the native text. Only its
+                // visual presentation is shortened inside the physical cell.
+                style.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis)); style.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.NoWrap)); style.Setters.Add(new Setter(TextBlock.PaddingProperty, new Thickness(4, 0, 4, 0))); style.Setters.Add(new Setter(UIElement.ClipToBoundsProperty, true)); style.Setters.Add(new Setter(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Stretch)); style.Setters.Add(new Setter(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center));
+                var cellStyle = new Style(typeof(DataGridCell)); cellStyle.Setters.Add(new Setter(UIElement.ClipToBoundsProperty, true));
+                Cells.Columns.Add(new DataGridTextColumn { Header = ColumnName(column + index), Binding = new Binding(path + ".Text"), ElementStyle = style, CellStyle = cellStyle, Width = 115, IsReadOnly = true });
             }
             Cells.FrozenColumnCount = 1;
             var observed = gridValue.Get("items").Items().ToDictionary(v => (v.Get("row").Number(), v.Get("column").Number()), v => v);
@@ -338,7 +352,9 @@ internal sealed class ComparePane
                 var cells = new GridCell[columnCount]; for (var index = 0; index < columnCount; index++)
                 {
                     if (!observed.TryGetValue((r, column + index), out var cell)) { cells[index] = new("—", true, "sparseCell", owner.Copy); continue; }
-                    var formula = cell.Get("formula").Text(); var value = showFormula.IsChecked == true && formula.Length > 0 ? formula : cell.Get("value").Text(); var truncated = cell.Get("text_truncated").Flag(); cells[index] = new(value + (truncated ? "…" : ""), truncated, truncated ? "truncatedCell" : "literalCell", owner.Copy);
+                    var field = showFormula.IsChecked == true && cell.Get("formula") is { ValueKind: JsonValueKind.String } formula && formula.GetString()!.Length > 0 ? "formula" : "value";
+                    var value = cell.Get(field).Text(); var total = cell.Get("source_lengths").Get(field); var truncated = total.ValueKind == JsonValueKind.Number && total.TryGetInt32(out var length) && length > value.Length;
+                    cells[index] = new(value, truncated, truncated ? "truncatedCell" : "literalCell", owner.Copy);
                 }
                 values.Add(new(r, cells));
             }
@@ -406,7 +422,31 @@ internal sealed class ComparePane
     internal void CheckTruncationForSmoke()
     {
         var truncated = Cells.Items.OfType<GridRow>().SelectMany(item => item.Values).FirstOrDefault(cell => cell.TooltipKey == "truncatedCell");
-        if (truncated is null || !truncated.Annotation || truncated.FontStyle != FontStyles.Italic || truncated.ToolTip != owner.Copy["truncatedCell"]) throw new InvalidOperationException("Truncated source preview lacks its distinct style and full-source reader guidance.");
+        if (truncated is null || !truncated.Annotation || truncated.FontStyle != FontStyles.Italic || truncated.ToolTip != truncated.Text + "\n\n" + owner.Copy["truncatedCell"]) throw new InvalidOperationException("Truncated source preview lacks its exact stored segment, distinct style and full-source reader guidance.");
+    }
+    internal void ShowFormulasForSmoke(bool enabled) => showFormula.IsChecked = enabled;
+    internal object CheckCellClippingForSmoke(string expectedSource)
+    {
+        if (ReadState != "ready" || Cells.Visibility != Visibility.Visible) throw new InvalidOperationException("No native source grid is available for cell clipping qualification.");
+        Cells.UpdateLayout();
+        foreach (var nativeRow in Descendants(Cells).OfType<DataGridRow>().Where(item => item.IsVisible && item.Item is GridRow))
+        {
+            var model = (GridRow)nativeRow.Item;
+            foreach (var nativeCell in Descendants(nativeRow).OfType<DataGridCell>().Where(item => item.IsVisible && item.Column.DisplayIndex > 0))
+            {
+                var index = nativeCell.Column.DisplayIndex - 1; if (index >= model.Values.Length || model.Values[index].Text != expectedSource) continue;
+                var nativeText = nativeCell.Content as TextBlock ?? Descendants(nativeCell).OfType<TextBlock>().FirstOrDefault(item => item.Text == expectedSource);
+                if (nativeText is null || nativeText.ActualWidth <= 0 || nativeText.ActualHeight <= 0) throw new InvalidOperationException("The exact source segment has no materialized native text element.");
+                var cellBounds = nativeCell.TransformToAncestor(Cells).TransformBounds(new Rect(0, 0, nativeCell.ActualWidth, nativeCell.ActualHeight));
+                var textBounds = nativeText.TransformToAncestor(Cells).TransformBounds(new Rect(0, 0, nativeText.ActualWidth, nativeText.ActualHeight));
+                var value = model.Values[index]; var tooltip = nativeText.ToolTip as string ?? "";
+                if (nativeText.Text != expectedSource || tooltip != value.ToolTip || !tooltip.StartsWith(expectedSource + "\n\n", StringComparison.Ordinal) || nativeText.TextTrimming != TextTrimming.CharacterEllipsis || nativeText.TextWrapping != TextWrapping.NoWrap || !nativeText.ClipToBounds || !nativeCell.ClipToBounds || nativeText.Padding.Left < 4 || nativeText.Padding.Right < 4 || textBounds.Left < cellBounds.Left - .5 || textBounds.Right > cellBounds.Right + .5 || textBounds.Top < cellBounds.Top - .5 || textBounds.Bottom > cellBounds.Bottom + .5) throw new InvalidOperationException("Native source text is not bounded by its physical cell with its exact stored segment retained in the tooltip.");
+                var source = gridValue.Get("items").Items().Single(item => item.Get("row").Number() == model.Row && item.Get("column").Number() == column + index);
+                var field = showFormula.IsChecked == true && source.Get("formula").ValueKind == JsonValueKind.String && source.Get("formula").Text().Length > 0 ? "formula" : "value";
+                return new { address = ColumnName(column + index) + model.Number, displayed_text = nativeText.Text, active_field = field, active_field_truncated = value.Annotation, cell_text_truncated = source.Get("text_truncated").Flag(), tooltip, cell_left = cellBounds.Left, cell_right = cellBounds.Right, cell_top = cellBounds.Top, cell_bottom = cellBounds.Bottom, text_left = textBounds.Left, text_right = textBounds.Right, text_top = textBounds.Top, text_bottom = textBounds.Bottom, native_text_type = nativeText.GetType().Name, text_trimming = nativeText.TextTrimming.ToString(), text_wrapping = nativeText.TextWrapping.ToString(), text_clip_to_bounds = nativeText.ClipToBounds, cell_clip_to_bounds = nativeCell.ClipToBounds, padding_left = nativeText.Padding.Left, padding_right = nativeText.Padding.Right };
+            }
+        }
+        throw new InvalidOperationException("The expected exact source segment is not currently materialized in the native grid viewport.");
     }
     private async Task LoadCoordinates()
     {
@@ -485,14 +525,25 @@ internal sealed class ComparePane
         if (!owner.IsWorkbook && ReadState == "ready")
         {
             if (!PreviewMatchesSelection) { source.Text = ""; fallback.Text = owner.Copy["loading"]; PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; return; }
-            source.Text = PageImage.Source is not null ? owner.Copy["source"] + ": " + previewSource : owner.Copy["structural"] + " · " + previewSource + "\n" + previewReason; fallback.Text = previewText;
+            source.Text = PageImage.Source is not null ? owner.Copy["source"] + ": " + previewSource : owner.Copy["structural"] + " · " + previewSource + "\n" + previewReason;
+            fallback.Text = previewText + (previewObservation.State == SourceTextState.Partial ? "\n\n" + owner.Copy["partialSourceSegment"] + " [" + previewObservation.Range?.Total + "]" : "");
         }
     }
     private bool PreviewMatchesSelection => previewScope is { } scope && scope.Project == owner.ProjectId && scope.Report == owner.ReportId && scope.Revision == RevisionId && scope.Page == PageId;
     internal string VerifiedPreviewText => PreviewMatchesSelection ? previewText : "";
     internal bool DiffTextAvailable => PreviewMatchesSelection && ReadState == "ready" && (page.SelectedItem as Choice)?.Value.Get("capabilities").Get("text").Text() == "available";
     internal bool StructuralPreview => PreviewMatchesSelection && PageImage.Source is null;
-    internal SourceTextObservation PreviewObservation => !PreviewMatchesSelection || ReadState != "ready" || !DiffTextAvailable && previewText.Length == 0 ? new(SourceTextState.Missing, "") : new(previewText.Length == 0 ? SourceTextState.Empty : SourceTextState.Present, previewText);
+    internal SourceTextObservation PreviewObservation => !PreviewMatchesSelection || ReadState != "ready" ? new(SourceTextState.Missing, "") : previewObservation;
+    internal static SourceTextObservation ReadPreviewObservation(JsonElement value)
+    {
+        var raw = SourceTextObservation.Read(value.Get("text"));
+        if (!raw.HasText) return raw;
+        var lengthValue = value.Get("text_total_length"); int? total = lengthValue.ValueKind == JsonValueKind.Number && lengthValue.TryGetInt32(out var length) && length >= 0 ? length : null;
+        var truncatedValue = value.Get("text_truncated"); bool? truncated = truncatedValue.ValueKind is JsonValueKind.True or JsonValueKind.False ? truncatedValue.GetBoolean() : null;
+        var valid = total.HasValue && truncated.HasValue && (truncated.Value ? raw.Text.Length > 0 && total > raw.Text.Length : total == raw.Text.Length);
+        var state = truncated == true ? "truncated" : raw.Text.Length == 0 ? "empty" : "complete";
+        return new(!valid ? SourceTextState.Invalid : truncated == true ? SourceTextState.Partial : raw.State, raw.Text, new(valid, state, 0, total, truncated == true ? raw.Text.Length : null, raw.Text.Length)) { RawState = raw.State };
+    }
     internal string PresentedSourceCaption => source.Text;
     internal string PresentedFallback => fallback.Text;
     internal async Task SelectPageForSmoke(string id, Func<CancellationToken, Task>? beforeInstall = null) { SetEventPage(id); var request = LoadPage(owner.Generation, owner.ReadToken, beforeInstall); owner.SourcePresentationChanged(); try { await request; } finally { owner.SourcePresentationChanged(); } }

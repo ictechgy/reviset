@@ -218,5 +218,53 @@
   "git.singleVersionChanges": {
     "en": "Reading one version. Select two different versions to compare changes.",
     "ko": "한 버전의 원문을 보고 있습니다. 변경을 비교하려면 서로 다른 두 버전을 선택하세요."
+  },
+  "git.reportChip": {
+    "en": "Report · {0}",
+    "ko": "보고서 · {0}"
+  },
+  "git.observedBlank": {
+    "en": "Observed blank cell",
+    "ko": "관측된 빈 셀"
+  },
+  "git.savedValue": {
+    "en": "Saved value",
+    "ko": "저장된 값"
+  },
+  "git.fieldNotAsserted": {
+    "en": "This selected event does not assert a change to this field. Raw observations are shown neutrally.",
+    "ko": "선택한 변경은 이 필드의 변경을 판정하지 않습니다. 원문 관측을 중립적으로 표시합니다."
+  },
+  "git.fieldPairWithheld": {
+    "en": "This event has no qualified paired field comparison. Check its association and alignment evidence.",
+    "ko": "이 변경에는 확인된 양쪽 필드 비교가 없습니다. 대응 관계와 정렬 근거를 확인하세요."
+  },
+  "git.fieldCacheUnavailable": {
+    "en": "Saved formula-result availability is unverified; no value edit is asserted.",
+    "ko": "저장된 수식 결과의 관측 여부가 확인되지 않아 값 변경을 판정하지 않습니다."
+  },
+  "git.fieldValueType": {
+    "en": "Stored value types differ; raw observations are shown without a text-edit claim.",
+    "ko": "저장된 값의 자료형이 달라 텍스트 변경으로 판정하지 않고 원문 관측을 표시합니다."
+  },
+  "git.fieldDialect": {
+    "en": "Stored formula dialects differ; no formula text edit is asserted.",
+    "ko": "저장된 수식 문법 체계가 달라 수식 텍스트 변경을 판정하지 않습니다."
+  },
+  "git.fieldMissing": {
+    "en": "No stored observation is available for this field on one or both sides. This is not a partial text fragment.",
+    "ko": "한쪽 또는 양쪽에 이 필드의 저장 관측이 없습니다. 일부 텍스트 조각을 뜻하지 않습니다."
+  },
+  "git.fieldIdentical": {
+    "en": "The complete raw text is identical on both sides. No text delta is shown.",
+    "ko": "양쪽의 전체 원문 텍스트가 같습니다. 텍스트 차이를 표시하지 않습니다."
+  },
+  "git.archivedDiffUnavailable": {
+    "en": "The archived engine for this endpoint comparison is unavailable. Stored intermediate history remains readable.",
+    "ko": "선택한 양 끝점 비교에 필요한 과거 엔진을 사용할 수 없습니다. 저장된 중간 이력은 읽을 수 있습니다."
+  },
+  "git.openStoredHistory": {
+    "en": "Open stored history",
+    "ko": "저장된 이력 열기"
   }
 }

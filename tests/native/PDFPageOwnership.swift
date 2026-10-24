@@ -121,6 +121,16 @@ import PDFKit
         if pdf.document === loaded || pdf.currentPage !== pdf.document?.page(at: 0) || abs(pdf.scaleFactor - 1) > 0.001 {
             failures.append("Explicit document replacement was overwritten")
         }
+        let retainedDocument=pdf.document,retainedPage=pdf.currentPage,retainedZoom=pdf.scaleFactor,retainedOrigin=pdf.documentView?.enclosingScrollView?.contentView.bounds.origin
+        guard window.makeFirstResponder(pdf) else{throw NSError(domain:"VisiblePDFFocusUnavailable",code:1)}
+        host.rootView=OriginalPDFView(keyboardEnabled:false,path:replacementURL.path,pageNumber:1,zoom:1,evidence:JSON(),page:JSON());host.layoutSubtreeIfNeeded();settle()
+        guard !pdf.acceptsFirstResponder,!pdf.canBecomeKeyView,pdf.isAccessibilityHidden() else{throw NSError(domain:"HiddenPDFGateAbsent",code:1)}
+        _ = window.makeFirstResponder(pdf)
+        if let responder=window.firstResponder as? NSView,responder === pdf || responder.isDescendant(of:pdf) {throw NSError(domain:"HiddenPDFAllowedReacquisition",code:1)}
+        for forward in [true,false] {for _ in 0..<12 {if forward {window.selectNextKeyView(nil)}else{window.selectPreviousKeyView(nil)};if let responder=window.firstResponder as? NSView,responder === pdf || responder.isDescendant(of:pdf) {throw NSError(domain:"NativeTraversalEnteredHiddenPDF",code:1)}}}
+        guard pdf.document===retainedDocument,pdf.currentPage===retainedPage,pdf.scaleFactor==retainedZoom,pdf.documentView?.enclosingScrollView?.contentView.bounds.origin==retainedOrigin else{throw NSError(domain:"HiddenPDFGateChangedRetainedSource",code:1)}
+        host.rootView=OriginalPDFView(keyboardEnabled:true,path:replacementURL.path,pageNumber:1,zoom:1,evidence:JSON(),page:JSON());host.layoutSubtreeIfNeeded();settle()
+        guard !pdf.isAccessibilityHidden(),window.makeFirstResponder(pdf) else{throw NSError(domain:"PDFSourceInputGateDidNotRestore",code:1)}
         if !failures.isEmpty { throw NSError(domain: "PDFViewportOwnership", code: failures.count, userInfo: [NSLocalizedDescriptionKey: failures.joined(separator: "\n")]) }
         print("PASS production PDFKit page ownership: keys, destination links, previous-page actions, explicit model navigation, zoomed viewport preservation, within-page scrolling, and document changes")
         withExtendedLifetime(window) {}

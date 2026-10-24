@@ -88,6 +88,11 @@ func canHighlightEvidence(_ evidence:JSON,page:JSON)->Bool {
 // record the actual supplied evidence and installed annotation, never invent a
 // rectangle when source/geometry guards reject it.
 final class OriginalPDFHostView:PDFView {
+    var sourceKeyboardEnabled=true
+    override var acceptsFirstResponder:Bool {sourceKeyboardEnabled && super.acceptsFirstResponder}
+    override var canBecomeKeyView:Bool {sourceKeyboardEnabled && super.canBecomeKeyView}
+    override func becomeFirstResponder()->Bool {sourceKeyboardEnabled && super.becomeFirstResponder()}
+
     var representedPageID=""
     var representedEvidencePageID=""
     var qualifiedEvidence=false
@@ -190,6 +195,7 @@ struct OriginalPDFView: NSViewRepresentable {
         coordinator.resetViewport()
     }
     func updateNSView(_ view: PDFView, context: Context) {
+        (view as? OriginalPDFHostView)?.sourceKeyboardEnabled=keyboardEnabled;view.setAccessibilityHidden(!keyboardEnabled)
         if !keyboardEnabled {resignHiddenSourceFirstResponder(in:view)}
         let sourceChanged=context.coordinator.path != path
         let selectionChanged = sourceChanged || context.coordinator.pageNumber != pageNumber || context.coordinator.zoom != zoom

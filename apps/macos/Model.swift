@@ -67,7 +67,8 @@ struct ReorderConfirmation:Identifiable {
     var sidecarFailure:String {get{sidecarFailureMessage.text} set{sidecarFailureMessage = .raw(newValue)}}
     @Published var loading = false
     @Published var loadingChanges = false
-    @Published var changesFailureMessage = UIMessage.raw("")
+    @Published var changesFailureMessage = UIMessage.raw("") {didSet {storedHistoryRecovery=nil}}
+    @Published private var storedHistoryRecovery:(project:String,report:String,from:Int,to:Int)?
     var changesFailure:String {get{changesFailureMessage.text} set{changesFailureMessage = .raw(newValue)}}
     @Published var committing = false
     @Published var statusMessage = UIMessage.raw("")
@@ -141,14 +142,27 @@ struct ReorderConfirmation:Identifiable {
     var selected: JSON { changes.first { $0["change_id"].string == selectedChangeID } ?? JSON() }
     var filteredChanges: [JSON] { changes.filter { (kind == "all" || $0["kind"].string == kind) && (search.isEmpty || ($0["before"].string + " " + $0["after"].string).localizedCaseInsensitiveContains(search)) } }
     var currentMCPConfig:String? {libraryAvailable && !initializing && !loading && mcpProjectID==projectID && !mcp.isEmpty ? mcp:nil}
+    var canOpenStoredHistory:Bool {
+        guard let recovery=storedHistoryRecovery else{return false}
+        return !loading && !loadingChanges && !busy && tab != "history" && recovery.project==projectID && recovery.report==report["report_id"].string && recovery.from==from && recovery.to==to
+    }
+    func openStoredHistory()async {
+        guard canOpenStoredHistory else{return}
+        tab="history";try? await updateChanges()
+    }
     var emptyChangesMessage:String {
         if busy && changes.isEmpty {return L("doc.changes.analysisPending")}
         if loadingChanges || loading {return L("doc.changes.loadingEllipsis")}
-        if !changesFailure.isEmpty {return changesFailureMessage==UIMessage("doc.changes.interrupted") ? changesFailure:L("doc.changes.failed")}
-        if !revisions.isEmpty && readingSingleVersion {return L("git.singleVersionChanges")}
+        if !changesFailure.isEmpty {if canOpenStoredHistory {return L("git.archivedDiffUnavailable")};return changesFailureMessage==UIMessage("doc.changes.interrupted") ? changesFailure:L("doc.changes.failed")}
         if revisions.count<2 {return L("doc.changes.needRevisions")}
+        if readingSingleVersion {return L("git.singleVersionChanges")}
         if changes.isEmpty {return L("doc.changes.none")}
         return L("doc.changes.filteredNone")
+    }
+    var unselectedChangeMessage:String {
+        if !evidenceWarning.isEmpty {return evidenceWarning}
+        if !changes.isEmpty {return L("doc.tail.change.selectPrompt")}
+        return emptyChangesMessage
     }
     func primaryPages(_ revision: JSON) -> [JSON] {
         let pptx = revision["assets"].array.filter { $0["format"].string == "pptx" }.map { $0["asset_id"].string }
@@ -223,7 +237,9 @@ struct ReorderConfirmation:Identifiable {
             if pendingRange?.generation==generation {pendingRange=nil}
         } catch {
             guard generation==rangeGeneration else{return}
-            changes=[];selectedChangeID=nil;loadingChanges=false;changesFailureMessage=bridgeErrorMessage(error);selectEvidence()
+            changes=[];selectedChangeID=nil;loadingChanges=false;changesFailureMessage=bridgeErrorMessage(error)
+            if (error as? BridgeError)?.code=="ENGINE_VERSION_UNAVAILABLE",!history {storedHistoryRecovery=(project,reportID,start,end)}
+            selectEvidence()
             if pendingRange?.generation==generation {pendingRange=nil}
             throw error
         }
@@ -231,6 +247,7 @@ struct ReorderConfirmation:Identifiable {
 
     func selectEvidence() {
         let a=sourceFrom,b=sourceTo
+        if let n=pageNavigation,n.report != report["report_id"].string || n.from != a || n.to != b {pageNavigation=nil}
         if let n=pageNavigation,n.report==report["report_id"].string,n.from==a,n.to==b {
             leftPageID=normalizedPage(n.left,in:revision(a),preserveAbsent:true)
             rightPageID=normalizedPage(n.right,in:revision(b),preserveAbsent:true)
@@ -608,7 +625,7 @@ func isReferenceAppearanceChange(_ change:JSON)->Bool {
 }
 func versionDisplayName(_ index:Int,_ revision:JSON)->String {
     let prefix="v\(index+1)",label=revision["label"].string
-    return label.trimmingCharacters(in:.whitespacesAndNewlines).caseInsensitiveCompare(prefix) == .orderedSame ? prefix:prefix+" "+label
+    return label.trimmingCharacters(in:.whitespacesAndNewlines).caseInsensitiveCompare(prefix) == .orderedSame ? prefix:prefix+" · "+label
 }
 @MainActor func changeVersionSummary(_ change:JSON,revisions:[JSON])->String {
     func name(_ key:String)->String {revisions.firstIndex{$0["revision_occurrence_id"].string==key}.map{versionDisplayName($0,revisions[$0])} ?? L("doc.tail.version.unconfirmed")}

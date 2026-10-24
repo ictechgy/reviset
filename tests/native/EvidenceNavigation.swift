@@ -47,7 +47,7 @@ import SwiftUI
   guard model.leftPageID=="source_before_b" else{throw NSError(domain:"ManualPickerAcceptedSecondaryPage",code:12)}
   model.navigatePage("source_before",in:"occ_before")
   let split=JSON(["from_occurrence":"a","to_occurrence":"b","evidence":[["revision_occurrence_id":"a","page":1],["revision_occurrence_id":"b","page":2],["revision_occurrence_id":"b","page":1],["revision_occurrence_id":"b","page":1]]])
-  guard evidencePageSummary(split)=="p.1 → p.1, p.2",versionDisplayName(0,JSON(["label":"v1"]))=="v1",versionDisplayName(1,JSON(["label":"검토본"]))=="v2 검토본" else{throw NSError(domain:"PageSetsOrVersionLabelsAmbiguous",code:13)}
+  guard evidencePageSummary(split)=="p.1 → p.1, p.2",versionDisplayName(0,JSON(["label":"v1"]))=="v1",versionDisplayName(1,JSON(["label":"검토본"]))=="v2 · 검토본" else{throw NSError(domain:"PageSetsOrVersionLabelsAmbiguous",code:13)}
   model.changes=[JSON(["change_id":"before_only","evidence":[["revision_occurrence_id":"occ_before","page_id":"source_before"]]])];model.chooseChange("before_only")
   guard model.leftPageID=="source_before",model.rightPageID.isEmpty else{throw NSError(domain:"AbsentSideRetainedUnrelatedPage",code:9)}
   model.report=JSON(["report_id":"report_pdf_only","revisions":[["revision_occurrence_id":"occ_pdf","assets":[["asset_id":"pdf_only","format":"pdf"]],"pages":[["page_id":"pdf_page","asset_id":"pdf_only"]]]]]);model.from=0;model.to=0;model.leftPageID="";model.rightPageID="";model.navigateEvidence(JSON(["revision_occurrence_id":"occ_pdf","page_id":"pdf_page"]))

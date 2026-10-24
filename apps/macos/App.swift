@@ -153,6 +153,7 @@ private struct SmokeStructureView: View {
             let assetFacts=try FileManager.default.contentsOfDirectory(at:assets,includingPropertiesForKeys:nil).filter{$0.lastPathComponent.range(of:"^[a-f0-9]{64}$",options:.regularExpression) != nil}.map{url in
                 (url:url,sha:try fileDigest(url),modified:try FileManager.default.attributesOfItem(atPath:url.path)[.modificationDate] as? Date)
             }
+            let singleRevisionChecks=request["single_revision_checks"].bool ? try await exerciseSingleRevision(model,output:output):[:]
             let gitDiffChecks=request["git_diff_checks"].bool ? try await exerciseGitDiffWorkspace(model,layout:layout,output:output,expectReversion:request["git_diff_reversion"].bool):[:]
             let aspectChecks=request["aspect_ratio_checks"].bool ? try await exerciseAspectRatios(model,output):[]
             if request["bundle_sheet_page"].int>0 {
@@ -219,7 +220,7 @@ private struct SmokeStructureView: View {
             model.tab="history";try await model.updateChanges()
             await model.loadMCP()
             let numeric=model.changes.filter{$0["kind"].string=="text_modified"}
-            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"git_diff_checks":gitDiffChecks,"reference_appearance_checks":referenceChecks,"import_draft_checks":importChecks,"bundle_mapping_checks":bundleChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
+            let result:[String:Any]=["native_ui":"SwiftUI/AppKit/PDFKit","report_id":model.report["report_id"].string,"project_id":model.projectID,"pages":model.revisions.map{model.primaryPages($0).count},"numeric_changes":numeric.map(\.raw),"analysis_and_ui_seconds":Date().timeIntervalSince(startedAt),"error":model.error,"mcp_config":model.mcp,"manual_relation_checks":manualChecks,"layout_checks":layoutChecks,"git_diff_checks":gitDiffChecks,"single_revision_checks":singleRevisionChecks,"reference_appearance_checks":referenceChecks,"import_draft_checks":importChecks,"bundle_mapping_checks":bundleChecks,"smoke_invocation_id":request["smoke_invocation_id"].string]
             var complete=result;complete["aspect_ratio_checks"]=aspectChecks
             for fact in assetFacts {
                 let modified=try FileManager.default.attributesOfItem(atPath:fact.url.path)[.modificationDate] as? Date
@@ -383,6 +384,18 @@ private struct SmokeStructureView: View {
         observation.cancel();let selectionDidNotQuery = !loaded
         _ = try await captureSelectedPages(model,output,selectionReady:{model.tab=="history" && model.selectedChangeID==change["change_id"].string})
         try capture(output.appendingPathComponent("native-git-history.png"))
+        var pairNavigationFacts:[String:Any]=["availability":"no_alternate_page"]
+        let eventStart=model.sourceFrom,eventEnd=model.sourceTo,originalPage=model.leftPageID
+        if let alternate=model.primaryPages(model.revision(eventStart)).first(where:{$0["page_id"].string != originalPage}) {
+            model.navigatePage(alternate["page_id"].string,in:model.revision(eventStart)["revision_occurrence_id"].string);model.selectEvidence()
+            guard model.manuallyBrowsing,model.leftPageID==alternate["page_id"].string else{throw BridgeError(code:"GIT_MANUAL_PAIR_SETUP",message:"Actual in-pair manual page browsing was not retained.")}
+            model.from=eventStart;model.to=eventStart;try await model.updateChanges()
+            guard !model.manuallyBrowsing else{throw BridgeError(code:"GIT_MANUAL_PAIR_SINGLE",message:"Single reading retained the previous pair's manual page snapshot.")}
+            model.from=queryFrom;model.to=queryTo;try await model.updateChanges()
+            guard model.sourceFrom==eventStart,model.sourceTo==eventEnd,model.selectedChangeID==change["change_id"].string,model.leftPageID==originalPage,try JSON(model.changes.map(\.raw)).data()==rows else{throw BridgeError(code:"GIT_MANUAL_PAIR_RETURN",message:"Returning the query revived an old manual page instead of current event evidence.")}
+            let mounted=try await captureSelectedPages(model,output,selectionReady:{model.leftPageID==originalPage && !model.manuallyBrowsing})
+            pairNavigationFacts=["availability":"verified","in_pair_manual_page_retained":true,"left_pair_snapshot_invalidated":true,"return_selected_event_page":originalPage,"mounted_source":mounted]
+        }
         func pdfs(_ view:NSView)->[PDFView] {(view as? PDFView).map{[$0]} ?? view.subviews.flatMap{pdfs($0)}}
         guard let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}),let content=window.contentView else{throw BridgeError(code:"GIT_WINDOW",message:"No native source window.")}
         let annotationScope=pdfs(content).compactMap{view->[String:Any]? in
@@ -396,6 +409,7 @@ private struct SmokeStructureView: View {
         guard let focusedPDF=mounted.first,window.makeFirstResponder(focusedPDF) else{throw BridgeError(code:"GIT_SOURCE_FOCUS",message:"Actual PDF host could not take keyboard focus for qualification.")}
         model.diffMode="text";try await Task.sleep(nanoseconds:250_000_000)
         if let responder=window.firstResponder as? NSView {guard !mounted.contains(where:{responder === $0 || responder.isDescendant(of:$0)}) else{throw BridgeError(code:"GIT_HIDDEN_SOURCE_FOCUS",message:"Text mode left keyboard focus in an invisible PDF host.")}}
+        let hiddenInputFacts=try hiddenNativeSourceInputFacts(window:window,sources:mounted)
         try capture(output.appendingPathComponent("native-git-unified.png"));model.diffMode="source";try await Task.sleep(nanoseconds:250_000_000)
         guard !mounted.isEmpty,Set(pdfs(content).map(ObjectIdentifier.init))==identities else{throw BridgeError(code:"GIT_HOST",message:"Text mode recreated PDF hosts.")}
         for (view,document,page,zoom,origin) in state {let now=view.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero;guard view.document===document,view.currentPage===page,abs(view.scaleFactor-zoom)<0.001,abs(now.x-origin.x)<1,abs(now.y-origin.y)<1 else{throw BridgeError(code:"GIT_VIEWPORT",message:"Text mode changed source page, zoom or viewport.")}}
@@ -418,10 +432,20 @@ private struct SmokeStructureView: View {
         model.selectVersion(max(0,model.revisions.count-1));try await model.updateChanges();model.tab="compare";try await model.updateChanges()
         let reread=try await model.bridge.call("view",["project_id":model.projectID,"report_id":reportID])
         guard model.report["report_id"].string==reportID,try model.report.data()==report,try reread.data()==report else{throw BridgeError(code:"GIT_REPORT_MUTATION",message:"Workspace navigation modified the in-memory or stored fixed report.")}
-        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"focus_fixed_report_visible":true,"focus_selected_context_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"single_source_one_based_pager_routes_verified":2,"single_source_pager_picker_source_consistency_verified":true,"single_source_reading_message_verified":true,"single_source_pagers":[firstVersionPager,equalEndpointPager],"native_annotation_scope":annotationScope,"fixed_report_unchanged":true,"stored_report_reread_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png","native-git-single-source.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
+        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"hidden_source_input_gate":hiddenInputFacts,"focus_fixed_report_visible":true,"focus_selected_context_visible":true,"manual_pair_navigation_checks":pairNavigationFacts,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"single_source_one_based_pager_routes_verified":2,"single_source_pager_picker_source_consistency_verified":true,"single_source_reading_message_verified":true,"single_source_pagers":[firstVersionPager,equalEndpointPager],"native_annotation_scope":annotationScope,"fixed_report_unchanged":true,"stored_report_reread_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png","native-git-single-source.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
+    }
+    private static func exerciseSingleRevision(_ model:AppModel,output:URL)async throws->[String:Any] {
+        guard model.revisions.count==1 else{throw BridgeError(code:"SINGLE_REVISION_FIXTURE",message:"This probe requires one actual imported revision.")}
+        let report=try model.report.data();model.tab="compare";model.selectVersion(0);try await model.updateChanges()
+        let mounted=try await captureSelectedPages(model,output,selectionReady:{model.readingSingleVersion && model.changes.isEmpty})
+        let pager=try singleSourcePagerObservation(model,route:"one_actual_imported_revision",mountedSource:mounted)
+        let reread=try await model.bridge.call("view",["project_id":model.projectID,"report_id":model.report["report_id"].string])
+        guard try model.report.data()==report,try reread.data()==report,model.emptyChangesMessage==L("doc.changes.needRevisions") else{throw BridgeError(code:"SINGLE_REVISION_GUIDANCE",message:"One imported revision offered impossible version selection or altered its fixed report.")}
+        try capture(output.appendingPathComponent("native-one-revision-reading.png"))
+        return ["passed":true,"actual_revision_count":1,"import_more_guidance_verified":true,"pager":pager,"stored_report_unchanged":true]
     }
     private static func singleSourcePagerObservation(_ model:AppModel,route:String,mountedSource:[String:Any])throws->[String:Any] {
-        guard model.readingSingleVersion,model.emptyChangesMessage==L("git.singleVersionChanges"),
+        guard model.readingSingleVersion,model.emptyChangesMessage==(model.revisions.count<2 ? L("doc.changes.needRevisions"):L("git.singleVersionChanges")),
               let content=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil})?.contentView else{throw BridgeError(code:"GIT_SINGLE_SOURCE_MESSAGE",message:"Single-source reading displayed comparison/import guidance or no native window.")}
         content.layoutSubtreeIfNeeded()
         let revision=model.revision(model.sourceFrom),pages=model.primaryPages(revision),page=pages.first(where:{$0["page_id"].string==model.leftPageID}) ?? JSON()

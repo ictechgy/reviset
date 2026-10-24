@@ -196,7 +196,7 @@ struct ReportBar: View {
             Menu {
                 ForEach(model.reports){r in Button(localizedISODate(r["created_at"].string)+" · "+String(r["report_id"].string.suffix(12))){Task{await model.selectProject(model.projectID,snapshot:r["report_id"].string)}}}
                 Divider();Button(L("git.reportDetails")){details=true}
-            } label:{Label(String(model.report["report_id"].string.suffix(12)),systemImage:"lock.doc")}.help(L("doc.report.saved")).disabled(model.busy || model.loading)
+            } label:{Label(L("git.reportChip",.verbatim(String(model.report["report_id"].string.suffix(12)))),systemImage:"lock.doc")}.help(L("doc.report.saved")).disabled(model.busy || model.loading)
             Text(LC("doc.project.revisionCount",model.revisions.count)).font(.caption).foregroundStyle(.secondary)
             Spacer()
             if model.project["dirty"].bool {Label(L("doc.report.pending"),systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)}
@@ -266,7 +266,7 @@ struct CompareWorkspace: View {
                     Picker(L("git.view"),selection:Binding(get:{model.effectiveDiffMode},set:{model.setDiffMode($0)})){Text(L("git.original")).tag("source");Text(L("git.textDiff")).tag("text")}.disabled(model.readingSingleVersion)
                     Picker(L("doc.compare.documentView"),selection:$model.pageMode){Text(L("doc.compare.both")).tag("both");Text(L("doc.compare.beforeOnly")).tag("before");Text(L("doc.compare.afterOnly")).tag("after")}
                     Picker(L("doc.common.zoom"),selection:$model.zoom){Text(L("doc.common.fit")).tag(0.0);Text("100%").tag(1.0);Text("150%").tag(1.5);Text("200%").tag(2.0)}
-                } label:{Label(L("git.view"),systemImage:"rectangle.split.2x1")}
+                } label:{Label(model.effectiveDiffMode=="source" ? L("git.original"):L("git.textDiff"),systemImage:"rectangle.split.2x1")}
                 Button{model.showChanges.toggle()}label:{Image(systemName:"list.bullet")}.help(L("layout.panel.changes")).accessibilityLabel(L("layout.panel.changes"))
                 Button{model.inspector.toggle()}label:{Image(systemName:"sidebar.right")}.help(L("doc.compare.evidence")).accessibilityLabel(L("doc.compare.evidence"))
             }.controlSize(.small).padding(.horizontal,12).padding(.vertical,7).background(WorkspaceLayoutMarker(name:"Reviset.document.versionBar")).onChange(of:model.from){model.changeRange()}.onChange(of:model.to){model.changeRange()}
@@ -313,7 +313,7 @@ struct SelectedChangeContext:View {
                     Spacer(minLength:4)
                     if model.manuallyBrowsing {Button(L("git.returnToChange")){model.returnToChange()}.font(.caption)}
                     Button(L("git.contextDetails")){detailsPresented=true}.font(.caption).accessibilityIdentifier("Reviset.document.contextDetails")
-                }else {Text(model.readingSingleVersion ? L("git.reading"):model.emptyChangesMessage).font(.caption).foregroundStyle(.secondary);Spacer()}
+                }else {Text(model.readingSingleVersion ? L("git.reading"):model.unselectedChangeMessage).font(.caption).foregroundStyle(.secondary);Spacer()}
             }.lineLimit(1).frame(height:20).clipped()
             ForEach(documentSelectedContext(model.selected),id:\.category.rawValue){item in
                 NativeContextSummaryLine(text:label(item),symbol:item.status=="observed" || item.status=="human_confirmed" ? "checkmark.circle":"exclamationmark.circle",warning:item.status=="needs_review" || item.status=="inferred")
@@ -378,7 +378,7 @@ struct ChangeListView: View {
             HStack{filters;Spacer();changeCount}
             VStack(alignment:.leading,spacing:8){filters;changeCount}
         }.padding(.horizontal,12).padding(.top,8)
-        if model.filteredChanges.isEmpty {Text(model.emptyChangesMessage).font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity).padding(12)}
+        if model.filteredChanges.isEmpty {VStack(spacing:10){Text(model.emptyChangesMessage).font(.callout).foregroundStyle(.secondary);if model.canOpenStoredHistory {Button(L("git.openStoredHistory")){Task{await model.openStoredHistory()}}}}.frame(maxWidth:.infinity,maxHeight:.infinity).padding(12)}
         else {ScrollViewReader {reader in ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c,compact:compact).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges || !model.changesFailure.isEmpty).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear).id(c["change_id"].string) } }.padding(6) }.onChange(of:model.selectedChangeID){if let id=model.selectedChangeID{reader.scrollTo(id,anchor:.center)}}}}
     }}
     private var filters:some View {

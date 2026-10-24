@@ -493,3 +493,19 @@ struct NativeVerbatimReasonReader:NSViewRepresentable {
         if !reader.string.utf16.elementsEqual(text.utf16) {reader.string=text;reader.scrollToBeginningOfDocument(nil)}
     }
 }
+
+// Opt-in packaged probes exercise public AppKit properties and local traversal.
+// This does not certify OS Full Keyboard Access or VoiceOver interaction.
+@MainActor func hiddenNativeSourceInputFacts(window:NSWindow,sources:[NSView])throws->[String:Any] {
+    guard !sources.isEmpty else{throw NSError(domain:"HiddenSourceInputMissing",code:1)}
+    for source in sources {
+        guard !source.acceptsFirstResponder,!source.canBecomeKeyView,source.isAccessibilityHidden() else{throw NSError(domain:"HiddenSourceInputGateAbsent",code:1)}
+        _ = window.makeFirstResponder(source)
+        if let responder=window.firstResponder as? NSView,responder === source || responder.isDescendant(of:source) {throw NSError(domain:"HiddenSourceInputReacquired",code:1)}
+    }
+    for forward in [true,false] {for _ in 0..<12 {
+        if forward {window.selectNextKeyView(nil)}else{window.selectPreviousKeyView(nil)}
+        if let responder=window.firstResponder as? NSView,sources.contains(where:{responder === $0 || responder.isDescendant(of:$0)}) {throw NSError(domain:"KeyViewEnteredHiddenSource",code:1)}
+    }}
+    return ["source_count":sources.count,"accepts_first_responder":false,"can_become_key_view":false,"native_accessibility_hidden":true,"direct_reacquisition_rejected":true,"local_keyview_steps":24,"scope":"controlled public AppKit source controls and local next/previous traversal; no OS Full Keyboard Access or VoiceOver claim"]
+}

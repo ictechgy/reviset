@@ -2,7 +2,7 @@
 
 ## Source of truth
 - Status: Active — 사용자가 2026-10-24 B 중심의 Git식 탐색 구조 구현을 승인했다. 기존 A(밝고 차분한 macOS형) 시각 방향과 중앙 원문 확대 요구를 유지한다. 네이티브 구현·검증 상태는 아래 기록과 실제 결과로 구분한다.
-- Last refreshed: 2026-10-24
+- Last refreshed: 2026-10-25
 - Primary product surfaces: macOS·Windows 네이티브 앱의 프로젝트·버전 입력, 이력, 문서·통합문서 비교, 대응 검토, 내보내기·읽기 전용 MCP 연결.
 - Evidence reviewed: 현재 소스 `37c603c91df568d65a50ff664eef61d266e2ea67`, apps/macos의 App·Views·Model·WorkbookView·WorkspaceLayout, apps/windows의 MainWindow·ComparePane, docs/WORKSPACE-LAYOUTS.md·MCP.md, 실행 소스 `29f3a8ad`의 실제 문서·통합문서 캡처. 이전 계획과 검증 기록은 각 원래 소스 범위를 유지한다.
 
@@ -205,3 +205,12 @@ Actual48fivecaptureClaude review confirms largerdocumentcanvas/pageedges/compact
 - Preservation: 네이티브 원문·그리드 인스턴스와 보고서/구간/이벤트/페이지/셀/확대/스크롤을 보존한다. UI 보고서 고정은 프로젝트 범위 MCP 설정 복사만으로 클라이언트에 전파되지 않는다. MCP는 응답의 고정 ID를 이어 사용한다. 레이아웃·언어 선호는 보고서 밖에 둔다.
 - Open questions: 읽기 보기의 진입 방식, 이력 서랍의 발견 가능성, 좁은 창에서 변경 목록의 도킹 방식. 원문 면적 수치는 실측 전 목표이며 패널을 모두 연 상태의 비율로 약속하지 않는다.
 - Qualification: HTML 시안의 상호작용 확인은 네이티브 키보드·VoiceOver/Narrator·150% 배율·대형 코퍼스 성능 검증과 별개다. 후속 네이티브 구현에서 기존 선택·CAS·부분 실패 계약과 이전 레이아웃 선호를 함께 검증한다.
+
+### Implementation acceptance refinements — 2026-10-25
+
+- One-version reading is a source view, not an empty comparison result. With only one imported revision, offer importing another revision; with several revisions and equal endpoints, explain selecting different endpoints. Actual pages remain one-based and unavailable page numbers remain blank.
+- On Windows, a newly chosen workbook query interval or version-log entry starts with valid sheets in its selected occurrences. It does not claim that the previously browsed sheet still exists. Direct navigation of an individual source pane retains that sheet's name and explicitly reports its absence. Source headers always name the actual displayed sheet. A manual document-page anchor is retained only within its report and source pair; leaving that pair invalidates the anchor.
+- Workbook text captions explain the actual eligibility gate. A complete companion field that the selected event does not assert is neutral, not an unresolved formula or cache. Missing, empty, materialized blank, partial, invalid and already-read fields remain distinct. Budget-shortened text is presented as bounded observations without colouring independently clipped prefixes as semantic edits.
+- Source cells keep their exact stored text. Native clipping, ellipsis and tooltips control presentation; an arbitrary saved phrase must never be translated or replaced as if it were app chrome. Formula and value preview limits apply to the field currently displayed. UI continuation notes remain outside raw observations.
+- Text mode retains native source hosts while preventing hidden hosts from acquiring keyboard focus. Superseded evidence reads do not display an import-cancellation message. These native control checks do not qualify OS keyboard traversal or assistive technology.
+- Windows adopts the reversible, session-only Focus behavior described above. The previous platform guide documented that toggle only for macOS; this is an explicit parity decision, not a claim that the older wording unambiguously required the Windows implementation. Each workspace retains its own preceding layout; transient hidden-panel flags never become a saved layout by accident. Applying another preset, a named layout or reset starts a new baseline.
