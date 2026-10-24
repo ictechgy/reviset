@@ -266,5 +266,13 @@
   "git.openStoredHistory": {
     "en": "Open stored history",
     "ko": "저장된 이력 열기"
+  },
+  "git.workbookNeedVersions": {
+    "en": "Reading one workbook version. To compare changes, use New comparison to import at least two versions into a new timeline.",
+    "ko": "한 버전의 통합문서를 읽고 있습니다. 변경을 비교하려면 새 비교에서 두 버전 이상을 가져와 새 타임라인을 만드세요."
+  },
+  "git.workbookNewComparison": {
+    "en": "New comparison…",
+    "ko": "새 비교…"
   }
 }

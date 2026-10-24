@@ -8,6 +8,8 @@ private extension JSON {
     var workbookChangeID: String { self["change_id"].string }
 }
 
+enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChanges}
+
 // A workbook window shares the application's Bridge and exclusive library lock.
 // It owns only its read requests; closing it never cancels a document analysis.
 @MainActor final class WorkbookModel: ObservableObject {
@@ -132,6 +134,15 @@ private extension JSON {
     func setDiffMode(_ value:String) {diffMode = readingSingleVersion || value != "text" ? "source":"text"}
     private func enforceSingleSourcePresentation() {if readingSingleVersion {diffMode="source"}}
 
+    var emptyChangesKind:WorkbookEmptyChangesKind {
+        if revisions.count<2 {return .additionalVersion}
+        if !changesFromID.isEmpty,changesFromID==changesToID {return .singleRead}
+        return .noChanges
+    }
+    var emptyChangesMessage:String {
+        switch emptyChangesKind {case .additionalVersion:return L("git.workbookNeedVersions");case .singleRead:return L("git.singleVersionChanges");case .noChanges:return L("workbook.changes.empty")}
+    }
+    func openNewComparisonImport() {guard ready else{return};importPresented=true}
     var scope: String { projectID + "|" + reportID }
     var rangeScope: String { [scope,beforeID,afterID,beforeSheetID,afterSheetID,String(beforeRowStart),String(beforeColumnStart),String(afterRowStart),String(afterColumnStart)].joined(separator:"|") }
     var comparisonScope: String { [scope,changesFromID,changesToID,changesMode].joined(separator:"|") }
@@ -902,7 +913,7 @@ struct WorkbookWorkspace: View {
             if model.changePageNumber > model.changePreviousCursors.count+1 { Text(L("workbook.paging.historyLimit")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12) }
             if model.loadingChanges { ProgressView(L("workbook.status.loadingChanges")).frame(maxWidth:.infinity,maxHeight:.infinity) }
             else if !model.changesFailure.isEmpty { Text(verbatim:model.changesFailure).font(.caption).foregroundStyle(.red).padding(12).frame(maxWidth:.infinity,maxHeight:.infinity) }
-            else if model.changes.isEmpty { Text(L("workbook.changes.empty")).font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
+            else if model.changes.isEmpty {WorkbookEmptyChangesState(model:model).frame(maxWidth:.infinity,maxHeight:.infinity)}
             else {
                 List(selection:Binding<String?>(get:{model.selectedChangeID.isEmpty ? nil : model.selectedChangeID},set:{if let id = $0 { Task { await model.chooseChange(id) } }})) {
                     ForEach(model.changes,id:\.workbookChangeID) { change in
@@ -1107,6 +1118,47 @@ private struct WorkbookSelectedWarnings:View {
             Label(prefix+" · "+messages.joined(separator:" · "),systemImage:"exclamationmark.circle").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
         }
     }
+}
+private final class WorkbookEmptyGuidanceDocument:NSView {override var isFlipped:Bool {true}}
+final class WorkbookEmptyGuidanceView:NSScrollView {
+    let message=NSTextField(wrappingLabelWithString:"")
+    let importButton=NSButton(title:"",target:nil,action:nil)
+    private let bodyView=WorkbookEmptyGuidanceDocument()
+    override init(frame:NSRect) {
+        super.init(frame:frame);drawsBackground=false;borderType = .noBorder;hasVerticalScroller=true;autohidesScrollers=true
+        message.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.emptyGuidance");message.font = .systemFont(ofSize:NSFont.systemFontSize);message.textColor = .secondaryLabelColor;message.alignment = .center;message.maximumNumberOfLines=0
+        importButton.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.newComparison");importButton.bezelStyle = .rounded
+        bodyView.addSubview(message);bodyView.addSubview(importButton);documentView=bodyView
+    }
+    required init?(coder:NSCoder) {fatalError("init(coder:) is unavailable")}
+    override func layout() {
+        super.layout()
+        let width=max(1,contentSize.width-28)
+        message.preferredMaxLayoutWidth=width
+        let textHeight=max(20,message.cell?.cellSize(forBounds:NSRect(x:0,y:0,width:width,height:CGFloat.greatestFiniteMagnitude)).height ?? 20)
+        let buttonHeight=importButton.isHidden ? 0:importButton.fittingSize.height+12
+        let block=textHeight+buttonHeight,documentHeight=max(contentSize.height,block+24)
+        bodyView.frame=NSRect(x:0,y:0,width:contentSize.width,height:documentHeight)
+        let top=max(12,(documentHeight-block)/2)
+        message.frame=NSRect(x:14,y:top,width:width,height:textHeight)
+        if !importButton.isHidden {let size=importButton.fittingSize;importButton.frame=NSRect(x:max(14,(contentSize.width-size.width)/2),y:top+textHeight+12,width:min(size.width,width),height:size.height)}
+    }
+}
+struct WorkbookEmptyChangesState:View {
+    @ObservedObject var model:WorkbookModel
+    var body:some View {
+        WorkbookEmptyChangesNative(message:model.emptyChangesMessage,showsImport:model.emptyChangesKind == .additionalVersion,canImport:model.ready,onImport:{model.openNewComparisonImport()})
+    }
+}
+private struct WorkbookEmptyChangesNative:NSViewRepresentable {
+    let message:String
+    let showsImport:Bool
+    let canImport:Bool
+    let onImport:()->Void
+    final class Coordinator:NSObject {var onImport:()->Void={};@objc func openImport(_ sender:NSButton){onImport()}}
+    func makeCoordinator()->Coordinator {Coordinator()}
+    func makeNSView(context:Context)->WorkbookEmptyGuidanceView {let view=WorkbookEmptyGuidanceView();view.importButton.target=context.coordinator;view.importButton.action=#selector(Coordinator.openImport(_:));return view}
+    func updateNSView(_ view:WorkbookEmptyGuidanceView,context:Context) {context.coordinator.onImport=onImport;view.message.stringValue=message;view.importButton.title=L("git.workbookNewComparison");view.importButton.isHidden = !showsImport;view.importButton.isEnabled=canImport;view.needsLayout=true}
 }
 private struct WorkbookUnifiedDiff:View {
     @ObservedObject var model:WorkbookModel
@@ -1828,6 +1880,15 @@ struct WorkbookGrid: NSViewRepresentable {
             let project = model.projectID,snapshot = model.reportID,metadata = try model.report.data()
             var checks: [String:Any] = ["native_ui":"SwiftUI/AppKit NSTableView","sparse_viewport":true,"viewport_rows":model.rowLimit,"viewport_columns":model.columnLimit,"source_sha_forwarded":!originals.isEmpty,"public_bundled_demo_action":useDemo]
             checks["initial_net_change_count"] = model.changeTotal
+            if request["single_revision_checks"].bool {
+                checks["single_revision_checks"] = try await exerciseSingleRevision(model,layout:layout,folder:folder,originals:originals,metadata:metadata)
+                model.closeReads()
+                guard !model.ready,!model.canCopyMCP else{throw BridgeError(code:"WORKBOOK_SINGLE_CLOSE",message:"Closed single-version workspace retained authority.")}
+                checks["closed_workspace_invalidates_authority"] = true
+                let result:[String:Any] = ["completed":true,"project_id":project,"report_id":snapshot,"revision_count":model.revisions.count,"seconds":Date().timeIntervalSince(began),"checks":checks,"mcp_config":"","interaction_scope":"production workbook actions, visible AppKit guidance/button/grid and existing import sheet; programmatic actions without submitted import or OS input","smoke_invocation_id":request["smoke_invocation_id"].string]
+                try JSON(result).data().write(to:folder.appendingPathComponent("validation.json"))
+                NSApp.terminate(nil);return
+            }
             if request["git_diff_checks"].bool {checks["git_diff_checks"] = try await exerciseGitDiffWorkspace(model,layout:layout,folder:folder)}
             if request.dictionary.keys.contains("expected_blank_formatting_warning") { checks["initial_blank_formatting_warning"] = try checkBlankFormattingWarning(model,request:request) }
             let requiredKinds = request["required_change_kinds"].array.map(\.string)
@@ -1991,6 +2052,53 @@ struct WorkbookGrid: NSViewRepresentable {
         }
         NSApp.terminate(nil)
     }
+    private static func guidanceView(_ view:NSView?)->WorkbookEmptyGuidanceView? {
+        guard let view else{return nil};if let found=view as? WorkbookEmptyGuidanceView{return found}
+        for child in view.subviews {if let found=guidanceView(child){return found}};return nil
+    }
+    private static func readingGuidanceFacts(_ model:WorkbookModel,window:NSWindow,route:String)async throws->[String:Any] {
+        try await Task.sleep(nanoseconds:200_000_000);window.contentView?.layoutSubtreeIfNeeded()
+        guard model.changesFromID==model.changesToID,!model.changesFromID.isEmpty,model.changes.isEmpty,model.effectiveDiffMode=="source",let content=window.contentView,let view=guidanceView(content),!view.message.isHiddenOrHasHiddenAncestor,!view.message.visibleRect.isEmpty,view.message.stringValue==model.emptyChangesMessage,view.message.stringValue != L("workbook.changes.empty") else{throw BridgeError(code:"WORKBOOK_READING_GUIDANCE",message:"Single-source workbook did not display its count-aware native reading guidance.")}
+        let tables=["before","after"].compactMap{grid(content,pane:$0)},visible=tables.filter{!$0.isHiddenOrHasHiddenAncestor && !$0.visibleRect.isEmpty}
+        let one=model.revisions.count==1
+        guard visible.count==1,visible[0].numberOfRows>0,visible[0].numberOfColumns>1,!workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.unifiedDiff"}),model.emptyChangesKind == (one ? .additionalVersion:.singleRead),view.importButton.isHidden != one,!one || view.importButton.isEnabled else{throw BridgeError(code:"WORKBOOK_READING_SOURCE",message:"Count-aware workbook guidance obscured the useful original grid or its new-comparison action.")}
+        return ["route":route,"language":LanguagePreferences.shared.effectiveLanguage,"revision_count":model.revisions.count,"kind":model.emptyChangesKind.rawValue,"native_visible_message":view.message.stringValue,"native_message_field_verified":true,"effective_view":"source","query_before":model.changesFromID,"query_after":model.changesToID,"native_visible_grid_count":visible.count,"native_grid_rows":visible[0].numberOfRows,"native_grid_columns":visible[0].numberOfColumns,"new_comparison_button_visible":!view.importButton.isHidden,"new_comparison_button_enabled":view.importButton.isEnabled]
+    }
+    private static func exerciseSingleRevision(_ model:WorkbookModel,layout:WorkspaceLayoutStore,folder:URL,originals:[WorkbookImportRow],metadata:Data)async throws->[String:Any] {
+        guard model.revisions.count==1,let first=model.revisions.first else{throw BridgeError(code:"WORKBOOK_SINGLE_COUNT",message:"Single-version qualification requires one actually imported workbook.")}
+        let project=model.projectID,report=model.reportID,occurrence=first["revision_occurrence_id"].string
+        layout.reset();model.diffMode="text";await model.selectVersion(occurrence);model.setDiffMode("text")
+        try await Task.sleep(nanoseconds:300_000_000)
+        guard let window=NSApp.windows.first(where:{$0.isVisible && containsGrid($0.contentView)}),let content=window.contentView else{throw BridgeError(code:"WORKBOOK_SINGLE_WINDOW",message:"Single imported workbook has no rendered native grid.")}
+        let facts=try await readingGuidanceFacts(model,window:window,route:"one_imported_version")
+        let rawBefore=try model.beforeCell.data(),rawAfter=try model.afterCell.data(),cellsBefore=try JSON(model.beforeCells.map(\.raw)).data(),cellsAfter=try JSON(model.afterCells.map(\.raw)).data()
+        let identity=[model.projectID,model.reportID,model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,String(model.selectedRow),String(model.selectedColumn)]
+        let tables=["before","after"].compactMap{grid(content,pane:$0)},state=tables.map{($0,$0.dataSource as AnyObject?,$0.selectedRow,$0.enclosingScrollView!.contentView.bounds.origin)}
+        func storedAssets()throws->[String:ImportFileIdentity] {
+            let directory=model.bridge.library.appendingPathComponent("assets")
+            return try Dictionary(uniqueKeysWithValues:FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil).filter{$0.lastPathComponent.range(of:"^[a-f0-9]{64}$",options:.regularExpression) != nil}.map{($0.lastPathComponent,try ImportFileIdentity.capture($0))})
+        }
+        let assets=try storedAssets();guard !assets.isEmpty else{throw BridgeError(code:"WORKBOOK_SINGLE_ASSETS",message:"Imported workbook has no content-addressed source bytes to verify.")}
+        try Smoke.captureView(window,folder.appendingPathComponent("native-one-workbook-reading.png"))
+        guard let view=guidanceView(content) else{throw BridgeError(code:"WORKBOOK_SINGLE_ACTION",message:"New comparison action is unavailable.")}
+        defer{model.importPresented=false;for sheet in window.sheets{window.endSheet(sheet);sheet.orderOut(nil)}}
+        view.importButton.performClick(nil)
+        func fields(_ view:NSView?)->[NSTextField] {guard let view else{return []};return (view as? NSTextField).map{[$0]} ?? view.subviews.flatMap{fields($0)}}
+        for _ in 0..<100 {if let sheet=window.sheets.first,fields(sheet.contentView).contains(where:{$0.isEditable && $0.placeholderString==L("workbook.import.projectName")}){break};try await Task.sleep(nanoseconds:20_000_000)}
+        guard model.importPresented,let sheet=window.sheets.first,fields(sheet.contentView).contains(where:{$0.isEditable && $0.placeholderString==L("workbook.import.projectName") && $0.stringValue==L("workbook.import.defaultTitle")}) else{throw BridgeError(code:"WORKBOOK_SINGLE_IMPORT",message:"Native New comparison action did not open the existing new-timeline import sheet.")}
+        try Smoke.captureView(sheet,folder.appendingPathComponent("native-one-workbook-import.png"))
+        model.importPresented=false
+        for _ in 0..<100 {if window.sheets.isEmpty{break};try await Task.sleep(nanoseconds:20_000_000)}
+        guard window.sheets.isEmpty else{throw BridgeError(code:"WORKBOOK_SINGLE_DISMISS",message:"Existing import sheet did not dismiss before continuing.")}
+        try await Task.sleep(nanoseconds:150_000_000)
+        guard identity==[model.projectID,model.reportID,model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,String(model.selectedRow),String(model.selectedColumn)],try model.beforeCell.data()==rawBefore,try model.afterCell.data()==rawAfter,try JSON(model.beforeCells.map(\.raw)).data()==cellsBefore,try JSON(model.afterCells.map(\.raw)).data()==cellsAfter else{throw BridgeError(code:"WORKBOOK_SINGLE_STATE",message:"Opening new comparison changed the current report or observed raw cells.")}
+        for (table,coordinator,selected,origin) in state {guard ["before","after"].contains(where:{grid(content,pane:$0) === table}),(table.dataSource as AnyObject?) === coordinator,table.selectedRow==selected,let scroll=table.enclosingScrollView,abs(scroll.contentView.bounds.minX-origin.x)<1,abs(scroll.contentView.bounds.minY-origin.y)<1 else{throw BridgeError(code:"WORKBOOK_SINGLE_HOST",message:"Opening new comparison replaced the source host or changed its selection/viewport.")}}
+        let reread=try await model.bridge.call("workbookView",["project_id":project,"report_id":report])
+        guard try reread.data()==metadata,try storedAssets()==assets else{throw BridgeError(code:"WORKBOOK_SINGLE_IMMUTABLE",message:"Reading or opening import changed the fixed report or stored raw asset bytes.")}
+        for original in originals {guard try ImportFileIdentity.capture(original.url)==original.identity else{throw BridgeError(code:"WORKBOOK_SINGLE_ORIGINAL",message:"Original workbook bytes changed.")}}
+        _ = try await readingGuidanceFacts(model,window:window,route:"after_import_dismissal")
+        return ["passed":true,"reading_guidance":facts,"actual_revision_count":1,"native_new_comparison_action_reached":true,"existing_new_timeline_import_sheet_mounted":true,"import_not_submitted":true,"import_sheet_dismissed":true,"report_metadata_disk_reread_unchanged":true,"raw_selected_cells_and_grid_observations_unchanged":true,"stored_asset_bytes_unchanged":true,"stored_asset_count":assets.count,"original_bytes_unchanged":true,"original_input_count":originals.count,"native_grid_hosts_and_viewport_preserved":true,"captures":["native-one-workbook-reading.png","native-one-workbook-import.png"]]
+    }
     // Optional shipped-app qualification. The locale mutation, seeded draft,
     // AppKit scroll, and captures are explicit programmatic operations. This is
     // not an OS input/VoiceOver automation claim and does not submit the draft.
@@ -2039,14 +2147,16 @@ struct WorkbookGrid: NSViewRepresentable {
         model.diffMode="text";await model.selectVersion(first)
         guard model.beforeID==first,model.afterID==first,model.changes.isEmpty,model.diffMode=="source",model.effectiveDiffMode=="source" else{throw BridgeError(code:"WORKBOOK_GIT_V1",message:"First workbook version from text mode did not show the original source.")}
         model.setDiffMode("text");guard model.diffMode=="source" else{throw BridgeError(code:"WORKBOOK_GIT_V1_TEXT",message:"Single workbook source accepted change-only text mode.")}
+        let firstReading=try await readingGuidanceFacts(model,window:window,route:"version_menu_v1")
         model.diffMode="text";await model.changeVersions(before:first,after:first)
         guard model.diffMode=="source",model.effectiveDiffMode=="source" else{throw BridgeError(code:"WORKBOOK_GIT_EQUAL_TEXT",message:"Equal workbook endpoints kept a text overlay.")}
+        let equalReading=try await readingGuidanceFacts(model,window:window,route:"equal_query_endpoints")
         try await Task.sleep(nanoseconds:200_000_000)
         let visibleTables=tables.filter{!$0.isHiddenOrHasHiddenAncestor && !$0.visibleRect.isEmpty}
         guard visibleTables.count==1,!workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.unifiedDiff"}),Set(["before","after"].compactMap{grid(content,pane:$0)}.map(ObjectIdentifier.init))==Set(tables.map(ObjectIdentifier.init)) else{throw BridgeError(code:"WORKBOOK_GIT_SINGLE_SOURCE_VISIBLE",message:"Single workbook source was covered or its grid hosts were replaced.")}
         try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-git-single-source.png"))
         await model.selectVersion(last);await model.changeMode("range_net")
-        return ["passed":true,"default_predecessor_latest":true,"source_first_default":true,"query_interval_and_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"physical_addresses_preserved":true,"raw_saved_value_cell_checks":rawCellFacts,"native_grid_hosts_preserved":tables.count,"coordinator_and_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"hidden_source_input_gate":hiddenInputFacts,"focus_fixed_report_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"manual_sheet_cell_window_return_without_requery":true,"focus_return_action_visible":true,"captures":["native-workbook-git-source-first.png","native-workbook-git-history.png","native-workbook-git-unified.png","native-workbook-git-focus.png","native-workbook-git-single-source.png","native-workbook-git-manual-return.png"]]
+        return ["passed":true,"default_predecessor_latest":true,"source_first_default":true,"query_interval_and_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"physical_addresses_preserved":true,"raw_saved_value_cell_checks":rawCellFacts,"native_grid_hosts_preserved":tables.count,"coordinator_and_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"hidden_source_input_gate":hiddenInputFacts,"focus_fixed_report_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"single_source_reading_guidance_verified":true,"single_source_reading_guidance":[firstReading,equalReading],"manual_sheet_cell_window_return_without_requery":true,"focus_return_action_visible":true,"captures":["native-workbook-git-source-first.png","native-workbook-git-history.png","native-workbook-git-unified.png","native-workbook-git-focus.png","native-workbook-git-single-source.png","native-workbook-git-manual-return.png"]]
     }
     private static func rawSavedValueCellFacts(_ model:WorkbookModel,content:NSView)throws->[[String:Any]] {
         var facts:[[String:Any]]=[]

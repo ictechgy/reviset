@@ -178,6 +178,7 @@ private struct PageColumnProbeHarness:View {
         workbook.beforeID="w0";workbook.afterID="w1";workbook.changesFromID="w0";workbook.changesToID="w1";workbook.diffMode="text"
         await workbook.changeVersions(before:"w0",after:"w0");try require(workbook.diffMode=="source" && workbook.effectiveDiffMode=="source" && workbook.beforeID==workbook.afterID,"WorkbookEndpointPickerKeptTextOverlay")
         workbook.setDiffMode("text");try require(workbook.diffMode=="source","SingleWorkbookReadAllowedTextPicker")
+        try await checkWorkbookReadingGuidance(workbook)
         let reportProjection=documentReportDetails(JSON(["coverage_gap_count":750,"coverage_gaps":(0..<500).map{["reason":"gap_\($0)"]},"quality_counts":["ocr_inferred_pages":3,"ocr_failed_pages":1,"pptx_without_render":4,"unknown_future_key":999]]))
         try require(reportProjection.totalCoverageGaps==750 && reportProjection.gaps.count==50 && reportProjection.coverageTruncated && reportProjection.gaps.first?["reason"].string=="gap_0" && reportProjection.gaps.last?["reason"].string=="gap_49","ReportLimitProjectionLostCountOrBound")
         try require(reportProjection.quality.contains(DocumentReportQualityCount(key:"ocr_inferred_pages",count:3)) && reportProjection.quality.count==3,"ReportQualityProjectionLostKnownCounts")
@@ -264,6 +265,46 @@ private struct PageColumnProbeHarness:View {
         host.rootView=source(true);try await settle();try require(!table.isAccessibilityHidden() && window.makeFirstResponder(table),"SourceGridGateDidNotRestore")
         let proof:[String:Any]=["scope":"controlled native WorkbookGrid; raw fixture literal, clipping and public AppKit responder/traversal/AX properties; no OS Full Keyboard Access or VoiceOver claim","raw_value":raw,"raw_utf16":Array(raw.utf16).map(Int.init),"full_saved_value_in_tooltip":true,"single_line_clipping_padding_verified":true,"retained_host_coordinator_viewport_selection":true,"hidden_reacquisition_rejected":true,"native_next_keyview_steps":12,"source_restore_verified":true]
         if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:proof,options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("grid-source-proof.json"))}
+    }
+
+    @MainActor static func checkWorkbookReadingGuidance(_ model:WorkbookModel)async throws {
+        func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
+        let languages=LanguagePreferences.shared,previous=LanguagePreferences.shared.selection
+        defer{languages.selection=previous;model.importPresented=false}
+        let revisions:[[String:Any]]=[["revision_occurrence_id":"w0","index":0,"sheets":[]],["revision_occurrence_id":"w1","index":1,"sheets":[]]]
+        let host=NSHostingView(rootView:WorkbookEmptyChangesState(model:model)),window=NSWindow(contentRect:NSRect(x:0,y:0,width:320,height:220),styleMask:[.titled],backing:.buffered,defer:false)
+        window.isReleasedWhenClosed=false;window.contentView=host;window.orderFront(nil);defer{window.close()}
+        func settle()async throws {try await Task.sleep(nanoseconds:100_000_000);host.layoutSubtreeIfNeeded()}
+        func guidance(_ view:NSView)->WorkbookEmptyGuidanceView? {(view as? WorkbookEmptyGuidanceView) ?? view.subviews.lazy.compactMap{guidance($0)}.first}
+        var observations:[[String:Any]]=[]
+        for language in [UILanguage.en,.ko] {
+            languages.selection=language
+            model.report=JSON(["report_id":"workbook_report","revisions":revisions]);model.beforeID="w0";model.afterID="w1";model.changesFromID="w0";model.changesToID="w1"
+            model.diffMode="text";await model.selectVersion("w0");try await settle()
+            guard let view=guidance(host) else{throw NSError(domain:"ActualWorkbookEmptyGuidanceMissing",code:1)}
+            func observe(_ route:String,_ expected:String,_ count:Int)throws {
+                try require(view.message.stringValue==expected && view.message.stringValue != L("workbook.changes.empty") && !view.message.isHiddenOrHasHiddenAncestor && !view.message.visibleRect.isEmpty,"WorkbookSingleReadVisibleMessageWrong_"+language.rawValue+"_"+route)
+                try require(model.effectiveDiffMode=="source" && model.changes.isEmpty,"WorkbookReadingGuideNotOriginalSingleSource")
+                observations.append(["language":language.rawValue,"route":route,"revision_count":count,"native_visible_message":view.message.stringValue,"native_message_field_verified":true,"effective_mode":model.effectiveDiffMode])
+            }
+            try require(model.emptyChangesKind == .singleRead && view.importButton.isHidden,"ExistingVersionsOfferedNewTimelineInsteadOfDistinctEndpoints")
+            try observe("version_menu_v1",L("git.singleVersionChanges"),2)
+            model.beforeID="w0";model.afterID="w1";model.changesFromID="w0";model.changesToID="w1";model.diffMode="text";await model.changeVersions(before:"w0",after:"w0");try await settle()
+            try observe("equal_query_endpoints",L("git.singleVersionChanges"),2)
+            model.report=JSON(["report_id":"workbook_report","revisions":[revisions[0]]]);model.diffMode="text";await model.changeVersions(before:"w0",after:"w0");try await settle()
+            try require(model.emptyChangesKind == .additionalVersion && !view.importButton.isHidden && view.importButton.isEnabled,"OneWorkbookVersionLackedReachableNewComparison")
+            try observe("one_imported_version",L("git.workbookNeedVersions"),1)
+            let report=try model.report.data(),before=try model.beforeCell.data(),after=try model.afterCell.data()
+            view.importButton.performClick(nil);try require(model.importPresented,"NativeNewComparisonDidNotReachExistingImportRoute")
+            try require(try model.report.data()==report && model.beforeCell.data()==before && model.afterCell.data()==after,"OpeningNewComparisonMutatedReadingReportOrRawCells")
+            model.importPresented=false
+            // The query owns the list: a manually equal source pair must not
+            // replace a distinct query's truthful empty comparison message.
+            model.report=JSON(["report_id":"workbook_report","revisions":revisions]);model.changesFromID="w0";model.changesToID="w1";try await settle()
+            try require(model.beforeID==model.afterID && model.emptyChangesKind == .noChanges && view.message.stringValue==L("workbook.changes.empty") && view.importButton.isHidden,"WorkbookEmptyCopyFollowedSourcesInsteadOfQuery")
+        }
+        let proof:[String:Any]=["scope":"production workbook reading model routes and actual visible native guidance fields/button in synthetic NSHostingView; existing import route reached without submitting a new timeline; no OS gestures","observations":observations,"native_new_comparison_action_reached":true,"report_and_raw_cells_unchanged_by_action":true]
+        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:proof,options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("workbook-reading-proof.json"))}
     }
 
 }

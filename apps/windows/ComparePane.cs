@@ -81,6 +81,7 @@ internal sealed class ComparePane
     private long gridGeneration;
     private CancellationTokenSource pageRead = new();
     private Task? activePageRequest;
+    internal Func<CancellationToken, Task>? PageBeforeInstallForSmoke { get; set; }
     internal readonly Border Host = new() { BorderBrush = new SolidColorBrush(Color.FromRgb(225, 229, 235)), BorderThickness = new Thickness(1), Background = Brushes.White, ClipToBounds = true };
     internal string RevisionId => (revision.SelectedItem as Choice)?.Id ?? "";
     internal string SheetId => (sheet.SelectedItem as Choice)?.Id ?? "";
@@ -136,7 +137,7 @@ internal sealed class ComparePane
         navigation.AddRange([revision, page, sheet, rowStart, colStart, address]); Localize(); Clear();
     }
     private Button Button(string key, Func<Task> action) { var button = new Button { Margin = new Thickness(3), Padding = new Thickness(8, 3, 8, 3) }; owner.BindText(button, key); button.Click += async (_, _) => await owner.Guard(action); navigation.Add(button); return button; }
-    private Button Arrow(string key, string glyph, Func<Task> action) { var button = new Button { Content = glyph, Margin = new Thickness(3), Padding = new Thickness(7, 3, 7, 3) }; button.Click += async (_, _) => await owner.Guard(action); arrows.Add((button, key)); navigation.Add(button); return button; }
+    private Button Arrow(string key, string glyph, Func<Task> action) { var button = new Button { Content = glyph, Margin = new Thickness(3), Padding = new Thickness(7, 3, 7, 3) }; button.Click += async (_, _) => { selectionRequest = action(); await owner.Guard(() => selectionRequest); }; arrows.Add((button, key)); navigation.Add(button); return button; }
     internal void Localize()
     {
         heading.Text = owner.Copy[after ? "after" : "before"]; pageCaption.Text = owner.Copy["pages"]; sheetCaption.Text = owner.Copy["sheet"]; showFormula.Content = owner.Copy["showFormula"]; sparse.Text = owner.Copy["sparseShort"]; sparse.ToolTip = owner.Copy["sparse"]; address.ToolTip = owner.Copy["address"];
@@ -262,14 +263,26 @@ internal sealed class ComparePane
         var request = LoadPage(ticket, token);
         while (true)
         {
-            try { await request; return; }
+            try { await request; if (owner.IsCurrent(ticket) && !token.IsCancellationRequested && activePageRequest is { } latest && !ReferenceEquals(latest, request)) { request = latest; continue; } return; }
             catch (OperationCanceledException) when (owner.IsCurrent(ticket) && !token.IsCancellationRequested && activePageRequest is { } replacement && !ReferenceEquals(replacement, request)) { request = activePageRequest; }
             catch (OperationCanceledException) when (!owner.IsCurrent(ticket) || token.IsCancellationRequested) { return; }
         }
     }
+    internal async Task<bool> AwaitCurrentPageRead(long ticket, CancellationToken token)
+    {
+        while (owner.IsCurrent(ticket) && !token.IsCancellationRequested && ReadState == "loading")
+        {
+            var request = activePageRequest; if (request is null) return false;
+            try { await request; }
+            catch (OperationCanceledException) when (owner.IsCurrent(ticket) && !token.IsCancellationRequested && activePageRequest is { } replacement && !ReferenceEquals(replacement, request)) { continue; }
+            catch (OperationCanceledException) when (!owner.IsCurrent(ticket) || token.IsCancellationRequested) { return false; }
+            if (ReferenceEquals(request, activePageRequest) && ReadState == "loading") return false;
+        }
+        return owner.IsCurrent(ticket) && !token.IsCancellationRequested && ReadState != "loading";
+    }
     private Task LoadPage(long ticket, CancellationToken token, Func<CancellationToken, Task>? beforeInstallForSmoke = null)
     {
-        var request = LoadPageCore(ticket, token, beforeInstallForSmoke); activePageRequest = request; return request;
+        var request = LoadPageCore(ticket, token, beforeInstallForSmoke ?? PageBeforeInstallForSmoke); activePageRequest = request; return request;
     }
     private async Task LoadPageCore(long ticket, CancellationToken token, Func<CancellationToken, Task>? beforeInstallForSmoke)
     {
@@ -549,6 +562,8 @@ internal sealed class ComparePane
     internal async Task SelectPageForSmoke(string id, Func<CancellationToken, Task>? beforeInstall = null) { SetEventPage(id); var request = LoadPage(owner.Generation, owner.ReadToken, beforeInstall); owner.SourcePresentationChanged(); try { await request; } finally { owner.SourcePresentationChanged(); } }
     internal async Task SelectRevisionForSmoke(int index) { revision.SelectedIndex = index; await selectionRequest; }
     internal async Task SelectAvailableSheetForSmoke() { sheet.SelectedIndex = 0; await selectionRequest; }
+    internal async Task SelectSheetForSmoke(string id) { sheet.SelectedItem = sheet.Items.OfType<Choice>().Single(item => item.Id == id); await selectionRequest; }
+    internal async Task NextWindowForSmoke() { arrows.Single(item => item.Key == "next").Button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); await selectionRequest; }
     internal async Task ClickCellForSmoke(int requestedRow, int requestedColumn)
     {
         if (binding || !Cells.IsEnabled || !AuthorizesCell(requestedRow, requestedColumn)) throw new InvalidOperationException("The requested native cell is not authorized by a ready source window.");

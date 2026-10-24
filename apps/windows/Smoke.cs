@@ -28,7 +28,7 @@ internal static class Smoke
             using var manifest = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(fixtures, "windows-smoke.json")));
             var request = manifest.RootElement;
             window.CheckInitializationGateForSmoke(); checks.Add("native_actions_disabled_until_owned_library_initialization_completes"); await window.Initialize();
-            var documents = Rows(request.Get("documents"), fixtures, false); var books = Rows(request.Get("workbook"), fixtures, true);
+            var documents = Rows(request.Get("documents"), fixtures, false); var books = Rows(request.Get("workbook"), fixtures, true); var navigationBooks = Rows(request.Get("navigation_workbooks"), fixtures, true);
             var formats = documents.SelectMany(r => r.Paths).Concat(books.SelectMany(r => r.Paths)).Select(p => Path.GetExtension(p).ToLowerInvariant()).Distinct().OrderBy(v => v).ToArray();
             foreach (var extension in new[] { ".pdf", ".pptx", ".xlsx", ".csv", ".ods" }) Require(formats.Contains(extension), "Missing required fixture format " + extension);
             result["fixture_formats"] = formats;
@@ -51,6 +51,7 @@ internal static class Smoke
             result["document_revisions"] = window.Report.Get("revisions").Items().Count;
             var documentProject = window.ProjectId; var documentReport = window.ReportId;
             checks.Add("document_create_analyze_staged_commit_fixed_report");
+            result["document_sole_import"] = await window.CheckSoleImportedRevisionForSmoke(documents[0], async name => { await Tick(window); Screenshot(window, Path.Combine(output, "document-git-" + name + ".png")); }); checks.Add("actual_one_imported_document_occurrence_en_ko_sourcefirst_focus_reading_guidance_names_new_timeline_with_two_versions_native_import_dialog_reachable_without_impossible_endpoints");
             result["document_query_routing"] = await window.CheckDocumentQueryRoutingForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "document-git-" + name + ".png")); }); checks.Add("document_adjacent_net_uses_exact_stored_canonical_pair_and_provenance_nonadjacent_unavailable_keeps_net_until_explicit_scoped_native_history_recovery");
             await window.CheckRetainedImportRecoveryForSmoke(documents); checks.Add("existing_document_report_new_import_actual_process_cancel_and_postcreate_failure_restore_populated_exact_query_selectors_source_pair_and_next_native_endpoint_action");
             await window.CheckGitWorkflowForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "document-git-" + name + ".png")); }); checks.Add("document_source_first_native_version_log_v1_read_history_query_event_context_bounded_text_diff_focus_and_retained_hosts");
@@ -107,6 +108,7 @@ internal static class Smoke
             finally { releaseSuperseded.TrySetResult(); }
             try { await oldPageRead; throw new InvalidOperationException("Superseded page request did not cancel"); } catch (OperationCanceledException) { }
             await guardedOldPageRead; await newestPage; Require(window.Before.ReadState == "ready" && window.Before.VerifiedPreviewText.Contains("Revenue 100", StringComparison.Ordinal) && window.Before.PageId == documentPages[0].Get("page_id").Text() && window.StatusForSmoke == window.Copy[window.Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"], "Older page cancellation invalidated the newest verified request or presented a false import-cancelled banner"); checks.Add("guarded_superseded_actual_page_read_remains_quiet_latest_verified_page_settles_ready_without_import_cancelled_banner");
+            result["document_source_only_page_supersession"] = await window.CheckSourceOnlyPageSupersessionForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "document-git-" + name + ".png")); }); checks.Add("actual_document_source_only_read_follows_latest_same_generation_page_after_old_install_ignores_cancellation_and_returns_normally_without_query_refresh_or_premature_authority");
             await CheckLayout(window, checks, output, "document"); window.CheckChangeCaptionLanguageForSmoke(); checks.Add("document_existing_native_change_captions_locally_translate_preserving_row_selection_mode_interval_and_source");
             result["document_temporary_focus"] = await window.CheckTemporaryFocusForSmoke(); checks.Add("document_native_temporary_focus_toggle_retains_custom_geometry_panel_intent_saves_retained_layout_and_visibility_preset_saved_reset_routes_preserve_hosts_sources_other_workspace");
             var documentAssets = await AssetHashes(bridge.Library);
@@ -116,14 +118,20 @@ internal static class Smoke
             await window.ExportForSmoke(Path.Combine(output, "document-export")); checks.Add("document_pinned_export");
             Require(Equal(documentAssets, await AssetHashes(bridge.Library)), "Source assets changed during UI/layout/export"); checks.Add("document_source_assets_preserved");
             await window.CheckWorkspaceListForSmoke(); checks.Add("held_workspace_project_refresh_rejects_stale_native_row_before_scope_commit_and_recovers_membership");
-            var staleGeneration = window.Generation; var superseded = window.ReloadComparison(); await window.SwitchWorkspace(true);
+            var staleGeneration = window.Generation; var superseded = window.ReloadSourceWindow(); await window.SwitchWorkspace(true);
             try { await superseded; } catch (OperationCanceledException) { }
-            Require(window.Generation > staleGeneration && window.IsWorkbook && window.ReportId.Length == 0, "A stale document read mutated workbook state"); checks.Add("superseded_document_read_scope");
+            Require(window.Generation > staleGeneration && window.IsWorkbook && window.ReportId.Length == 0, "A stale document source-only read mutated workbook state"); checks.Add("superseded_document_source_only_read_cannot_promote_foreign_workbook_scope");
             var firstStage = Path.Combine(bridge.Library, "workbook-staging-v1"); Require(!Directory.Exists(firstStage) && !File.Exists(firstStage), "First workbook staging control requires its isolated empty profile");
             try { await window.CheckFirstImportForSmoke("Failed workbook draft", books, false, () => File.WriteAllText(firstStage, "synthetic first import failure")); } finally { File.Delete(firstStage); } checks.Add("failed_first_workbook_import_refreshes_saved_draft_without_dead_retry");
             await window.ImportAndAnalyze(request.Get("workbook").Get("title").Text(), books);
             Require(window.ProjectId.StartsWith("wprj_", StringComparison.Ordinal) && window.ReportId.StartsWith("wreport_", StringComparison.Ordinal), "Workbook report was not pinned");
             result["workbook_project_id"] = window.ProjectId; result["workbook_report_id"] = window.ReportId; result["workbook_revisions"] = window.Report.Get("revisions").Items().Count;
+            result["workbook_sole_import"] = await window.CheckSoleImportedRevisionForSmoke(books[0], async name => { await Tick(window); Screenshot(window, Path.Combine(output, "workbook-git-" + name + ".png")); }); checks.Add("actual_one_imported_workbook_occurrence_en_ko_sourcefirst_focus_useful_native_grid_reading_guidance_names_new_timeline_with_two_versions_native_import_dialog_reachable");
+            JsonElement navigationBackup = default;
+            async Task CorruptNavigation() { navigationBackup = await IndexControl(bridge, output, new { operation = "corrupt", report_id = window.ReportId, revision = window.Before.RevisionId, sheet = window.Before.SheetId, row = window.Before.SelectedRow, column = window.Before.SelectedColumn }); }
+            async Task RestoreNavigation() { if (navigationBackup.ValueKind != JsonValueKind.Undefined) await IndexControl(bridge, output, new { operation = "restore", backup = navigationBackup }); }
+            result["workbook_paged_source_navigation"] = await window.CheckPagedSourceNavigationForSmoke(navigationBooks, CorruptNavigation, RestoreNavigation, async name => { await Tick(window); Screenshot(window, Path.Combine(output, "workbook-navigation-" + name + ".png")); }, (name, value) => Observe(output, "workbook-navigation-" + name, value)); checks.Add("actual_two_sheet_canonical_continuation_event_native_sheet_address_next_window_browse_and_return_preserve_loaded_objects_cursor_selected_row_scroll_query_mode_report_scope_and_event_anchors_without_changes_reads");
+            checks.Add("actual_paged_source_corruption_retry_preserves_owned_query_pending_append_cancellation_resumes_real_cursor_unknown_or_failed_query_requires_requery_and_old_source_completion_cannot_promote_authority");
             await window.CheckRetainedImportRecoveryForSmoke(books); checks.Add("existing_workbook_report_new_import_actual_process_cancel_and_postcreate_failure_restore_populated_exact_query_selectors_physical_pair_and_next_native_endpoint_action");
             await window.CheckGitWorkflowForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "workbook-git-" + name + ".png")); }); checks.Add("workbook_source_first_native_version_log_v1_read_history_query_event_context_stored_formula_address_text_diff_focus_and_retained_hosts");
             checks.Add("workbook_actual_text_mode_before_v1_and_equal_native_endpoints_forces_original_reading_picker_five_source_rows_and_no_overlay_or_raw_pager");

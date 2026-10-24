@@ -3,7 +3,7 @@ import {join,resolve} from 'node:path';
 import PDFDocument from 'pdfkit';
 import pptxgen from 'pptxgenjs';
 import {generateWorkbookDemo} from './generate-workbook-demo.js';
-import {odsFixture} from '../tests/workbook-fixtures.js';
+import {odsFixture,xlsxFixture} from '../tests/workbook-fixtures.js';
 import {unzipSync,zipSync,strToU8,strFromU8} from 'fflate';
 import {readFile} from 'node:fs/promises';
 
@@ -32,5 +32,20 @@ if((sheetXML.match(/<c r="D4">/gu)??[]).length!==1)throw new Error('Expected one
 xlsx[sheetKey]=strToU8(sheetXML.replace(/<c r="D4">[\s\S]*?<\/c>/u,'<c r="D4" t="str"><f>'+longFormula.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')+'</f><v>stored only; not recalculated</v></c>'));
 await writeFile(xlsxPath,zipSync(xlsx,{mtime:new Date(1980,0,1)}));
 await writeFile(join(folder,'workbooks/v5.ods'),odsFixture('<table:table table:name="견적서"><table:table-row><table:table-cell office:value-type="string"><text:p>SKU001</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="140" table:formula="of:=70*2"><text:p>140</text:p></table:table-cell></table:table-row></table:table>'));
-await writeFile(join(folder,'windows-smoke.json'),JSON.stringify({documents:{title:'Windows document control',revisions:[{label:'Draft 100',files:['v1.pdf']},{label:'Review 120',files:['v2.pdf']},{label:'PPTX structure 110',files:['v3.pptx']}]},workbook:{title:'Windows workbook control',revisions:[1,2,3].map(i=>({label:'XLSX '+i,path:`workbooks/v${i}.xlsx`})).concat([{label:'CSV 130',path:'workbooks/v4.csv'},{label:'ODS 140',path:'workbooks/v5.ods'}])},expected_long_sources:{csv_b3:longValue,csv_c3:longLiteral,xlsx_d4_formula:longFormula}},null,2)+'\n');
+// Separate sources exercise real change continuations and different-sheet
+// browsing without changing the established five-version/MCP72-cell control.
+await mkdir(join(folder,'navigation'),{recursive:true});
+const mainNS='http://schemas.openxmlformats.org/spreadsheetml/2006/main',officeRels='http://schemas.openxmlformats.org/officeDocument/2006/relationships',packageRels='http://schemas.openxmlformats.org/package/2006/relationships';
+const navigationSheet=(base:number)=>`<worksheet xmlns="${mainNS}"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Key</t></is></c><c r="B1" t="inlineStr"><is><t>Value</t></is></c></row>${Array.from({length:8},(_,index)=>`<row r="${index+2}"><c r="A${index+2}" t="inlineStr"><is><t>item-${index+1}</t></is></c><c r="B${index+2}"><v>${base+index}</v></c></row>`).join('')}</sheetData></worksheet>`;
+for(const version of [1,2]) {
+  await writeFile(join(folder,`navigation/v${version}-two-sheets.xlsx`),xlsxFixture(navigationSheet(version===1?100:120),{
+    workbook:`<workbook xmlns="${mainNS}" xmlns:r="${officeRels}"><sheets><sheet name="Primary" sheetId="1" r:id="primary"/><sheet name="Secondary" sheetId="2" r:id="secondary"/></sheets></workbook>`,
+    relationships:`<Relationships xmlns="${packageRels}"><Relationship Id="primary" Type="${officeRels}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="secondary" Type="${officeRels}/worksheet" Target="worksheets/sheet2.xml"/></Relationships>`,
+    extra:{
+      '[Content_Types].xml':`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
+      'xl/worksheets/sheet2.xml':navigationSheet(version===1?200:220),
+    },
+  }));
+}
+await writeFile(join(folder,'windows-smoke.json'),JSON.stringify({documents:{title:'Windows document control',revisions:[{label:'Draft 100',files:['v1.pdf']},{label:'Review 120',files:['v2.pdf']},{label:'PPTX structure 110',files:['v3.pptx']}]},workbook:{title:'Windows workbook control',revisions:[1,2,3].map(i=>({label:'XLSX '+i,path:`workbooks/v${i}.xlsx`})).concat([{label:'CSV 130',path:'workbooks/v4.csv'},{label:'ODS 140',path:'workbooks/v5.ods'}])},navigation_workbooks:{title:'Paged source navigation control',revisions:[1,2].map(i=>({label:'Two sheets '+i,path:`navigation/v${i}-two-sheets.xlsx`}))},expected_long_sources:{csv_b3:longValue,csv_c3:longLiteral,xlsx_d4_formula:longFormula}},null,2)+'\n');
 console.log(JSON.stringify({folder,source:'independent synthetic files; no macros, links, private data or external instructions'}));
