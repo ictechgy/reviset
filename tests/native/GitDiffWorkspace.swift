@@ -692,6 +692,43 @@ private struct SoleDocumentImportProbeHarness:View {
             model.inspectorVisible=false;try await settle(window)
             for (table,origin) in zip(tables,origins) {try require(table.enclosingScrollView!.contentView.bounds.origin==origin,"ClosingDetailsRearmedConsumedReveal")}
         }
+        // A real native user-sized column can exceed the entire source pane.
+        // Opening details must finish its single reveal even when full fit is impossible.
+        model.inspectorVisible=false;model.columnStart=1;model.revealGeneration += 1;try await settle(window)
+        let oversizedTables=views(host).compactMap{$0 as? NSTableView}.filter{$0.identifier?.rawValue.hasPrefix("Docver.workbook.grid.")==true}
+        let originalWindowSize=host.bounds.size
+        var oversizedColumns:[(NSTableColumn,CGFloat,CGFloat)]=[],oversizedGeometry:[[String:Any]]=[]
+        for table in oversizedTables {
+            guard let column=table.tableColumns.first(where:{$0.identifier.rawValue=="4"}) else{throw NSError(domain:"OversizedD4ColumnMissing",code:1)}
+            oversizedColumns.append((column,column.width,column.maxWidth));column.maxWidth=2000;column.width=1600;table.tile()
+            let scroll=table.enclosingScrollView!;scroll.contentView.scroll(to:NSPoint(x:0,y:scroll.contentView.bounds.origin.y));scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        let oversizedStates=oversizedTables.map{($0,$0.dataSource as AnyObject?,$0.enclosingScrollView!.contentView.bounds.origin,$0.selectedRow)}
+        let oversizedBefore=try model.beforeCell.data(),oversizedAfter=try model.afterCell.data(),oversizedFixed=try model.report.data(),oversizedQuery=model.comparisonScope,oversizedRequests=try Data(contentsOf:library.appendingPathComponent("read-events.jsonl"))
+        guard let oversizedButton=views(host).compactMap({$0 as? NSButton}).first(where:{$0.identifier?.rawValue=="Reviset.workbook.cellDetailsAction"}) else{throw NSError(domain:"OversizedDetailsButtonMissing",code:1)}
+        oversizedButton.performClick(nil);try await settle(window)
+        for (table,owner,origin,row) in oversizedStates {
+            guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,let index=table.tableColumns.firstIndex(where:{$0.identifier.rawValue=="4"}) else{throw NSError(domain:"OversizedDetailsNativeScopeMissing",code:1)}
+            try require(table.rect(ofColumn:index).width>scroll.contentView.bounds.width && !scroll.columnVisibleToRightOfGutter(index) && scroll.pendingCellDetailsReveal==nil && scroll.contentView.bounds.minY==origin.y && table.selectedRow==row && (table.dataSource as AnyObject?) === owner,"OversizedDetailsRetainedRevealAuthorityOrMovedPhysicalSource")
+            oversizedGeometry.append(["pane":(table.dataSource as! WorkbookGrid.Coordinator).parent.pane,"column_width":Double(table.rect(ofColumn:index).width),"viewport_width":Double(scroll.contentView.bounds.width),"cannot_fit_whole_column":true,"pending_nil_after_attempt":true])
+            scroll.contentView.scroll(to:NSPoint(x:127,y:origin.y));scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        let manualOrigins=oversizedTables.map{$0.enclosingScrollView!.contentView.bounds.origin}
+        window.setContentSize(NSSize(width:originalWindowSize.width+80,height:originalWindowSize.height));try await settle(window)
+        guard let pageSplit=views(host).compactMap({$0 as? NSSplitView}).first(where:{$0.identifier?.rawValue=="Reviset.workspace.workbook.pages"}),let pageSizing=pageSplit.delegate as? WorkspacePaneSizing else{throw NSError(domain:"OversizedDetailsNativeDividerMissing",code:1)}
+        let savedPageExtent=pageSplit.arrangedSubviews.last!.frame.width
+        pageSizing.resizeAuxiliary(to:savedPageExtent+30,commit:true);try await settle(window)
+        for ((table,owner,_,row),origin) in zip(oversizedStates,manualOrigins) {let scroll=table.enclosingScrollView as! WorkbookTableScrollView;try require(scroll.pendingCellDetailsReveal==nil && scroll.contentView.bounds.origin==origin && table.selectedRow==row && (table.dataSource as AnyObject?) === owner,"PassiveWindowOrDividerResizeReplayedOversizedReveal")}
+        // Fault the actual mounted readiness marker to exercise an unavailable
+        // marker, rather than installing a test callback in the production scroll.
+        guard let readinessMarker=workspaceLayoutMarkers(in:host).first(where:{$0.identifier?.rawValue=="Reviset.workbook.cellDetails"}) else{throw NSError(domain:"UnavailableReadinessMarkerFixtureMissing",code:1)}
+        let readinessID=readinessMarker.identifier;readinessMarker.identifier=NSUserInterfaceItemIdentifier("Test.unavailableCellDetailsReadiness")
+        oversizedButton.performClick(nil);try await settle(window)
+        readinessMarker.identifier=readinessID
+        for (table,origin) in zip(oversizedTables,manualOrigins) {let scroll=table.enclosingScrollView as! WorkbookTableScrollView;try require(scroll.pendingCellDetailsReveal==nil && scroll.contentView.bounds.origin==origin,"UnavailableInspectorMarkerRetainedRevealAuthority")}
+        try require(try model.beforeCell.data()==oversizedBefore && model.afterCell.data()==oversizedAfter && model.report.data()==oversizedFixed && model.comparisonScope==oversizedQuery && Data(contentsOf:library.appendingPathComponent("read-events.jsonl"))==oversizedRequests,"OversizedDetailsChangedSourceQueryOrReadAgain")
+        for (column,width,maxWidth) in oversizedColumns {column.width=width;column.maxWidth=maxWidth}
+        pageSizing.resizeAuxiliary(to:savedPageExtent,commit:true);window.setContentSize(originalWindowSize);model.inspectorVisible=false;try await settle(window)
         model.selectedRow=savedCellState.0;model.selectedColumn=savedCellState.1;model.beforeAddress=savedCellState.2;model.afterAddress=savedCellState.3;model.beforeCell=savedCellState.4;model.afterCell=savedCellState.5;model.beforeCells=savedCellState.6;model.afterCells=savedCellState.7;model.selectedChangeID=savedCellState.8;model.columnStart=savedCellState.9;model.rowStart=savedCellState.10;model.revealGeneration += 1;try await settle(window)
         let originalReport=model.report
         var longReport=model.report.dictionary,longRevisions=model.revisions.map(\.dictionary)
@@ -740,7 +777,7 @@ private struct SoleDocumentImportProbeHarness:View {
         try require(!workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"UnselectedDocumentDiffClaimedSelectedEvent")
         document.changes=[JSON(["change_id":"selected","kind":"text_modified","before":"100","after":"120"])];document.selectedChangeID="selected";try await settle(docWindow)
         try require(workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"SelectedDocumentEventHeaderMissing")
-        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true,"source23_cell_details_both_directions_after_final_inspector_geometry":directionalGeometry,"source18_scope_caption_geometry":captionGeometry,"source18_nonfinite_width_resolved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
+        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true,"source24_oversized_cell_details":oversizedGeometry,"source24_passive_window_and_divider_resize_keeps_manual_origin":true,"source24_missing_native_marker_readiness_expires":true,"source23_cell_details_both_directions_after_final_inspector_geometry":directionalGeometry,"source18_scope_caption_geometry":captionGeometry,"source18_nonfinite_width_resolved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
     }
 
 }

@@ -240,25 +240,39 @@ struct WorkspaceLayoutMarker:NSViewRepresentable {
     func resizeAuxiliary(to points:CGFloat,commit:Bool)
 }
 @MainActor protocol WorkspacePreferredGeometryObserver:AnyObject {
+    var hasPendingPreferredGeometryAction:Bool {get}
     func workspacePreferredGeometryDidSettle()
 }
 // Explicit actions may wait for the native split queue. Passive layouts never
 // install an action, and a later preferred-size job must finish before it runs.
 @MainActor enum WorkspacePreferredGeometry {
+    private final class PendingView {
+        weak var view:NSView?
+        init(_ view:NSView){self.view=view}
+    }
+    private static var pendingViews:[PendingView]=[]
     private static var scheduled:Set<ObjectIdentifier>=[]
+    static func watch(_ view:NSView) {
+        pendingViews.removeAll{($0.view as? WorkspacePreferredGeometryObserver)?.hasPendingPreferredGeometryAction != true}
+        if !pendingViews.contains(where:{$0.view === view}) {pendingViews.append(PendingView(view))}
+    }
     static func requestCompletion(in window:NSWindow?) {
         guard let window else{return}
+        pendingViews.removeAll{($0.view as? WorkspacePreferredGeometryObserver)?.hasPendingPreferredGeometryAction != true}
+        guard pendingViews.contains(where:{$0.view?.window === window}) else{return}
         let identity=ObjectIdentifier(window)
         guard scheduled.insert(identity).inserted else{return}
         DispatchQueue.main.async { [weak window] in
             scheduled.remove(identity)
             guard let window else{return}
+            let observers=pendingViews.compactMap{$0.view}.filter{$0.window === window && ($0 as? WorkspacePreferredGeometryObserver)?.hasPendingPreferredGeometryAction==true}
+            guard !observers.isEmpty else{return}
             guard let content=window.contentView else{return}
             func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
             let children=views(content)
             // NSSplitViewController is its managed split view's delegate.
             guard !children.contains(where:{(($0 as? NSSplitView)?.delegate as? WorkspacePaneSizing)?.geometryPending==true}) else{return}
-            for child in children {(child as? WorkspacePreferredGeometryObserver)?.workspacePreferredGeometryDidSettle()}
+            for observer in observers {(observer as? WorkspacePreferredGeometryObserver)?.workspacePreferredGeometryDidSettle()}
         }
     }
 }

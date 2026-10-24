@@ -1300,7 +1300,9 @@ private struct WorkbookCellDetailsButton:NSViewRepresentable {
                         let before=owner.parent.pane=="before",occurrence=before ? model.beforeID:model.afterID,sheet=before ? model.beforeSheetID:model.afterSheetID
                         guard owner.parent.keyboardEnabled,!scroll.isHiddenOrHasHiddenAncestor,!scroll.visibleRect.isEmpty,["before","after"].contains(owner.parent.pane),owner.parent.revealIntent==[model.scope,occurrence,sheet,String(model.revealGeneration)].joined(separator:"|"),let coordinate=model.paneCoordinate(before:before),owner.parent.selectedRow==coordinate.row,owner.parent.selectedColumn==coordinate.column,let column=table.tableColumns.firstIndex(where:{$0.identifier.rawValue==String(coordinate.column)}) else{return true}
                         scroll.revealColumnToRightOfGutter(column)
-                        return scroll.columnVisibleToRightOfGutter(column)
+                        // A user-sized column may be wider than its viewport.
+                        // The explicit attempt still finishes here.
+                        return true
                     }
                 } else {for child in view.subviews {install(child)}}
             }
@@ -1806,10 +1808,20 @@ private final class WorkbookPinnedRowsView:NSView {
     }
 }
 @MainActor final class WorkbookTableScrollView: NSScrollView,WorkspacePreferredGeometryObserver {
-    var pendingCellDetailsReveal:((WorkbookTableScrollView)->Bool)?
+    private var remainingReadinessSettles=0
+    var pendingCellDetailsReveal:((WorkbookTableScrollView)->Bool)? {
+        didSet {if pendingCellDetailsReveal != nil {remainingReadinessSettles=2;WorkspacePreferredGeometry.watch(self)}}
+    }
+    var hasPendingPreferredGeometryAction:Bool {pendingCellDetailsReveal != nil}
     func workspacePreferredGeometryDidSettle() {
         guard let pending=pendingCellDetailsReveal else{return}
-        if pending(self) {pendingCellDetailsReveal=nil}
+        remainingReadinessSettles -= 1
+        if pending(self) || remainingReadinessSettles<=0 {pendingCellDetailsReveal=nil}
+        else {
+            // One extra geometry tail allows the action's SwiftUI inspector
+            // marker to mount. Missing readiness cannot retain pan authority.
+            WorkspacePreferredGeometry.requestCompletion(in:window)
+        }
     }
     override func scrollWheel(with event:NSEvent) {pendingCellDetailsReveal=nil;super.scrollWheel(with:event)}
     var sourceKeyboardEnabled=true {didSet{if !sourceKeyboardEnabled {pendingCellDetailsReveal=nil}}}
@@ -2396,9 +2408,43 @@ struct WorkbookGrid: NSViewRepresentable {
             ["side":side,"address":cell["address"].string,"fields":["value","formula","number_format"].map {field->[String:Any] in let raw=cell[field].string,continuation=cell["text_continuations"][field];return ["field":field,"raw_utf16":Array(raw.utf16).map(Int.init),"state":continuation["state"].string,"offset":continuation["offset"].int,"observed_end":continuation["offset"].int+raw.utf16.count,"total_length":continuation["total_length"].int,"next_offset":continuation["next_offset"].raw] }]
         }
         try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-cell-details.png"))
+        let oversizedChecks=try await exerciseOversizedCellDetails(model,layout:layout,window:window,button:button,tables:tables)
         model.inspectorVisible=originalInspector;layout.update{$0=originalLayout};await model.returnToChange();try await Task.sleep(nanoseconds:200_000_000)
         guard !queried,model.comparisonScope==query,try JSON(model.changes.map(\.raw)).data()==rows,try model.report.data()==fixed,model.selectedChangeID==selected else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_RESTORE",message:"Cell details qualification replaced the query/list/report or failed to restore the selected event.")}
-        return ["qualified":true,"native_action_performed":true,"existing_bounded_raw_reader_visible":true,"literal_unchanged":literal,"address":candidate["address"].string,"physical_scope_retained_by_action":true,"query_list_report_and_selected_event_restored_without_query":true,"grid_hosts_coordinators_selection_and_vertical_viewports_retained_by_action":true,"explicit_horizontal_reveal_only":true,"horizontal_reveal":horizontalReveal,"inspected_columns_visible_right_of_pinned_gutter":true,"physical_row_gutter_labels_visible":true,"source_segments":segments,"capture":"native-workbook-cell-details.png","interaction_scope":"actual packaged production native button performClick; horizontal reveal is explicit while source scope, selected cells, retained hosts and vertical origins stay fixed; no OS input or value beyond recorded continuation bounds"]
+        return ["qualified":true,"native_action_performed":true,"existing_bounded_raw_reader_visible":true,"literal_unchanged":literal,"address":candidate["address"].string,"physical_scope_retained_by_action":true,"query_list_report_and_selected_event_restored_without_query":true,"grid_hosts_coordinators_selection_and_vertical_viewports_retained_by_action":true,"explicit_horizontal_reveal_only":true,"horizontal_reveal":horizontalReveal,"inspected_columns_visible_right_of_pinned_gutter":true,"physical_row_gutter_labels_visible":true,"oversized_column_one_shot_checks":oversizedChecks,"source_segments":segments,"capture":"native-workbook-cell-details.png","interaction_scope":"actual packaged production native button performClick; horizontal reveal is explicit while source scope, selected cells, retained hosts and vertical origins stay fixed; no OS input or value beyond recorded continuation bounds"]
+    }
+    private static func exerciseOversizedCellDetails(_ model:WorkbookModel,layout:WorkspaceLayoutStore,window:NSWindow,button:NSButton,tables:[NSTableView])async throws->[String:Any] {
+        guard let content=window.contentView else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Oversized column qualification has no window content.")}
+        func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
+        let originalSize=content.bounds.size,configuration=layout.configuration,originalOrigins=tables.map{$0.enclosingScrollView!.contentView.bounds.origin},before=try model.beforeCell.data(),after=try model.afterCell.data(),identity=[model.rangeScope,model.comparisonScope,model.beforeAddress,model.afterAddress,model.selectedChangeID,String(model.selectedRow),String(model.selectedColumn),String(model.revealGeneration)]
+        var columns:[(NSTableColumn,CGFloat,CGFloat)]=[],facts:[[String:Any]]=[]
+        defer {
+            for (column,width,maximum) in columns {column.width=width;column.maxWidth=maximum}
+            for table in tables {table.tile()}
+            layout.update{$0=configuration};window.setContentSize(originalSize)
+            for (table,origin) in zip(tables,originalOrigins) {if let scroll=table.enclosingScrollView {scroll.contentView.scroll(to:origin);scroll.reflectScrolledClipView(scroll.contentView)}}
+        }
+        for table in tables {
+            guard let owner=table.dataSource as? WorkbookGrid.Coordinator,let column=table.tableColumns.first(where:{$0.identifier.rawValue==String(owner.parent.selectedColumn)}),let scroll=table.enclosingScrollView else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Oversized column qualification lost its physical source owner.")}
+            columns.append((column,column.width,column.maxWidth));column.maxWidth=2000;column.width=1600;table.tile()
+            scroll.contentView.scroll(to:NSPoint(x:0,y:scroll.contentView.bounds.origin.y));scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        let states=tables.map{($0,$0.dataSource as AnyObject?,$0.selectedRow,$0.enclosingScrollView!.contentView.bounds.origin.y)}
+        button.performClick(nil);try await Task.sleep(nanoseconds:150_000_000)
+        for (table,owner,row,y) in states {
+            guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,let coordinator=table.dataSource as? WorkbookGrid.Coordinator,let index=table.tableColumns.firstIndex(where:{$0.identifier.rawValue==String(coordinator.parent.selectedColumn)}),table.rect(ofColumn:index).width>scroll.contentView.bounds.width,!scroll.columnVisibleToRightOfGutter(index),scroll.pendingCellDetailsReveal==nil,scroll.contentView.bounds.origin.y==y,table.selectedRow==row,(table.dataSource as AnyObject?) === owner else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"A column that cannot fit retained reveal authority or moved its physical source.")}
+            facts.append(["pane":coordinator.parent.pane,"physical_address":WorkbookGrid.address(coordinator.parent.selectedRow,coordinator.parent.selectedColumn),"column_width":Double(table.rect(ofColumn:index).width),"viewport_width":Double(scroll.contentView.bounds.width),"whole_column_cannot_fit":true,"pending_nil_after_attempt":true])
+            scroll.contentView.scroll(to:NSPoint(x:127,y:y));scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        let origins=tables.map{$0.enclosingScrollView!.contentView.bounds.origin}
+        window.setContentSize(NSSize(width:originalSize.width+64,height:originalSize.height));try await Task.sleep(nanoseconds:100_000_000)
+        guard let pages=views(content).compactMap({$0 as? NSSplitView}).first(where:{$0.identifier?.rawValue=="Reviset.workspace.workbook.pages"}),let sizing=pages.delegate as? WorkspacePaneSizing,let auxiliary=pages.arrangedSubviews.last else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Oversized column qualification has no native page divider.")}
+        sizing.resizeAuxiliary(to:(pages.isVertical ? auxiliary.frame.width:auxiliary.frame.height)+25,commit:true);try await Task.sleep(nanoseconds:100_000_000)
+        for ((table,owner,row,_),origin) in zip(states,origins) {
+            guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,scroll.pendingCellDetailsReveal==nil,scroll.contentView.bounds.origin==origin,table.selectedRow==row,(table.dataSource as AnyObject?) === owner else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Passive window/divider geometry replayed a completed oversized-column reveal or changed selection/owner.")}
+        }
+        guard try model.beforeCell.data()==before,try model.afterCell.data()==after,identity==[model.rangeScope,model.comparisonScope,model.beforeAddress,model.afterAddress,model.selectedChangeID,String(model.selectedRow),String(model.selectedColumn),String(model.revealGeneration)] else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Oversized column qualification changed physical raw source or query scope.")}
+        return ["qualified":true,"panes":facts,"manual_horizontal_origin":127,"pending_consumed_after_first_ready_attempt":true,"later_passive_window_and_divider_geometry_did_not_pan":true,"vertical_selection_hosts_and_source_scope_retained":true,"widths_layout_window_and_viewports_restored_before_return":true]
     }
     private static func rawSavedValueCellFacts(_ model:WorkbookModel,content:NSView)throws->[[String:Any]] {
         var facts:[[String:Any]]=[]
