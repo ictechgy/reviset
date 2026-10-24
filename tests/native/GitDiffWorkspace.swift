@@ -172,6 +172,7 @@ private struct PageColumnProbeHarness:View {
         detailWindow.close();contextWindow.close()
         try await checkOneBasedPager()
         try await checkGridSourceAndHiddenInput()
+        try await checkHiddenSourceHeaders()
         let workbook=WorkbookModel(bridge:model.bridge);await workbook.start();workbook.projectID="workbook";workbook.reportID="workbook_report";workbook.report=JSON(["report_id":"workbook_report","revisions":[["revision_occurrence_id":"w0","index":0,"sheets":[]],["revision_occurrence_id":"w1","index":1,"sheets":[]]]]);workbook.beforeID="w0";workbook.afterID="w1";workbook.changesFromID="w0";workbook.changesToID="w1"
         workbook.diffMode="text";await workbook.selectVersion("w0");try require(workbook.diffMode=="source" && workbook.effectiveDiffMode=="source","WorkbookVersionMenuKeptTextOverlay")
         try require(workbook.beforeID=="w0" && workbook.afterID=="w0" && workbook.changesFromID=="w0" && workbook.changesToID=="w0" && workbook.changes.isEmpty && !workbook.loadingChanges && workbook.changesFailure.isEmpty,"WorkbookFirstVersionDidNotReadSingleSource")
@@ -305,6 +306,68 @@ private struct PageColumnProbeHarness:View {
         }
         let proof:[String:Any]=["scope":"production workbook reading model routes and actual visible native guidance fields/button in synthetic NSHostingView; existing import route reached without submitting a new timeline; no OS gestures","observations":observations,"native_new_comparison_action_reached":true,"report_and_raw_cells_unchanged_by_action":true]
         if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:proof,options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("workbook-reading-proof.json"))}
+    }
+
+    @MainActor static func checkHiddenSourceHeaders()async throws {
+        func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
+        func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
+        func settle(_ window:NSWindow)async throws {try await Task.sleep(nanoseconds:100_000_000);window.contentView?.layoutSubtreeIfNeeded()}
+        func window<Content:View>(_ content:Content)->NSWindow {let result=NSWindow(contentRect:NSRect(x:0,y:0,width:1280,height:800),styleMask:[.titled],backing:.buffered,defer:false);result.isReleasedWhenClosed=false;result.contentView=NSHostingView(rootView:content);result.orderFront(nil);return result}
+        let language=LanguagePreferences.shared,previous=LanguagePreferences.shared.selection
+        defer{language.selection=previous}
+        var facts:[[String:Any]]=[]
+        for locale in [UILanguage.en,.ko] {
+            language.selection=locale
+            let document=AppModel();document.initializing=false;document.projectID="header-project";document.zoom=1.5
+            document.report=JSON(["report_id":"header-fixed","revisions":(0..<2).map{i in ["revision_occurrence_id":"header-o\(i)","label":"v\(i+1)","assets":[],"pages":[["page_id":"header-p\(i)","page":1],["page_id":"header-next\(i)","page":2]]]}]);document.from=0;document.to=1;document.leftPageID="header-p0";document.rightPageID="header-p1"
+            let exactReason="Observed source é / e\u{301}\nFull reason stays selectable."
+            document.changes=[JSON(["change_id":"header-change","kind":"text_modified","from_occurrence":"header-o0","to_occurrence":"header-o1","before":"100","after":"120","lineage":["status":"needs_review","reasons":[exactReason]],"evidence":[["revision_occurrence_id":"header-o0","page_id":"header-p0"],["revision_occurrence_id":"header-o1","page_id":"header-p1"]]])];document.selectedChangeID="header-change"
+            let layout=WorkspaceLayoutStore(scope:.document),docWindow=window(CompareWorkspace().environmentObject(document).environmentObject(layout))
+            try await settle(docWindow)
+            guard let docRoot=docWindow.contentView else{throw NSError(domain:"HeaderDocumentRootMissing",code:1)}
+            let fields=views(docRoot).compactMap{$0 as? NSTextField}.filter{$0.isEditable && $0.stringValue=="1"}
+            let controls=pageColumnControlObservations(in:docRoot)
+            try require(fields.count==2 && controls.filter{$0.identifier?.rawValue.contains("pagePicker")==true}.count==2,"NativePageHeadersMissing")
+            guard let field=fields.first else{throw NSError(domain:"NativePageEntryMissing",code:1)}
+            try require(fields.allSatisfy{$0.isEnabled} && controls.allSatisfy{$0.contentEnabled} && docWindow.makeFirstResponder(field) && field.currentEditor() === docWindow.firstResponder,"VisiblePageHeaderCouldNotOwnNativeEditor")
+            let fixed=try document.report.data(),source=[document.leftPageID,document.rightPageID],query=[document.from,document.to]
+            document.diffMode="text";try await settle(docWindow)
+            try require(fields.allSatisfy{!$0.isEnabled && !$0.acceptsFirstResponder && !$0.canBecomeKeyView && $0.currentEditor()==nil} && controls.allSatisfy{!$0.contentEnabled},"InvisiblePageHeaderKeptKeyboardAuthority")
+            _ = docWindow.makeFirstResponder(field)
+            try require(field.currentEditor()==nil,"InvisiblePageHeaderReacquiredNativeEditor")
+            for reverse in [false,true] {for _ in 0..<12 {if reverse{docWindow.selectPreviousKeyView(nil)}else{docWindow.selectNextKeyView(nil)};try require(fields.allSatisfy{$0.currentEditor()==nil},"NativeTraversalEnteredInvisiblePageHeader")}}
+            // Repeat the original native-editor attack only if an editor could
+            // still be acquired. Disabled retained headers must offer none.
+            if let editor=field.currentEditor() as? NSTextView {editor.selectAll(nil);editor.insertText("2",replacementRange:editor.selectedRange());editor.insertNewline(nil)}
+            try await settle(docWindow)
+            let overlay=workspaceLayoutMarkers(in:docRoot).first{$0.identifier?.rawValue=="Reviset.document.unifiedDiff"}
+            let diffLines=workspaceLayoutMarkers(in:docRoot).filter{$0.identifier?.rawValue.hasPrefix("Reviset.document.diffLine.")==true}
+            try require(overlay?.contentEnabled==true && !diffLines.isEmpty && diffLines.allSatisfy{$0.contentEnabled},"OriginalDisableLeakedIntoTextDiffOverlay")
+            let details=window(SelectedChangeContextDetails().environmentObject(document));try await settle(details)
+            guard let reader=details.contentView.flatMap({views($0).compactMap{$0 as? NSTextView}.first(where:{$0.string.utf16.elementsEqual(exactReason.utf16)})}) else{throw NSError(domain:"FullReasonReaderMissingInTextMode",code:1)}
+            try require(reader.isSelectable && !reader.isEditable && details.makeFirstResponder(reader),"FullReasonReaderDisabledWithOriginalSource");reader.selectAll(nil);try require(reader.selectedRange().length==exactReason.utf16.count,"FullReasonReaderLostExactSelectableText")
+            details.close();document.diffMode="source";try await settle(docWindow)
+            try require(fields.allSatisfy{$0.isEnabled} && controls.allSatisfy{$0.contentEnabled} && fields.allSatisfy{old in views(docRoot).contains{$0===old}} && document.zoom==1.5 && [document.leftPageID,document.rightPageID]==source && [document.from,document.to]==query && (try document.report.data())==fixed,"HeaderModeGateRebuiltControlsOrChangedSource")
+            facts.append(["workspace":"document","language":locale.rawValue,"actual_native_page_entries":fields.count,"native_editor_retired":true,"hidden_reacquisition_rejected":true,"local_next_previous_steps":24,"evaluated_page_picker_and_pager_disabled":true,"text_overlay_enabled":true,"exact_full_reason_reader_selectable":true,"report_query_source_zoom_and_header_identity_retained":true]);docWindow.close()
+
+            let workbook=WorkbookModel(bridge:document.bridge);workbook.projectID="header-workbook";workbook.reportID="header-workbook-report"
+            workbook.report=JSON(["report_id":workbook.reportID,"revisions":(0..<2).map{i in ["revision_occurrence_id":"book-o\(i)","index":i,"sheets":[["sheet_id":"book-s\(i)","name":"Sheet \(i)","row_count":10,"column_count":3],["sheet_id":"other-s\(i)","name":"Other","row_count":10,"column_count":3]]]}]);workbook.beforeID="book-o0";workbook.afterID="book-o1";workbook.beforeSheetID="book-s0";workbook.afterSheetID="book-s1";workbook.changesFromID=workbook.beforeID;workbook.changesToID=workbook.afterID
+            let bookWindow=window(WorkbookWorkspace(model:workbook));try await settle(bookWindow)
+            guard let bookRoot=bookWindow.contentView else{throw NSError(domain:"WorkbookHeaderRootMissing",code:1)}
+            let sheets=workspaceLayoutMarkers(in:bookRoot).filter{$0.identifier?.rawValue.hasPrefix("Reviset.workbook.sheetPicker.")==true},tables=views(bookRoot).compactMap{$0 as? NSTableView}
+            try require(sheets.count==2 && sheets.allSatisfy{$0.contentEnabled} && tables.count==2,"ProductionWorkbookSheetHeadersNotMounted")
+            let bookFixed=try workbook.report.data(),bookSource=[workbook.beforeID,workbook.afterID,workbook.beforeSheetID,workbook.afterSheetID],tableState=tables.map{($0,$0.dataSource as AnyObject?,$0.enclosingScrollView!.contentView.bounds.origin,$0.selectedRow)}
+            try require(bookWindow.makeFirstResponder(tables[0]),"VisibleWorkbookSourceCouldNotTakeFocus")
+            workbook.diffMode="text";try await settle(bookWindow)
+            try require(sheets.allSatisfy{!$0.contentEnabled} && tables.allSatisfy{!$0.acceptsFirstResponder && !$0.canBecomeKeyView},"HiddenWorkbookSheetOrGridStayedEnabled")
+            try require(workspaceLayoutMarkers(in:bookRoot).first{$0.identifier?.rawValue=="Reviset.workbook.unifiedDiff"}?.contentEnabled==true,"WorkbookSourceDisableLeakedIntoTextOverlay")
+            for reverse in [false,true] {for _ in 0..<12 {if reverse{bookWindow.selectPreviousKeyView(nil)}else{bookWindow.selectNextKeyView(nil)};if let responder=bookWindow.firstResponder as? NSView {try require(!tables.contains{responder === $0 || responder.isDescendant(of:$0)},"NativeTraversalEnteredHiddenWorkbookSource")}}}
+            workbook.diffMode="source";try await settle(bookWindow)
+            try require(sheets.allSatisfy{$0.contentEnabled} && bookSource==[workbook.beforeID,workbook.afterID,workbook.beforeSheetID,workbook.afterSheetID] && (try workbook.report.data())==bookFixed,"WorkbookHeaderGateChangedFixedSource")
+            for (table,coordinator,origin,selected) in tableState {try require(views(bookRoot).contains{$0===table} && (table.dataSource as AnyObject?) === coordinator && table.enclosingScrollView!.contentView.bounds.origin==origin && table.selectedRow==selected,"WorkbookHeaderGateRebuiltGridOrMovedViewport")}
+            facts.append(["workspace":"workbook","language":locale.rawValue,"evaluated_sheet_picker_environments":sheets.count,"hidden_sheet_pickers_disabled":true,"text_overlay_enabled":true,"actual_native_grid_hosts":tables.count,"native_popup_views_in_closed_tree":views(bookRoot).compactMap{$0 as? NSPopUpButton}.count,"local_next_previous_steps":24,"source_report_grid_coordinator_viewport_selection_retained":true,"picker_proof_scope":"evaluated production Picker enabled environment; no native popup/OS AX activation claim"]);bookWindow.close()
+        }
+        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["scope":"production CompareWorkspace and WorkbookWorkspace in controlled native NSHostingViews; synthetic fixed reports, local AppKit responder/editor/traversal actions; no OS Full Keyboard Access or VoiceOver automation","observations":facts],options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("hidden-header-proof.json"))}
     }
 
 }

@@ -37,7 +37,7 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
       }),
     ];
     const contexts=join(root,'engine-contexts.json');await writeFile(contexts,JSON.stringify(cases));
-    const stdout=execFileSync(executable,[contexts,resolve("tests/fixtures/native-workbook-observation-cases.json")],{encoding:'utf8',timeout:10_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata')}});
+    const stdout=execFileSync(executable,[contexts,resolve("tests/fixtures/native-workbook-observation-cases.json")],{encoding:'utf8',timeout:15_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata')}});
     assert.match(stdout,/PASS native Git diff workspace:/u);
     const contextEvidence=await readFile(join(root,'userdata','context-geometry.json'),'utf8');
     const context=JSON.parse(contextEvidence) as {summary_height:number;source_height:number;reason_utf16_count:number;full_reader_utf16:number[];expected_utf16:number[];reader_height:number;reader_viewport_height:number};
@@ -58,5 +58,9 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
     assert.equal(reading.observations.length,6);assert.equal(new Set(reading.observations.map(item=>[item.language,item.route].join('/'))).size,6);
     assert.ok(reading.observations.every(item=>item.native_message_field_verified));
     if(process.env.DOCVER_TEST_WORKBOOK_READING_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_WORKBOOK_READING_EVIDENCE_OUT,readingEvidence);
+    const headerEvidence=await readFile(join(root,'userdata','hidden-header-proof.json'),'utf8');
+    const headers=JSON.parse(headerEvidence) as {observations:{workspace:string;language:string}[]};
+    assert.equal(headers.observations.length,4);assert.equal(new Set(headers.observations.map(item=>[item.workspace,item.language].join('/'))).size,4);
+    if(process.env.DOCVER_TEST_HIDDEN_HEADER_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_HIDDEN_HEADER_EVIDENCE_OUT,headerEvidence);
   } finally {await rm(root,{recursive:true,force:true});}
 });

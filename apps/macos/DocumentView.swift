@@ -276,6 +276,7 @@ final class PageColumnControlObservationView:NSView {
     var occurrence=""
     var selection=""
     var title=""
+    var contentEnabled=true
     override func hitTest(_ point:NSPoint)->NSView? {nil}
 }
 @MainActor func pageColumnControlObservations(in view:NSView)->[PageColumnControlObservationView] {
@@ -288,7 +289,7 @@ private struct PageColumnControlObservation:NSViewRepresentable {
     let title:String
     func makeNSView(context:Context)->PageColumnControlObservationView {PageColumnControlObservationView()}
     func updateNSView(_ view:PageColumnControlObservationView,context:Context) {
-        view.identifier=NSUserInterfaceItemIdentifier("Reviset.document."+kind+"."+occurrence);view.occurrence=occurrence;view.selection=selection;view.title=title
+        view.identifier=NSUserInterfaceItemIdentifier("Reviset.document."+kind+"."+occurrence);view.occurrence=occurrence;view.selection=selection;view.title=title;view.contentEnabled=context.environment.isEnabled
     }
 }
 private struct PageColumnReadIdentity:Equatable {

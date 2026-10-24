@@ -717,6 +717,7 @@ struct WorkbookWorkspace: View {
     @StateObject var model: WorkbookModel
     @StateObject private var layout=WorkspaceLayoutStore(scope:.workbook)
     init(bridge: Bridge) { _model = StateObject(wrappedValue:WorkbookModel(bridge:bridge)) }
+    init(model:WorkbookModel) { _model = StateObject(wrappedValue:model) }
     var body: some View {
         VStack(spacing:0) {
             WorkspacePaneSplit(name:"workbook.projects",auxiliaryFirst:true,auxiliaryVisible:layout.configuration.sidebarVisible,extent:.points(layout.configuration.sidebarWidth),primaryMinimum:760,auxiliaryMinimum:180,onResize:{value in if case .points(let width)=value {layout.update{$0.sidebarWidth=min(380,max(180,width))}}}) {
@@ -832,6 +833,7 @@ struct WorkbookWorkspace: View {
             WorkspacePaneSplit(name:"workbook.changes",isVertical:layout.configuration.changesDock != .bottom,auxiliaryFirst:layout.configuration.changesDock == .left,auxiliaryVisible:layout.configuration.changesVisible,extent:.points(layout.configuration.changesDock == .bottom ? layout.configuration.changesHeight:layout.configuration.changesWidth),primaryMinimum:240,auxiliaryMinimum:layout.configuration.changesDock == .bottom ? 110:260,onResize:{value in if case .points(let size)=value {layout.update{if $0.changesDock == .bottom {$0.changesHeight=min(600,max(110,size))}else{$0.changesWidth=min(600,max(260,size))}}}}) {
                 VStack(spacing:0) {
                     WorkspacePaneSplit(name:"workbook.pages",isVertical:layout.configuration.pageArrangement == .horizontal,auxiliaryVisible:model.beforeID != model.afterID,extent:.fraction(layout.configuration.pageFraction),primaryMinimum:150,auxiliaryMinimum:150,onResize:{value in if case .fraction(let fraction)=value {layout.update{$0.pageFraction=min(0.8,max(0.2,fraction))}}}) {gridPane(before:true)} auxiliary:{gridPane(before:false)}
+                    .disabled(model.effectiveDiffMode != "source")
                     .frame(minHeight:160,maxHeight:.infinity).opacity(model.effectiveDiffMode=="source" ? 1:0).allowsHitTesting(model.effectiveDiffMode=="source").accessibilityHidden(model.effectiveDiffMode != "source")
                     .overlay {if model.effectiveDiffMode=="text" {WorkbookUnifiedDiff(model:model)}}
                     .overlay { if model.loadingRange { ZStack { Color(nsColor:.windowBackgroundColor).opacity(0.94); ProgressView(L("workbook.status.loadingRange")) } } }
@@ -866,7 +868,7 @@ struct WorkbookWorkspace: View {
         return Picker(before ? L("workbook.sheet.before") : L("workbook.sheet.after"),selection:Binding(get:{current},set:{id in Task { if before { await model.changeSheet(before:id) } else { await model.changeSheet(after:id) } }})) {
             if current.isEmpty { Text(L("workbook.sheet.none")).tag("") }
             ForEach(model.sheets(occurrence),id:\.workbookSheetID) { s in Text(verbatim:s["name"].string + (s["hidden"].bool ? L("workbook.sheet.hiddenSuffix") : "") + " (\(s["row_count"].int)×\(s["column_count"].int))").tag(s["sheet_id"].string) }
-        }.frame(maxWidth:.infinity)
+        }.frame(maxWidth:.infinity).background(WorkspaceLayoutMarker(name:"Reviset.workbook.sheetPicker."+(before ? "before":"after")))
     }
     private func gridPane(before: Bool) -> some View {
         let occurrence = before ? model.beforeID : model.afterID
@@ -2132,9 +2134,12 @@ struct WorkbookGrid: NSViewRepresentable {
         guard !manualQueried,query==[model.changesFromID,model.changesToID,model.changesMode],try JSON(model.changes.map(\.raw)).data()==rows,model.selectedChangeID==change["change_id"].string,model.beforeSheetID==change["from_sheet_id"].string,model.afterSheetID==change["to_sheet_id"].string,model.beforeAddress==change["before_address"].string,model.afterAddress==change["after_address"].string else{throw BridgeError(code:"WORKBOOK_GIT_RETURN_SCOPE",message:"Return changed the query/list or failed to restore exact sheet and cell sources.")}
         manualObservation.cancel()
         let tables=["before","after"].compactMap{grid(content,pane:$0)},selection=[model.beforeID,model.afterID,model.beforeAddress,model.afterAddress,model.selectedChangeID]
+        let sheetControls=workspaceLayoutMarkers(in:content).filter{$0.identifier?.rawValue.hasPrefix("Reviset.workbook.sheetPicker.")==true}
+        guard sheetControls.count==2,sheetControls.allSatisfy({$0.contentEnabled}) else{throw BridgeError(code:"WORKBOOK_GIT_HEADER_SOURCE",message:"Original workbook sheet Picker environments are unavailable or disabled.")}
         let state=tables.map{($0,$0.dataSource as AnyObject?,$0.enclosingScrollView!.contentView.bounds.origin)}
         guard let focusedTable=tables.first,window.makeFirstResponder(focusedTable) else{throw BridgeError(code:"WORKBOOK_GIT_SOURCE_FOCUS",message:"Actual grid could not take keyboard focus for qualification.")}
         model.diffMode="text";try await Task.sleep(nanoseconds:200_000_000)
+        guard sheetControls.allSatisfy({!$0.contentEnabled}) else{throw BridgeError(code:"WORKBOOK_GIT_HIDDEN_HEADER",message:"Invisible original sheet Picker environments remained enabled.")}
         if let responder=window.firstResponder as? NSView {guard !tables.contains(where:{responder === $0 || responder.isDescendant(of:$0)}) else{throw BridgeError(code:"WORKBOOK_GIT_HIDDEN_FOCUS",message:"Text mode left keyboard focus in an invisible grid.")}}
         guard workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.unifiedDiff"}) else{throw BridgeError(code:"WORKBOOK_GIT_DIFF_VIEW",message:"Native workbook text diff is unavailable.")}
         let hiddenInputFacts=try hiddenNativeSourceInputFacts(window:window,sources:tables)
@@ -2156,7 +2161,7 @@ struct WorkbookGrid: NSViewRepresentable {
         guard visibleTables.count==1,!workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.unifiedDiff"}),Set(["before","after"].compactMap{grid(content,pane:$0)}.map(ObjectIdentifier.init))==Set(tables.map(ObjectIdentifier.init)) else{throw BridgeError(code:"WORKBOOK_GIT_SINGLE_SOURCE_VISIBLE",message:"Single workbook source was covered or its grid hosts were replaced.")}
         try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-git-single-source.png"))
         await model.selectVersion(last);await model.changeMode("range_net")
-        return ["passed":true,"default_predecessor_latest":true,"source_first_default":true,"query_interval_and_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"physical_addresses_preserved":true,"raw_saved_value_cell_checks":rawCellFacts,"native_grid_hosts_preserved":tables.count,"coordinator_and_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"hidden_source_input_gate":hiddenInputFacts,"focus_fixed_report_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"single_source_reading_guidance_verified":true,"single_source_reading_guidance":[firstReading,equalReading],"manual_sheet_cell_window_return_without_requery":true,"focus_return_action_visible":true,"captures":["native-workbook-git-source-first.png","native-workbook-git-history.png","native-workbook-git-unified.png","native-workbook-git-focus.png","native-workbook-git-single-source.png","native-workbook-git-manual-return.png"]]
+        return ["passed":true,"default_predecessor_latest":true,"source_first_default":true,"query_interval_and_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"physical_addresses_preserved":true,"raw_saved_value_cell_checks":rawCellFacts,"native_grid_hosts_preserved":tables.count,"coordinator_and_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"hidden_source_input_gate":hiddenInputFacts,"hidden_source_sheet_picker_environments_disabled":true,"hidden_source_sheet_picker_environment_count":sheetControls.count,"focus_fixed_report_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"single_source_reading_guidance_verified":true,"single_source_reading_guidance":[firstReading,equalReading],"manual_sheet_cell_window_return_without_requery":true,"focus_return_action_visible":true,"captures":["native-workbook-git-source-first.png","native-workbook-git-history.png","native-workbook-git-unified.png","native-workbook-git-focus.png","native-workbook-git-single-source.png","native-workbook-git-manual-return.png"]]
     }
     private static func rawSavedValueCellFacts(_ model:WorkbookModel,content:NSView)throws->[[String:Any]] {
         var facts:[[String:Any]]=[]
