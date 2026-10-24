@@ -143,6 +143,40 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         switch emptyChangesKind {case .additionalVersion:return L("git.workbookNeedVersions");case .singleRead:return L("git.singleVersionChanges");case .noChanges:return L("workbook.changes.empty")}
     }
     func openNewComparisonImport() {guard ready else{return};importPresented=true}
+    var showingSheetMetadata:Bool {
+        let event=selectedChange,kind=event["kind"].string
+        return !event.isNull && (kind.hasPrefix("sheet_") || ["merges","date_system","calculation_settings"].contains(kind)) && event["before_address"].string.isEmpty && event["after_address"].string.isEmpty && event["from_revision_occurrence_id"].string==beforeID && event["to_revision_occurrence_id"].string==afterID && event["from_sheet_id"].string==beforeSheetID && event["to_sheet_id"].string==afterSheetID
+    }
+    var selectedSourceWarnings:[String] {
+        guard !showingSheetMetadata else{return []}
+        return (readingSingleVersion ? [true]:[true,false]).compactMap {before in
+            let cell=before ? beforeCell:afterCell,messages=workbookSelectedWarningMessages(cell)
+            guard !messages.isEmpty else{return nil}
+            let prefix=(readingSingleVersion ? L("doc.common.source")+" · ":before ? L("workbook.pane.beforePrefix"):L("workbook.pane.afterPrefix"))+(before ? beforeAddress:afterAddress)
+            return prefix+" · "+messages.joined(separator:" · ")
+        }
+    }
+    func sourceIdentity(before:Bool)->String {
+        let occurrence=before ? beforeID:afterID,id=before ? beforeSheetID:afterSheetID,address=before ? beforeAddress:afterAddress,name=sheet(occurrence,id)["name"].string
+        let workbookMetadata=["date_system","calculation_settings"].contains(selectedChange["kind"].string)
+        let sheetLabel = !name.isEmpty ? name : !id.isEmpty ? L("workbook.sheet.missingIdentity",.verbatim(id)) : workbookMetadata ? L("workbook.sheet.workbookMetadata"):L("workbook.sheet.unmatchedSource")
+        return versionLabel(occurrence)+" · "+sheetLabel+(address.isEmpty ? "":" · "+address)
+    }
+    var missingSourceSheetCaptions:[String] {
+        guard !["date_system","calculation_settings"].contains(selectedChange["kind"].string) else{return []}
+        return [true,false].compactMap {before in
+            let occurrence=before ? beforeID:afterID,id=before ? beforeSheetID:afterSheetID
+            guard sheet(occurrence,id).isNull else{return nil}
+            return (before ? L("workbook.pane.beforePrefix"):L("workbook.pane.afterPrefix"))+L("workbook.sheet.unmatchedSource")+(id.isEmpty ? "":" · "+id)
+        }
+    }
+    var canOpenCellDetails:Bool {ready && cellHistoryAnchor != nil && (selectedRow>0 || !selectedChange.isNull)}
+    func openCellDetails() {guard canOpenCellDetails else{return};inspectorVisible=true}
+    var navigationDetail:String {readingSingleVersion ? L("workbook.nav.singleSourceDetail") : independentPaneCoordinates ? L("workbook.nav.independentDetail") : L("workbook.nav.sameAddressDetail")}
+    var sourceScopeDescription:String {
+        guard !changesFromID.isEmpty,!changesToID.isEmpty,changesFromID != beforeID || changesToID != afterID else{return ""}
+        return L(selectedChange.isNull ? "workbook.changes.currentSourceDifference":"workbook.changes.intervalDifference",.verbatim(versionLabel(changesFromID)),.verbatim(versionLabel(changesToID)),.verbatim(versionLabel(beforeID)),.verbatim(versionLabel(afterID)))
+    }
     var scope: String { projectID + "|" + reportID }
     var rangeScope: String { [scope,beforeID,afterID,beforeSheetID,afterSheetID,String(beforeRowStart),String(beforeColumnStart),String(afterRowStart),String(afterColumnStart)].joined(separator:"|") }
     var comparisonScope: String { [scope,changesFromID,changesToID,changesMode].joined(separator:"|") }
@@ -455,7 +489,8 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
                 guard current(ticket), rangeScope == identity, beforeAddress == oldAddress, afterAddress == newAddress else { return }
                 a = try scopedCellResult(value,occurrence:beforeID,sheet:beforeSheetID,address:oldAddress)
             }
-            if !afterSheetID.isEmpty,let (row,column) = WorkbookGrid.parseAddress(newAddress) {
+            if beforeID==afterID,beforeSheetID==afterSheetID,oldAddress==newAddress {b=a}
+            else if !afterSheetID.isEmpty,let (row,column) = WorkbookGrid.parseAddress(newAddress) {
                 let value = try await query("get_workbook_cell",["revision_occurrence_id":afterID,"sheet_id":afterSheetID,"row":row,"column":column,"text_offset":offset,"text_length":1024,"max_output_tokens":8000],ticket:ticket)
                 guard current(ticket), rangeScope == identity, beforeAddress == oldAddress, afterAddress == newAddress else { return }
                 b = try scopedCellResult(value,occurrence:afterID,sheet:afterSheetID,address:newAddress)
@@ -819,6 +854,7 @@ struct WorkbookWorkspace: View {
             versionBar
             Divider()
             HStack {
+                if model.effectiveDiffMode=="source" {
                 TextField(L("workbook.nav.address"),text:$model.addressInput).accessibilityIdentifier("Docver.workbook.addressInput").textFieldStyle(.roundedBorder).frame(width:130).onSubmit { Task { await model.goToAddress() } }
                 Button(L("workbook.action.go")) { Task { await model.goToAddress() } }
                 Spacer()
@@ -828,6 +864,12 @@ struct WorkbookWorkspace: View {
                 Button { Task { await model.moveWindow(rows:-model.rowLimit) } } label: { Image(systemName:"chevron.up") }.disabled(model.rowStart == 1).accessibilityLabel(L("workbook.nav.previousRows"))
                 Text(L("workbook.nav.rows",.verbatim(model.navigationRangePrefix),.integer(model.rowStart),.integer(model.rowStart+model.rowLimit-1))).font(.caption.monospacedDigit())
                 Button { Task { await model.moveWindow(rows:model.rowLimit) } } label: { Image(systemName:"chevron.down") }.disabled(model.rowStart+model.rowLimit>1048576).accessibilityLabel(L("workbook.nav.nextRows"))
+                } else {
+                    Text(L("workbook.nav.textModeDetail")).font(.caption).foregroundStyle(.secondary)
+                    Button(L("git.original")){model.setDiffMode("source")}.background(WorkspaceLayoutMarker(name:"Reviset.workbook.showOriginal"))
+                    Spacer()
+                }
+                WorkbookCellDetailsButton(model:model).frame(width:110,height:24)
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready)
             if !model.addressFailure.isEmpty { Text(verbatim:model.addressFailure).font(.caption).foregroundStyle(.red).padding(8) }
             if !model.rangeFailure.isEmpty {
@@ -843,7 +885,7 @@ struct WorkbookWorkspace: View {
                     .frame(minHeight:160,maxHeight:.infinity).opacity(model.effectiveDiffMode=="source" ? 1:0).allowsHitTesting(model.effectiveDiffMode=="source").accessibilityHidden(model.effectiveDiffMode != "source")
                     .overlay {if model.effectiveDiffMode=="text" {WorkbookUnifiedDiff(model:model)}}
                     .overlay { if model.loadingRange { ZStack { Color(nsColor:.windowBackgroundColor).opacity(0.94); ProgressView(L("workbook.status.loadingRange")) } } }
-                    Text(model.independentPaneCoordinates ? L("workbook.nav.independentDetail") : L("workbook.nav.sameAddressDetail")).font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)
+                    if model.effectiveDiffMode=="source" {Text(model.navigationDetail).font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)}
                     WorkbookSelectedWarnings(model:model).padding(.horizontal,12).padding(.bottom,4)
                     HStack{Text(L("workbook.cell.storedOnly")).font(.caption2).foregroundStyle(.secondary);if !model.selectedChange.isNull{Text(WorkbookLabels.association(model.selectedChange["association"].string)).font(.caption2).foregroundStyle(.orange)};Spacer();if model.canReturnToChange {Button(L("git.returnToChange")){Task{await model.returnToChange()}}.font(.caption).background(WorkspaceLayoutMarker(name:"Reviset.workbook.returnToChange"))}}.padding(.horizontal,12).padding(.bottom,5)
                 }
@@ -918,7 +960,7 @@ struct WorkbookWorkspace: View {
             Text(model.changeListProvenance).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
             Text(verbatim:model.versionLabel(model.changesFromID)+" → "+model.versionLabel(model.changesToID)).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
             }
-            if !model.changesFromID.isEmpty,!model.changesToID.isEmpty,(model.changesFromID != model.beforeID || model.changesToID != model.afterID) { Text(L("workbook.changes.intervalDifference")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            if !model.sourceScopeDescription.isEmpty { Text(verbatim:model.sourceScopeDescription).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.changeCursor.isEmpty { Text(L("workbook.paging.more")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             else if !model.changePreviousCursors.isEmpty { Text(L("workbook.paging.last")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.comparisonNotice.isEmpty { Text(verbatim:model.comparisonNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
@@ -1045,7 +1087,7 @@ func workbookFieldDiffEligibility(change:JSON,before:JSON,after:JSON,scope:Workb
         let old=before["formula_dialect"].string,new=after["formula_dialect"].string
         return !before["formula"].isNull && !after["formula"].isNull && ["xlsx_a1","ods_openformula"].contains(old) && old==new ? .formulaSource:.neutral
     case "stored_value":
-        return ["present","not_applicable"].contains(before["cached_result"].string) && ["present","not_applicable"].contains(after["cached_result"].string) && before["value_type"].string==after["value_type"].string ? .storedValue:.neutral
+        return ["present","not_applicable"].contains(before["cached_result"].string) && ["present","not_applicable"].contains(after["cached_result"].string) && ["blank","string","number","boolean","date","time","error"].contains(before["value_type"].string) && before["value_type"].string==after["value_type"].string ? .storedValue:.neutral
     default:return .neutral
     }
 }
@@ -1115,7 +1157,7 @@ func workbookFieldCaption(change:JSON,before:JSON,after:JSON,field:String,textOf
     if field=="number_format" {return .observed}
     if before["formula_interpretation"].string=="unresolved" || after["formula_interpretation"].string=="unresolved" {return .formulaRole}
     if field=="value",!["present","not_applicable"].contains(before["cached_result"].string) || !["present","not_applicable"].contains(after["cached_result"].string) {return .cache}
-    if field=="value",before["value_type"].string != after["value_type"].string {return .valueType}
+    if field=="value",!["blank","string","number","boolean","date","time","error"].contains(before["value_type"].string) || before["value_type"].string != after["value_type"].string {return .valueType}
     if field=="formula",before["formula_dialect"].string != after["formula_dialect"].string {return .dialect}
     let eligibility=workbookFieldDiffEligibility(change:change,before:before,after:after,scope:scope)
     if eligibility == .neutral {return .withheld}
@@ -1152,17 +1194,12 @@ private struct WorkbookSelectedWarnings:View {
             if model.loadingCell {Text(L("workbook.status.loadingCell")).font(.caption2).foregroundStyle(.secondary)}
             else if !model.cellFailure.isEmpty {HStack{Text(verbatim:model.cellFailure).textSelection(.enabled);Button(L("workbook.action.reloadSourceStart")){Task{await model.loadSelectedCells()}}.disabled(!model.ready)}.font(.caption).foregroundStyle(.orange)}
             else if model.selectedRow>0 || !model.selectedChange.isNull {
-                side(before:true);side(before:false)
+                if model.showingSheetMetadata {Text(L("workbook.cell.metadataEvent")).font(.caption2).foregroundStyle(.secondary)}
+                else {ForEach(Array(model.selectedSourceWarnings.enumerated()),id:\.offset){index,message in Label(message,systemImage:"exclamationmark.circle").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true).background(WorkspaceLayoutMarker(name:"Reviset.workbook.selectedCellWarning.\(index)"))}}
             }
         }.frame(maxWidth:.infinity,alignment:.leading)
     }
-    @ViewBuilder private func side(before:Bool)->some View {
-        let cell=before ? model.beforeCell:model.afterCell,messages=workbookSelectedWarningMessages(cell)
-        if !messages.isEmpty {
-            let prefix=(before ? L("workbook.pane.beforePrefix"):L("workbook.pane.afterPrefix"))+(before ? model.beforeAddress:model.afterAddress)
-            Label(prefix+" · "+messages.joined(separator:" · "),systemImage:"exclamationmark.circle").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
-        }
-    }
+
 }
 struct WorkbookEmptyChangesState:View {
     @ObservedObject var model:WorkbookModel
@@ -1175,9 +1212,19 @@ private struct WorkbookUnifiedDiff:View {
     var body:some View {
         VStack(alignment:.leading,spacing:12){
             Text(L("git.storedDiff")).font(.headline)
-            Text(model.versionLabel(model.beforeID)+" · "+model.beforeAddress+" → "+model.versionLabel(model.afterID)+" · "+model.afterAddress).font(.caption).textSelection(.enabled)
+            Text(verbatim:model.sourceIdentity(before:true)+" → "+model.sourceIdentity(before:false)).font(.caption).textSelection(.enabled).background(WorkspaceLayoutMarker(name:"Reviset.workbook.textSourceIdentity"))
+            ForEach(Array(model.missingSourceSheetCaptions.enumerated()),id:\.offset){_,caption in Text(verbatim:caption).font(.caption2).foregroundStyle(.secondary)}
             if model.loadingCell {ProgressView(L("workbook.status.loadingCell"))}
             else if !model.cellFailure.isEmpty {Text(model.cellFailure).foregroundStyle(.red)}
+            else if model.showingSheetMetadata {
+                VStack(alignment:.leading,spacing:8){
+                    Text(L("workbook.cell.metadataEvent")).font(.caption).foregroundStyle(.secondary)
+                    Text(WorkbookLabels.kind(model.selectedChange["kind"].string)).font(.headline)
+                    Text(verbatim:WorkbookLabels.description(model.selectedChange)).font(.callout).textSelection(.enabled)
+                    WorkbookSheetMetadata(title:L("workbook.sheet.beforeMetadata"),sheet:model.sheet(model.beforeID,model.beforeSheetID))
+                    WorkbookSheetMetadata(title:L("workbook.sheet.afterMetadata"),sheet:model.sheet(model.afterID,model.afterSheetID))
+                }.background(WorkspaceLayoutMarker(name:"Reviset.workbook.sheetMetadataDiff"))
+            }
             else {
                 HStack {
                     if model.cellTextOffset>0 {Button(L("workbook.action.sourceStartBoth")){Task{await model.loadSelectedCells(offset:0)}}}
@@ -1235,6 +1282,13 @@ private struct WorkbookStatus: View {
     var body: some View { VStack(spacing:12) { if loading { ProgressView() } else { Image(systemName:"tablecells").font(.system(size:36)).foregroundStyle(.secondary) }; Text(verbatim:title).font(.title3.weight(.semibold)); Text(verbatim:detail).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth:520) }.padding(28).frame(maxWidth:.infinity,maxHeight:.infinity) }
 }
 
+private struct WorkbookCellDetailsButton:NSViewRepresentable {
+    @ObservedObject var model:WorkbookModel
+    @MainActor final class Coordinator:NSObject {var model:WorkbookModel?;@objc func open(_ sender:NSButton){model?.openCellDetails()}}
+    func makeCoordinator()->Coordinator {Coordinator()}
+    func makeNSView(context:Context)->NSButton {let button=NSButton(title:"",target:context.coordinator,action:#selector(Coordinator.open(_:)));button.bezelStyle = .rounded;button.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.cellDetailsAction");return button}
+    func updateNSView(_ button:NSButton,context:Context) {context.coordinator.model=model;button.title=L("workbook.action.cellDetails");button.setAccessibilityLabel(button.title);button.isEnabled=model.canOpenCellDetails}
+}
 private struct WorkbookInspector: View {
     @State private var language = LanguagePreferences.shared
     @ObservedObject var model: WorkbookModel
@@ -1249,8 +1303,9 @@ private struct WorkbookInspector: View {
                     Text(verbatim:model.cellFailure).font(.caption).foregroundStyle(.red)
                     if model.cellHistoryAnchor != nil { Button(model.cellTextOffset > 0 ? L("workbook.action.reloadSourceStart") : L("workbook.action.reloadCellSource")) { Task { await model.loadSelectedCells() } }.disabled(!model.ready) }
                 }
+                else if model.showingSheetMetadata {Text(L("workbook.cell.metadataEvent")).font(.caption).foregroundStyle(.secondary)}
                 else if model.selectedRow == 0, model.selectedChangeID.isEmpty { Text(L("workbook.cell.selectPrompt")).foregroundStyle(.secondary) }
-                else { cellSection(L("workbook.pane.beforePrefix") + model.versionLabel(model.beforeID),cell:model.beforeCell); Divider(); cellSection(L("workbook.pane.afterPrefix") + model.versionLabel(model.afterID),cell:model.afterCell) }
+                else { cellSection((model.readingSingleVersion ? L("doc.common.source")+" · ":L("workbook.pane.beforePrefix")) + model.versionLabel(model.beforeID),cell:model.beforeCell); if !model.readingSingleVersion {Divider(); cellSection(L("workbook.pane.afterPrefix") + model.versionLabel(model.afterID),cell:model.afterCell)} }
                 if !model.selectedChange.isNull {
                     Divider(); Text(L("workbook.cell.changeMethod")).font(.headline)
                     Text(verbatim:WorkbookLabels.kind(model.selectedChange["kind"].string)).font(.callout)
@@ -1283,7 +1338,7 @@ private struct WorkbookInspector: View {
                 WorkbookSheetMetadata(title:L("workbook.sheet.afterMetadata"),sheet:model.sheet(model.afterID,model.afterSheetID))
                 WorkbookCoverageView(gaps:model.coverage,total:model.report["coverage_gap_count"].int,truncated:model.report["coverage_truncated"].bool,revisions:model.revisions)
             }.padding(14).frame(maxWidth:.infinity,alignment:.leading)
-        }.background(Color(nsColor:.controlBackgroundColor))
+        }.background(Color(nsColor:.controlBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.workbook.cellDetails"))
     }
     private func cellSection(_ title: String,cell: JSON) -> some View {
         WorkbookCellDetail(title:title,cell:cell,textOffset:model.cellTextOffset,nextTextOffset:model.cellTextNext,canPage:model.ready && !model.loadingCell,onTextPage:{ offset in Task { await model.loadSelectedCells(offset:offset) } })
@@ -1306,8 +1361,8 @@ private struct WorkbookCellDetail: View {
                 if !cell["source_range"].string.isEmpty { Text(verbatim:L("workbook.cell.blankRangePrefix") + cell["source_range"].string).font(.caption).textSelection(.enabled) }
                 if !cell["difference_range"].string.isEmpty { Text(verbatim:L("workbook.cell.differenceRangePrefix") + cell["difference_range"].string).font(.caption).textSelection(.enabled) }
                 if cell["formula_interpretation"].string == "unresolved" { Text(L("workbook.cell.unresolvedFormula")).font(.caption.weight(.medium)).foregroundStyle(.orange) }
-                if !cell["formula"].isNull { rawDetail(L("workbook.cell.formula"),field:"formula"); Text(L("workbook.cell.formulaNotExecuted")).font(.caption2).foregroundStyle(.secondary) }
                 rawDetail(cell["formula_interpretation"].string == "unresolved" ? L("workbook.cell.unresolvedValue") : cell["formula"].isNull ? L("workbook.cell.input") : L("workbook.cell.result"),field:"value")
+                if !cell["formula"].isNull { rawDetail(L("workbook.cell.formula"),field:"formula"); Text(L("workbook.cell.formulaNotExecuted")).font(.caption2).foregroundStyle(.secondary) }
                 if textOffset > 0 || ["value","formula","number_format"].contains(where:{cell["text_continuations"][$0]["state"].string == "truncated"}) {
                     HStack {
                         if textOffset > 0 { Button(L("workbook.action.sourceStartBoth")) { onTextPage(0) } }
@@ -1342,7 +1397,7 @@ private struct WorkbookCellDetail: View {
             if cell["text_continuations"][field]["state"].string == "truncated",!cell[field].string.isEmpty {
                 Text(cell["text_continuations"][field]["next_offset"].isNull ? L("workbook.cell.sourceLastChunk") : L("workbook.cell.sourceMoreChunks")).font(.caption2.weight(.medium)).foregroundStyle(.orange)
             }
-        }
+        }.background(WorkspaceLayoutMarker(name:"Reviset.workbook.inspector.raw."+field))
     }
     private func sourceStatus(_ field: String) -> String? {
         let raw = cell[field],continuation = cell["text_continuations"][field]
@@ -1719,6 +1774,23 @@ final class WorkbookSourceTableView:NSTableView {
     override var canBecomeKeyView:Bool {sourceKeyboardEnabled && super.canBecomeKeyView}
     override func becomeFirstResponder()->Bool {sourceKeyboardEnabled && super.becomeFirstResponder()}
 }
+private final class WorkbookValueCellView:NSTableCellView {
+    let annotation=NSTextField(labelWithString:"")
+    override init(frame:NSRect) {
+        super.init(frame:frame)
+        let source=NSTextField(labelWithString:"");source.lineBreakMode = .byTruncatingTail
+        annotation.font = .systemFont(ofSize:10);annotation.textColor = .secondaryLabelColor
+        addSubview(annotation);addSubview(source);textField=source
+    }
+    required init?(coder:NSCoder) {fatalError("init(coder:) is unavailable")}
+    func setAnnotation(_ value:String) {annotation.stringValue=value;annotation.isHidden=value.isEmpty;needsLayout=true}
+    override func layout() {
+        super.layout()
+        let width=annotation.isHidden ? 0:min(48,(annotation.cell?.cellSize.width ?? 0)+5)
+        annotation.frame=NSRect(x:6,y:max(0,(bounds.height-14)/2),width:max(0,width-5),height:14)
+        textField?.frame=NSRect(x:6+width,y:max(0,(bounds.height-17)/2),width:max(0,bounds.width-11-width),height:17)
+    }
+}
 struct WorkbookGrid: NSViewRepresentable {
     var keyboardEnabled=true
     let language: String
@@ -1805,7 +1877,7 @@ struct WorkbookGrid: NSViewRepresentable {
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             guard let tableColumn else { return nil }
             let id = NSUserInterfaceItemIdentifier(tableColumn.identifier.rawValue == "row" ? "WorkbookRowNumberCell":"WorkbookPlainCell")
-            let cell = tableView.makeView(withIdentifier:id,owner:self) as? NSTableCellView ?? NSTableCellView()
+            let cell = tableView.makeView(withIdentifier:id,owner:self) as? NSTableCellView ?? (tableColumn.identifier.rawValue == "row" ? NSTableCellView():WorkbookValueCellView())
             cell.identifier = id
             cell.wantsLayer = true; cell.layer?.masksToBounds = true; cell.layer?.borderWidth = 0; cell.layer?.backgroundColor = NSColor.clear.cgColor
             let text: NSTextField
@@ -1821,14 +1893,15 @@ struct WorkbookGrid: NSViewRepresentable {
                 let raw = value["value"].isNull ? "" : value["value"].string
                 let unresolved = value["formula_interpretation"].string == "unresolved"
                 var flags = unresolved ? "?ƒ" : value["formula"].isNull ? "" : "ƒ"
-                if value["cached_result"].string == "missing" { flags += "∅" }
+                if value["cached_result"].string == "missing" { flags += (flags.isEmpty ? "":" · ")+"∅" }
                 let valueTruncated = value["source_lengths"]["value"].int > raw.utf16.count
-                if value["text_truncated"].bool,!valueTruncated { flags += "…" }
-                text.stringValue = (flags.isEmpty ? "" : flags + " ") + String(raw.prefix(400)) + (valueTruncated ? "…" : ""); text.font = .systemFont(ofSize:12); text.textColor = value["hidden_row"].bool || value["hidden_column"].bool ? .secondaryLabelColor : .labelColor
+                if value["text_truncated"].bool,!valueTruncated { flags += (flags.isEmpty ? "":" · ")+"…" }
+                (cell as? WorkbookValueCellView)?.setAnnotation(flags)
+                text.stringValue = String(raw.prefix(400)) + (valueTruncated ? "…" : ""); text.font = .systemFont(ofSize:12); text.textColor = value["hidden_row"].bool || value["hidden_column"].bool ? .secondaryLabelColor : .labelColor
                 let formula = value["formula"].isNull ? "" : L("workbook.grid.formulaPrefix") + String(value["formula"].string.prefix(600))
                 let interpretation = value["formula_interpretation"].string == "unresolved" ? L("workbook.grid.unresolvedSuffix") : value["formula"].isNull ? "" : L("workbook.grid.resultSuffix")
                 cell.toolTip = WorkbookGrid.address(physicalRow,column) + (value.isNull ? L("workbook.grid.absentSuffix") : " · " + WorkbookLabels.valueType(value["value_type"].string) + formula + interpretation + "\n" + (valueTruncated ? L("git.savedValuePreview"):L("git.savedValue")) + ": " + raw + (value["text_truncated"].bool || valueTruncated ? "\n"+L("git.gridPreviewRoute"):""))
-                text.setAccessibilityLabel(WorkbookGrid.address(physicalRow,column) + " " + text.stringValue + interpretation)
+                text.setAccessibilityLabel(WorkbookGrid.address(physicalRow,column) + " " + flags + " " + text.stringValue + interpretation)
             }
             return cell
         }
@@ -2128,6 +2201,9 @@ struct WorkbookGrid: NSViewRepresentable {
         guard query==[model.changesFromID,model.changesToID,model.changesMode],try JSON(model.changes.map(\.raw)).data()==rows,!queried,model.beforeID==change["from_revision_occurrence_id"].string,model.afterID==change["to_revision_occurrence_id"].string,model.beforeAddress==change["before_address"].string,model.afterAddress==change["after_address"].string else{throw BridgeError(code:"WORKBOOK_GIT_SCOPE",message:"Workbook event selection replaced query/list or physical addresses.")}
         observation.cancel();let selectionDidNotQuery = !queried
         try await Task.sleep(nanoseconds:200_000_000);try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-git-history.png"))
+        try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-query-event-scope.png"))
+        let scopeCopy:[String:Any] = ["query_from":model.changesFromID,"query_to":model.changesToID,"source_from":model.beforeID,"source_to":model.afterID,"selected_event_id":model.selectedChangeID,"visible_copy":model.sourceScopeDescription,"capture":"native-workbook-query-event-scope.png"]
+        let cellDetails=try await exerciseCellDetails(model,layout:layout,window:window,folder:folder)
         let rawCellFacts=try rawSavedValueCellFacts(model,content:content)
         var manualQueried=false;let manualObservation=model.$loadingChanges.dropFirst().sink{if $0{manualQueried=true}};defer{manualObservation.cancel()}
         await model.changeSheet(before:model.beforeSheetID,after:model.afterSheetID)
@@ -2170,7 +2246,31 @@ struct WorkbookGrid: NSViewRepresentable {
         guard visibleTables.count==1,!workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.unifiedDiff"}),Set(["before","after"].compactMap{grid(content,pane:$0)}.map(ObjectIdentifier.init))==Set(tables.map(ObjectIdentifier.init)) else{throw BridgeError(code:"WORKBOOK_GIT_SINGLE_SOURCE_VISIBLE",message:"Single workbook source was covered or its grid hosts were replaced.")}
         try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-git-single-source.png"))
         await model.selectVersion(last);await model.changeMode("range_net")
-        return ["passed":true,"default_predecessor_latest":true,"source_first_default":true,"query_interval_and_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"physical_addresses_preserved":true,"raw_saved_value_cell_checks":rawCellFacts,"native_grid_hosts_preserved":tables.count,"coordinator_and_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"hidden_source_input_gate":hiddenInputFacts,"hidden_source_sheet_picker_environments_disabled":true,"hidden_source_sheet_picker_environment_count":sheetControls.count,"focus_fixed_report_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"single_source_reading_guidance_verified":true,"single_source_reading_guidance":[firstReading,equalReading],"manual_sheet_cell_window_return_without_requery":true,"focus_return_action_visible":true,"captures":["native-workbook-git-source-first.png","native-workbook-git-history.png","native-workbook-git-unified.png","native-workbook-git-focus.png","native-workbook-git-single-source.png","native-workbook-git-manual-return.png"]]
+        return ["passed":true,"default_predecessor_latest":true,"source_first_default":true,"query_interval_and_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"physical_addresses_preserved":true,"raw_saved_value_cell_checks":rawCellFacts,"cell_details_checks":cellDetails,"query_event_scope_copy":scopeCopy,"native_grid_hosts_preserved":tables.count,"coordinator_and_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"hidden_source_input_gate":hiddenInputFacts,"hidden_source_sheet_picker_environments_disabled":true,"hidden_source_sheet_picker_environment_count":sheetControls.count,"focus_fixed_report_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"single_source_reading_guidance_verified":true,"single_source_reading_guidance":[firstReading,equalReading],"manual_sheet_cell_window_return_without_requery":true,"focus_return_action_visible":true,"captures":["native-workbook-git-source-first.png","native-workbook-git-history.png","native-workbook-git-unified.png","native-workbook-git-focus.png","native-workbook-git-single-source.png","native-workbook-git-manual-return.png","native-workbook-cell-details.png","native-workbook-query-event-scope.png"]]
+    }
+    private static func exerciseCellDetails(_ model:WorkbookModel,layout:WorkspaceLayoutStore,window:NSWindow,folder:URL)async throws->[String:Any] {
+        let literal="stored only; not recalculated"
+        guard let candidate=(model.beforeCells+model.afterCells).first(where:{$0["value"].string==literal}),let content=window.contentView else{return ["qualified":false,"reason":"No authored literal cell in this fixture window."]}
+        func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
+        let originalLayout=layout.configuration,selected=model.selectedChangeID,originalInspector=model.inspectorVisible
+        let rows=try JSON(model.changes.map(\.raw)).data(),query=model.comparisonScope,fixed=try model.report.data()
+        var queried=false;let observer=model.$loadingChanges.dropFirst().sink{if $0{queried=true}};defer{observer.cancel()}
+        await model.selectCell(candidate["row"].int,candidate["column"].int);model.inspectorVisible=false;layout.update{$0.inspectorVisible=false}
+        try await Task.sleep(nanoseconds:200_000_000)
+        let tables=["before","after"].compactMap{grid(content,pane:$0)},states=tables.map{($0,$0.dataSource as AnyObject?,$0.enclosingScrollView!.contentView.bounds.origin,$0.selectedRow)}
+        if let table=tables.first {_ = window.makeFirstResponder(table)}
+        guard let button=views(content).compactMap({$0 as? NSButton}).first(where:{$0.identifier?.rawValue=="Reviset.workbook.cellDetailsAction"}),button.isEnabled,!button.visibleRect.isEmpty else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_ACTION",message:"Focused physical cell has no visible native Cell details action.")}
+        let identity=[model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress,model.selectedChangeID],before=try model.beforeCell.data(),after=try model.afterCell.data()
+        button.performClick(nil);try await Task.sleep(nanoseconds:250_000_000)
+        guard model.inspectorVisible,let details=workspaceLayoutMarkers(in:content).first(where:{$0.identifier?.rawValue=="Reviset.workbook.cellDetails"}),!details.visibleRect.isEmpty,[model.beforeCell,model.afterCell].contains(where:{$0["value"].string.utf16.elementsEqual(literal.utf16)}),workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.inspector.raw.value" && !$0.visibleRect.isEmpty}),try model.beforeCell.data()==before,try model.afterCell.data()==after,identity==[model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress,model.selectedChangeID] else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_SOURCE",message:"Cell details did not reveal the existing bounded raw reader or changed physical source authority.")}
+        for (table,coordinator,origin,row) in states {guard views(content).contains(where:{$0===table}),(table.dataSource as AnyObject?) === coordinator,table.enclosingScrollView!.contentView.bounds.origin==origin,table.selectedRow==row else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_HOST",message:"Opening cell details replaced a grid or moved its viewport/selection.")}}
+        let segments=[("before",model.beforeCell),("after",model.afterCell)].map {side,cell->[String:Any] in
+            ["side":side,"address":cell["address"].string,"fields":["value","formula","number_format"].map {field->[String:Any] in let raw=cell[field].string,continuation=cell["text_continuations"][field];return ["field":field,"raw_utf16":Array(raw.utf16).map(Int.init),"state":continuation["state"].string,"offset":continuation["offset"].int,"observed_end":continuation["offset"].int+raw.utf16.count,"total_length":continuation["total_length"].int,"next_offset":continuation["next_offset"].raw] }]
+        }
+        try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-cell-details.png"))
+        model.inspectorVisible=originalInspector;layout.update{$0=originalLayout};await model.returnToChange();try await Task.sleep(nanoseconds:200_000_000)
+        guard !queried,model.comparisonScope==query,try JSON(model.changes.map(\.raw)).data()==rows,try model.report.data()==fixed,model.selectedChangeID==selected else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_RESTORE",message:"Cell details qualification replaced the query/list/report or failed to restore the selected event.")}
+        return ["qualified":true,"native_action_performed":true,"existing_bounded_raw_reader_visible":true,"literal_unchanged":literal,"address":candidate["address"].string,"physical_scope_retained_by_action":true,"query_list_report_and_selected_event_restored_without_query":true,"grid_hosts_coordinators_viewports_retained_by_action":true,"source_segments":segments,"capture":"native-workbook-cell-details.png","interaction_scope":"actual packaged production native button performClick, validated source payloads, mounted raw reader and retained native grid; no OS input or value beyond recorded continuation bounds"]
     }
     private static func rawSavedValueCellFacts(_ model:WorkbookModel,content:NSView)throws->[[String:Any]] {
         var facts:[[String:Any]]=[]

@@ -375,7 +375,7 @@ struct DocumentUnifiedDiff:View {
         let diff=documentTextDiff(model.selected)
         VStack(alignment:.leading,spacing:12){
             Text(L("git.textDiff")).font(.headline)
-            Text(L("git.selectedEvent")+" · "+versionDisplayName(model.sourceFrom,model.revision(model.sourceFrom))+" → "+versionDisplayName(model.sourceTo,model.revision(model.sourceTo))+" · "+evidencePageSummary(model.selected)).font(.headline)
+            if !model.selected.isNull {Text(L("git.selectedEvent")+" · "+versionDisplayName(model.sourceFrom,model.revision(model.sourceFrom))+" → "+versionDisplayName(model.sourceTo,model.revision(model.sourceTo))+" · "+evidencePageSummary(model.selected)).font(.headline).background(WorkspaceLayoutMarker(name:"Reviset.document.selectedEventHeader"))}
             Text(L("git.excerptNote")).font(.caption).foregroundStyle(.secondary)
             if model.selected.isNull {Text(L("doc.tail.change.selectPrompt")).foregroundStyle(.secondary)}
             else if !diff.bounded {Text(L("git.diffBound")).foregroundStyle(.secondary)}

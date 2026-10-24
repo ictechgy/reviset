@@ -166,6 +166,18 @@ import AppKit
         model.reportID="report";model.report=retainedReport;model.beforeID="old";model.afterID="new"
         await model.loadChanges()
         try require(!model.blankFormattingWarning.isEmpty,"WarningNotRestoredAfterFreshQuery")
+        // Equal source coordinates reuse the same validated response, including
+        // missing observations and continuation requests; no second trust path.
+        model.beforeID="old";model.afterID="old";model.beforeSheetID="sheet-old";model.afterSheetID="sheet-old";model.beforeAddress="A2";model.afterAddress="A2"
+        func cellRequests()throws->[JSON] {try String(contentsOf:root.appendingPathComponent("read-events.jsonl"),encoding:.utf8).split(separator:"\n").map{JSON(try JSONSerialization.jsonObject(with:Data($0.utf8)))}.filter{$0["action"].string=="workbookQuery" && !$0["query"]["row"].isNull}}
+        for (mode,offset) in [("ok",0),("ok",1024),("missing",0),("wrong-report",0)] {
+            try control(mode,"single saved source")
+            let count=try cellRequests().count;await model.loadSelectedCells(offset:offset);let requests=try cellRequests()
+            try require(requests.count==count+1,"EqualCellSourceWasReadTwice_\(mode)_\(offset)")
+            let q=requests.last!["query"]
+            try require(q["project_id"].string=="project" && q["report_id"].string=="report" && q["revision_occurrence_id"].string=="old" && q["sheet_id"].string=="sheet-old" && q["row"].int==2 && q["column"].int==1 && q["text_offset"].int==offset && (try model.beforeCell.data())==(try model.afterCell.data()),"ReusedSingleSourceChangedPhysicalScopeOrRawObservation")
+            try require(mode=="wrong-report" ? !model.cellFailure.isEmpty && model.beforeCell.isNull : model.cellFailure.isEmpty,"EqualSourceBypassedResponseScopeValidation")
+        }
         model.closeReads()
         try require(model.blankFormattingWarning.isEmpty,"ClosedWindowKeptFormattingWarning")
         await model.loadSelectedCells()

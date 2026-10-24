@@ -22,6 +22,15 @@ await writeFile(join(folder,'v3-reverted.pdf'),await readFile(join(folder,'v1.pd
 const deck=new (pptxgen as unknown as typeof pptxgen.default)();deck.layout='LAYOUT_WIDE';
 deck.addSlide().addText('Revenue 110',{x:1,y:1,w:10,h:1,fontSize:28});
 await deck.writeFile({fileName:join(folder,'v3.pptx')});
+// A real 960-point PPTX (OOXML EMUs) and a supplied 720-point PDF with
+// identical text/aspect qualify the supported reference-PDF preview path.
+await mkdir(join(folder,'preview-bundle'),{recursive:true});
+const referenceDeck=new (pptxgen as unknown as typeof pptxgen.default)();referenceDeck.layout='LAYOUT_WIDE';
+referenceDeck.addSlide().addText('Reference PDF width 720',{x:1,y:1,w:10,h:1,fontSize:28});
+await referenceDeck.writeFile({fileName:join(folder,'preview-bundle/source.pptx')});
+const referencePDF=new PDFDocument({size:[720,405],margin:40}),referenceChunks:Buffer[]=[];
+const referenceDone=new Promise<Buffer>((ok,fail)=>{referencePDF.on('data',(chunk:Buffer)=>referenceChunks.push(chunk));referencePDF.on('end',()=>ok(Buffer.concat(referenceChunks)));referencePDF.on('error',fail);});
+referencePDF.fontSize(28).text('Reference PDF width 720',54,54);referencePDF.end();await writeFile(join(folder,'preview-bundle/reference.pdf'),await referenceDone);
 await generateWorkbookDemo(join(folder,'workbooks'));
 const longValue='한글😀{0}% opaque '.repeat(600),longFormula='CONCAT("'+'한글😀{0}%'.repeat(900)+'")',longLiteral='='+longFormula;
 const csvQuote=(text:string)=>'"'+text.replaceAll('"','""')+'"';
@@ -47,5 +56,5 @@ for(const version of [1,2]) {
     },
   }));
 }
-await writeFile(join(folder,'windows-smoke.json'),JSON.stringify({documents:{title:'Windows document control',revisions:[{label:'Draft 100',files:['v1.pdf']},{label:'Review 120',files:['v2.pdf']},{label:'PPTX structure 110',files:['v3.pptx']}]},workbook:{title:'Windows workbook control',revisions:[1,2,3].map(i=>({label:'XLSX '+i,path:`workbooks/v${i}.xlsx`})).concat([{label:'CSV 130',path:'workbooks/v4.csv'},{label:'ODS 140',path:'workbooks/v5.ods'}])},navigation_workbooks:{title:'Paged source navigation control',revisions:[1,2].map(i=>({label:'Two sheets '+i,path:`navigation/v${i}-two-sheets.xlsx`}))},expected_long_sources:{csv_b3:longValue,csv_c3:longLiteral,xlsx_d4_formula:longFormula}},null,2)+'\n');
+await writeFile(join(folder,'windows-smoke.json'),JSON.stringify({documents:{title:'Windows document control',revisions:[{label:'Draft 100',files:['v1.pdf']},{label:'Review 120',files:['v2.pdf']},{label:'PPTX structure 110',files:['v3.pptx']}]},workbook:{title:'Windows workbook control',revisions:[1,2,3].map(i=>({label:'XLSX '+i,path:`workbooks/v${i}.xlsx`})).concat([{label:'CSV 130',path:'workbooks/v4.csv'},{label:'ODS 140',path:'workbooks/v5.ods'}])},navigation_workbooks:{title:'Paged source navigation control',revisions:[1,2].map(i=>({label:'Two sheets '+i,path:`navigation/v${i}-two-sheets.xlsx`}))},preview_bundle:{title:'Real EMU PPTX with supplied PDF point geometry',revisions:[{label:'PPTX plus supplied PDF',files:['preview-bundle/source.pptx','preview-bundle/reference.pdf']},{label:'Standalone PDF',files:['preview-bundle/reference.pdf']}]},expected_long_sources:{csv_b3:longValue,csv_c3:longLiteral,xlsx_d4_formula:longFormula}},null,2)+'\n');
 console.log(JSON.stringify({folder,source:'independent synthetic files; no macros, links, private data or external instructions'}));

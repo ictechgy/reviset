@@ -55,6 +55,14 @@ internal sealed class ComparePane
     private readonly CheckBox showFormula = new() { Margin = new Thickness(8, 4, 8, 4) };
     private readonly StackPanel docControls = new();
     private readonly StackPanel workbookControls = new();
+    private readonly Expander cellDetails = new() { IsExpanded = false, Margin = new Thickness(6, 0, 6, 0) };
+    private readonly TextBlock cellDetailsCaption = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4), FontSize = 11 };
+    private readonly TextBox cellValue = MainWindow.SourceText();
+    private readonly TextBox cellFormula = MainWindow.SourceText();
+    private readonly TextBlock cellValueLabel = new() { Margin = new Thickness(4, 2, 4, 0) };
+    private readonly TextBlock cellFormulaLabel = new() { Margin = new Thickness(4, 2, 4, 0) };
+    private readonly Button openCellSource;
+    private Task cellDetailsRequest = Task.CompletedTask;
     private readonly Grid visual = new();
     private readonly Button retry;
     private readonly List<FrameworkElement> navigation = [];
@@ -119,7 +127,8 @@ internal sealed class ComparePane
         workbookControls.Children.Add(sheet);
         var coordinates = new WrapPanel(); var rowLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }; owner.BindText(rowLabel, "row"); coordinates.Children.Add(rowLabel); coordinates.Children.Add(rowStart); var columnLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center }; owner.BindText(columnLabel, "column"); coordinates.Children.Add(columnLabel); coordinates.Children.Add(colStart); coordinates.Children.Add(Button("go", LoadCoordinates));
         var navigationRow = new StackPanel { Orientation = Orientation.Horizontal }; var previous = Arrow("previous", "◀", async () => { row = Math.Max(1, row - 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); var next = Arrow("next", "▶", async () => { row = Math.Min(1_048_527, row + 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); navigationRow.Children.Add(previous); navigationRow.Children.Add(next); address.Width = 65; navigationRow.Children.Add(address); navigationRow.Children.Add(Button("go", GoAddress)); workbookControls.Children.Add(navigationRow); workbookControls.Children.Add(showFormula);
-        var advanced = new Expander { Header = "…", ToolTip = "Row / column · 행 / 열", Content = coordinates, IsExpanded = false, Margin = new Thickness(6, 0, 6, 0) }; workbookControls.Children.Add(advanced); top.Children.Add(workbookControls);
+        var details = new StackPanel(); details.Children.Add(cellDetailsCaption); details.Children.Add(cellValueLabel); cellValue.MaxHeight = 66; cellValue.MinHeight = 26; details.Children.Add(cellValue); details.Children.Add(cellFormulaLabel); cellFormula.MaxHeight = 66; cellFormula.MinHeight = 26; details.Children.Add(cellFormula);
+        openCellSource = Button("openCellSource", () => cellDetailsRequest = owner.OpenCellSource(this)); details.Children.Add(openCellSource); details.Children.Add(coordinates); cellDetails.Content = details; workbookControls.Children.Add(cellDetails); top.Children.Add(workbookControls);
         var bottom = new StackPanel(); bottom.Children.Add(source); bottom.Children.Add(sparse); bottom.Children.Add(retry); DockPanel.SetDock(bottom, Dock.Bottom); dock.Children.Add(bottom);
         PageScroll.Content = PageImage; visual.Children.Add(PageScroll); visual.Children.Add(fallback); visual.Children.Add(Cells); dock.Children.Add(visual);
         VirtualizingPanel.SetVirtualizationMode(Cells, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(Cells, true);
@@ -144,26 +153,26 @@ internal sealed class ComparePane
     internal void Localize()
     {
         pageCaption.Text = owner.Copy["pages"]; sheetCaption.Text = owner.Copy["sheet"]; showFormula.Content = owner.Copy["showFormula"]; sparse.Text = owner.Copy["sparseShort"]; sparse.ToolTip = owner.Copy["sparse"]; address.ToolTip = owner.Copy["address"];
-        versionCaption.Text = (revision.SelectedItem as Choice)?.Label ?? ""; versionCaption.ToolTip = RevisionId; zoomCaption.Text = owner.Copy["zoom"]; zoom.ToolTip = owner.Copy["zoom"] + " · 10–200%"; UpdateZoomCaption();
+        zoomCaption.Text = owner.Copy["zoom"]; zoom.ToolTip = owner.Copy["zoom"] + " · 10–200%"; UpdateZoomCaption();
         RefreshReadingChrome();
         foreach (var arrow in arrows) arrow.Button.ToolTip = owner.Copy[arrow.Key];
         docControls.Visibility = owner.IsWorkbook ? Visibility.Collapsed : Visibility.Visible; workbookControls.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed; sparse.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
-        RerenderPresentation(); foreach (var cells in Cells.Items.OfType<GridRow>()) foreach (var cell in cells.Values) cell.Localize();
+        cellDetails.Header = owner.Copy["cellDetails"]; cellDetails.ToolTip = owner.Copy["cellPreviewNotice"]; RerenderPresentation(); foreach (var cells in Cells.Items.OfType<GridRow>()) foreach (var cell in cells.Values) cell.Localize(); RefreshCellDetails();
     }
     internal void RefreshReadingChrome()
     {
-        heading.Text = PresentedSideName;
+        heading.Text = PresentedSideName; versionCaption.Text = (revision.SelectedItem as Choice)?.Label ?? ""; versionCaption.ToolTip = RevisionId;
         AutomationProperties.SetName(zoom, heading.Text + " · " + owner.Copy["zoom"]); AutomationProperties.SetName(fitWidth, heading.Text + " · " + owner.Copy["fitWidth"]);
         AutomationProperties.SetName(Cells, heading.Text + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(PageScroll, heading.Text + " · " + owner.Copy["pages"]); AutomationProperties.SetName(PageImage, heading.Text + " · " + owner.Copy["pages"]); AutomationProperties.SetName(revision, heading.Text + " · " + owner.Copy["label"]); AutomationProperties.SetName(sheet, heading.Text + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(page, heading.Text + " · " + owner.Copy["pages"]); AutomationProperties.SetName(address, heading.Text + " · " + owner.Copy["address"]);
-        foreach (var arrow in arrows) AutomationProperties.SetName(arrow.Button, heading.Text + " · " + owner.Copy[arrow.Key]);
+        foreach (var arrow in arrows) AutomationProperties.SetName(arrow.Button, heading.Text + " · " + owner.Copy[arrow.Key]); RefreshCellDetails();
     }
     internal object CheckReadingChromeForSmoke()
     {
         var expected = PresentedSideName; var expectedSourceName = expected + " · " + owner.Copy[owner.IsWorkbook ? "sheet" : "pages"];
-        if (heading.Text != expected || SourceAutomationNameForSmoke != expectedSourceName || AutomationProperties.GetName(sheet) != expected + " · " + owner.Copy["sheet"] || AutomationProperties.GetName(page) != expected + " · " + owner.Copy["pages"]) throw new InvalidOperationException("The native source heading or automation names do not match the current paired/single-source reading state and locale.");
+        if (versionCaption.Text != ((revision.SelectedItem as Choice)?.Label ?? "") || versionCaption.ToolTip as string != RevisionId || heading.Text != expected || SourceAutomationNameForSmoke != expectedSourceName || AutomationProperties.GetName(sheet) != expected + " · " + owner.Copy["sheet"] || AutomationProperties.GetName(page) != expected + " · " + owner.Copy["pages"]) throw new InvalidOperationException("The native source heading or automation names do not match the current paired/single-source reading state and locale.");
         return new { single_source_reading = owner.SingleSourceReading, mounted_after_side = after, heading = heading.Text, source_automation_name = SourceAutomationNameForSmoke, native_control = owner.IsWorkbook ? "DataGrid" : "ScrollViewer", observation_scope = "Production native control properties; not an OS screen-reader traversal" };
     }
-    internal void NavigationEnabled(bool enabled) { foreach (var control in navigation) control.IsEnabled = enabled; showFormula.IsEnabled = enabled && ReadState == "ready" && loadedGridScope is not null; }
+    internal void NavigationEnabled(bool enabled) { foreach (var control in navigation) control.IsEnabled = enabled; showFormula.IsEnabled = enabled && ReadState == "ready" && loadedGridScope is not null; RefreshCellDetails(); }
     internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence, requestedSheetName, focusedRow, focusedColumn);
     internal void RestoreSelection(PaneSelection saved)
     {
@@ -175,11 +184,11 @@ internal sealed class ComparePane
     internal void Clear()
     {
         pageRead.Cancel(); ++pageGeneration; ++gridGeneration;
-        Invalidate("empty"); binding = true; revision.ItemsSource = null; page.ItemsSource = null; sheet.ItemsSource = null; row = 1; column = 1; SetFocusCoordinates(0, 0); fallback.Text = owner.Copy["selectPage"]; evidenceAbsence = ""; requestedSheetName = ""; binding = false;
+        Invalidate("empty"); binding = true; revision.ItemsSource = null; page.ItemsSource = null; sheet.ItemsSource = null; row = 1; column = 1; SetFocusCoordinates(0, 0); fallback.Text = owner.Copy["selectPage"]; evidenceAbsence = ""; requestedSheetName = ""; binding = false; RefreshReadingChrome();
     }
     internal void Invalidate(string state = "loading")
     {
-        ++gridGeneration; ++pageGeneration; pageRead.Cancel(); ReadState = state; loadedGridScope = null; gridValue = default; previewScope = null; previewSource = ""; previewReason = ""; previewText = ""; previewObservation = new(SourceTextState.Missing, "");
+        ++gridGeneration; ++pageGeneration; pageRead.Cancel(); ReadState = state; loadedGridScope = null; gridValue = default; previewScope = null; previewSource = ""; previewReason = ""; previewText = ""; previewObservation = new(SourceTextState.Missing, ""); RefreshCellDetails();
         var previous = binding; binding = true; Cells.SelectedCells.Clear(); Cells.ItemsSource = null; binding = previous; Cells.IsEnabled = false; showFormula.IsEnabled = false;
         PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; fallback.Text = owner.Copy[state == "invalid" ? "reverse" : state == "failed" ? "failed" : "loading"]; source.Text = ""; retry.Visibility = state == "failed" ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -187,8 +196,29 @@ internal sealed class ComparePane
     private void SetFocusCoordinates(int requestedRow, int requestedColumn)
     {
         focusedRow = requestedRow is >= 1 and <= 1_048_576 && requestedColumn is >= 1 and <= 16_384 ? requestedRow : 0;
-        focusedColumn = focusedRow > 0 ? requestedColumn : 0; address.Text = FocusedAddress;
+        focusedColumn = focusedRow > 0 ? requestedColumn : 0; address.Text = FocusedAddress; RefreshCellDetails();
     }
+    private void RefreshCellDetails()
+    {
+        cellDetailsCaption.Text = FocusedAddress + " · " + owner.Copy["cellPreviewNotice"];
+        var materialized = TryGetFocusedMaterializedCell(out var cell);
+        cellValue.Text = materialized && cell.Get("value").ValueKind == JsonValueKind.String ? cell.Get("value").Text() : "";
+        cellFormula.Text = materialized && cell.Get("formula").ValueKind == JsonValueKind.String ? cell.Get("formula").Text() : "";
+        var unavailable = ReadState == "ready" && AuthorizesCell(focusedRow, focusedColumn) ? owner.Copy["cellNotMaterialized"] : owner.Copy[ReadState == "failed" ? "failed" : ReadState == "absent" && evidenceAbsence.Length > 0 ? evidenceAbsence : "loading"];
+        cellValueLabel.Text = owner.Copy["cached"] + (materialized && cell.Get("value").ValueKind == JsonValueKind.Null ? " · " + owner.Copy[cell.Get("cached_result").Text() == "missing" ? "resultMissingShort" : cell.Get("value_type").Text() == "blank" ? "valueBlankShort" : "valueUnrecordedShort"] : !materialized ? " · " + unavailable : "");
+        cellFormulaLabel.Text = owner.Copy["formula"] + (materialized && cell.Get("formula").ValueKind == JsonValueKind.Null ? " · " + owner.Copy["formulaAbsent"] : "");
+        if (openCellSource is not null) { openCellSource.IsEnabled = owner.AllowsEvidence && AuthorizesCell(focusedRow, focusedColumn); AutomationProperties.SetName(openCellSource, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["openCellSource"]); }
+        AutomationProperties.SetName(cellValue, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["cached"]); AutomationProperties.SetName(cellFormula, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["formula"]);
+    }
+    internal async Task<object> OpenCellDetailsForSmoke(string expectedValue)
+    {
+        cellDetails.IsExpanded = true; RefreshCellDetails(); Host.UpdateLayout(); await owner.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        if (!cellDetails.IsVisible || cellDetails.Header as string != owner.Copy["cellDetails"] || !cellValue.IsReadOnly || !cellValue.IsVisible || cellValue.Text != expectedValue || !openCellSource.IsEnabled) throw new InvalidOperationException("The focused physical cell has no visible selectable exact bounded value and named source-segment route.");
+        var selection = CaptureSelection(); openCellSource.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); await cellDetailsRequest;
+        if (CaptureSelection() != selection || cellValue.Text != expectedValue) throw new InvalidOperationException("Opening full source segments changed the focused physical cell or bounded source text.");
+        return new { address = FocusedAddress, heading = cellDetails.Header, selectable_value = cellValue.Text, formula_preview = cellFormula.Text, bounded_notice = cellDetailsCaption.Text, full_source_action = openCellSource.Content, source_selection_unchanged = true };
+    }
+    internal void CloseCellDetailsForSmoke() => cellDetails.IsExpanded = false;
     internal void FocusCell(int requestedRow, int requestedColumn)
     {
         if (!AuthorizesCell(requestedRow, requestedColumn)) return;
@@ -238,7 +268,7 @@ internal sealed class ComparePane
         {
             pageValues = selected.Get("pages").Items(); var pages = pageValues.Select(v => new Choice(v.Get("page_id").Text(), v.Get("page").Number().ToString(System.Globalization.CultureInfo.InvariantCulture) + " · " + v.Get("text").Text(), v)).ToList(); page.ItemsSource = pages; page.SelectedItem = pages.Find(v => v.Id == oldPage) ?? pages.FirstOrDefault();
         }
-        binding = false;
+        binding = false; RefreshReadingChrome();
     }
     internal bool HasPage(string id) => pageValues.Any(v => v.Get("page_id").Text() == id);
     internal void RestoreDefaultSelection() => SetRevisionContents();
@@ -267,6 +297,7 @@ internal sealed class ComparePane
             row = observation.Get("row").Number(0); column = observation.Get("column").Number(0); if (row < 1 || column < 1) { row = 0; column = 0; if (evidenceAbsence.Length == 0) evidenceAbsence = SourceDiffPolicy.SheetScoped(eventKind) ? "sheetMetadata" : "cellNotMaterialized"; } SetFocusCoordinates(row, column);
             binding = false;
         }
+        RefreshReadingChrome();
     }
     internal async Task Load(long ticket, CancellationToken token)
     {
@@ -387,7 +418,7 @@ internal sealed class ComparePane
                 }
                 values.Add(new(r, cells));
             }
-            Cells.ItemsSource = values; SelectFocusedNativeCell();
+            Cells.ItemsSource = values; SelectFocusedNativeCell(); RefreshCellDetails();
         }
         finally { binding = wasBinding; }
     }
@@ -520,12 +551,9 @@ internal sealed class ComparePane
     }
     private double PreviewPointWidth(BitmapSource bitmap)
     {
-        if (page.SelectedItem is not Choice selected || selected.Value.Get("width") is not { ValueKind: JsonValueKind.Number } widthValue || !widthValue.TryGetDouble(out var width)) return bitmap.Width;
-        var asset = revisions.Find(value => value.Get("revision_occurrence_id").Text() == RevisionId).Get("assets").Items().FirstOrDefault(value => value.Get("asset_id").Text() == selected.Value.Get("asset_id").Text());
-        var format = asset.Get("format").Text();
-        if (format == "pptx") width /= 12_700; // OOXML EMUs per point.
-        else if (format != "pdf") return bitmap.Width;
-        return double.IsFinite(width) && width > 0 ? width : bitmap.Width;
+        if (page.SelectedItem is not Choice selected) return bitmap.Width;
+        var revision = revisions.Find(value => value.Get("revision_occurrence_id").Text() == RevisionId);
+        return SourcePreviewGeometry.PointWidth(revision, selected.Value, previewSource, bitmap.Width);
     }
     private void FitPreview() { fittingWidth = true; ResizePreview(); }
     private void UpdateZoomCaption() => zoomPercent.Text = Math.Round(zoom.Value * 100).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";

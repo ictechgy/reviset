@@ -2,6 +2,36 @@ using System.Text.Json;
 
 namespace Reviset.Windows;
 
+internal static class SourcePreviewGeometry
+{
+    internal static double PointWidth(JsonElement revision, JsonElement selected, string previewSource, double fallback)
+    {
+        bool Pdf(JsonElement page) => revision.Get("assets").Items().Any(asset => asset.Get("asset_id").Text() == page.Get("asset_id").Text() && asset.Get("format").Text() == "pdf");
+        double Width(JsonElement page) => page.Get("width").ValueKind == JsonValueKind.Number && page.Get("width").TryGetDouble(out var value) && double.IsFinite(value) && value > 0 ? value : fallback;
+        if (previewSource == "reference_pdf")
+        {
+            var appearance = selected.Get("appearance"); var pages = revision.Get("pages").Items();
+            if (appearance.ValueKind == JsonValueKind.Object)
+            {
+                var reference = pages.FirstOrDefault(page => page.Get("page_id").Text() == appearance.Get("source_page_id").Text() && page.Get("asset_id").Text() == appearance.Get("asset_id").Text() && Pdf(page));
+                return Width(reference);
+            }
+            // Legacy storage may select a bundle mapping without appearance.
+            // It is only a PDF geometry source when the actual preview says so.
+            if (revision.Get("reference_appearance_policy").ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                var mappings = revision.Get("bundle_mapping").Items().Where(mapping => mapping.Get("source_page_id").Text() == selected.Get("page_id").Text()).ToArray();
+                if (mappings.Length == 1) { var reference = pages.FirstOrDefault(page => page.Get("page_id").Text() == mappings[0].Get("rendered_page_id").Text() && Pdf(page)); return Width(reference); }
+            }
+            return fallback;
+        }
+        var format = revision.Get("assets").Items().FirstOrDefault(asset => asset.Get("asset_id").Text() == selected.Get("asset_id").Text()).Get("format").Text();
+        if (format == "pdf") return Width(selected);
+        if (format != "pptx" || selected.Get("width").ValueKind != JsonValueKind.Number || !selected.Get("width").TryGetDouble(out var emu)) return fallback;
+        var points = emu / 12_700; return double.IsFinite(points) && points > 0 ? points : fallback;
+    }
+}
+
 // Presentation-only, bounded comparison of stored text. It does not infer
 // document deletion, recalculate cells or change the canonical report.
 internal sealed record SourceDiffLine(char Prefix, string Text, string Terminator = "", bool CutOff = false)
@@ -75,7 +105,7 @@ internal static class SourceDiffPolicy
         var text when change.Get("kind").Text() == "sheet_name" && text.StartsWith("Sheet name: ", StringComparison.Ordinal) && text.Contains(" → ", StringComparison.Ordinal) => "summarySheetName",
         var text when change.Get("kind").Text() == "sheet_position" && System.Text.RegularExpressions.Regex.IsMatch(text, @"\ASheet index: [0-9]+ → [0-9]+\z") => "summarySheetPosition",
         var text when change.Get("kind").Text() == "sheet_visibility" && System.Text.RegularExpressions.Regex.IsMatch(text, @"\ASheet hidden: (true|false) → (true|false)\z") => "summarySheetVisibility",
-        var text when change.Get("kind").Text() == "date_system" && System.Text.RegularExpressions.Regex.IsMatch(text, @"\ADate system changed from (1900|1904|unknown) to (1900|1904|unknown); stored numeric dates are not converted or equated\z") => "summaryDateSystem",
+        var text when change.Get("kind").Text() == "date_system" && System.Text.RegularExpressions.Regex.IsMatch(text, @"\ADate system changed from (1900|1904|iso8601|unknown) to (1900|1904|iso8601|unknown); stored numeric dates are not converted or equated\z") => "summaryDateSystem",
         _ => ""
     };
     internal static string WorkbookObservationCaption(string field, JsonElement cell, SourceTextObservation value)

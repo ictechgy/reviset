@@ -703,7 +703,7 @@ private func storedDiffLines(_ text:String)->[StoredDiffLine] {
             result.append(StoredDiffLine(text:String(decoding:units[start..<end],as:UTF16.self),terminator:String(decoding:units[end..<index],as:UTF16.self)));start=index
         } else {index+=1}
     }
-    result.append(StoredDiffLine(text:String(decoding:units[start..<units.count],as:UTF16.self),terminator:""));return result
+    if start<units.count || result.isEmpty {result.append(StoredDiffLine(text:String(decoding:units[start..<units.count],as:UTF16.self),terminator:""))};return result
 }
 func unifiedTextDiff(before:String,after:String,semantic:Bool)->UnifiedTextDiff {
     // Never truncate a source and then present that fragment as a complete diff.

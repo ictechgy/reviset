@@ -360,8 +360,8 @@
     "ko": "조회 구간 · "
   },
   "workbook.changes.intervalDifference": {
-    "en": "The query interval in this list differs from the two versions displayed above.",
-    "ko": "위 비교의 두 버전과 목록의 조회 구간은 다릅니다."
+    "en": "List query: {0} → {1}. Selected-event sources: {2} → {3}.",
+    "ko": "목록 조회 구간: {0} → {1}. 선택한 사건의 원문: {2} → {3}."
   },
   "workbook.paging.more": {
     "en": "Results are paged by response size. Continue with “Next page” to inspect more changes.",
@@ -1546,5 +1546,37 @@
   "workbook.code.label": {
     "en": "{0} ({1})",
     "ko": "{0} ({1})"
+  },
+  "workbook.changes.currentSourceDifference": {
+    "en": "List query: {0} → {1}. Current source pair: {2} → {3}.",
+    "ko": "목록 조회 구간: {0} → {1}. 현재 원문 쌍: {2} → {3}."
+  },
+  "workbook.action.cellDetails": {
+    "en": "Cell details…",
+    "ko": "셀 상세…"
+  },
+  "workbook.nav.textModeDetail": {
+    "en": "Show original source to navigate the physical grid.",
+    "ko": "물리 셀을 탐색하려면 원문 보기를 여세요."
+  },
+  "workbook.nav.singleSourceDetail": {
+    "en": "Browse physical addresses in this source. A blank position has no stored observation; it does not establish deletion.",
+    "ko": "이 원문의 물리 주소 순서로 탐색합니다. 빈 칸은 저장된 관측이 없는 위치이며 삭제를 뜻하지 않습니다."
+  },
+  "workbook.cell.metadataEvent": {
+    "en": "This selected event concerns sheet or workbook metadata; it does not assert a physical cell observation.",
+    "ko": "선택한 사건은 시트 또는 통합문서 메타데이터이며, 물리 셀 관측을 뜻하지 않습니다."
+  },
+  "workbook.sheet.missingIdentity": {
+    "en": "Sheet not materialized ({0})",
+    "ko": "시트가 관측되지 않음 ({0})"
+  },
+  "workbook.sheet.unmatchedSource": {
+    "en": "No matching sheet in this source; no deletion is inferred.",
+    "ko": "이 원문에는 대응 시트가 없습니다. 삭제를 단정하지 않습니다."
+  },
+  "workbook.sheet.workbookMetadata": {
+    "en": "Workbook metadata",
+    "ko": "통합문서 메타데이터"
   }
 }
