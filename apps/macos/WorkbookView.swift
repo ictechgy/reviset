@@ -1909,9 +1909,9 @@ struct WorkbookGrid: NSViewRepresentable {
                 var flags = unresolved ? "?ƒ" : value["formula"].isNull ? "" : "ƒ"
                 if value["cached_result"].string == "missing" { flags += (flags.isEmpty ? "":" · ")+"∅" }
                 let valueTruncated = value["source_lengths"]["value"].int > raw.utf16.count
-                if value["text_truncated"].bool,!valueTruncated { flags += (flags.isEmpty ? "":" · ")+"…" }
+                if value["text_truncated"].bool || valueTruncated { flags += (flags.isEmpty ? "":" · ")+"…" }
                 (cell as? WorkbookValueCellView)?.setAnnotation(flags)
-                text.stringValue = String(raw.prefix(400)) + (valueTruncated ? "…" : ""); text.font = .systemFont(ofSize:12); text.textColor = value["hidden_row"].bool || value["hidden_column"].bool ? .secondaryLabelColor : .labelColor
+                text.stringValue = raw; text.font = .systemFont(ofSize:12); text.textColor = value["hidden_row"].bool || value["hidden_column"].bool ? .secondaryLabelColor : .labelColor
                 let formula = value["formula"].isNull ? "" : L("workbook.grid.formulaPrefix") + String(value["formula"].string.prefix(600))
                 let interpretation = value["formula_interpretation"].string == "unresolved" ? L("workbook.grid.unresolvedSuffix") : value["formula"].isNull ? "" : L("workbook.grid.resultSuffix")
                 cell.toolTip = WorkbookGrid.address(physicalRow,column) + (value.isNull ? L("workbook.grid.absentSuffix") : " · " + WorkbookLabels.valueType(value["value_type"].string) + formula + interpretation + "\n" + (valueTruncated ? L("git.savedValuePreview"):L("git.savedValue")) + ": " + raw + (value["text_truncated"].bool || valueTruncated ? "\n"+L("git.gridPreviewRoute"):""))
