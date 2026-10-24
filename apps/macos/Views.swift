@@ -253,18 +253,41 @@ struct CompareWorkspace: View {
 }
 struct SelectedChangeContext:View {
     @EnvironmentObject var model:AppModel
+    private func label(_ item:DocumentSelectedContextItem)->String {
+        let heading:String
+        switch item.category {
+        case .pageCorrespondence:heading=L("git.pageCorrespondence")
+        case .textAssessment:heading=L("git.textAssessment")
+        case .regionCorrespondence:heading=L("git.regionCorrespondence")
+        case .appearanceAssessment:heading=L("git.appearanceAssessment")
+        }
+        let status:String
+        switch item.status {
+        case "human_confirmed":status=L("doc.matching.humanConfirmed")
+        case "needs_review":status=L("doc.matching.needsReview")
+        case "inferred":status=L("git.inferred")
+        case "observed":status=L("git.observed")
+        default:status=L("doc.matching.otherCode",.verbatim(item.status))
+        }
+        let reason=lineageReasonText(item.reasons.map(JSON.init),humanConfirmed:item.status=="human_confirmed" && model.selected["topology"]["semantics"].string != "directed_reachability")
+        return heading+" · "+status+(reason.isEmpty ? "":" · "+reason)
+    }
     var body:some View {
-        HStack(spacing:10){
-            if !model.selected.isNull {
-                Text(changeDisplayName(model.selected)).font(.caption.weight(.medium)).lineLimit(1)
-                if model.eventInsideQuery {Text(L("git.eventInsideQuery")).font(.caption2).foregroundStyle(.secondary)}
-                if model.selected["text_assessment"].string=="inferred" || model.selected["region_pairing_assessment"].string=="inferred" {Label(L("doc.ocr.inferredReview"),systemImage:"exclamationmark.circle").font(.caption2).foregroundStyle(.orange)}
-                if !model.selected["appearance_assessment"].string.isEmpty {Text(L("doc.coverage.noSemanticDeletion")).font(.caption2).foregroundStyle(.secondary).lineLimit(2)}
-                if !model.selected["coverage_gaps"].array.isEmpty {Menu {ForEach(Array(model.selected["coverage_gaps"].array.enumerated()),id:\.offset){_,gap in Text(coverageReasonName(gap["reason"].string))}}label:{Label(L("doc.coverage.heading"),systemImage:"exclamationmark.circle")}.font(.caption2)}
-                Spacer(minLength:4)
-                if model.manuallyBrowsing {Button(L("git.returnToChange")){model.returnToChange()}.font(.caption)}
-            }else {Text(model.readingSingleVersion ? L("git.reading"):model.emptyChangesMessage).font(.caption).foregroundStyle(.secondary);Spacer()}
-        }.padding(.horizontal,14).padding(.vertical,5).frame(minHeight:28).background(Color(nsColor:.controlBackgroundColor))
+        VStack(alignment:.leading,spacing:4){
+            HStack(spacing:10){
+                if !model.selected.isNull {
+                    Text(changeDisplayName(model.selected)).font(.caption.weight(.medium)).lineLimit(1)
+                    if model.eventInsideQuery {Text(L("git.eventInsideQuery")).font(.caption2).foregroundStyle(.secondary)}
+                    if !model.selected["coverage_gaps"].array.isEmpty {Menu {ForEach(Array(model.selected["coverage_gaps"].array.enumerated()),id:\.offset){_,gap in Text(coverageReasonName(gap["reason"].string))}}label:{Label(L("doc.coverage.heading"),systemImage:"exclamationmark.circle")}.font(.caption2)}
+                    Spacer(minLength:4)
+                    if model.manuallyBrowsing {Button(L("git.returnToChange")){model.returnToChange()}.font(.caption)}
+                }else {Text(model.readingSingleVersion ? L("git.reading"):model.emptyChangesMessage).font(.caption).foregroundStyle(.secondary);Spacer()}
+            }
+            ForEach(documentSelectedContext(model.selected),id:\.category.rawValue){item in
+                Label(label(item),systemImage:item.status=="observed" || item.status=="human_confirmed" ? "checkmark.circle":"exclamationmark.circle").font(.caption2).foregroundStyle(item.status=="needs_review" || item.status=="inferred" ? Color.orange:Color.secondary).fixedSize(horizontal:false,vertical:true)
+            }
+            if !model.selected["appearance_assessment"].string.isEmpty {Text(L("doc.coverage.noSemanticDeletion")).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)}
+        }.padding(.horizontal,14).padding(.vertical,5).frame(minHeight:28).background(Color(nsColor:.controlBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.document.selectedContext"))
     }
 }
 struct DocumentUnifiedDiff:View {

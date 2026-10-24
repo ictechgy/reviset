@@ -118,5 +118,29 @@
   "git.fragmentRange": {
     "en": "Source fragment · UTF-16 [{0}, {1}) of {2}",
     "ko": "원문 조각 · 전체 UTF-16 {2}단위 중 [{0}, {1})"
+  },
+  "git.pageCorrespondence": {
+    "en": "Page correspondence",
+    "ko": "페이지 대응"
+  },
+  "git.textAssessment": {
+    "en": "Text assessment",
+    "ko": "텍스트 판독"
+  },
+  "git.regionCorrespondence": {
+    "en": "Region correspondence",
+    "ko": "영역 대응"
+  },
+  "git.appearanceAssessment": {
+    "en": "Appearance observation",
+    "ko": "표시 상태 관측"
+  },
+  "git.inferred": {
+    "en": "Inferred",
+    "ko": "추정"
+  },
+  "git.observed": {
+    "en": "Observed",
+    "ko": "관측"
   }
 }

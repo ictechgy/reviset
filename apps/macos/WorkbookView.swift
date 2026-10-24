@@ -957,12 +957,36 @@ func workbookRawField(_ cell:JSON,field:String)->WorkbookRawFieldObservation {
     default:return result(.unavailable)
     }
 }
-func workbookFieldTextDiff(before:JSON,after:JSON,field:String,textOffset:Int)->UnifiedTextDiff? {
+// The selected engine event authorizes one compared field. Reading two raw
+// cells alone does not establish a value/formula edit (for example across date
+// systems or formula dialects). Unknown and withheld event contexts stay neutral.
+enum WorkbookFieldDiffEligibility:Equatable {case neutral,formulaSource,storedValue}
+func workbookFieldDiffEligibility(change:JSON,before:JSON,after:JSON)->WorkbookFieldDiffEligibility {
+    guard !change.isNull,!before.isNull,!after.isNull,
+          ["exact","inferred"].contains(change["association"].string),
+          ["unique_nonempty_first_column_key","unique_exact_row_content"].contains(change["alignment_method"].string),
+          !change["from_revision_occurrence_id"].string.isEmpty,!change["to_revision_occurrence_id"].string.isEmpty,
+          change["from_revision_occurrence_id"].string != change["to_revision_occurrence_id"].string,
+          !change["from_sheet_id"].string.isEmpty,!change["to_sheet_id"].string.isEmpty,
+          !before["address"].string.isEmpty,!after["address"].string.isEmpty,
+          change["before_address"].string==before["address"].string,change["after_address"].string==after["address"].string,
+          before["formula_interpretation"].string != "unresolved",after["formula_interpretation"].string != "unresolved" else{return .neutral}
+    switch change["kind"].string {
+    case "formula":
+        let old=before["formula_dialect"].string,new=after["formula_dialect"].string
+        return !before["formula"].isNull && !after["formula"].isNull && ["xlsx_a1","ods_openformula"].contains(old) && old==new ? .formulaSource:.neutral
+    case "stored_value":
+        return before["cached_result"].string != "missing" && after["cached_result"].string != "missing" && before["value_type"].string==after["value_type"].string ? .storedValue:.neutral
+    default:return .neutral
+    }
+}
+func workbookFieldTextDiff(before:JSON,after:JSON,field:String,textOffset:Int,eligibility:WorkbookFieldDiffEligibility)->UnifiedTextDiff? {
     let old=workbookRawField(before,field:field),new=workbookRawField(after,field:field)
     guard textOffset==0,old.complete,new.complete,let oldText=old.text,let newText=new.text else{return nil}
     let unresolved=before["formula_interpretation"].string=="unresolved" || after["formula_interpretation"].string=="unresolved"
     let missingCache=field=="value" && (before["cached_result"].string=="missing" || after["cached_result"].string=="missing")
-    let semantic = !unresolved && !missingCache && (field=="formula" || before["value_type"].string==after["value_type"].string)
+    let eligibleField=(eligibility == .formulaSource && field=="formula") || (eligibility == .storedValue && field=="value")
+    let semantic = eligibleField && !unresolved && !missingCache && (field=="formula" || before["value_type"].string==after["value_type"].string)
     return unifiedTextDiff(before:oldText,after:newText,semantic:semantic)
 }
 @MainActor func workbookSelectedWarningMessages(_ cell:JSON)->[String] {
@@ -1012,7 +1036,8 @@ private struct WorkbookUnifiedDiff:View {
     }
     @ViewBuilder private func field(_ key:String,title:String)->some View {
         let old=workbookRawField(model.beforeCell,field:key),new=workbookRawField(model.afterCell,field:key)
-        let diff=workbookFieldTextDiff(before:model.beforeCell,after:model.afterCell,field:key,textOffset:model.cellTextOffset)
+        let eligibility=workbookFieldDiffEligibility(change:model.selectedChange,before:model.beforeCell,after:model.afterCell)
+        let diff=workbookFieldTextDiff(before:model.beforeCell,after:model.afterCell,field:key,textOffset:model.cellTextOffset,eligibility:eligibility)
         VStack(alignment:.leading,spacing:7){
             Text(title).font(.caption.weight(.semibold))
             // Status/offset/type labels live outside the verbatim source text.

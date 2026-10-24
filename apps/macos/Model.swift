@@ -679,3 +679,22 @@ func documentTextDiff(_ change:JSON)->UnifiedTextDiff {
     let semantic=change["kind"].string=="text_modified" && change["topology"].isNull && !change["before"].isNull && !change["after"].isNull
     return unifiedTextDiff(before:change["before"].string,after:change["after"].string,semantic:semantic)
 }
+
+// This projection does not depend on panel visibility or Focus. Keep page
+// correspondence separate from text reading, region matching and appearance.
+enum DocumentSelectedContextCategory:String {case pageCorrespondence,textAssessment,regionCorrespondence,appearanceAssessment}
+struct DocumentSelectedContextItem:Equatable {
+    let category:DocumentSelectedContextCategory
+    let status:String
+    let reasons:[String]
+}
+func documentSelectedContext(_ change:JSON)->[DocumentSelectedContextItem] {
+    guard !change.isNull else{return []}
+    var result:[DocumentSelectedContextItem]=[]
+    let lineage=change["lineage"],reasons=lineage["reasons"].array.map(\.string)
+    if !lineage["status"].string.isEmpty || !reasons.isEmpty {result.append(DocumentSelectedContextItem(category:.pageCorrespondence,status:lineage["status"].string,reasons:reasons))}
+    for (field,category) in [("text_assessment",DocumentSelectedContextCategory.textAssessment),("region_pairing_assessment",.regionCorrespondence),("appearance_assessment",.appearanceAssessment)] {
+        if !change[field].string.isEmpty {result.append(DocumentSelectedContextItem(category:category,status:change[field].string,reasons:[]))}
+    }
+    return result
+}

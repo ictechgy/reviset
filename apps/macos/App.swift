@@ -130,6 +130,13 @@ private struct SmokeStructureView: View {
             for _ in 0..<200 {if !model.initializing{break};try await Task.sleep(nanoseconds:50_000_000)}
             guard !model.initializing else{throw BridgeError(code:"STARTUP_TIMEOUT",message:"초기화가 완료되지 않았습니다.")}
             if request["expect_library_locked"].bool {
+                // Source First hides Projects. Reveal that production pane before
+                // qualifying its real disabled controls in the locked process.
+                layout.update{$0.sidebarVisible=true}
+                for _ in 0..<100 {
+                    let mounted=NSApp.windows.compactMap(\.contentView).flatMap{workspaceLayoutMarkers(in:$0)}.contains{$0.identifier?.rawValue=="Reviset.document.sidebar" && $0.window != nil}
+                    if mounted {break};try await Task.sleep(nanoseconds:20_000_000)
+                }
                 try await documentLockProbe(model,request:request,output:output)
                 NSApp.terminate(nil);return
             }
@@ -385,11 +392,12 @@ private struct SmokeStructureView: View {
         for (view,document,page,zoom,origin) in state {let now=view.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero;guard view.document===document,view.currentPage===page,abs(view.scaleFactor-zoom)<0.001,abs(now.x-origin.x)<1,abs(now.y-origin.y)<1 else{throw BridgeError(code:"GIT_VIEWPORT",message:"Text mode changed source page, zoom or viewport.")}}
         layout.setFocus(true);try await Task.sleep(nanoseconds:200_000_000)
         guard workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.document.reportBar"}) else{throw BridgeError(code:"GIT_REPORT_FOCUS",message:"Focus hid fixed report identity.")}
+        guard workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.document.selectedContext"}) else{throw BridgeError(code:"GIT_CONTEXT_FOCUS",message:"Focus hid selected correspondence/observation context.")}
         try capture(output.appendingPathComponent("native-git-focus.png"));layout.setFocus(false)
         model.selectVersion(0);try await model.updateChanges();guard model.readingSingleVersion,model.changes.isEmpty else{throw BridgeError(code:"GIT_V1_READ",message:"First version did not enter single-source reading.")}
         model.selectVersion(max(0,model.revisions.count-1));try await model.updateChanges();model.tab="compare";try await model.updateChanges()
         guard model.report["report_id"].string==reportID,try model.report.data()==report else{throw BridgeError(code:"GIT_REPORT_MUTATION",message:"Workspace navigation modified report data.")}
-        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"focus_fixed_report_visible":true,"first_version_single_read":true,"fixed_report_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
+        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"focus_fixed_report_visible":true,"focus_selected_context_visible":true,"first_version_single_read":true,"fixed_report_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
     }
     static func captureSelectedPages(_ model:AppModel,_ output:URL,selectionReady:()->Bool) async throws->[String:Any] {
         let report=model.report["report_id"].string,mode=model.pageMode,left=model.leftPageID,right=model.rightPageID,started=Date()

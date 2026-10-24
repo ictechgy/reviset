@@ -39,6 +39,9 @@ internal sealed class MainWindow : Window
     private readonly TextBlock sourceNotice = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(10, 3, 10, 4), Foreground = Brushes.DimGray, FontSize = 12 };
     private Button selectedLimitsButton = new();
     private readonly ComboBox sourceView = new() { Width = 155, Margin = new Thickness(4, 2, 4, 2) };
+    private readonly StackPanel rawTextPaging = new() { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed };
+    private Button firstTextStage = new();
+    private Button nextTextStage = new();
     private readonly ComboBox queryBefore = new() { Width = 145, Margin = new Thickness(4, 2, 0, 2) };
     private readonly ComboBox queryAfter = new() { Width = 145, Margin = new Thickness(0, 2, 4, 2) };
     private readonly TextBlock projectCaption = new() { VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold, MaxWidth = 160, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 8, 0) };
@@ -200,6 +203,7 @@ internal sealed class MainWindow : Window
         var metadata = new Expander { Header = "Source metadata / 원본 메타데이터", IsExpanded = false, Content = detailMetadata, MaxHeight = 180 }; DockPanel.SetDock(metadata, Dock.Bottom); inspector.Children.Add(metadata); inspector.Children.Add(detail); InspectorPane.Child = inspector;
         var sourceTools = new DockPanel { Margin = new Thickness(4, 1, 4, 1), LastChildFill = true };
         var sourceActions = new StackPanel { Orientation = Orientation.Horizontal }; previousChange = Command("previousChange", () => MoveChange(-1)); nextChange = Command("nextChange", () => MoveChange(1)); returnChange = Command("returnChange", ReturnToChange); sourceActions.Children.Add(previousChange); sourceActions.Children.Add(nextChange); sourceActions.Children.Add(returnChange); sourceActions.Children.Add(sourceView); DockPanel.SetDock(sourceActions, Dock.Right); sourceTools.Children.Add(sourceActions); sourceTools.Children.Add(sourcePair); DockPanel.SetDock(sourceTools, Dock.Top); sourceStage.Children.Add(sourceTools);
+        firstTextStage = Command("firstText", FirstDetail); nextTextStage = Command("nextText", NextDetail); rawTextPaging.Children.Add(firstTextStage); rawTextPaging.Children.Add(nextTextStage); DockPanel.SetDock(rawTextPaging, Dock.Top); sourceStage.Children.Add(rawTextPaging);
         var sourceFooter = new DockPanel(); selectedLimitsButton = Command("selectedLimits", () => { CreateSelectedLimitsDialog().ShowDialog(); return Task.CompletedTask; }); DockPanel.SetDock(selectedLimitsButton, Dock.Right); sourceFooter.Children.Add(selectedLimitsButton); sourceFooter.Children.Add(sourceNotice); DockPanel.SetDock(sourceFooter, Dock.Bottom); sourceStage.Children.Add(sourceFooter); var sourceBody = new Grid(); sourceBody.Children.Add(comparison); sourceBody.Children.Add(unified); sourceStage.Children.Add(sourceBody);
         sourceView.SelectionChanged += (_, _) => { if (!binding) { textView = sourceView.SelectedIndex == 1; RenderSourceDiff(); } };
         root.Children.Add(workspace); ClearDetail(); SetBusy(false);
@@ -516,12 +520,13 @@ internal sealed class MainWindow : Window
         if (selectedChange.ValueKind == JsonValueKind.Object && !AtSelectedChange) notice.Add(Copy["outsideChange"]);
         var kind = selectedChange.Get("kind").Text(); if (kind == "row_correspondence") notice.Add(Copy["inferredRows"]);
         if (kind is "text_occluded" or "text_revealed" or "text_struck_through" or "coverage_gap") notice.Add(Copy["appearanceOnly"]);
-        var selectedNotices = SourceDiffPolicy.SelectedNotices(selectedChange); var selectedGaps = selectedNotices.Where(item => item.Key == "selectedCoverage").ToArray();
-        foreach (var selectedNotice in selectedNotices.Where(item => item.Key != "selectedCoverage")) notice.Add(SelectedNoticeText(selectedNotice));
-        if (selectedGaps.Length > 0) { var first = selectedGaps[0].Value; if (first.Length > 220) first = first[..(char.IsHighSurrogate(first[219]) ? 219 : 220)] + "…"; notice.Add(Copy["selectedCoverage"] + ": " + first + (selectedGaps.Length > 1 ? " [1/" + selectedGaps.Length + "]" : "")); }
+        var selectedNotices = SourceDiffPolicy.SelectedNotices(selectedChange); var selectedGaps = selectedNotices.Where(item => item.Key is "selectedCoverage" or "lineageReason").ToArray();
+        foreach (var selectedNotice in selectedNotices.Where(item => item.Key is not ("selectedCoverage" or "lineageReason"))) notice.Add(SelectedNoticeText(selectedNotice));
+        if (selectedGaps.Length > 0) { var first = selectedGaps[0].Value; if (first.Length > 220) first = first[..(char.IsHighSurrogate(first[219]) ? 219 : 220)] + "…"; notice.Add(Copy[selectedGaps[0].Key] + ": " + first + (selectedGaps.Length > 1 ? " [1/" + selectedGaps.Length + "]" : "")); }
         selectedLimitsButton.Visibility = selectedGaps.Length > 0 ? Visibility.Visible : Visibility.Collapsed; selectedLimitsButton.IsEnabled = !busy;
         if (currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count) > 0) notice.Add(Copy["reportCoverage"] + ": " + currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count));
         sourceNotice.Text = string.Join(" · ", notice); sourceNotice.ToolTip = string.Join("\n", selectedNotices.Select(SelectedNoticeText)); AutomationProperties.SetHelpText(sourceNotice, sourceNotice.ToolTip.ToString()); sourceNotice.Visibility = notice.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        rawTextPaging.Visibility = textView && IsWorkbook && detailLoader is not null ? Visibility.Visible : Visibility.Collapsed; firstTextStage.IsEnabled = !busy && firstDetail.IsEnabled; nextTextStage.IsEnabled = !busy && nextDetail.IsEnabled;
         if (!textView) return;
         var flow = new FlowDocument { PagePadding = new Thickness(14), FontFamily = unified.FontFamily, FontSize = 13 }; unified.Document = flow;
         void Add(string text, Brush? color = null, Brush? background = null) { flow.Blocks.Add(new Paragraph(new Run(text)) { Margin = new Thickness(0), Foreground = color ?? Brushes.Black, Background = background ?? Brushes.Transparent }); }
@@ -532,15 +537,20 @@ internal sealed class MainWindow : Window
         if (Before.ReadState is "loading" or "failed" || After.ReadState is "loading" or "failed") { Add(Copy[Before.ReadState == "failed" || After.ReadState == "failed" ? "failed" : "loading"], Brushes.DimGray); return; }
         void Observation(SourceTextObservation value)
         {
-            Add(Copy[value.State switch { SourceTextState.Missing => "observationMissing", SourceTextState.Null => "observationNull", SourceTextState.Empty => "observationEmpty", _ => "observationPresent" }], Brushes.DimGray);
-            if (!value.Available) return; var bounded = SourceDiff.Build(value.Text, value.Text); if (bounded.Truncated) Add(Copy["boundedDiff"], Brushes.DarkOrange); foreach (var line in bounded.Lines) Add(line.Text);
+            Add(Copy[value.State switch { SourceTextState.Missing => "observationMissing", SourceTextState.Null => "observationNull", SourceTextState.Empty => "observationEmpty", SourceTextState.Partial => "partialSourceSegment", SourceTextState.AlreadyRead => "alreadyReadSegment", SourceTextState.Invalid => "invalidSourceSegment", _ => "observationPresent" }], Brushes.DimGray);
+            if (value.State == SourceTextState.Invalid) Add(Copy[value.RawState switch { SourceTextState.Null => "observationNull", SourceTextState.Empty => "fragmentEmpty", SourceTextState.Missing => "observationMissing", _ => "observationPresent" }], Brushes.DimGray);
+            if (value.Range is { Valid: true, State: "missing" } missing) Add(Copy["textRange"] + ": missing · " + Copy["requestedOffset"] + "=" + missing.Offset + " · total=0 · next=∅", Brushes.DimGray);
+            else if (value.Range is { } range) Add(Copy["textRange"] + ": [" + (range.Offset?.ToString(CultureInfo.InvariantCulture) ?? "?") + ", " + (range.Offset is { } at ? ((long)at + range.Length).ToString(CultureInfo.InvariantCulture) : "?") + ") / " + (range.Total?.ToString(CultureInfo.InvariantCulture) ?? "?") + " · " + range.State + " · " + Copy[range.Valid ? "validSourceRange" : "invalidSourceRange"] + " · next=" + (range.Next?.ToString(CultureInfo.InvariantCulture) ?? (range.Valid ? "∅" : "?")), Brushes.DimGray);
+            if (!value.HasText) return; var bounded = SourceDiff.Build(value.Text, value.Text); if (bounded.Truncated) Add(Copy["boundedDiff"], Brushes.DarkOrange); foreach (var line in bounded.Lines) Add(line.Text + (line.Terminator.Length > 0 ? " " + line.TerminatorLabel : ""));
         }
         void Field(SourceDiffField field)
         {
             Add(Copy[field.Key == "value" ? "cached" : field.Key == "text" ? "textObservation" : field.Key], Brushes.DimGray);
             if (!field.Eligible) { Add(Copy[field.Reason], Brushes.DimGray); Add(Copy["before"], Brushes.DimGray); Observation(field.Before); Add(Copy["after"], Brushes.DimGray); Observation(field.After); return; }
+            if (field.Before.Range is { } a) Add(Copy["before"] + " · " + Copy["textRange"] + ": [0, " + a.Length + ") / " + a.Total + " · " + a.State, Brushes.DimGray);
+            if (field.After.Range is { } b) Add(Copy["after"] + " · " + Copy["textRange"] + ": [0, " + b.Length + ") / " + b.Total + " · " + b.State, Brushes.DimGray);
             var diff = SourceDiff.Build(field.Before.Text, field.After.Text); if (diff.Truncated) Add(Copy["boundedDiff"], Brushes.DarkOrange);
-            foreach (var line in diff.Lines) Add(line.Prefix + " " + line.Text, line.Prefix == '-' ? Brushes.DarkRed : line.Prefix == '+' ? Brushes.DarkGreen : Brushes.Black, line.Prefix == '-' ? new SolidColorBrush(Color.FromRgb(255, 241, 240)) : line.Prefix == '+' ? new SolidColorBrush(Color.FromRgb(237, 250, 240)) : null);
+            foreach (var line in diff.Lines) Add(line.Prefix + " " + line.Text + (diff.TerminatorsDiffer ? " " + line.TerminatorLabel : ""), line.Prefix == '-' ? Brushes.DarkRed : line.Prefix == '+' ? Brushes.DarkGreen : Brushes.Black, line.Prefix == '-' ? new SolidColorBrush(Color.FromRgb(255, 241, 240)) : line.Prefix == '+' ? new SolidColorBrush(Color.FromRgb(237, 250, 240)) : null);
         }
         if (IsWorkbook)
         {
@@ -549,6 +559,7 @@ internal sealed class MainWindow : Window
             Add(Copy["textSegmentOnly"], Brushes.DimGray);
             var a = detailPayload.Get("before").Get("items").Items().FirstOrDefault().Get("before"); var b = detailPayload.Get("after").Get("items").Items().FirstOrDefault().Get("after");
             Add(Copy["before"] + " " + a.Get("address").Text() + " → " + Copy["after"] + " " + b.Get("address").Text(), Brushes.DimGray);
+            foreach (var side in new[] { (Label: Copy["before"], Cell: a), (Label: Copy["after"], Cell: b) }) Add(side.Label + " · " + Copy["cacheState"] + ": " + side.Cell.Get("cached_result").Text() + " · " + Copy["cacheFreshness"] + ": " + side.Cell.Get("cache_freshness").Text() + " · " + Copy["formulaInterpretation"] + ": " + side.Cell.Get("formula_interpretation").Text(), Brushes.DimGray);
             foreach (var field in SourceDiffPolicy.Workbook(selectedChange, a, b)) Field(field);
         }
         else if (AtSelectedChange && documentDetail.ValueKind == JsonValueKind.Object)
@@ -567,8 +578,9 @@ internal sealed class MainWindow : Window
     {
         busy = value; progress.Visibility = value ? Visibility.Visible : Visibility.Collapsed; cancelButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed; cancelButton.IsEnabled = value; importButton.IsEnabled = !value; analyzeButton.IsEnabled = !value && projectId.Length > 0; reorderButton.IsEnabled = !value && !IsWorkbook && projectId.Length > 0; exportButton.IsEnabled = !value && reportId.Length > 0; mcpButton.IsEnabled = !value && reportId.Length > 0; documents.IsEnabled = !value; workbooks.IsEnabled = !value; projectList.IsEnabled = !value && projectChoicesReady; reports.IsEnabled = !value; comparisonMode.IsEnabled = !value && reportId.Length > 0; Before.NavigationEnabled(!value); After.NavigationEnabled(!value);
         foreach (var pair in actionItems) pair.Value.IsEnabled = pair.Key switch { "import" or "refresh" => !value, "analyze" => analyzeButton.IsEnabled, "reorder" => reorderButton.IsEnabled, "export" => exportButton.IsEnabled, "mcp" => mcpButton.IsEnabled, _ => !value };
-        queryBefore.IsEnabled = queryAfter.IsEnabled = versionsButton.IsEnabled = !value && reportId.Length > 0; sourceView.IsEnabled = !value; RenderSourceDiff();
+        queryBefore.IsEnabled = queryAfter.IsEnabled = versionsButton.IsEnabled = !value && reportId.Length > 0; sourceView.IsEnabled = !value;
         changeList.IsEnabled = !value && changesReady; more.IsEnabled = !value && changesReady && nextChanges.Length > 0; Before.Cells.IsEnabled = !value && Before.ReadState == "ready"; After.Cells.IsEnabled = !value && After.ReadState == "ready"; firstDetail.IsEnabled = !value && detailLoader is not null && (detailOffset > 0 || detailCursor.Length > 0); nextDetail.IsEnabled = !value && detailLoader is not null && (detailNext is not null || detailItemNext.Length > 0);
+        RenderSourceDiff();
     }
     private ComparisonSelection AdmitMutation()
     {
@@ -823,6 +835,16 @@ internal sealed class MainWindow : Window
         var fixedReport = reportId; var reportBytes = currentReport.GetRawText(); var layout = Layout; var previousView = textView;
         await SelectSourcePairForSmoke(0, 1); SetLayout(WorkspaceLayout.Preset("sourceFirst")); sourceView.SelectedIndex = 1;
         JsonElement J(object value) => JsonSerializer.SerializeToElement(value);
+        JsonElement CompleteCell(object value)
+        {
+            var cell = J(value); var fields = cell.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value); var ranges = new Dictionary<string, object?>();
+            foreach (var field in new[] { "value", "formula", "number_format" }) { var raw = cell.Get(field); ranges[field] = new { offset = 0, total_length = raw.Text().Length, next_offset = (int?)null, state = raw.ValueKind == JsonValueKind.Null ? "missing" : raw.Text().Length == 0 ? "empty" : "complete" }; }
+            fields["text_continuations"] = ranges; return J(fields);
+        }
+        JsonElement WithRange(JsonElement cell, string field, object metadata)
+        {
+            var fields = cell.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value); var ranges = cell.Get("text_continuations").EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value); ranges[field] = metadata; fields["text_continuations"] = ranges; return J(fields);
+        }
         void Install(JsonElement change, JsonElement payload = default)
         {
             selectedChange = change; selectedBefore = Before.CaptureSelection(); selectedAfter = After.CaptureSelection(); documentDetail = change; detailPayload = payload; inspectorMode = IsWorkbook ? "raw" : "event"; RenderSourceDiff();
@@ -838,6 +860,7 @@ internal sealed class MainWindow : Window
             }
             Install(J(new { kind = "text_modified", before = (string?)null, after = "" }));
             if (Colored() || !Text().Contains(Copy["observationNull"], StringComparison.Ordinal) || !Text().Contains(Copy["observationEmpty"], StringComparison.Ordinal)) throw new InvalidOperationException("Native text view collapsed null observation into explicit empty/deletion.");
+            Install(J(new { kind = "text_modified", before = "SYNTHETIC same\r\n", after = "SYNTHETIC same\n" })); if (!Colored() || !Text().Contains("⟦CRLF⟧", StringComparison.Ordinal) || !Text().Contains("⟦LF⟧", StringComparison.Ordinal)) throw new InvalidOperationException("Terminator-only source edit lost its exact CRLF/LF presentation."); await capture("synthetic-newline-only-diff");
             Install(J(new { kind = "text_modified", before = "SYNTHETIC inferred 100", after = "SYNTHETIC inferred 120", text_assessment = "inferred", region_pairing_assessment = "inferred", coverage_gaps = new[] { new { feature = "ocr", reason = "SYNTHETIC_ocr_requires_source_review" }, new { feature = "comparison", reason = "SYNTHETIC_other_regions_unresolved" } } }));
             if (!Colored()) throw new InvalidOperationException("Eligible synthetic paired text edit did not reach the native +/- renderer.");
             foreach (var name in new[] { "sourceFirst", "focus" })
@@ -857,8 +880,8 @@ internal sealed class MainWindow : Window
         }
         else
         {
-            var a = J(new { address = "C2", value = "SYNTHETIC stored 100", formula = "=SUM(A1:A3)", number_format = "0", cached_result = "present", formula_interpretation = "explicit" });
-            var b = J(new { address = "C3", value = (string?)null, formula = "=SUM(B1:B3)", number_format = "0", cached_result = "missing", formula_interpretation = "explicit" });
+            var a = CompleteCell(new { address = "C2", value = "SYNTHETIC stored 100", formula = "=SUM(A1:A3)", number_format = "0", cached_result = "present", formula_interpretation = "explicit" });
+            var b = CompleteCell(new { address = "C3", value = (string?)null, formula = "=SUM(B1:B3)", number_format = "0", cached_result = "missing", formula_interpretation = "explicit" });
             JsonElement Payload(JsonElement left, JsonElement right) => J(new { before = new { items = new[] { new { before = left } } }, after = new { items = new[] { new { after = right } } } });
             foreach (var kind in new[] { "cache_availability", "stored_value", "cell_observation", "row_correspondence", "sheet_observation", "formatting_range" })
             {
@@ -867,6 +890,19 @@ internal sealed class MainWindow : Window
             }
             await capture("synthetic-missing-cache-neutral");
             Install(J(new { kind = "formula" }), Payload(a, b)); if (!Colored() || !Text().Contains(Copy["missingCacheObservation"], StringComparison.Ordinal) || !Text().Contains("=SUM(B1:B3)", StringComparison.Ordinal)) throw new InvalidOperationException("Exact eligible formulas were conflated with missing saved values."); await capture("synthetic-formula-independent-cache");
+            var firstA = CompleteCell(new { address = "C2", value = "100", formula = (string?)null, number_format = "0", cached_result = "not_applicable", formula_interpretation = "not_formula" });
+            var firstB = WithRange(CompleteCell(new { address = "C3", value = "120", formula = (string?)null, number_format = "0", cached_result = "not_applicable", formula_interpretation = "not_formula" }), "value", new { offset = 0, total_length = 9, next_offset = 3, state = "truncated" });
+            var laterA = WithRange(CompleteCell(new { address = "C2", value = "", formula = (string?)null, number_format = "0", cached_result = "not_applicable", formula_interpretation = "not_formula" }), "value", new { offset = 3, total_length = 3, next_offset = (int?)null, state = "truncated" });
+            var laterB = WithRange(CompleteCell(new { address = "C3", value = "LONGER", formula = (string?)null, number_format = "0", cached_result = "not_applicable", formula_interpretation = "not_formula" }), "value", new { offset = 3, total_length = 9, next_offset = (int?)null, state = "truncated" });
+            Install(J(new { kind = "stored_value" }), Payload(firstA, firstB)); detailLoader = (offset, _) => Task.FromResult(offset == 0 ? Payload(firstA, firstB) : Payload(laterA, laterB)); await LoadDetail(0); SetLayout(WorkspaceLayout.Preset("focus"));
+            foreach (var language in new[] { "ko", "en" })
+            {
+                SetLanguage(language); if (Colored() || !rawTextPaging.IsVisible || !nextTextStage.IsVisible || !nextTextStage.IsEnabled || InspectorPane.IsVisible || !Text().Contains("[0, 3) / 9", StringComparison.Ordinal) || !Text().Contains(Copy["partialSourceSegment"], StringComparison.Ordinal)) throw new InvalidOperationException("Budget-shortened source ranges or native text pager disappeared in Focus/" + language);
+                await NextDetail(); if (Colored() || !Text().Contains(Copy["alreadyReadSegment"], StringComparison.Ordinal) || !Text().Contains("[3, 3) / 3", StringComparison.Ordinal) || !Text().Contains("[3, 9) / 9", StringComparison.Ordinal) || !firstTextStage.IsEnabled) throw new InvalidOperationException("Already-read field became an empty-value edit or lost independent source ranges in " + language); await FirstDetail();
+            }
+            await capture("synthetic-partial-source-ranges-pager");
+            Install(J(new { kind = "stored_value" }), Payload(firstA, WithRange(firstB, "value", new { offset = 0, total_length = 9, next_offset = (int?)null, state = "complete" }))); if (Colored() || !Text().Contains(Copy["invalidSourceSegment"], StringComparison.Ordinal) || !Text().Contains(Copy["invalidSourceRange"], StringComparison.Ordinal)) throw new InvalidOperationException("Contradictory source metadata certified a complete field.");
+            var empty = CompleteCell(new { address = "C3", value = "", formula = (string?)null, number_format = "0", cached_result = "not_applicable", formula_interpretation = "not_formula" }); Install(J(new { kind = "stored_value" }), Payload(firstA, empty)); if (!Colored() || !Text().Contains("[0, 0) / 0", StringComparison.Ordinal)) throw new InvalidOperationException("A validated genuine empty string was confused with a later empty fragment.");
         }
         if (reportId != fixedReport || currentReport.GetRawText() != reportBytes) throw new InvalidOperationException("Presentation-only controls changed the fixed report.");
         selectedChange = default; sourceView.SelectedIndex = previousView ? 1 : 0; SetLayout(layout); await SelectSourcePairForSmoke(0, currentReport.Get("revisions").Items().Count - 1); await CheckIntermediateEventForSmoke();
