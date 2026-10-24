@@ -710,7 +710,12 @@ private struct SoleDocumentImportProbeHarness:View {
         for (table,owner,origin,row) in oversizedStates {
             guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,let index=table.tableColumns.firstIndex(where:{$0.identifier.rawValue=="4"}) else{throw NSError(domain:"OversizedDetailsNativeScopeMissing",code:1)}
             try require(table.rect(ofColumn:index).width>scroll.contentView.bounds.width && !scroll.columnVisibleToRightOfGutter(index) && scroll.pendingCellDetailsReveal==nil && scroll.contentView.bounds.minY==origin.y && table.selectedRow==row && (table.dataSource as AnyObject?) === owner,"OversizedDetailsRetainedRevealAuthorityOrMovedPhysicalSource")
-            oversizedGeometry.append(["pane":(table.dataSource as! WorkbookGrid.Coordinator).parent.pane,"column_width":Double(table.rect(ofColumn:index).width),"viewport_width":Double(scroll.contentView.bounds.width),"cannot_fit_whole_column":true,"pending_nil_after_attempt":true])
+            guard let cell=table.view(atColumn:index,row:row,makeIfNecessary:true) as? NSTableCellView,let text=cell.textField else{throw NSError(domain:"OversizedD4NativeTextMissing",code:1)}
+            cell.layoutSubtreeIfNeeded()
+            let leadingError=abs(table.rect(ofColumn:index).minX-scroll.contentView.bounds.minX-scroll.pinnedRowGutter.frame.width),fragment=text.convert(NSRect(x:text.bounds.minX,y:text.bounds.midY-2,width:min(12,text.bounds.width),height:4),to:scroll)
+            var usable=scroll.contentView.convert(scroll.contentView.bounds,to:scroll);usable.origin.x += scroll.pinnedRowGutter.frame.width;usable.size.width -= scroll.pinnedRowGutter.frame.width
+            try require(leadingError<0.5 && usable.contains(fragment) && !text.visibleRect.isEmpty && text.stringValue.utf16.elementsEqual(raw.utf16),"OversizedD4LeadingTextNotVisibleBesidePinnedGutter")
+            oversizedGeometry.append(["pane":(table.dataSource as! WorkbookGrid.Coordinator).parent.pane,"column_width":Double(table.rect(ofColumn:index).width),"viewport_width":Double(scroll.contentView.bounds.width),"cannot_fit_whole_column":true,"pending_nil_after_attempt":true,"leading_edge_alignment_error":Double(leadingError),"native_text_leading_fragment_visible":true,"leading_fragment_rect":NSStringFromRect(fragment),"usable_viewport_rect":NSStringFromRect(usable)])
             scroll.contentView.scroll(to:NSPoint(x:127,y:origin.y));scroll.reflectScrolledClipView(scroll.contentView)
         }
         let manualOrigins=oversizedTables.map{$0.enclosingScrollView!.contentView.bounds.origin}

@@ -1845,8 +1845,11 @@ private final class WorkbookPinnedRowsView:NSView {
         guard let table=documentView as? NSTableView,column>0,column<table.numberOfColumns else{return}
         let original=contentView.bounds.origin,visible=contentView.bounds,rect=table.rect(ofColumn:column),gutter=min(table.rect(ofColumn:0).width,visible.width)
         var x=original.x
-        if rect.minX<x+gutter {x=rect.minX-gutter}
-        if rect.maxX>x+visible.width {x=rect.maxX-visible.width}
+        if rect.width>visible.width-gutter {x=rect.minX-gutter}
+        else {
+            if rect.minX<x+gutter {x=rect.minX-gutter}
+            if rect.maxX>x+visible.width {x=rect.maxX-visible.width}
+        }
         x=max(0,min(x,max(0,table.bounds.width-visible.width)))
         contentView.scroll(to:NSPoint(x:x,y:original.y));reflectScrolledClipView(contentView)
     }
@@ -2433,7 +2436,12 @@ struct WorkbookGrid: NSViewRepresentable {
         button.performClick(nil);try await Task.sleep(nanoseconds:150_000_000)
         for (table,owner,row,y) in states {
             guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,let coordinator=table.dataSource as? WorkbookGrid.Coordinator,let index=table.tableColumns.firstIndex(where:{$0.identifier.rawValue==String(coordinator.parent.selectedColumn)}),table.rect(ofColumn:index).width>scroll.contentView.bounds.width,!scroll.columnVisibleToRightOfGutter(index),scroll.pendingCellDetailsReveal==nil,scroll.contentView.bounds.origin.y==y,table.selectedRow==row,(table.dataSource as AnyObject?) === owner else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"A column that cannot fit retained reveal authority or moved its physical source.")}
-            facts.append(["pane":coordinator.parent.pane,"physical_address":WorkbookGrid.address(coordinator.parent.selectedRow,coordinator.parent.selectedColumn),"column_width":Double(table.rect(ofColumn:index).width),"viewport_width":Double(scroll.contentView.bounds.width),"whole_column_cannot_fit":true,"pending_nil_after_attempt":true])
+            guard let cell=table.view(atColumn:index,row:row,makeIfNecessary:true) as? NSTableCellView,let text=cell.textField,!text.stringValue.isEmpty else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Oversized column has no native source text.")}
+            cell.layoutSubtreeIfNeeded()
+            let leadingError=abs(table.rect(ofColumn:index).minX-scroll.contentView.bounds.minX-scroll.pinnedRowGutter.frame.width),fragment=text.convert(NSRect(x:text.bounds.minX,y:text.bounds.midY-2,width:min(12,text.bounds.width),height:4),to:scroll)
+            var usable=scroll.contentView.convert(scroll.contentView.bounds,to:scroll);usable.origin.x += scroll.pinnedRowGutter.frame.width;usable.size.width -= scroll.pinnedRowGutter.frame.width
+            guard leadingError<0.5,usable.contains(fragment),!text.visibleRect.isEmpty else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Oversized column reveal did not expose its leading source text beside the gutter.")}
+            facts.append(["pane":coordinator.parent.pane,"physical_address":WorkbookGrid.address(coordinator.parent.selectedRow,coordinator.parent.selectedColumn),"column_width":Double(table.rect(ofColumn:index).width),"viewport_width":Double(scroll.contentView.bounds.width),"whole_column_cannot_fit":true,"pending_nil_after_attempt":true,"leading_edge_alignment_error":Double(leadingError),"native_text_leading_fragment_visible":true,"leading_fragment_rect":NSStringFromRect(fragment),"usable_viewport_rect":NSStringFromRect(usable)])
             scroll.contentView.scroll(to:NSPoint(x:127,y:y));scroll.reflectScrolledClipView(scroll.contentView)
         }
         let origins=tables.map{$0.enclosingScrollView!.contentView.bounds.origin}
