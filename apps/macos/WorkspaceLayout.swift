@@ -236,7 +236,31 @@ struct WorkspaceLayoutMarker:NSViewRepresentable {
 }
 @MainActor protocol WorkspacePaneSizing:AnyObject {
     var splitView:NSSplitView {get}
+    var geometryPending:Bool {get}
     func resizeAuxiliary(to points:CGFloat,commit:Bool)
+}
+@MainActor protocol WorkspacePreferredGeometryObserver:AnyObject {
+    func workspacePreferredGeometryDidSettle()
+}
+// Explicit actions may wait for the native split queue. Passive layouts never
+// install an action, and a later preferred-size job must finish before it runs.
+@MainActor enum WorkspacePreferredGeometry {
+    private static var scheduled:Set<ObjectIdentifier>=[]
+    static func requestCompletion(in window:NSWindow?) {
+        guard let window else{return}
+        let identity=ObjectIdentifier(window)
+        guard scheduled.insert(identity).inserted else{return}
+        DispatchQueue.main.async { [weak window] in
+            scheduled.remove(identity)
+            guard let window else{return}
+            guard let content=window.contentView else{return}
+            func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
+            let children=views(content)
+            // NSSplitViewController is its managed split view's delegate.
+            guard !children.contains(where:{(($0 as? NSSplitView)?.delegate as? WorkspacePaneSizing)?.geometryPending==true}) else{return}
+            for child in children {(child as? WorkspacePreferredGeometryObserver)?.workspacePreferredGeometryDidSettle()}
+        }
+    }
 }
 @MainActor final class WorkspacePaneSplitController<Primary:View,Auxiliary:View>:NSSplitViewController,WorkspacePaneSizing {
     let primary:NSHostingController<WorkspaceHostedRoot<Primary>>,auxiliary:NSHostingController<WorkspaceHostedRoot<Auxiliary>>
@@ -249,6 +273,7 @@ struct WorkspaceLayoutMarker:NSViewRepresentable {
     private var mouseMonitor:Any?
     private var isTrackingDivider=false
     private var geometryScheduled=false
+    var geometryPending:Bool {geometryScheduled || positioning}
     private var onResize:(WorkspacePaneExtent)->Void={_ in}
     init(name:String,primary:Primary,auxiliary:Auxiliary,isEnabled:Bool=true,locale:Locale = .current) {
         self.name=name
@@ -320,6 +345,7 @@ struct WorkspaceLayoutMarker:NSViewRepresentable {
         geometryScheduled=true
         DispatchQueue.main.async{[weak self] in
             guard let self else{return}
+            defer{WorkspacePreferredGeometry.requestCompletion(in:self.splitView.window)}
             self.geometryScheduled=false;self.applyPreferredGeometry()
         }
     }

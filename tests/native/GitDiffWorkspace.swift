@@ -307,7 +307,8 @@ private struct SoleDocumentImportProbeHarness:View {
         let raw="stored only; not recalculated"
         let preview=String(repeating:"p",count:64),literalEllipsis="literal… source"
         let cells=[JSON(["address":"D4","row":4,"column":4,"value":raw,"value_type":"string","formula":"SUM(C1)","formula_interpretation":"explicit","cached_result":"present","text_truncated":true,"source_lengths":["value":raw.utf16.count]]),JSON(["address":"E4","row":4,"column":5,"value":literalEllipsis,"value_type":"string","formula":NSNull(),"text_truncated":false,"source_lengths":["value":literalEllipsis.utf16.count]]),JSON(["address":"F4","row":4,"column":6,"value":preview,"value_type":"string","formula":NSNull(),"cached_result":"not_applicable","text_truncated":true,"source_lengths":["value":200]])]
-        func source(_ enabled:Bool)->WorkbookGrid {WorkbookGrid(keyboardEnabled:enabled,language:"en",pane:"source-probe",revealIntent:"fixed",cells:cells,rowStart:4,columnStart:4,rowCount:10,columnCount:12,selectedRow:4,selectedColumn:4,onSelect:{_,_ in})}
+        var gutterSelections:[[Int]]=[],throwAwayPending=false
+        func source(_ enabled:Bool)->WorkbookGrid {WorkbookGrid(keyboardEnabled:enabled,language:"en",pane:"source-probe",revealIntent:"fixed",cells:cells,rowStart:4,columnStart:4,rowCount:10,columnCount:12,selectedRow:4,selectedColumn:4,onSelect:{gutterSelections.append([$0,$1])})}
         let host=NSHostingView(rootView:source(true)),window=NSWindow(contentRect:NSRect(x:0,y:0,width:500,height:300),styleMask:[.titled],backing:.buffered,defer:false)
         window.isReleasedWhenClosed=false;window.contentView=host;window.orderFront(nil);defer{window.close()}
         func settle()async throws {try await Task.sleep(nanoseconds:100_000_000);host.layoutSubtreeIfNeeded()}
@@ -333,6 +334,10 @@ private struct SoleDocumentImportProbeHarness:View {
         try require(!rowLabel.isHiddenOrHasHiddenAncestor && !rowLabel.visibleRect.isEmpty && rowLabel.stringValue=="4" && abs(rowCenter-labelCenter)<1 && table.visibleRect.intersection(table.rect(ofColumn:0)).isEmpty,"HorizontalScrollLostPinnedPhysicalRowIdentity")
         let gutter=pinned.pinnedRowGutter,point=NSPoint(x:gutter.frame.midX,y:gutter.frame.midY)
         try require(!gutter.acceptsFirstResponder && !gutter.canBecomeKeyView && gutter.hitTest(point)===gutter,"PinnedGutterAcquiredFocusOrForwardedCoveredCellHit")
+        guard let nextRow=pinned.pinnedRowLabel(5),let click=NSEvent.mouseEvent(with:.leftMouseDown,location:nextRow.convert(NSPoint(x:nextRow.bounds.midX,y:nextRow.bounds.midY),to:nil),modifierFlags:[],timestamp:0,windowNumber:window.windowNumber,context:nil,eventNumber:0,clickCount:1,pressure:1) else{throw NSError(domain:"PinnedRowClickFixtureMissing",code:1)}
+        pinned.pendingCellDetailsReveal={_ in throwAwayPending=true;return true}
+        gutter.mouseDown(with:click)
+        try require(gutterSelections==[[5,4]] && pinned.pendingCellDetailsReveal==nil && !throwAwayPending,"PinnedRowClickDidNotUsePhysicalRowCurrentColumnOwnerAction")
         guard let header=table.headerView else{throw NSError(domain:"PinnedGridHeaderMissing",code:1)}
         var headerAlignmentError:CGFloat=0
         for column in table.tableColumns.indices {let body=table.convert(table.rect(ofColumn:column),to:nil),title=header.convert(header.headerRect(ofColumn:column),to:nil);headerAlignmentError=max(headerAlignmentError,abs(body.minX-title.minX),abs(body.maxX-title.maxX))}
@@ -343,11 +348,12 @@ private struct SoleDocumentImportProbeHarness:View {
         try require(tables(host).first===table && (table.dataSource as AnyObject?)===coordinator && table.selectedRow==selected && scroll.contentView.bounds.origin==origin,"HiddenInputGateChangedGridHostOrViewport")
         try require(!table.acceptsFirstResponder && !table.canBecomeKeyView && table.isAccessibilityHidden(),"HiddenGridGateAbsent")
         try require(gutter.isAccessibilityHidden() && !gutter.acceptsFirstResponder && !gutter.canBecomeKeyView,"HiddenPinnedGutterEscapedSourceInputGate")
+        gutter.mouseDown(with:click);try require(gutterSelections==[[5,4]],"HiddenPinnedRowClickSelectedPhysicalSource")
         _ = window.makeFirstResponder(table)
         if let responder=window.firstResponder as? NSView {try require(responder !== table && !responder.isDescendant(of:table),"HiddenGridAllowedReacquisition")}
         for _ in 0..<12 {window.selectNextKeyView(nil);if let responder=window.firstResponder as? NSView {try require(responder !== table && !responder.isDescendant(of:table),"NativeTraversalEnteredHiddenGrid")}}
         host.rootView=source(true);try await settle();try require(!table.isAccessibilityHidden() && window.makeFirstResponder(table),"SourceGridGateDidNotRestore")
-        let proof:[String:Any]=["scope":"controlled native WorkbookGrid; raw fixture literal, clipping and public AppKit responder/traversal/AX properties; no OS Full Keyboard Access or VoiceOver claim","raw_value":raw,"raw_utf16":Array(raw.utf16).map(Int.init),"full_saved_value_in_tooltip":true,"single_line_clipping_padding_verified":true,"partial_preview_returned_utf16":64,"partial_preview_source_total_utf16":200,"partial_native_field_utf16":previewNativeUTF16,"partial_native_ax_value_utf16":previewAX.utf16.count,"partial_raw_field_and_ax_exact":true,"partial_secondary_annotation":previewAnnotation,"literal_source_ellipsis_preserved":true,"pinned_row_label_visible_after_horizontal_scroll":true,"pinned_row_label_physical_row":4,"pinned_row_label_vertical_alignment_error":abs(rowCenter-labelCenter),"header_body_alignment_error_after_horizontal_scroll":headerAlignmentError,"pinned_gutter_blocks_covered_cell_hits_and_focus":true,"pinned_gutter_hidden_source_ax_gate":true,"retained_host_coordinator_viewport_selection":true,"hidden_reacquisition_rejected":true,"native_next_keyview_steps":12,"source_restore_verified":true]
+        let proof:[String:Any]=["scope":"controlled native WorkbookGrid; raw fixture literal, clipping and public AppKit responder/traversal/AX properties; no OS Full Keyboard Access or VoiceOver claim","raw_value":raw,"raw_utf16":Array(raw.utf16).map(Int.init),"full_saved_value_in_tooltip":true,"single_line_clipping_padding_verified":true,"partial_preview_returned_utf16":64,"partial_preview_source_total_utf16":200,"partial_native_field_utf16":previewNativeUTF16,"partial_native_ax_value_utf16":previewAX.utf16.count,"partial_raw_field_and_ax_exact":true,"partial_secondary_annotation":previewAnnotation,"literal_source_ellipsis_preserved":true,"pinned_row_label_visible_after_horizontal_scroll":true,"pinned_row_label_physical_row":4,"pinned_row_label_vertical_alignment_error":abs(rowCenter-labelCenter),"header_body_alignment_error_after_horizontal_scroll":headerAlignmentError,"pinned_gutter_blocks_covered_cell_hits_and_focus":true,"pinned_gutter_hidden_source_ax_gate":true,"actual_gutter_mouse_down_selected_physical_row_and_current_column":[5,4],"hidden_gutter_mouse_down_blocked":true,"row_click_cancels_pending_reveal":true,"retained_host_coordinator_viewport_selection":true,"hidden_reacquisition_rejected":true,"native_next_keyview_steps":12,"source_restore_verified":true]
         if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:proof,options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("grid-source-proof.json"))}
     }
 
@@ -659,6 +665,34 @@ private struct SoleDocumentImportProbeHarness:View {
             model.setDiffMode("source");try await settle(window)
             observations.append(["language":language.rawValue,"native_details_action_visible_and_performed":true,"existing_inspector_visible":true,"query_event_copy":scopeLabel.stringValue,"mounted_native_scope_label_verified":true,"raw_literal":raw,"raw_utf16_preserved":true,"no_new_bridge_requests_or_list_replacement":true,"grid_hosts_selection_and_vertical_viewports_retained":true,"explicit_horizontal_reveal_from_offscreen_column":true,"horizontal_reveal":horizontalReveal,"inspected_column_and_pinned_row_visible":true,"text_navigation_explicit_original_route":true])
         }
+        var directionalGeometry:[[String:Any]]=[]
+        let savedCellState=(model.selectedRow,model.selectedColumn,model.beforeAddress,model.afterAddress,model.beforeCell,model.afterCell,model.beforeCells,model.afterCells,model.selectedChangeID,model.columnStart,model.rowStart)
+        for start in [1,4] {
+            model.inspectorVisible=false;model.diffMode="source";model.rowStart=1;model.columnStart=start;model.selectedRow=4;model.selectedColumn=4;model.beforeAddress="D4";model.afterAddress="D4";model.selectedChangeID="";model.revealGeneration += 1
+            let cell=JSON(["address":"D4","row":4,"column":4,"value":raw,"formula":NSNull(),"number_format":"General"])
+            model.beforeCell=cell;model.afterCell=cell;model.beforeCells=[cell];model.afterCells=[cell];try await settle(window)
+            let tables=views(host).compactMap{$0 as? NSTableView}.filter{$0.identifier?.rawValue.hasPrefix("Docver.workbook.grid.")==true}
+            try require(tables.count==2,"DirectionalCellDetailsPhysicalPairMissing")
+            for table in tables {let scroll=table.enclosingScrollView!;scroll.contentView.scroll(to:NSPoint(x:start==1 ? 0:400,y:scroll.contentView.bounds.origin.y));scroll.reflectScrolledClipView(scroll.contentView)}
+            let states=tables.map{($0,$0.dataSource as AnyObject?,$0.enclosingScrollView!.contentView.bounds,$0.selectedRow)}
+            let rawBefore=try model.beforeCell.data(),rawAfter=try model.afterCell.data(),fixed=try model.report.data(),query=model.comparisonScope,requests=try Data(contentsOf:library.appendingPathComponent("read-events.jsonl"))
+            guard let button=views(host).compactMap({$0 as? NSButton}).first(where:{$0.identifier?.rawValue=="Reviset.workbook.cellDetailsAction"}) else{throw NSError(domain:"DirectionalCellDetailsButtonMissing",code:1)}
+            button.performClick(nil);try await settle(window)
+            for (table,owner,bounds,row) in states {
+                guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,let coordinator=table.dataSource as? WorkbookGrid.Coordinator,let index=table.tableColumns.firstIndex(where:{$0.identifier.rawValue=="4"}),let label=scroll.pinnedRowLabel(4) else{throw NSError(domain:"DirectionalCellDetailsNativeScopeMissing",code:1)}
+                let actual=scroll.contentView.bounds,direction=start==1 ? actual.minX>bounds.minX:actual.minX<bounds.minX
+                let fact:[String:Any]=["column_start":start,"physical_address":"D4","pane":coordinator.parent.pane,"before_clip":NSStringFromRect(bounds),"after_clip":NSStringFromRect(actual),"column_rect":NSStringFromRect(table.rect(ofColumn:index)),"gutter_rect":NSStringFromRect(scroll.pinnedRowGutter.frame),"horizontal_direction":start==1 ? "right":"left","inspected_column_visible":scroll.columnVisibleToRightOfGutter(index),"physical_row_visible":!label.visibleRect.isEmpty,"pending_reveal":scroll.pendingCellDetailsReveal != nil]
+                try require(direction && (start != 1 || actual.width<bounds.width) && actual.minY==bounds.minY && table.selectedRow==row && (table.dataSource as AnyObject?) === owner && views(host).contains{$0===table} && scroll.columnVisibleToRightOfGutter(index) && !label.visibleRect.isEmpty && scroll.pendingCellDetailsReveal==nil,"DirectionalCellDetailsAfterFinalShrinkFailed_\(fact)")
+                directionalGeometry.append(fact)
+                // Closing the inspector is passive geometry, so the consumed
+                // action cannot acquire ownership of subsequent viewport moves.
+            }
+            try require(try model.beforeCell.data()==rawBefore && model.afterCell.data()==rawAfter && model.report.data()==fixed && model.comparisonScope==query && Data(contentsOf:library.appendingPathComponent("read-events.jsonl"))==requests,"DirectionalDetailsQueriedOrChangedRawScope")
+            let origins=tables.map{$0.enclosingScrollView!.contentView.bounds.origin}
+            model.inspectorVisible=false;try await settle(window)
+            for (table,origin) in zip(tables,origins) {try require(table.enclosingScrollView!.contentView.bounds.origin==origin,"ClosingDetailsRearmedConsumedReveal")}
+        }
+        model.selectedRow=savedCellState.0;model.selectedColumn=savedCellState.1;model.beforeAddress=savedCellState.2;model.afterAddress=savedCellState.3;model.beforeCell=savedCellState.4;model.afterCell=savedCellState.5;model.beforeCells=savedCellState.6;model.afterCells=savedCellState.7;model.selectedChangeID=savedCellState.8;model.columnStart=savedCellState.9;model.rowStart=savedCellState.10;model.revealGeneration += 1;try await settle(window)
         let originalReport=model.report
         var longReport=model.report.dictionary,longRevisions=model.revisions.map(\.dictionary)
         for index in longRevisions.indices {longRevisions[index]["label"]="\(index+1) · "+String(repeating:"긴 버전 이름 👨‍👩‍👧‍👦 e\u{301} العربية עברית · ",count:2)}
@@ -706,7 +740,7 @@ private struct SoleDocumentImportProbeHarness:View {
         try require(!workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"UnselectedDocumentDiffClaimedSelectedEvent")
         document.changes=[JSON(["change_id":"selected","kind":"text_modified","before":"100","after":"120"])];document.selectedChangeID="selected";try await settle(docWindow)
         try require(workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"SelectedDocumentEventHeaderMissing")
-        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true,"source18_scope_caption_geometry":captionGeometry,"source18_nonfinite_width_resolved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
+        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true,"source23_cell_details_both_directions_after_final_inspector_geometry":directionalGeometry,"source18_scope_caption_geometry":captionGeometry,"source18_nonfinite_width_resolved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
     }
 
 }
