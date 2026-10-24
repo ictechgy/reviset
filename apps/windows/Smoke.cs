@@ -61,6 +61,7 @@ internal static class Smoke
             checks.Add("synthetic_native_over_character_and_crlf_line_budget_insertions_show_neutral_bounded_sides_no_colored_prefix_artifacts_full_exact_reader_retained_and_structural_raw_marker_separate");
             await window.CheckNoticeGeometryForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "document-git-" + name + ".png")); }, (name, value) => Observe(output, "document-git-" + name, value)); checks.Add("synthetic_native_document_valid_1998_utf16_multiline_reason_bounded_geometry_en_ko_sourcefirst_focus_exact_scrolling_reason_and_limited_report_count_export_path");
             checks.Add("native_document_full_selected_limits_reader_preserves_all_four_opaque_status_looking_reasons_exactly_in_en_ko");
+            checks.Add("native_document_human_confirmed_code_looking_authored_reasons_remain_exact_in_compact_notice_tooltip_full_reader_en_ko_sourcefirst_focus_inferred_and_directed_machine_reason_controls_localize_without_raw_mutation");
             var revertedFixture = Path.Combine(fixtures, "v3-reverted.pdf"); Require(File.Exists(revertedFixture), "Missing byte-identical reverted PDF fixture.");
             var beforeRevertedLayout = window.Layout;
             await window.ImportAndAnalyze("Reverted 100→120→100", new[] { new ImportRow { Label = "100", Paths = [Path.Combine(fixtures, "v1.pdf")] }, new ImportRow { Label = "120", Paths = [Path.Combine(fixtures, "v2.pdf")] }, new ImportRow { Label = "100 restored", Paths = [revertedFixture] } });

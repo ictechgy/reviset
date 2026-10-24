@@ -655,7 +655,8 @@ internal sealed class MainWindow : Window
         if (kind is "text_occluded" or "text_revealed" or "text_struck_through" or "coverage_gap") notice.Add(Copy["appearanceOnly"]);
         var selectedNotices = SourceDiffPolicy.SelectedNotices(selectedChange); var selectedGaps = selectedNotices.Where(item => item.Key is "selectedCoverage" or "lineageReason").ToArray();
         foreach (var selectedNotice in selectedNotices.Where(item => item.Key is not ("selectedCoverage" or "lineageReason"))) notice.Add(SelectedNoticeText((selectedNotice.Key, SourceDiff.NoticeSummary(selectedNotice.Value, 160))));
-        if (selectedGaps.Length > 0) { var first = selectedGaps[0].Value; if (selectedGaps[0].Key == "lineageReason") { var key = "reason_" + first; if (Copy[key] != key) first = Copy[key]; } first = SourceDiff.NoticeSummary(first, 160); notice.Add(Copy[selectedGaps[0].Key] + ": " + first + (selectedGaps.Length > 1 ? " [1/" + selectedGaps.Length + "]" : "")); }
+        var authoredReason = selectedChange.Get("lineage").Get("status").Text() == "human_confirmed" && selectedChange.Get("topology").Get("semantics").Text() != "directed_reachability";
+        if (selectedGaps.Length > 0) { var first = selectedGaps[0].Value; if (selectedGaps[0].Key == "lineageReason" && !authoredReason) { var key = "reason_" + first; if (Copy[key] != key) first = Copy[key]; } first = SourceDiff.NoticeSummary(first, 160); notice.Add(Copy[selectedGaps[0].Key] + ": " + first + (selectedGaps.Length > 1 ? " [1/" + selectedGaps.Length + "]" : "")); }
         selectedLimitsButton.Visibility = selectedGaps.Length > 0 || workbookWarnings.Count > 0 ? Visibility.Visible : Visibility.Collapsed; selectedLimitsButton.IsEnabled = !busy;
         if (currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count) > 0) notice.Add((Copy["reportCoverage"] + ": " + currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count)).Replace(' ', '\u00a0'));
         sourceNotice.Text = string.Join(" · ", notice); sourceNotice.ToolTip = string.Join("\n", workbookWarnings.Concat(selectedNotices.Select(SelectedNoticeText))); AutomationProperties.SetHelpText(sourceNotice, sourceNotice.ToolTip.ToString()); sourceNotice.Visibility = notice.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -1184,7 +1185,12 @@ internal sealed class MainWindow : Window
         var previousChange = selectedChange; var previousBefore = selectedBefore; var previousAfter = selectedAfter; var beforeSource = Before.CaptureSelection(); var afterSource = After.CaptureSelection(); var oldWidth = Width; var oldHeight = Height;
         var reason = string.Concat(Enumerable.Repeat("x\n", 999));
         async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
-        void Reason(string value) { selectedChange = JsonSerializer.SerializeToElement(new { kind = "page_lineage_changed", lineage = new { status = "human_confirmed", reasons = new[] { value } } }); selectedBefore = Before.CaptureSelection(); selectedAfter = After.CaptureSelection(); RenderSourceDiff(); }
+        void Reason(string value, string status = "human_confirmed", bool directed = false)
+        {
+            selectedChange = JsonSerializer.SerializeToElement(new { kind = "page_lineage_changed", lineage = new { status, reasons = new[] { value } } });
+            if (directed) { var fields = selectedChange.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value); fields["topology"] = new { relation_id = "SYNTHETIC_directed_presentation", kind = "range_lineage", from_page_ids = new[] { Before.PageId }, to_page_ids = new[] { After.PageId }, semantics = "directed_reachability" }; selectedChange = JsonSerializer.SerializeToElement(fields); }
+            selectedBefore = Before.CaptureSelection(); selectedAfter = After.CaptureSelection(); RenderSourceDiff();
+        }
         object Geometry() => new { width = ActualWidth, height = ActualHeight, context_height = sourceNotice.ActualHeight, source_height = comparison.ActualHeight, before_height = Before.Host.ActualHeight, after_height = After.Host.ActualHeight, before_grid_height = Before.Cells.ActualHeight, after_grid_height = After.Cells.ActualHeight, before_grid_rows = Before.GridScroll?.ViewportHeight, after_grid_rows = After.GridScroll?.ViewportHeight };
         try
         {
@@ -1214,6 +1220,30 @@ internal sealed class MainWindow : Window
                     var reasonLine = reader.Text.Split(["\r\n", "\n"], StringSplitOptions.None).Single(line => line.StartsWith(Copy["lineageReason"] + ": ", StringComparison.Ordinal));
                     if (!string.Equals(reasonLine, Copy["lineageReason"] + ": " + opaqueReason, StringComparison.Ordinal) || !reader.Text.Contains(Copy["lineageAssessment"] + ": " + Copy["assessment_human_confirmed"], StringComparison.Ordinal)) throw new InvalidOperationException("The production native full reader translated an opaque status-looking reason or failed to translate its typed assessment in " + locale);
                     dialog.Close();
+                }
+            }
+            if (!IsWorkbook)
+            {
+                foreach (var preset in new[] { "sourceFirst", "focus" }) foreach (var locale in new[] { "en", "ko" })
+                {
+                    SetLayout(WorkspaceLayout.Preset(preset)); SetLanguage(locale);
+                    foreach (var rawReason in new[] { "normalized_text_bigrams", "unique_nonempty_first_column_key", "unique_exact_row_content" })
+                    {
+                        Reason(rawReason); await Settle();
+                        var dialog = CreateSelectedLimitsDialog(); var reader = ((DockPanel)dialog.Content).Children.OfType<TextBox>().Single(); var exactLine = Copy["lineageReason"] + ": " + rawReason;
+                        var fullLine = reader.Text.Split(["\r\n", "\n"], StringSplitOptions.None).Single(line => line.StartsWith(Copy["lineageReason"] + ": ", StringComparison.Ordinal));
+                        if (!sourceNotice.IsVisible || InspectorPane.IsVisible || sourceNotice.ActualHeight > 49 || !sourceNotice.Text.Contains(exactLine, StringComparison.Ordinal) || sourceNotice.Text.Contains(Copy["reason_" + rawReason], StringComparison.Ordinal) || !sourceNotice.ToolTip.ToString()!.Split('\n').Contains(exactLine, StringComparer.Ordinal) || !string.Equals(fullLine, exactLine, StringComparison.Ordinal) || !reader.Text.Contains(Copy["lineageAssessment"] + ": " + Copy["assessment_human_confirmed"], StringComparison.Ordinal) || selectedChange.Get("lineage").Get("reasons").Items().Single().Text() != rawReason || reportId != fixedReport || currentReport.GetRawText() != reportBytes || Before.CaptureSelection() != beforeSource || After.CaptureSelection() != afterSource) throw new InvalidOperationException("The compact native notice translated an authored code-looking reason or changed its full raw reader/source in " + preset + "/" + locale);
+                        dialog.Close();
+                    }
+                    Reason("normalized_text_bigrams"); await capture("synthetic-authored-code-reason-" + preset + "-" + locale);
+                    foreach (var control in new[] { (Status: "inferred", Directed: false), (Status: "human_confirmed", Directed: true) })
+                    {
+                        Reason("normalized_text_bigrams", control.Status, control.Directed); await Settle();
+                        var dialog = CreateSelectedLimitsDialog(); var reader = ((DockPanel)dialog.Content).Children.OfType<TextBox>().Single(); var exactLine = Copy["lineageReason"] + ": normalized_text_bigrams";
+                        if (!sourceNotice.Text.Contains(Copy["reason_normalized_text_bigrams"], StringComparison.Ordinal) || sourceNotice.Text.Contains(exactLine, StringComparison.Ordinal) || !reader.Text.Split(["\r\n", "\n"], StringSplitOptions.None).Contains(exactLine, StringComparer.Ordinal) || selectedChange.Get("lineage").Get("reasons").Items().Single().Text() != "normalized_text_bigrams") throw new InvalidOperationException("Typed generated lineage reason presentation lost localization or mutated its raw evidence in " + locale);
+                        dialog.Close();
+                    }
+                    await observe("synthetic-authored-code-reason-" + preset + "-" + locale, new { provenance = "synthetic native presentation controls, not engine mapping facts", authored_status = "human_confirmed", raw_authored_reasons = new[] { "normalized_text_bigrams", "unique_nonempty_first_column_key", "unique_exact_row_content" }, raw_compact_tooltip_and_full_reader_verified = true, inferred_and_directed_generation_controls_localized_without_raw_mutation = true, preset, language = locale });
                 }
             }
             // Explicitly qualify the bounded report dialog with a synthetic
