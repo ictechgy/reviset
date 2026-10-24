@@ -1284,7 +1284,29 @@ private struct WorkbookStatus: View {
 
 private struct WorkbookCellDetailsButton:NSViewRepresentable {
     @ObservedObject var model:WorkbookModel
-    @MainActor final class Coordinator:NSObject {var model:WorkbookModel?;@objc func open(_ sender:NSButton){model?.openCellDetails()}}
+    @MainActor final class Coordinator:NSObject {
+        var model:WorkbookModel?
+        private func identity(_ model:WorkbookModel)->[String] {[model.scope,model.comparisonScope,model.rangeScope,model.beforeAddress,model.afterAddress,model.selectedChangeID,String(model.selectedRow),String(model.selectedColumn)]}
+        @objc func open(_ sender:NSButton){
+            guard let model,model.canOpenCellDetails else{return}
+            let scope=identity(model),window=sender.window
+            model.openCellDetails()
+            // The explicit action reveals horizontally after the inspector has
+            // resized the retained source hosts; passive redraws do not pan.
+            DispatchQueue.main.async { [weak self,weak window] in
+                guard let self,let model=self.model,let window,model.inspectorVisible,model.effectiveDiffMode=="source",self.identity(model)==scope else{return}
+                window.contentView?.layoutSubtreeIfNeeded()
+                @MainActor func reveal(_ view:NSView){
+                    if let scroll=view as? WorkbookTableScrollView,let table=scroll.documentView as? NSTableView,let owner=table.dataSource as? WorkbookGrid.Coordinator {
+                        let before=owner.parent.pane=="before",occurrence=before ? model.beforeID:model.afterID,sheet=before ? model.beforeSheetID:model.afterSheetID
+                        guard owner.parent.keyboardEnabled,!scroll.isHiddenOrHasHiddenAncestor,!scroll.visibleRect.isEmpty,["before","after"].contains(owner.parent.pane),owner.parent.revealIntent==[model.scope,occurrence,sheet,String(model.revealGeneration)].joined(separator:"|"),let coordinate=model.paneCoordinate(before:before),owner.parent.selectedRow==coordinate.row,owner.parent.selectedColumn==coordinate.column,let column=table.tableColumns.firstIndex(where:{$0.identifier.rawValue==String(coordinate.column)}) else{return}
+                        scroll.revealColumnToRightOfGutter(column)
+                    } else {for child in view.subviews {reveal(child)}}
+                }
+                if let content=window.contentView {reveal(content)}
+            }
+        }
+    }
     func makeCoordinator()->Coordinator {Coordinator()}
     func makeNSView(context:Context)->NSButton {let button=NSButton(title:"",target:context.coordinator,action:#selector(Coordinator.open(_:)));button.bezelStyle = .rounded;button.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.cellDetailsAction");return button}
     func updateNSView(_ button:NSButton,context:Context) {context.coordinator.model=model;button.title=L("workbook.action.cellDetails");button.setAccessibilityLabel(button.title);button.isEnabled=model.canOpenCellDetails}
@@ -1751,18 +1773,74 @@ private struct WorkbookPublishSheet: View {
 // AppKit creates reusable cells only for visible rows. The data source is a
 // bounded 100×12 physical window backed by sparse observations, never a dense
 // workbook. Formula text remains plain text and is never evaluated by AppKit.
+private final class WorkbookPinnedRowsView:NSView {
+    let heading:Bool
+    var fields:[NSTextField]=[]
+    override var isFlipped:Bool {true}
+    override var acceptsFirstResponder:Bool {false}
+    override var canBecomeKeyView:Bool {false}
+    init(heading:Bool){self.heading=heading;super.init(frame:.zero)}
+    required init?(coder:NSCoder){fatalError("init(coder:) is unavailable")}
+    override func hitTest(_ point:NSPoint)->NSView? {super.hitTest(point)==nil ? nil:self}
+    override func mouseDown(with event:NSEvent) {} // Covered data cells never receive gutter clicks.
+    override func scrollWheel(with event:NSEvent) {superview?.scrollWheel(with:event)}
+    override func draw(_ dirtyRect:NSRect){NSColor.controlBackgroundColor.setFill();bounds.fill();NSColor.gridColor.setFill();NSRect(x:max(0,bounds.width-1),y:0,width:1,height:bounds.height).fill()}
+    func synchronize(_ table:NSTableView,rowStart:Int,pane:String){
+        let range=table.rows(in:table.visibleRect),start=range.location==NSNotFound ? 0:range.location,count=heading ? 1:min(max(0,table.numberOfRows-start),range.length)
+        while fields.count<count {let field=NSTextField(labelWithString:"");field.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular);field.alignment = .right;field.isEditable=false;field.isSelectable=false;addSubview(field);fields.append(field)}
+        for (index,field) in fields.enumerated(){
+            field.isHidden=index>=count
+            guard index<count else{continue}
+            let local=start+index,physical=rowStart+local,text=heading ? L("workbook.grid.rowHeader"):String(physical)
+            field.stringValue=text;field.identifier=NSUserInterfaceItemIdentifier(heading ? "Reviset.workbook.rowGutterHeader."+pane:"Reviset.workbook.rowGutter."+pane+".row.\(physical)");field.setAccessibilityLabel(heading ? text:L("workbook.grid.rowAX",.integer(physical)))
+            let row=heading ? bounds:table.convert(table.rect(ofRow:local),to:self)
+            field.frame=NSRect(x:6,y:row.midY-8.5,width:max(0,bounds.width-12),height:17)
+            field.textColor = !heading && table.selectedRow==local ? .labelColor:.secondaryLabelColor
+        }
+    }
+}
 @MainActor final class WorkbookTableScrollView: NSScrollView {
     var sourceKeyboardEnabled=true
+    private let rowGutter=WorkbookPinnedRowsView(heading:false),rowHeading=WorkbookPinnedRowsView(heading:true)
+    private var gutterRowStart=1,gutterPane=""
+    private var synchronizingGutter=false
+    var pinnedRowGutter:NSView {rowGutter}
+    func pinnedRowLabel(_ physical:Int)->NSTextField? {rowGutter.fields.first{!$0.isHidden && $0.stringValue==String(physical)}}
+    func configurePinnedRows(rowStart:Int,pane:String){gutterRowStart=rowStart;gutterPane=pane;synchronizePinnedRows()}
+    func synchronizePinnedRows(){
+        guard !synchronizingGutter,let table=documentView as? NSTableView,table.numberOfColumns>0 else{return}
+        synchronizingGutter=true;defer{synchronizingGutter=false}
+        if rowGutter.superview==nil {addSubview(rowGutter);addSubview(rowHeading)}
+        let body=contentView.convert(contentView.bounds,to:self),width=min(table.rect(ofColumn:0).width,body.width),frame=NSRect(x:body.minX,y:body.minY,width:width,height:body.height)
+        if rowGutter.frame != frame {rowGutter.frame=frame}
+        rowGutter.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.rowGutter."+gutterPane);rowGutter.setAccessibilityHidden(!sourceKeyboardEnabled);rowHeading.setAccessibilityHidden(!sourceKeyboardEnabled)
+        rowGutter.synchronize(table,rowStart:gutterRowStart,pane:gutterPane)
+        if let header=table.headerView {let headerRect=header.convert(header.bounds,to:self);rowHeading.frame=NSRect(x:body.minX,y:headerRect.minY,width:width,height:headerRect.height);rowHeading.synchronize(table,rowStart:gutterRowStart,pane:gutterPane)}
+    }
+    func revealColumnToRightOfGutter(_ column:Int){
+        guard let table=documentView as? NSTableView,column>0,column<table.numberOfColumns else{return}
+        let original=contentView.bounds.origin,visible=contentView.bounds,rect=table.rect(ofColumn:column),gutter=min(table.rect(ofColumn:0).width,visible.width)
+        var x=original.x
+        if rect.minX<x+gutter {x=rect.minX-gutter}
+        if rect.maxX>x+visible.width {x=rect.maxX-visible.width}
+        x=max(0,min(x,max(0,table.bounds.width-visible.width)))
+        contentView.scroll(to:NSPoint(x:x,y:original.y));reflectScrolledClipView(contentView)
+    }
+    func columnVisibleToRightOfGutter(_ column:Int)->Bool {
+        guard let table=documentView as? NSTableView,column>0,column<table.numberOfColumns else{return false}
+        let visible=contentView.bounds,rect=table.rect(ofColumn:column),gutter=min(table.rect(ofColumn:0).width,visible.width)
+        return rect.minX>=visible.minX+gutter-0.5 && rect.maxX<=visible.maxX+0.5
+    }
     override var acceptsFirstResponder:Bool {sourceKeyboardEnabled && super.acceptsFirstResponder}
     override var canBecomeKeyView:Bool {sourceKeyboardEnabled && super.canBecomeKeyView}
     override func becomeFirstResponder()->Bool {sourceKeyboardEnabled && super.becomeFirstResponder()}
     private var synchronizingHeader = false
     override func reflectScrolledClipView(_ clipView: NSClipView) {
         super.reflectScrolledClipView(clipView)
-        if clipView === contentView { synchronizeHeader() }
+        if clipView === contentView { synchronizeHeader();synchronizePinnedRows() }
     }
-    override func tile() { super.tile(); synchronizeHeader() }
-    override func layout() { super.layout(); synchronizeHeader() }
+    override func tile() { super.tile(); synchronizeHeader();synchronizePinnedRows() }
+    override func layout() { super.layout(); synchronizeHeader();synchronizePinnedRows() }
     func synchronizeHeader() {
         guard !synchronizingHeader,let table = documentView as? NSTableView,table.numberOfColumns > 0,let header = table.headerView else { return }
         var ancestor = header.superview,headerClip: NSClipView?
@@ -1874,7 +1952,8 @@ struct WorkbookGrid: NSViewRepresentable {
                 table.selectRowIndexes(IndexSet(integer:row),byExtendingSelection:false)
                 let reveal = "\(value.revealIntent):\(value.rowStart):\(value.columnStart):\(value.selectedRow):\(value.selectedColumn)"
                 if lastRevealed != reveal {
-                    table.scrollRowToVisible(row); table.scrollColumnToVisible(column)
+                    table.scrollRowToVisible(row)
+                    if let scroll=table.enclosingScrollView as? WorkbookTableScrollView {scroll.revealColumnToRightOfGutter(column)}else{table.scrollColumnToVisible(column)}
                     // AppKit aligns the selected data column to x=0 and can
                     // scroll the row-number column away even for A. Reveal both
                     // when they fit; later user scrolling remains untouched.
@@ -1885,7 +1964,7 @@ struct WorkbookGrid: NSViewRepresentable {
                     lastRevealed = reveal
                 }
             } else { table.deselectAll(nil); lastRevealed = "" }
-            (table.enclosingScrollView as? WorkbookTableScrollView)?.synchronizeHeader()
+            if let scroll=table.enclosingScrollView as? WorkbookTableScrollView {scroll.synchronizeHeader();scroll.configurePinnedRows(rowStart:value.rowStart,pane:value.pane)}
         }
         func numberOfRows(in tableView: NSTableView) -> Int { parent.rowCount }
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -2282,14 +2361,18 @@ struct WorkbookGrid: NSViewRepresentable {
         let identity=[model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress,model.selectedChangeID],before=try model.beforeCell.data(),after=try model.afterCell.data()
         button.performClick(nil);try await Task.sleep(nanoseconds:250_000_000)
         guard model.inspectorVisible,let details=workspaceLayoutMarkers(in:content).first(where:{$0.identifier?.rawValue=="Reviset.workbook.cellDetails"}),!details.visibleRect.isEmpty,[model.beforeCell,model.afterCell].contains(where:{$0["value"].string.utf16.elementsEqual(literal.utf16)}),workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.inspector.raw.value" && !$0.visibleRect.isEmpty}),try model.beforeCell.data()==before,try model.afterCell.data()==after,identity==[model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress,model.selectedChangeID] else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_SOURCE",message:"Cell details did not reveal the existing bounded raw reader or changed physical source authority.")}
-        for (table,coordinator,origin,row) in states {guard views(content).contains(where:{$0===table}),(table.dataSource as AnyObject?) === coordinator,table.enclosingScrollView!.contentView.bounds.origin==origin,table.selectedRow==row else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_HOST",message:"Opening cell details replaced a grid or moved its viewport/selection.")}}
+        var horizontalReveal:[[String:Any]]=[]
+        for (table,coordinator,origin,row) in states {
+            guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,let owner=table.dataSource as? WorkbookGrid.Coordinator,let column=table.tableColumns.firstIndex(where:{$0.identifier.rawValue==String(owner.parent.selectedColumn)}),let rowLabel=scroll.pinnedRowLabel(owner.parent.selectedRow),views(content).contains(where:{$0===table}),(table.dataSource as AnyObject?) === coordinator,abs(scroll.contentView.bounds.origin.y-origin.y)<0.5,table.selectedRow==row,scroll.columnVisibleToRightOfGutter(column),!rowLabel.visibleRect.isEmpty else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_HOST",message:"Cell details must retain hosts, selection and vertical origin while revealing the inspected column beside the pinned row gutter.")}
+            horizontalReveal.append(["pane":owner.parent.pane,"before_x":Double(origin.x),"after_x":Double(scroll.contentView.bounds.origin.x),"vertical_origin":Double(origin.y),"inspected_column":owner.parent.selectedColumn,"inspected_column_visible_right_of_gutter":true,"physical_row_label_visible":rowLabel.stringValue])
+        }
         let segments=[("before",model.beforeCell),("after",model.afterCell)].map {side,cell->[String:Any] in
             ["side":side,"address":cell["address"].string,"fields":["value","formula","number_format"].map {field->[String:Any] in let raw=cell[field].string,continuation=cell["text_continuations"][field];return ["field":field,"raw_utf16":Array(raw.utf16).map(Int.init),"state":continuation["state"].string,"offset":continuation["offset"].int,"observed_end":continuation["offset"].int+raw.utf16.count,"total_length":continuation["total_length"].int,"next_offset":continuation["next_offset"].raw] }]
         }
         try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-cell-details.png"))
         model.inspectorVisible=originalInspector;layout.update{$0=originalLayout};await model.returnToChange();try await Task.sleep(nanoseconds:200_000_000)
         guard !queried,model.comparisonScope==query,try JSON(model.changes.map(\.raw)).data()==rows,try model.report.data()==fixed,model.selectedChangeID==selected else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_RESTORE",message:"Cell details qualification replaced the query/list/report or failed to restore the selected event.")}
-        return ["qualified":true,"native_action_performed":true,"existing_bounded_raw_reader_visible":true,"literal_unchanged":literal,"address":candidate["address"].string,"physical_scope_retained_by_action":true,"query_list_report_and_selected_event_restored_without_query":true,"grid_hosts_coordinators_viewports_retained_by_action":true,"source_segments":segments,"capture":"native-workbook-cell-details.png","interaction_scope":"actual packaged production native button performClick, validated source payloads, mounted raw reader and retained native grid; no OS input or value beyond recorded continuation bounds"]
+        return ["qualified":true,"native_action_performed":true,"existing_bounded_raw_reader_visible":true,"literal_unchanged":literal,"address":candidate["address"].string,"physical_scope_retained_by_action":true,"query_list_report_and_selected_event_restored_without_query":true,"grid_hosts_coordinators_selection_and_vertical_viewports_retained_by_action":true,"explicit_horizontal_reveal_only":true,"horizontal_reveal":horizontalReveal,"inspected_columns_visible_right_of_pinned_gutter":true,"physical_row_gutter_labels_visible":true,"source_segments":segments,"capture":"native-workbook-cell-details.png","interaction_scope":"actual packaged production native button performClick; horizontal reveal is explicit while source scope, selected cells, retained hosts and vertical origins stay fixed; no OS input or value beyond recorded continuation bounds"]
     }
     private static func rawSavedValueCellFacts(_ model:WorkbookModel,content:NSView)throws->[[String:Any]] {
         var facts:[[String:Any]]=[]
@@ -2868,10 +2951,8 @@ struct WorkbookGrid: NSViewRepresentable {
             let localRow = coordinate.row-row,localColumn = coordinate.column-column+1
             guard state.selectedRow == coordinate.row,state.selectedColumn == coordinate.column,localRow >= 0,localRow < state.rowCount,localColumn > 0,localColumn <= state.columnCount,table.selectedRow == localRow,table.visibleRect.intersects(table.frameOfCell(atColumn:localColumn,row:localRow)) else { throw BridgeError(code:"WORKBOOK_SMOKE_PANE_EVIDENCE",message:"이전·이후의 실제 셀 근거가 올바르게 강조되어 화면에 표시되지 않았습니다: " + name) }
             guard let highlighted = table.view(atColumn:localColumn,row:localRow,makeIfNecessary:false),highlighted.layer?.borderWidth == 1 else { throw BridgeError(code:"WORKBOOK_SMOKE_PANE_HIGHLIGHT",message:"실제 셀 주소의 강조 테두리를 확인하지 못했습니다: " + name) }
-            let gutter = table.rect(ofColumn:0),gutterVisible = table.visibleRect.intersection(gutter).width >= gutter.width-0.5
-            if state.columnStart == 1,table.rect(ofColumn:localColumn).maxX <= table.visibleRect.width {
-                guard gutterVisible else { throw BridgeError(code:"WORKBOOK_SMOKE_ROW_GUTTER",message:"셀 근거와 함께 표시할 수 있는 행 번호가 가로 스크롤로 가려졌습니다: " + name) }
-            }
+            let gutterVisible=(table.enclosingScrollView as? WorkbookTableScrollView)?.pinnedRowLabel(coordinate.row).map{!$0.isHiddenOrHasHiddenAncestor && !$0.visibleRect.isEmpty} ?? false
+            guard gutterVisible else { throw BridgeError(code:"WORKBOOK_SMOKE_ROW_GUTTER",message:"고정된 행 번호가 실제 셀 근거 옆에 표시되지 않았습니다: " + name) }
             let cell = before ? model.beforeCell : model.afterCell,cells = before ? model.beforeCells : model.afterCells
             guard cell.isNull || cells.contains(where:{$0["row"].int == coordinate.row && $0["column"].int == coordinate.column}) else { throw BridgeError(code:"WORKBOOK_SMOKE_PANE_SOURCE",message:"셀 원문은 있지만 표시 범위에 해당 원본 관측이 없습니다.") }
             result.append(["pane":name,"highlight":WorkbookGrid.address(coordinate.row,coordinate.column),"row_start":row,"column_start":column,"selected_local_row":table.selectedRow,"visible":true,"cell_border_visible":true,"row_gutter_visible":gutterVisible,"header_geometry":headerGeometry])

@@ -56,11 +56,12 @@ internal sealed class ComparePane
     private readonly StackPanel docControls = new();
     private readonly StackPanel workbookControls = new();
     private readonly Expander cellDetails = new() { IsExpanded = false, Margin = new Thickness(6, 0, 6, 0) };
+    private readonly ScrollViewer cellDetailsScroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, CanContentScroll = false, MaxHeight = 160 };
     private readonly TextBlock cellDetailsCaption = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4), FontSize = 11 };
     private readonly TextBox cellValue = MainWindow.SourceText();
     private readonly TextBox cellFormula = MainWindow.SourceText();
-    private readonly TextBlock cellValueLabel = new() { Margin = new Thickness(4, 2, 4, 0) };
-    private readonly TextBlock cellFormulaLabel = new() { Margin = new Thickness(4, 2, 4, 0) };
+    private readonly TextBlock cellValueLabel = new() { Margin = new Thickness(4, 2, 4, 0), TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock cellFormulaLabel = new() { Margin = new Thickness(4, 2, 4, 0), TextWrapping = TextWrapping.Wrap };
     private readonly Button openCellSource;
     private Task cellDetailsRequest = Task.CompletedTask;
     private readonly Grid visual = new();
@@ -134,7 +135,8 @@ internal sealed class ComparePane
         var coordinates = new WrapPanel(); var rowLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }; owner.BindText(rowLabel, "row"); coordinates.Children.Add(rowLabel); coordinates.Children.Add(rowStart); var columnLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center }; owner.BindText(columnLabel, "column"); coordinates.Children.Add(columnLabel); coordinates.Children.Add(colStart); coordinates.Children.Add(Button("go", LoadCoordinates));
         var navigationRow = new StackPanel { Orientation = Orientation.Horizontal }; var previous = Arrow("previous", "◀", async () => { row = Math.Max(1, row - 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); var next = Arrow("next", "▶", async () => { row = Math.Min(1_048_527, row + 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); navigationRow.Children.Add(previous); navigationRow.Children.Add(next); address.Width = 65; navigationRow.Children.Add(address); navigationRow.Children.Add(Button("go", GoAddress)); workbookControls.Children.Add(navigationRow); workbookControls.Children.Add(showFormula);
         var details = new StackPanel(); details.Children.Add(cellDetailsCaption); details.Children.Add(cellValueLabel); cellValue.MaxHeight = 66; cellValue.MinHeight = 26; details.Children.Add(cellValue); details.Children.Add(cellFormulaLabel); cellFormula.MaxHeight = 66; cellFormula.MinHeight = 26; details.Children.Add(cellFormula);
-        openCellSource = Button("openCellSource", () => cellDetailsRequest = owner.OpenCellSource(this)); details.Children.Add(openCellSource); details.Children.Add(coordinates); cellDetails.Content = details; workbookControls.Children.Add(cellDetails); top.Children.Add(workbookControls);
+        openCellSource = Button("openCellSource", () => cellDetailsRequest = owner.OpenCellSource(this)); details.Children.Add(openCellSource); details.Children.Add(coordinates); cellDetailsScroll.Content = details; cellDetails.Content = cellDetailsScroll; workbookControls.Children.Add(cellDetails); top.Children.Add(workbookControls);
+        cellDetails.Expanded += (_, _) => UpdateCellDetailsHeight(); visual.SizeChanged += (_, _) => UpdateCellDetailsHeight();
         var bottom = new StackPanel(); bottom.Children.Add(source); bottom.Children.Add(sparse); bottom.Children.Add(retry); DockPanel.SetDock(bottom, Dock.Bottom); dock.Children.Add(bottom);
         PageScroll.Content = PageImage; visual.Children.Add(PageScroll); visual.Children.Add(fallback); visual.Children.Add(Cells); dock.Children.Add(visual);
         VirtualizingPanel.SetVirtualizationMode(Cells, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(Cells, true);
@@ -223,6 +225,32 @@ internal sealed class ComparePane
         cellFormulaLabel.Text = owner.Copy["formula"] + (materialized ? SourceDiffPolicy.WorkbookPreviewKeys(cell, "formula").Count > 0 ? Qualifier("formula") : "" : " · " + unavailable);
         if (openCellSource is not null) { openCellSource.Visibility = metadata ? Visibility.Collapsed : Visibility.Visible; openCellSource.IsEnabled = lastNavigationEnabled && owner.AllowsEvidence && AuthorizesCell(focusedRow, focusedColumn); AutomationProperties.SetName(openCellSource, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["openCellSource"]); }
         AutomationProperties.SetName(cellValue, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["cached"]); AutomationProperties.SetName(cellFormula, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["formula"]);
+    }
+    private void UpdateCellDetailsHeight()
+    {
+        if (!owner.IsWorkbook || !cellDetails.IsExpanded || Host.ActualHeight <= 0) return;
+        // The docked body shares its vertical budget with the native source
+        // grid. Keep three full rows plus header/scrollbar before giving the
+        // remaining space to an independently scrollable details body.
+        var minimumGrid = 3 * Cells.RowHeight + 30 + SystemParameters.HorizontalScrollBarHeight + 4;
+        var height = Math.Clamp(visual.ActualHeight + cellDetailsScroll.ActualHeight - minimumGrid, 32, 160);
+        if (Math.Abs(cellDetailsScroll.MaxHeight - height) > 1) cellDetailsScroll.MaxHeight = height;
+    }
+    internal async Task<object> CheckExpandedCellDetailsViewportForSmoke()
+    {
+        if (!owner.IsWorkbook || !cellDetails.IsExpanded || !TryGetFocusedMaterializedCell(out var raw)) throw new InvalidOperationException("Expanded details geometry requires a real scoped physical cell.");
+        var selection = CaptureSelection(); var rows = Cells.ItemsSource; var source = raw.GetRawText(); var value = cellValue.Text; var formula = cellFormula.Text;
+        async Task Settle() { Host.UpdateLayout(); await owner.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        await Settle();
+        var grid = GridScroll ?? throw new InvalidOperationException("The expanded details source has no native grid viewport.");
+        if (!Cells.IsVisible || grid.ViewportHeight < 3 || Cells.ActualHeight < 100 || !cellDetailsScroll.IsVisible || cellDetailsScroll.ActualHeight > 161 || cellDetailsScroll.ScrollableHeight <= 0 || cellDetailsScroll.VerticalScrollBarVisibility != ScrollBarVisibility.Auto || cellDetailsScroll.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled) throw new InvalidOperationException("Inline Cell details and the evidence inspector left fewer than three source rows or an unbounded/non-scrollable details body.");
+        cellDetailsScroll.ScrollToBottom(); await Settle(); var lastOffset = cellDetailsScroll.VerticalOffset;
+        if (lastOffset <= 0 || Math.Abs(lastOffset - cellDetailsScroll.ScrollableHeight) > 1) throw new InvalidOperationException("The bounded inline details body cannot reach its full source/coordinate controls by native scrolling.");
+        cellFormulaLabel.BringIntoView(); await Settle();
+        var text = new FormattedText(cellFormulaLabel.Text, System.Globalization.CultureInfo.CurrentUICulture, cellFormulaLabel.FlowDirection, new Typeface(cellFormulaLabel.FontFamily, cellFormulaLabel.FontStyle, cellFormulaLabel.FontWeight, cellFormulaLabel.FontStretch), cellFormulaLabel.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(cellFormulaLabel).PixelsPerDip) { MaxTextWidth = Math.Max(1, cellFormulaLabel.ActualWidth) };
+        if (cellFormulaLabel.TextWrapping != TextWrapping.Wrap || cellValueLabel.TextWrapping != TextWrapping.Wrap || cellFormulaLabel.TextTrimming != TextTrimming.None || cellFormulaLabel.ActualWidth <= 0 || cellFormulaLabel.ActualHeight + 1 < text.Height || !cellFormulaLabel.Text.Contains(owner.Copy["partialSourceSegment"], StringComparison.Ordinal)) throw new InvalidOperationException("The actual partial-formula qualifier is clipped instead of fully measured as wrapped text within the scrollable inline details.");
+        if (CaptureSelection() != selection || !ReferenceEquals(rows, Cells.ItemsSource) || !TryGetFocusedMaterializedCell(out var restored) || restored.GetRawText() != source || cellValue.Text != value || cellFormula.Text != formula || !cellDetails.IsExpanded) throw new InvalidOperationException("Inspecting bounded details geometry changed its physical cell, raw preview, mounted grid or expansion preference.");
+        return new { scope = "Actual native expanded Cell details and evidence-inspector source grid geometry, not OS scrolling/accessibility certification", physical_address = FocusedAddress, source_rows_visible = grid.ViewportHeight, grid_height = Cells.ActualHeight, body_height = cellDetailsScroll.ActualHeight, body_max_height = cellDetailsScroll.MaxHeight, body_extent = cellDetailsScroll.ExtentHeight, body_viewport = cellDetailsScroll.ViewportHeight, full_body_reachable_offset = lastOffset, formula_label = cellFormulaLabel.Text, formula_label_width = cellFormulaLabel.ActualWidth, formula_label_height = cellFormulaLabel.ActualHeight, formula_label_required_height = text.Height, formula_label_wrapping = cellFormulaLabel.TextWrapping.ToString(), exact_source_and_selection_unchanged = true, expanded_preference_retained = true };
     }
     internal async Task<object> OpenCellDetailsForSmoke(string expectedValue)
     {
