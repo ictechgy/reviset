@@ -45,6 +45,19 @@ internal sealed record SourceDiffField(string Key, SourceTextObservation Before,
 internal sealed record WorkbookSourceScope(string BeforeOccurrence, string AfterOccurrence, string BeforeSheet, string AfterSheet, string BeforeAddress, string AfterAddress);
 internal static class SourceDiffPolicy
 {
+    internal static IReadOnlyList<string> WorkbookWarningKeys(JsonElement cell)
+    {
+        if (cell.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return ["cellNotMaterialized"];
+        var warnings = new List<string>(); var missing = cell.Get("cached_result").Text() == "missing";
+        if (cell.Get("formula_interpretation").Text() == "unresolved") warnings.Add("formulaUnresolvedShort");
+        if (missing) warnings.Add("resultMissingShort");
+        if (cell.Get("cache_freshness").Text() == "unknown") warnings.Add("freshnessUnknownShort");
+        if (!missing && cell.Get("value").ValueKind == JsonValueKind.Null) warnings.Add("valueUnrecordedShort");
+        var empty = cell.Get("value").ValueKind == JsonValueKind.String && cell.Get("value").Text().Length == 0;
+        var previewEmpty = cell.Get("source_lengths").Get("value").ValueKind == JsonValueKind.Number && cell.Get("source_lengths").Get("value").Number(-1) == 0;
+        if (!missing && empty && (previewEmpty || SourceTextObservation.ReadSegment(cell.Get("value"), cell.Get("text_continuations").Get("value")).State == SourceTextState.Empty)) warnings.Add("valueEmptyShort");
+        return warnings;
+    }
     // Eligibility is decided on typed observations before any string conversion.
     // A null, absent observation or display-state event cannot become a +/- edit.
     internal static SourceDiffField Document(JsonElement change, bool pairedSourcesReady, bool structural)

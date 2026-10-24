@@ -24,7 +24,7 @@ internal sealed record GridRow(int Row, GridCell[] Values)
 {
     public string Number => Row.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
-internal sealed record PaneSelection(string Revision, string Sheet, string Page, int Row, int Column, double Zoom, string Absence, string RequestedSheet = "");
+internal sealed record PaneSelection(string Revision, string Sheet, string Page, int Row, int Column, double Zoom, string Absence, string RequestedSheet = "", int? FocusedRow = null, int? FocusedColumn = null);
 
 internal sealed class ComparePane
 {
@@ -74,6 +74,8 @@ internal sealed class ComparePane
     private bool binding;
     private int row = 1;
     private int column = 1;
+    private int focusedRow;
+    private int focusedColumn;
     private long pageGeneration;
     private long gridGeneration;
     private CancellationTokenSource pageRead = new();
@@ -84,7 +86,10 @@ internal sealed class ComparePane
     internal string PageId => (page.SelectedItem as Choice)?.Id ?? "";
     internal int SelectedRow => row;
     internal int SelectedColumn => column;
-    internal string LocationCaption => owner.IsWorkbook ? ((sheet.SelectedItem as Choice)?.Label ?? owner.Copy["missing"]) + (row > 0 && column > 0 ? "!" + ColumnName(column) + row.ToString(System.Globalization.CultureInfo.InvariantCulture) : " · " + owner.Copy["sheetMetadata"]) : PageId.Length == 0 ? owner.Copy["absentPage"] : owner.Copy["pages"] + " " + ((page.SelectedItem as Choice)?.Value.Get("page").Number() ?? 0);
+    internal int FocusedRow => focusedRow;
+    internal int FocusedColumn => focusedColumn;
+    internal string FocusedAddress => focusedRow > 0 && focusedColumn > 0 ? ColumnName(focusedColumn) + focusedRow.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
+    internal string LocationCaption => owner.IsWorkbook ? ((sheet.SelectedItem as Choice)?.Label ?? owner.Copy["missing"]) + (FocusedAddress.Length > 0 ? "!" + FocusedAddress : " · " + owner.Copy["sheetMetadata"]) : PageId.Length == 0 ? owner.Copy["absentPage"] : owner.Copy["pages"] + " " + ((page.SelectedItem as Choice)?.Value.Get("page").Number() ?? 0);
     internal double Zoom { get => zoom.Value; set { fittingWidth = false; zoom.Value = value; } }
 
     public ComparePane(MainWindow owner, bool after)
@@ -98,14 +103,14 @@ internal sealed class ComparePane
         docControls.Children.Add(page); var zoomRow = new StackPanel { Orientation = Orientation.Horizontal }; zoomRow.Children.Add(zoomCaption); zoomRow.Children.Add(zoom); zoomRow.Children.Add(zoomPercent); fitWidth = Button("fitWidth", () => { FitPreview(); return Task.CompletedTask; }); zoomRow.Children.Add(fitWidth); docControls.Children.Add(zoomRow); top.Children.Add(docControls);
         workbookControls.Children.Add(sheet);
         var coordinates = new WrapPanel(); var rowLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }; owner.BindText(rowLabel, "row"); coordinates.Children.Add(rowLabel); coordinates.Children.Add(rowStart); var columnLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center }; owner.BindText(columnLabel, "column"); coordinates.Children.Add(columnLabel); coordinates.Children.Add(colStart); coordinates.Children.Add(Button("go", LoadCoordinates));
-        var navigationRow = new StackPanel { Orientation = Orientation.Horizontal }; var previous = Arrow("previous", "◀", async () => { row = Math.Max(1, row - 50); await ReloadGrid(); }); var next = Arrow("next", "▶", async () => { row = Math.Min(1_048_527, row + 50); await ReloadGrid(); }); navigationRow.Children.Add(previous); navigationRow.Children.Add(next); address.Width = 65; navigationRow.Children.Add(address); navigationRow.Children.Add(Button("go", GoAddress)); workbookControls.Children.Add(navigationRow); workbookControls.Children.Add(showFormula);
+        var navigationRow = new StackPanel { Orientation = Orientation.Horizontal }; var previous = Arrow("previous", "◀", async () => { row = Math.Max(1, row - 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); var next = Arrow("next", "▶", async () => { row = Math.Min(1_048_527, row + 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); navigationRow.Children.Add(previous); navigationRow.Children.Add(next); address.Width = 65; navigationRow.Children.Add(address); navigationRow.Children.Add(Button("go", GoAddress)); workbookControls.Children.Add(navigationRow); workbookControls.Children.Add(showFormula);
         var advanced = new Expander { Header = "…", ToolTip = "Row / column · 행 / 열", Content = coordinates, IsExpanded = false, Margin = new Thickness(6, 0, 6, 0) }; workbookControls.Children.Add(advanced); top.Children.Add(workbookControls);
         var bottom = new StackPanel(); bottom.Children.Add(source); bottom.Children.Add(sparse); bottom.Children.Add(retry); DockPanel.SetDock(bottom, Dock.Bottom); dock.Children.Add(bottom);
         PageScroll.Content = PageImage; visual.Children.Add(PageScroll); visual.Children.Add(fallback); visual.Children.Add(Cells); dock.Children.Add(visual);
         VirtualizingPanel.SetVirtualizationMode(Cells, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(Cells, true);
         revision.SelectionChanged += async (_, _) => { if (binding) return; SetRevisionContents(true); selectionRequest = owner.ReloadComparison(); await owner.Guard(() => selectionRequest); };
         page.SelectionChanged += async (_, _) => { if (!binding && !owner.IsWorkbook) { var request = Load(owner.Generation, owner.ReadToken); owner.SourcePresentationChanged(); await owner.Guard(() => request); owner.SourcePresentationChanged(); } };
-        sheet.SelectionChanged += async (_, _) => { if (!binding && owner.IsWorkbook) { evidenceAbsence = ""; requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? ""; Invalidate(); row = 1; column = 1; selectionRequest = owner.ReloadSourceWindow(); await owner.Guard(() => selectionRequest); } };
+        sheet.SelectionChanged += async (_, _) => { if (!binding && owner.IsWorkbook) { evidenceAbsence = ""; requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? ""; Invalidate(); row = 1; column = 1; SetFocusCoordinates(row, column); selectionRequest = owner.ReloadSourceWindow(); await owner.Guard(() => selectionRequest); } };
         zoom.ValueChanged += (_, _) => { if (!applyingFit) fittingWidth = false; PageImage.LayoutTransform = new ScaleTransform(zoom.Value, zoom.Value); UpdateZoomCaption(); };
         Host.SizeChanged += (_, _) => ResizePreview();
         PageScroll.SizeChanged += (_, _) => { if (fittingWidth) ResizePreview(); };
@@ -114,7 +119,8 @@ internal sealed class ComparePane
         {
             if (binding || ReadState != "ready" || Cells.SelectedCells.Count == 0 || Cells.SelectedCells[0].Item is not GridRow selected) return;
             var displayColumn = Cells.SelectedCells[0].Column.DisplayIndex - 1; if (displayColumn < 0) return;
-            await owner.Guard(() => owner.SelectCell(this, selected.Row, column + displayColumn));
+            selectionRequest = owner.SelectCell(this, selected.Row, column + displayColumn);
+            await owner.Guard(() => selectionRequest);
         };
         navigation.AddRange([revision, page, sheet, rowStart, colStart, address]); Localize(); Clear();
     }
@@ -131,18 +137,18 @@ internal sealed class ComparePane
         RerenderPresentation(); foreach (var cells in Cells.Items.OfType<GridRow>()) foreach (var cell in cells.Values) cell.Localize();
     }
     internal void NavigationEnabled(bool enabled) { foreach (var control in navigation) control.IsEnabled = enabled; showFormula.IsEnabled = enabled && ReadState == "ready" && loadedGridScope is not null; }
-    internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence, requestedSheetName);
+    internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence, requestedSheetName, focusedRow, focusedColumn);
     internal void RestoreSelection(PaneSelection saved)
     {
         if (saved.Revision.Length == 0) { Clear(); return; } SetEvidenceRevision(saved.Revision); binding = true;
         if (sheet.ItemsSource is List<Choice> sheets) sheet.SelectedItem = sheets.Find(value => value.Id == saved.Sheet);
         if (page.ItemsSource is List<Choice> pages) page.SelectedItem = pages.Find(value => value.Id == saved.Page);
-        row = saved.Row; column = saved.Column; Zoom = saved.Zoom; evidenceAbsence = saved.Absence; requestedSheetName = saved.RequestedSheet; binding = false;
+        row = saved.Row; column = saved.Column; SetFocusCoordinates(saved.FocusedRow ?? saved.Row, saved.FocusedColumn ?? saved.Column); Zoom = saved.Zoom; evidenceAbsence = saved.Absence; requestedSheetName = saved.RequestedSheet; binding = false;
     }
     internal void Clear()
     {
         pageRead.Cancel(); ++pageGeneration; ++gridGeneration;
-        Invalidate("empty"); binding = true; revision.ItemsSource = null; page.ItemsSource = null; sheet.ItemsSource = null; fallback.Text = owner.Copy["selectPage"]; evidenceAbsence = ""; requestedSheetName = ""; binding = false;
+        Invalidate("empty"); binding = true; revision.ItemsSource = null; page.ItemsSource = null; sheet.ItemsSource = null; row = 1; column = 1; SetFocusCoordinates(0, 0); fallback.Text = owner.Copy["selectPage"]; evidenceAbsence = ""; requestedSheetName = ""; binding = false;
     }
     internal void Invalidate(string state = "loading")
     {
@@ -150,7 +156,39 @@ internal sealed class ComparePane
         var previous = binding; binding = true; Cells.SelectedCells.Clear(); Cells.ItemsSource = null; binding = previous; Cells.IsEnabled = false; showFormula.IsEnabled = false;
         PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; fallback.Text = owner.Copy[state == "invalid" ? "reverse" : state == "failed" ? "failed" : "loading"]; source.Text = ""; retry.Visibility = state == "failed" ? Visibility.Visible : Visibility.Collapsed;
     }
-    internal bool AuthorizesCell(int requestedRow, int requestedColumn) => ReadState == "ready" && loadedGridScope is { } scope && scope.Project == owner.ProjectId && scope.Report == owner.ReportId && scope.Revision == RevisionId && scope.Sheet == SheetId && scope.Row == row && scope.Column == column && requestedRow >= row && requestedRow < row + 50 && requestedColumn >= column && requestedColumn < Math.Min(16385, column + 8);
+    internal bool AuthorizesCell(int requestedRow, int requestedColumn) => ReadState == "ready" && loadedGridScope is { } scope && scope.Project == owner.ProjectId && scope.Report == owner.ReportId && scope.Revision == RevisionId && scope.Sheet == SheetId && scope.Row == row && scope.Column == column && requestedRow >= row && requestedRow < Math.Min(1_048_577, row + 50) && requestedColumn >= column && requestedColumn < Math.Min(16385, column + 8);
+    private void SetFocusCoordinates(int requestedRow, int requestedColumn)
+    {
+        focusedRow = requestedRow is >= 1 and <= 1_048_576 && requestedColumn is >= 1 and <= 16_384 ? requestedRow : 0;
+        focusedColumn = focusedRow > 0 ? requestedColumn : 0; address.Text = FocusedAddress;
+    }
+    internal void FocusCell(int requestedRow, int requestedColumn)
+    {
+        if (!AuthorizesCell(requestedRow, requestedColumn)) return;
+        SetFocusCoordinates(requestedRow, requestedColumn); SelectFocusedNativeCell();
+    }
+    private void SelectFocusedNativeCell()
+    {
+        if (!AuthorizesCell(focusedRow, focusedColumn) || Cells.Items.OfType<GridRow>().FirstOrDefault(item => item.Row == focusedRow) is not { } item) return;
+        var index = focusedColumn - column + 1; if (index < 1 || index >= Cells.Columns.Count) return;
+        if (Cells.SelectedCells.Count == 1 && ReferenceEquals(Cells.SelectedCells[0].Item, item) && ReferenceEquals(Cells.SelectedCells[0].Column, Cells.Columns[index])) return;
+        var wasBinding = binding; binding = true;
+        try
+        {
+            // Selecting the logical cell must not move the native viewport.
+            // Setting CurrentCell can bring a virtualized container into view.
+            Cells.SelectedCells.Clear(); Cells.SelectedCells.Add(new DataGridCellInfo(item, Cells.Columns[index]));
+        }
+        finally { binding = wasBinding; }
+    }
+    internal bool TryGetFocusedMaterializedCell(out JsonElement cell)
+    {
+        cell = default;
+        if (!AuthorizesCell(focusedRow, focusedColumn) || gridValue.ValueKind != JsonValueKind.Object || gridValue.Get("project_id").Text() != owner.ProjectId || gridValue.Get("report_id").Text() != owner.ReportId || gridValue.Get("revision_occurrence_id").Text() != RevisionId || gridValue.Get("sheet_id").Text() != SheetId || gridValue.Get("row_start").Number() != row || gridValue.Get("column_start").Number() != column) return false;
+        var matches = gridValue.Get("items").Items().Where(item => item.ValueKind == JsonValueKind.Object && item.Get("row").Number() == focusedRow && item.Get("column").Number() == focusedColumn).ToArray();
+        if (matches.Length != 1 || matches[0].Get("address").ValueKind != JsonValueKind.String || matches[0].Get("address").Text() != FocusedAddress) return false;
+        cell = matches[0]; return true;
+    }
     internal void SetRevisions(List<JsonElement> items, int index)
     {
         revisions = items; requestedSheetName = ""; binding = true; revision.ItemsSource = items.Select(v => Choice.From(v, "revision_occurrence_id", "label")).ToList(); revision.SelectedIndex = items.Count > 0 ? Math.Clamp(index, 0, items.Count - 1) : -1; binding = false; SetRevisionContents(); Localize();
@@ -167,7 +205,7 @@ internal sealed class ComparePane
         binding = true;
         if (owner.IsWorkbook)
         {
-            var sheets = selected.Get("sheets").Items().Select(v => Choice.From(v, "sheet_id", "name")).ToList(); sheet.ItemsSource = sheets; var matching = sheets.Find(v => v.Label == oldSheet); sheet.SelectedItem = matching ?? (explicitVersionChange && oldSheet.Length > 0 ? null : sheets.FirstOrDefault()); requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? oldSheet; if (explicitVersionChange && oldSheet.Length > 0 && matching is null) evidenceAbsence = "missingSelectedSheet"; row = 1; column = 1;
+            var sheets = selected.Get("sheets").Items().Select(v => Choice.From(v, "sheet_id", "name")).ToList(); sheet.ItemsSource = sheets; var matching = sheets.Find(v => v.Label == oldSheet); sheet.SelectedItem = matching ?? (explicitVersionChange && oldSheet.Length > 0 ? null : sheets.FirstOrDefault()); requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? oldSheet; if (explicitVersionChange && oldSheet.Length > 0 && matching is null) evidenceAbsence = "missingSelectedSheet"; row = 1; column = 1; SetFocusCoordinates(SheetId.Length > 0 ? row : 0, SheetId.Length > 0 ? column : 0);
         }
         else
         {
@@ -196,8 +234,9 @@ internal sealed class ComparePane
             if (sheetId.Length == 0) { sheet.SelectedItem = null; evidenceAbsence = "absentSheet"; }
             else if (sheet.ItemsSource is List<Choice> sheets && sheets.Any(v => v.Id == sheetId)) sheet.SelectedItem = sheets.Find(v => v.Id == sheetId);
             else { sheet.SelectedItem = null; evidenceAbsence = "unsupportedSheet"; }
+            requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? "";
             // Sheet events need not identify a physical cell. Preserve absence.
-            row = observation.Get("row").Number(0); column = observation.Get("column").Number(0); if (row < 1 || column < 1) { row = 0; column = 0; if (evidenceAbsence.Length == 0) evidenceAbsence = "sheetMetadata"; }
+            row = observation.Get("row").Number(0); column = observation.Get("column").Number(0); if (row < 1 || column < 1) { row = 0; column = 0; if (evidenceAbsence.Length == 0) evidenceAbsence = "sheetMetadata"; } SetFocusCoordinates(row, column);
             binding = false;
         }
     }
@@ -264,43 +303,48 @@ internal sealed class ComparePane
             return;
         }
         if (RevisionId.Length == 0 || SheetId.Length == 0) { ReadState = "absent"; fallback.Text = owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : "absentSheet"]; return; }
-        var revisionId = RevisionId; var sheetId = SheetId; var rowAt = row; var columnAt = column;
+        var project = owner.ProjectId; var report = owner.ReportId; var revisionId = RevisionId; var sheetId = SheetId; var rowAt = row; var columnAt = column;
         try {
-        var value = await owner.Bridge.Call("workbookGrid", new { project_id = owner.ProjectId, report_id = owner.ReportId, revision_occurrence_id = revisionId, sheet_id = sheetId, row_start = rowAt, row_limit = 50, column_start = columnAt, column_limit = 8 }, token);
-        if (!owner.IsCurrent(ticket) || sequence != gridGeneration || RevisionId != revisionId || SheetId != sheetId || row != rowAt || column != columnAt) return;
-        if (value.Get("revision_occurrence_id").Text() != revisionId || value.Get("sheet_id").Text() != sheetId || value.Get("report_id").Text() != owner.ReportId) throw new BridgeException("GRID_SCOPE", "Grid response is outside the selected source scope.");
-        loadedGridScope = (owner.ProjectId, owner.ReportId, revisionId, sheetId, rowAt, columnAt); ReadState = "ready"; Cells.IsEnabled = owner.AllowsEvidence; showFormula.IsEnabled = owner.AllowsEvidence;
+        var value = await owner.Bridge.Call("workbookGrid", new { project_id = project, report_id = report, revision_occurrence_id = revisionId, sheet_id = sheetId, row_start = rowAt, row_limit = 50, column_start = columnAt, column_limit = 8 }, token);
+        if (!owner.IsCurrent(ticket) || sequence != gridGeneration || project != owner.ProjectId || report != owner.ReportId || RevisionId != revisionId || SheetId != sheetId || row != rowAt || column != columnAt) return;
+        if (value.Get("project_id").Text() != project || value.Get("revision_occurrence_id").Text() != revisionId || value.Get("sheet_id").Text() != sheetId || value.Get("report_id").Text() != report || value.Get("row_start").Number() != rowAt || value.Get("column_start").Number() != columnAt || value.Get("row_limit").Number() != 50 || value.Get("column_limit").Number() != 8) throw new BridgeException("GRID_SCOPE", "Grid response is outside the selected source scope.");
+        loadedGridScope = (project, report, revisionId, sheetId, rowAt, columnAt); ReadState = "ready"; Cells.IsEnabled = owner.AllowsEvidence; showFormula.IsEnabled = owner.AllowsEvidence;
         gridValue = value; rowStart.Text = row.ToString(System.Globalization.CultureInfo.InvariantCulture); colStart.Text = column.ToString(System.Globalization.CultureInfo.InvariantCulture); RenderGrid();
         source.Text = (revision.SelectedItem as Choice)?.Label + " · " + (sheet.SelectedItem as Choice)?.Label + " · " + row + "–" + Math.Min(1048576, row + 49); source.ToolTip = revisionId + "\n" + sheetId; fallback.Visibility = Visibility.Collapsed; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Visible;
         } catch
         {
-            if (owner.IsCurrent(ticket) && sequence == gridGeneration && !token.IsCancellationRequested && RevisionId == revisionId && SheetId == sheetId && row == rowAt && column == columnAt) { Invalidate("failed"); throw; }
+            if (owner.IsCurrent(ticket) && sequence == gridGeneration && !token.IsCancellationRequested && project == owner.ProjectId && report == owner.ReportId && RevisionId == revisionId && SheetId == sheetId && row == rowAt && column == columnAt) { Invalidate("failed"); throw; }
             throw new OperationCanceledException("The grid request was superseded.", token);
         }
     }
     private void RenderGrid()
     {
-        if (ReadState != "ready" || loadedGridScope is null || gridValue.ValueKind == JsonValueKind.Undefined) return; binding = true; Cells.Columns.Clear();
-        Cells.Columns.Add(new DataGridTextColumn { Header = "#", Binding = new Binding(nameof(GridRow.Number)), Width = 65, IsReadOnly = true });
-        var columnCount = Math.Min(8, 16385 - column);
-        for (var index = 0; index < columnCount; index++)
+        if (ReadState != "ready" || loadedGridScope is null || gridValue.ValueKind == JsonValueKind.Undefined) return; var wasBinding = binding; binding = true;
+        try
         {
-            var path = "Values[" + index + "]"; var style = new Style(typeof(TextBlock)); style.Setters.Add(new Setter(TextBlock.ForegroundProperty, new Binding(path + ".Foreground"))); style.Setters.Add(new Setter(TextBlock.FontStyleProperty, new Binding(path + ".FontStyle"))); style.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(path + ".ToolTip")));
-            Cells.Columns.Add(new DataGridTextColumn { Header = ColumnName(column + index), Binding = new Binding(path + ".Text"), ElementStyle = style, Width = 115, IsReadOnly = true });
-        }
-        Cells.FrozenColumnCount = 1;
-        var observed = gridValue.Get("items").Items().ToDictionary(v => (v.Get("row").Number(), v.Get("column").Number()), v => v);
-        var values = new List<GridRow>();
-        for (var r = row; r < Math.Min(1_048_577, row + 50); r++)
-        {
-            var cells = new GridCell[columnCount]; for (var index = 0; index < columnCount; index++)
+            Cells.Columns.Clear();
+            Cells.Columns.Add(new DataGridTextColumn { Header = "#", Binding = new Binding(nameof(GridRow.Number)), Width = 65, IsReadOnly = true });
+            var columnCount = Math.Min(8, 16385 - column);
+            for (var index = 0; index < columnCount; index++)
             {
-                if (!observed.TryGetValue((r, column + index), out var cell)) { cells[index] = new("—", true, "sparseCell", owner.Copy); continue; }
-                var formula = cell.Get("formula").Text(); var value = showFormula.IsChecked == true && formula.Length > 0 ? formula : cell.Get("value").Text(); var truncated = cell.Get("text_truncated").Flag(); cells[index] = new(value + (truncated ? "…" : ""), truncated, truncated ? "truncatedCell" : "literalCell", owner.Copy);
+                var path = "Values[" + index + "]"; var style = new Style(typeof(TextBlock)); style.Setters.Add(new Setter(TextBlock.ForegroundProperty, new Binding(path + ".Foreground"))); style.Setters.Add(new Setter(TextBlock.FontStyleProperty, new Binding(path + ".FontStyle"))); style.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(path + ".ToolTip")));
+                Cells.Columns.Add(new DataGridTextColumn { Header = ColumnName(column + index), Binding = new Binding(path + ".Text"), ElementStyle = style, Width = 115, IsReadOnly = true });
             }
-            values.Add(new(r, cells));
+            Cells.FrozenColumnCount = 1;
+            var observed = gridValue.Get("items").Items().ToDictionary(v => (v.Get("row").Number(), v.Get("column").Number()), v => v);
+            var values = new List<GridRow>();
+            for (var r = row; r < Math.Min(1_048_577, row + 50); r++)
+            {
+                var cells = new GridCell[columnCount]; for (var index = 0; index < columnCount; index++)
+                {
+                    if (!observed.TryGetValue((r, column + index), out var cell)) { cells[index] = new("—", true, "sparseCell", owner.Copy); continue; }
+                    var formula = cell.Get("formula").Text(); var value = showFormula.IsChecked == true && formula.Length > 0 ? formula : cell.Get("value").Text(); var truncated = cell.Get("text_truncated").Flag(); cells[index] = new(value + (truncated ? "…" : ""), truncated, truncated ? "truncatedCell" : "literalCell", owner.Copy);
+                }
+                values.Add(new(r, cells));
+            }
+            Cells.ItemsSource = values; SelectFocusedNativeCell();
         }
-        Cells.ItemsSource = values; binding = false;
+        finally { binding = wasBinding; }
     }
     internal async Task<object> CheckFrozenCoordinatesForSmoke(Func<object, Task>? observeBeforeAssertions = null)
     {
@@ -366,14 +410,14 @@ internal sealed class ComparePane
     }
     private async Task LoadCoordinates()
     {
-        if (!int.TryParse(rowStart.Text, out var r) || !int.TryParse(colStart.Text, out var c) || r is < 1 or > 1_048_576 || c is < 1 or > 16_384) throw new BridgeException("ADDRESS", "Row 1–1048576; column 1–16384."); evidenceAbsence = ""; row = r; column = c; await ReloadGrid();
+        if (!int.TryParse(rowStart.Text, out var r) || !int.TryParse(colStart.Text, out var c) || r is < 1 or > 1_048_576 || c is < 1 or > 16_384) throw new BridgeException("ADDRESS", "Row 1–1048576; column 1–16384."); evidenceAbsence = ""; row = r; column = c; SetFocusCoordinates(row, column); await ReloadGrid();
     }
     private async Task GoAddress()
     {
         var found = Regex.Match(address.Text.Trim(), "^([A-Za-z]{1,3})([1-9][0-9]{0,6})$", RegexOptions.CultureInvariant); if (!found.Success) throw new BridgeException("ADDRESS", "A1–XFD1048576");
         var c = 0; foreach (var letter in found.Groups[1].Value.ToUpperInvariant()) c = c * 26 + letter - 'A' + 1;
         var r = int.Parse(found.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture); if (c > 16384 || r > 1048576) throw new BridgeException("ADDRESS", "A1–XFD1048576");
-        evidenceAbsence = ""; row = r; column = c; await ReloadGrid(); await owner.SelectCell(this, r, c);
+        evidenceAbsence = ""; row = r; column = c; SetFocusCoordinates(row, column); await ReloadGrid(); await owner.SelectCell(this, r, c);
     }
     private Task ReloadGrid() => owner.ReloadSourceWindow();
     internal (double X, double Y, string Page, ImageSource? Image) CaptureViewport() => (PageScroll.HorizontalOffset, PageScroll.VerticalOffset, PageId, PageImage.Source);
@@ -454,6 +498,27 @@ internal sealed class ComparePane
     internal async Task SelectPageForSmoke(string id, Func<CancellationToken, Task>? beforeInstall = null) { SetEventPage(id); var request = LoadPage(owner.Generation, owner.ReadToken, beforeInstall); owner.SourcePresentationChanged(); try { await request; } finally { owner.SourcePresentationChanged(); } }
     internal async Task SelectRevisionForSmoke(int index) { revision.SelectedIndex = index; await selectionRequest; }
     internal async Task SelectAvailableSheetForSmoke() { sheet.SelectedIndex = 0; await selectionRequest; }
+    internal async Task ClickCellForSmoke(int requestedRow, int requestedColumn)
+    {
+        if (binding || !Cells.IsEnabled || !AuthorizesCell(requestedRow, requestedColumn)) throw new InvalidOperationException("The requested native cell is not authorized by a ready source window.");
+        Cells.UpdateLayout(); var scroll = GridScroll ?? throw new InvalidOperationException("The native grid has no viewport.");
+        var nativeRow = Descendants(Cells).OfType<DataGridRow>().FirstOrDefault(item => item.IsVisible && item.Item is GridRow model && model.Row == requestedRow);
+        var index = requestedColumn - column + 1;
+        if (index < 1 || index >= Cells.Columns.Count) throw new InvalidOperationException("The requested native source column is not installed.");
+        var nativeCell = nativeRow is null ? null : Descendants(nativeRow).OfType<DataGridCell>().FirstOrDefault(item => item.IsVisible && ReferenceEquals(item.Column, Cells.Columns[index]));
+        if (nativeCell is null || nativeCell.ActualWidth <= 0 || nativeCell.ActualHeight <= 0) throw new InvalidOperationException("The requested native cell is not currently materialized in the viewport.");
+        DependencyObject? ancestor = nativeCell;
+        while (ancestor is not null && ancestor is not ScrollContentPresenter && !ReferenceEquals(ancestor, Cells)) ancestor = VisualTreeHelper.GetParent(ancestor);
+        if (ancestor is not ScrollContentPresenter viewport) throw new InvalidOperationException("The requested native cell has no visible scrolling content viewport.");
+        var bounds = nativeCell.TransformToAncestor(Cells).TransformBounds(new Rect(0, 0, nativeCell.ActualWidth, nativeCell.ActualHeight));
+        var visible = viewport.TransformToAncestor(Cells).TransformBounds(new Rect(0, 0, viewport.ActualWidth, viewport.ActualHeight));
+        if (bounds.Left < Math.Max(Cells.Columns[0].ActualWidth, visible.Left) - .5 || bounds.Right > Math.Min(Cells.ActualWidth, visible.Right) + .5 || bounds.Top < Math.Max(0, visible.Top) - .5 || bounds.Bottom > Math.Min(Cells.ActualHeight, visible.Bottom) + .5) throw new InvalidOperationException("The requested native cell is clipped or outside the existing viewport.");
+        var rowAt = row; var columnAt = column; var rows = Cells.ItemsSource; var x = scroll.HorizontalOffset; var y = scroll.VerticalOffset;
+        // Exercise the production SelectedCellsChanged path without Go,
+        // ScrollIntoView, a replacement source window, or a direct raw query.
+        Cells.SelectedCells.Clear(); Cells.SelectedCells.Add(new DataGridCellInfo(nativeRow!.Item, nativeCell.Column)); await selectionRequest;
+        if (row != rowAt || column != columnAt || !ReferenceEquals(rows, Cells.ItemsSource) || scroll.HorizontalOffset != x || scroll.VerticalOffset != y || focusedRow != requestedRow || focusedColumn != requestedColumn) throw new InvalidOperationException("Native cell selection moved the source window/viewport or failed to retain its physical focus.");
+    }
     internal static string ColumnName(int column) { var name = ""; while (column > 0) { column--; name = (char)('A' + column % 26) + name; column /= 26; } return name; }
     internal async Task GoForSmoke(string cell) { address.Text = cell; await GoAddress(); }
 }

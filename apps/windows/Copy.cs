@@ -15,6 +15,8 @@ internal sealed class Copy
         ["sourcePair"] = ("Displayed sources", "현재 원문"), ["withinInterval"] = ("Event within interval", "구간 안 변경"), ["reading"] = ("Read source", "원문 읽기"),
         ["outsideChange"] = ("Browsing outside the selected evidence · use Selected change to return", "선택한 근거 바깥을 탐색 중 · 선택 변경으로 돌아갈 수 있음"),
         ["storedOnly"] = ("Stored values and source formulas · no recalculation", "저장된 값과 원본 수식 · 재계산 안 함"), ["inferredRows"] = ("Row correspondence is inferred; physical addresses are retained", "행 대응은 추정 · 실제 셀 주소 유지"),
+        ["resultMissingShort"] = ("saved result missing", "저장 결과 없음"), ["formulaUnresolvedShort"] = ("formula unresolved", "수식 해석 미해결"), ["freshnessUnknownShort"] = ("freshness unknown", "저장값 최신성 미확인"),
+        ["valueUnrecordedShort"] = ("no saved observation", "저장 관측 없음"), ["valueEmptyShort"] = ("explicit empty string", "명시적인 빈 문자열"), ["cellNotMaterialized"] = ("cell not materialized", "셀이 관측되지 않음"),
         ["appearanceOnly"] = ("Coverage / appearance observation; semantic deletion is not confirmed", "관측 한계·표시 상태 관측 · 의미상 삭제 확정 아님"),
         ["textDiffNotice"] = ("−/+ compares extracted or stored text observations, not semantic document deletion. Inspect original sources and evidence for context.", "−/+는 추출·저장된 텍스트 관측의 차이입니다. 의미상 문서 삭제를 확정하지 않습니다. 원문과 근거를 함께 확인하세요."),
         ["selectedSnippet"] = ("Selected change excerpts · not the complete pages", "선택한 변경의 텍스트 일부 · 전체 페이지가 아님"), ["pageText"] = ("Extracted text of displayed pages · reading order may differ from the source", "현재 페이지의 추출 텍스트 · 원문과 읽기 순서가 다를 수 있음"),
