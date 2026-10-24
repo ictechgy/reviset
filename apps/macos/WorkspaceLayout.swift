@@ -7,15 +7,15 @@ enum WorkspaceLayoutScope:String,Codable {case document,workbook}
 enum WorkspaceChangesDock:String,Codable,CaseIterable {case bottom,left,right}
 enum WorkspaceInspectorDock:String,Codable,CaseIterable {case left,right}
 enum WorkspacePageArrangement:String,Codable,CaseIterable {case horizontal,vertical}
-enum WorkspaceLayoutPreset:String,CaseIterable {case balanced,focus,review}
+enum WorkspaceLayoutPreset:String,CaseIterable {case sourceFirst,balanced,focus,review}
 
 struct WorkspaceLayoutConfiguration:Codable,Equatable {
-    var sidebarVisible=false
+    var sidebarVisible=true
     var sidebarWidth:Double=220
     var changesVisible=true
-    var changesDock=WorkspaceChangesDock.left
+    var changesDock=WorkspaceChangesDock.bottom
     var changesHeight:Double=140
-    var changesWidth:Double=280
+    var changesWidth:Double=320
     var inspectorVisible=false
     var inspectorDock=WorkspaceInspectorDock.right
     var inspectorWidth:Double=300
@@ -25,8 +25,9 @@ struct WorkspaceLayoutConfiguration:Codable,Equatable {
         sidebarWidth.isFinite && (180...380).contains(sidebarWidth) && changesHeight.isFinite && (110...600).contains(changesHeight) && changesWidth.isFinite && (260...600).contains(changesWidth) && inspectorWidth.isFinite && (260...480).contains(inspectorWidth) && pageFraction.isFinite && (0.2...0.8).contains(pageFraction)
     }
     static func preset(_ preset:WorkspaceLayoutPreset,scope:WorkspaceLayoutScope)->Self {
-        var value=Self();value.changesHeight=scope == .workbook ? 200:140
+        var value=Self();value.inspectorVisible=scope == .workbook;value.changesHeight=scope == .workbook ? 200:140
         switch preset {
+        case .sourceFirst:value.sidebarVisible=false;value.inspectorVisible=false;value.changesDock = .left;value.changesWidth=280
         case .balanced:break
         case .focus:value.sidebarVisible=false;value.inspectorVisible=false;value.changesVisible=false
         case .review:value.sidebarVisible=false;value.inspectorVisible=true;value.changesHeight=260
@@ -69,7 +70,7 @@ private struct WorkspaceLayoutEnvelope:Codable {
     private var preFocusConfiguration:WorkspaceLayoutConfiguration?
     init(scope:WorkspaceLayoutScope) {
         self.scope=scope
-        configuration = .preset(.balanced,scope:scope)
+        configuration = .preset(.sourceFirst,scope:scope)
         if let data=WorkspaceLayoutPreferences.data(scope) {
             if data.count>65_536 || Self.excessivelyNested(data) {persistenceReadOnly=true}
             else if let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any],Self.currentSchema(object["schemaVersion"]) {
@@ -99,7 +100,7 @@ private struct WorkspaceLayoutEnvelope:Codable {
     }
     private static func recoveredConfiguration(_ raw:Any?,scope:WorkspaceLayoutScope)->WorkspaceLayoutConfiguration? {
         guard let object=raw as? [String:Any] else{return nil}
-        var value=WorkspaceLayoutConfiguration.preset(.balanced,scope:scope)
+        var value=WorkspaceLayoutConfiguration.preset(.sourceFirst,scope:scope)
         func field<T:Decodable>(_ key:String,_ fallback:T)->T {
             guard let raw=object[key],let data=try? JSONSerialization.data(withJSONObject:raw,options:.fragmentsAllowed),let decoded=try? JSONDecoder().decode(T.self,from:data) else{return fallback}
             return decoded
@@ -152,7 +153,7 @@ private struct WorkspaceLayoutEnvelope:Codable {
         guard saved.contains(where:{$0.id==savedLayout.id}),savedLayout.configuration.isValid else{return}
         applyConfiguration(savedLayout.configuration)
     }
-    func reset() {apply(.balanced)}
+    func reset() {apply(.sourceFirst)}
     func toggleFocus() {
         setFocus(!isFocused)
     }
@@ -372,6 +373,7 @@ struct WorkspaceLayoutMenu:View {
     @State private var name=""
     var body:some View {
         Menu {
+            Button(L("layout.preset.sourceFirst")){layout.apply(.sourceFirst)}
             Button(L("layout.preset.balanced")){layout.apply(.balanced)}
             Button(L("layout.preset.focus")){layout.apply(.focus)}
             Button(L("layout.preset.review")){layout.apply(.review)}
@@ -437,4 +439,25 @@ struct NativeDetailSheet<Content:View>:View {
     let title:String
     @ViewBuilder var content:()->Content
     var body:some View {VStack(spacing:0){HStack{Text(title).font(.headline);Spacer();Button(L("doc.common.close")){dismiss()}.keyboardShortcut(.cancelAction)}.padding(16);Divider();content()}.frame(width:940,height:680)}
+}
+
+// Hiding a native host visually does not remove AppKit keyboard focus. Resign
+// only a responder inside that host; an editor elsewhere keeps its focus.
+@MainActor @discardableResult func resignHiddenSourceFirstResponder(in source:NSView)->Bool {
+    guard let window=source.window,let responder=window.firstResponder as? NSView,
+          responder === source || responder.isDescendant(of:source) else{return false}
+    return window.makeFirstResponder(nil)
+}
+
+// Fixed intrinsic width prevents horizontal-scroll layout from wrapping each
+// source word independently. Explicit source newlines remain unchanged.
+struct NativeDiffSourceLine:View {
+    let prefix:String
+    let text:String
+    let semantic:Bool
+    var markerName:String?=nil
+    private var foreground:Color {guard semantic else{return .primary};return prefix=="−" ? Color(red:0.55,green:0.12,blue:0.12):prefix=="+" ? Color(red:0.08,green:0.36,blue:0.18):.primary}
+    var body:some View {
+        HStack(alignment:.top,spacing:8){Text(prefix).frame(width:18);Text(verbatim:text).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)}.font(.system(.body,design:.monospaced)).foregroundStyle(foreground).frame(maxWidth:.infinity,alignment:.leading).background {if let markerName {WorkspaceLayoutMarker(name:markerName)}}
+    }
 }

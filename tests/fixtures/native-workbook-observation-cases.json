@@ -1,0 +1,2939 @@
+{
+  "schema_version": 1,
+  "purpose": "Synthetic native presentation contract cases. These are not document facts, extraction results, or engine truth. Real diffWorkbooks cases are generated separately by native-git-diff-workspace.test.ts.",
+  "cases": [
+    {
+      "name": "eligible-stored-value",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": true,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "eligible-same-dialect-formula",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "formula",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C2)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": true,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "formula-event-does-not-authorize-value",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "formula",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C2)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": true,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "cross-dialect-formula-neutral",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "formula",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "of:=SUM([.C1])",
+        "formula_dialect": "ods_openformula",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 14
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "cross-value-type-neutral",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "string",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "association-needs_review",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "needs_review",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "association-unknown",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "unknown",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "withheld-alignment",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "physical_row_fallback",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "cross-format-date-observation",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "cell_observation",
+        "association": "needs_review",
+        "alignment_method": "cross_format_date_representation",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "45292",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 5
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "45293",
+        "value_type": "number",
+        "formula": "of:=SUM([.C1])",
+        "formula_dialect": "ods_openformula",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 5
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 14
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "physical-address-mismatch",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "C1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "occurrence-scope-mismatch",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_foreign",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "sheet-scope-mismatch",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_foreign"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "same-occurrence-neutral",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_before",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "cache-whitelist-unknown",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "unknown",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "cache-whitelist-none",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": null,
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "cache-whitelist-42",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": 42,
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "cache-whitelist-missing",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "missing",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "missing-later-offset4096",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": null,
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "missing",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "missing",
+            "offset": 4096,
+            "next_offset": null,
+            "total_length": 0
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 4096,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "missing",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "empty-versus-zero",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "empty",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 0
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "0",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 1
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": true,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "empty",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "shorter-exhausted-versus-later-fragment",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "truncated",
+            "offset": 3,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "xyz",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "truncated",
+            "offset": 3,
+            "next_offset": null,
+            "total_length": 6
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 3,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "earlier",
+      "expected_value_state_after": "partial"
+    },
+    {
+      "name": "valid-first-partial",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "abc",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "truncated",
+            "offset": 0,
+            "next_offset": 3,
+            "total_length": 10
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "partial",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "different-length-partials",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "abc",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "truncated",
+            "offset": 0,
+            "next_offset": 3,
+            "total_length": 10
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "xy",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "truncated",
+            "offset": 3,
+            "next_offset": 5,
+            "total_length": 8
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 3,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "partial",
+      "expected_value_state_after": "partial"
+    },
+    {
+      "name": "invalid-absent-next-offset",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-boolean-offset",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": true,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-fractional-offset",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0.5,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-negative-total",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": -1
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-inconsistent-total",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 99
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-string-next-offset",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": "3",
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-unknown-state",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "unknown",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-missing-state-has-text",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "missing",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 0
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-complete-later-offset",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 3,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-partial-without-next",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "abc",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "truncated",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 10
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-partial-shortened-next",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "abc",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "truncated",
+            "offset": 0,
+            "next_offset": 2,
+            "total_length": 10
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-empty-before-end",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "truncated",
+            "offset": 2,
+            "next_offset": null,
+            "total_length": 10
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-truncated-complete-first",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "abc",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "truncated",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "invalid-empty-with-later-offset",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "empty",
+            "offset": 4096,
+            "next_offset": null,
+            "total_length": 0
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "invalid",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "unavailable-cell-observation",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": null,
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "unavailable",
+      "expected_value_state_after": "complete"
+    }
+  ]
+}

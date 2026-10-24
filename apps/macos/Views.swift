@@ -128,11 +128,11 @@ struct MainView: View {
             Divider();HStack { Label(L("doc.privacy.localMac"),systemImage:"internaldrive");Spacer();Text(!model.evidenceWarning.isEmpty ? model.evidenceWarning:model.status.isEmpty ? L("doc.evidence.footer") : model.status);Spacer();Text("Reviset · Native macOS") }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,5)
         }.disabled(!model.libraryAvailable || model.initializing).preferredColorScheme(.light).background(Color(nsColor:.windowBackgroundColor)).frame(minWidth:1100,minHeight:740)
         .toolbar {
-            ToolbarItem(placement:.navigation){Button {layout.toggleFocus()} label:{Image(systemName:layout.isFocused ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")}.help(layout.isFocused ? L("doc.workspace.standard") : L("doc.workspace.focus"))}
+            ToolbarItem(placement:.navigation){Button {layout.toggleFocus()} label:{Image(systemName:layout.isFocused ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")}.help(layout.isFocused ? L("doc.workspace.standard") : L("doc.workspace.focus")).accessibilityLabel(layout.isFocused ? L("doc.workspace.standard") : L("doc.workspace.focus"))}
             ToolbarItem { WorkspaceLayoutMenu(layout:layout) }
-            ToolbarItem { Menu {ForEach(model.projects){project in Button(project["title"].string){Task{await model.selectProject(project["project_id"].string)}}};Divider();Button(L("git.manageVersions")){layout.update{$0.sidebarVisible=true}}} label:{Label(model.project["title"].string.isEmpty ? "Reviset":model.project["title"].string,systemImage:"folder")}.disabled(model.busy || model.loading) }
+            ToolbarItem { Menu {ForEach(model.projects){project in Button(project["title"].string){Task{await model.selectProject(project["project_id"].string)}}};Divider();Button(L("git.manageVersions")){layout.update{$0.sidebarVisible=true}}} label:{Label(model.project["title"].string.isEmpty ? "Reviset":model.project["title"].string,systemImage:"folder").background(WorkspaceLayoutMarker(name:"Reviset.document.toolbar.projects"))}.disabled(model.busy || model.loading || !model.libraryAvailable || model.initializing) }
             ToolbarItemGroup(placement:.primaryAction) {
-                Button{model.importSheet=true}label:{Label(L("doc.import.documents"),systemImage:"plus")}.disabled(model.busy || model.loading)
+                Button{model.importSheet=true}label:{Label(L("doc.import.documents"),systemImage:"plus").background(WorkspaceLayoutMarker(name:"Reviset.document.toolbar.import"))}.disabled(model.busy || model.loading || !model.libraryAvailable || model.initializing)
                 Menu {
                     Button(L("doc.workspace.spreadsheets")){openWindow(id:"workbooks")}
                     if !model.report.isNull {
@@ -142,7 +142,7 @@ struct MainView: View {
                         Button(L("git.lineage")){model.lineageSheet=true}
                         Button(L("doc.mapping.reviewHeading")){model.inspector=true}
                     }
-                } label:{Label(L("git.actions"),systemImage:"ellipsis.circle")}
+                } label:{Label(L("git.actions"),systemImage:"ellipsis.circle").background(WorkspaceLayoutMarker(name:"Reviset.document.toolbar.actions"))}.disabled(!model.libraryAvailable || model.initializing)
             }
         }.focusedSceneObject(layout)
         .onChange(of:model.focus){if model.focus != layout.isFocused {layout.setFocus(model.focus)}}
@@ -226,7 +226,7 @@ struct CompareWorkspace: View {
         VStack(spacing:0){
             HStack(spacing:8){
                 Text(L("git.query")).font(.caption).foregroundStyle(.secondary)
-                Menu {ForEach(Array(model.revisions.enumerated()),id:\.offset){index,revision in Button(versionDisplayName(index,revision)){model.selectVersion(index)}}} label:{Image(systemName:"clock.arrow.circlepath")}.help(L("git.versions"))
+                Menu {ForEach(Array(model.revisions.enumerated()),id:\.offset){index,revision in Button(versionDisplayName(index,revision)){model.selectVersion(index)}}} label:{Image(systemName:"clock.arrow.circlepath")}.help(L("git.versions")).accessibilityLabel(L("git.versions"))
                 Picker(L("doc.common.before"),selection:$model.from){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i<=model.to{Text(versionDisplayName(i,r)).tag(i)}}}.labelsHidden().frame(maxWidth:170)
                 Image(systemName:"arrow.right").foregroundStyle(.secondary)
                 Picker(L("doc.common.after"),selection:$model.to){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i>=model.from{Text(versionDisplayName(i,r)).tag(i)}}}.labelsHidden().frame(maxWidth:170)
@@ -237,8 +237,8 @@ struct CompareWorkspace: View {
                     Picker(L("doc.compare.documentView"),selection:$model.pageMode){Text(L("doc.compare.both")).tag("both");Text(L("doc.compare.beforeOnly")).tag("before");Text(L("doc.compare.afterOnly")).tag("after")}
                     Picker(L("doc.common.zoom"),selection:$model.zoom){Text(L("doc.common.fit")).tag(0.0);Text("100%").tag(1.0);Text("150%").tag(1.5);Text("200%").tag(2.0)}
                 } label:{Label(L("git.view"),systemImage:"rectangle.split.2x1")}
-                Button{model.showChanges.toggle()}label:{Image(systemName:"list.bullet")}.help(L("layout.panel.changes"))
-                Button{model.inspector.toggle()}label:{Image(systemName:"sidebar.right")}.help(L("doc.compare.evidence"))
+                Button{model.showChanges.toggle()}label:{Image(systemName:"list.bullet")}.help(L("layout.panel.changes")).accessibilityLabel(L("layout.panel.changes"))
+                Button{model.inspector.toggle()}label:{Image(systemName:"sidebar.right")}.help(L("doc.compare.evidence")).accessibilityLabel(L("doc.compare.evidence"))
             }.controlSize(.small).padding(.horizontal,12).padding(.vertical,7).background(WorkspaceLayoutMarker(name:"Reviset.document.versionBar")).onChange(of:model.from){model.changeRange()}.onChange(of:model.to){model.changeRange()}
             SelectedChangeContext().environmentObject(model)
             WorkspacePaneSplit(name:"document.inspector",auxiliaryFirst:layout.configuration.inspectorDock == .left,auxiliaryVisible:layout.configuration.inspectorVisible,extent:.points(layout.configuration.inspectorWidth),primaryMinimum:layout.configuration.changesVisible && layout.configuration.changesDock != .bottom ? 500:300,auxiliaryMinimum:260,onResize:{value in if case .points(let width)=value {layout.update{$0.inspectorWidth=min(480,max(260,width))}}}) {
@@ -277,7 +277,7 @@ struct SelectedChangeContext:View {
             HStack(spacing:10){
                 if !model.selected.isNull {
                     Text(changeDisplayName(model.selected)).font(.caption.weight(.medium)).lineLimit(1)
-                    if model.eventInsideQuery {Text(L("git.eventInsideQuery")).font(.caption2).foregroundStyle(.secondary)}
+                    if model.eventInsideQuery {Text(L("git.selectedEvent")+" · "+changeVersionSummary(model.selected,revisions:model.revisions)).font(.caption.weight(.semibold));Text(L("git.eventInsideQuery")).font(.caption2).foregroundStyle(.secondary)}
                     if !model.selected["coverage_gaps"].array.isEmpty {Menu {ForEach(Array(model.selected["coverage_gaps"].array.enumerated()),id:\.offset){_,gap in Text(coverageReasonName(gap["reason"].string))}}label:{Label(L("doc.coverage.heading"),systemImage:"exclamationmark.circle")}.font(.caption2)}
                     Spacer(minLength:4)
                     if model.manuallyBrowsing {Button(L("git.returnToChange")){model.returnToChange()}.font(.caption)}
@@ -296,17 +296,25 @@ struct DocumentUnifiedDiff:View {
         let diff=documentTextDiff(model.selected)
         VStack(alignment:.leading,spacing:12){
             Text(L("git.textDiff")).font(.headline)
-            Text(versionDisplayName(model.sourceFrom,model.revision(model.sourceFrom))+" → "+versionDisplayName(model.sourceTo,model.revision(model.sourceTo))+" · "+evidencePageSummary(model.selected)).font(.caption).foregroundStyle(.secondary)
+            Text(L("git.selectedEvent")+" · "+versionDisplayName(model.sourceFrom,model.revision(model.sourceFrom))+" → "+versionDisplayName(model.sourceTo,model.revision(model.sourceTo))+" · "+evidencePageSummary(model.selected)).font(.headline)
+            Text(L("git.excerptNote")).font(.caption).foregroundStyle(.secondary)
             if model.selected.isNull {Text(L("doc.tail.change.selectPrompt")).foregroundStyle(.secondary)}
             else if !diff.bounded {Text(L("git.diffBound")).foregroundStyle(.secondary)}
             else {
                 if !diff.semantic {Text(L("git.neutralDiff")).font(.caption).foregroundStyle(.secondary)}
                 if model.selected["before"].isNull {Text(L("doc.common.before")+" · "+L("doc.inspector.noSource")).font(.caption).foregroundStyle(.secondary)}
                 if model.selected["after"].isNull {Text(L("doc.common.after")+" · "+L("doc.inspector.noSource")).font(.caption).foregroundStyle(.secondary)}
-                ScrollView([.horizontal,.vertical]){LazyVStack(alignment:.leading,spacing:1){ForEach(Array(diff.lines.enumerated()),id:\.offset){_,line in HStack(alignment:.top,spacing:8){Text(line.prefix).frame(width:18);Text(verbatim:line.text).textSelection(.enabled)}.font(.system(.body,design:.monospaced)).foregroundStyle(!diff.semantic ? Color.primary:line.prefix=="−" ? Color.red:line.prefix=="+" ? Color.green:Color.primary).frame(maxWidth:.infinity,alignment:.leading)}}}
+                if !diff.semantic {
+                    ScrollView([.horizontal,.vertical]){VStack(alignment:.leading,spacing:14){neutralSource(model.selected["before"],title:L("doc.common.before"));neutralSource(model.selected["after"],title:L("doc.common.after"))}}
+                } else {
+                ScrollView([.horizontal,.vertical]){LazyVStack(alignment:.leading,spacing:1){ForEach(Array(diff.lines.enumerated()),id:\.offset){index,line in NativeDiffSourceLine(prefix:line.prefix,text:line.text,semantic:diff.semantic,markerName:"Reviset.document.diffLine.\(index)")}}}
+                }
             }
             Spacer(minLength:0)
         }.padding(20).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading).background(Color(nsColor:.textBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.document.unifiedDiff"))
+    }
+    private func neutralSource(_ source:JSON,title:String)->some View {
+        VStack(alignment:.leading,spacing:5){Text(title).font(.caption).foregroundStyle(.secondary);if source.isNull {Text(L("doc.inspector.noSource")).font(.caption).foregroundStyle(.secondary)}else if source.string.isEmpty {Text(L("workbook.cell.emptyString")).font(.caption).foregroundStyle(.secondary)}else {Text(verbatim:source.string).font(.system(.body,design:.monospaced)).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)}}
     }
 }
 struct ChangeListView: View {
@@ -328,7 +336,7 @@ struct ChangeListView: View {
             TextField(L("doc.changes.search"),text:$model.search).textFieldStyle(.roundedBorder).frame(maxWidth:250)
         }
     }
-    private var changeCount:some View {HStack{Button{model.stepChange(-1)}label:{Image(systemName:"chevron.up")}.help(L("git.previousChange"));Button{model.stepChange(1)}label:{Image(systemName:"chevron.down")}.help(L("git.nextChange"));if model.loadingChanges{ProgressView().controlSize(.small)};Text(LC("doc.changes.count",model.filteredChanges.count)).font(.caption).foregroundStyle(.secondary)}}
+    private var changeCount:some View {HStack{Button{model.stepChange(-1)}label:{Image(systemName:"chevron.up")}.help(L("git.previousChange")).accessibilityLabel(L("git.previousChange"));Button{model.stepChange(1)}label:{Image(systemName:"chevron.down")}.help(L("git.nextChange")).accessibilityLabel(L("git.nextChange"));if model.loadingChanges{ProgressView().controlSize(.small)};Text(LC("doc.changes.count",model.filteredChanges.count)).font(.caption).foregroundStyle(.secondary)}}
 }
 
 struct ChangeRow: View {

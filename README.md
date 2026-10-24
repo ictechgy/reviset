@@ -94,7 +94,9 @@ Keep the entire output folder together; .NET, Node and production dependencies a
 2. A document version can contain just one PPTX or PDF. Bundling a PPTX with a PDF from the same version is optional.
 3. Start with the latest version and its predecessor, or choose an explicit before/after interval. Switch between two-version differences and intermediate change history. Selecting an event keeps the query interval and opens that event's source pages or cells. Use the version list to inspect an earlier version against its predecessor.
 4. Select a change to inspect source evidence and before/after contents. Continue through long cell text; retry a failed read when needed.
-5. Open **AI & export** to export a fixed report or copy the project's MCP configuration.
+5. Choose **Actions → AI tools and export** to export a fixed report or copy the project's MCP configuration.
+
+Use **View → Extracted text diff** to read bounded `−/+` excerpts, then return to **Original source** for the page or grid. The selected event's source pair can differ from the wider query interval shown above it. **Return to selected change** restores the event after manual source browsing. Appearance, missing observations and uncertain cell associations stay neutral. Formula source and saved values remain separate; formulas are not recalculated.
 
 Try the built-in **Open five-revision synthetic demo** and **Three-version Excel demo**. Document focus mode is `⌘⌥F`; the evidence panel is `⌘⌥I`.
 

@@ -152,6 +152,24 @@ private struct LayoutHarness:View {
                     try require(pdf.document!.index(for:pdf.currentPage!)==1,"PDF page reset: "+label)
                 }
             }
+            // Measure the actual native SwiftUI source row under the same
+            // bidirectional ScrollView that previously wrapped one word per line.
+            let textWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:180),styleMask:[.titled],backing:.buffered,defer:false)
+            textWindow.isReleasedWhenClosed=false
+            textWindow.contentView=NSHostingView(rootView:ScrollView([.horizontal,.vertical]){LazyVStack(alignment:.leading){NativeDiffSourceLine(prefix:" ",text:"Windows native comparison control",semantic:true,markerName:"probe.rawLine")}})
+            textWindow.orderFront(nil);await settle()
+            guard let row=textWindow.contentView.flatMap({workspaceLayoutMarkers(in:$0).first(where:{$0.identifier?.rawValue=="probe.rawLine"})}) else{throw NSError(domain:"ActualSourceRowMissing",code:1)}
+            let expectedWidth=("Windows native comparison control" as NSString).size(withAttributes:[.font:NSFont.monospacedSystemFont(ofSize:NSFont.systemFontSize,weight:.regular)]).width
+            try require(row.bounds.width>=expectedWidth && row.bounds.height<35,"Raw context wrapped into one word per line: \(row.bounds)")
+            let sourceRowEvidence:[String:Any]=["scope":"actual native SwiftUI row in a bidirectional ScrollView; synthetic exact source","text":"Windows native comparison control","source_utf16":Array("Windows native comparison control".utf16).map(Int.init),"width":Double(row.bounds.width),"height":Double(row.bounds.height),"minimum_text_width":Double(expectedWidth),"no_synthetic_newlines":true]
+            if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:sourceRowEvidence,options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("source-row-layout.json"))}
+            textWindow.close()
+            guard let pdf=pdfs.values.first,let nativeWindow=pdf.window,nativeWindow.makeFirstResponder(pdf) else{throw NSError(domain:"PDFKeyboardProbeFocusMissing",code:1)}
+            try require(resignHiddenSourceFirstResponder(in:pdf),"Hidden PDF did not resign keyboard focus")
+            let external=NSTextField(string:"keep focus");nativeWindow.contentView!.addSubview(external);try require(nativeWindow.makeFirstResponder(external),"ExternalEditorCouldNotFocus")
+            let externalResponder=nativeWindow.firstResponder
+            try require(!resignHiddenSourceFirstResponder(in:pdf) && nativeWindow.firstResponder === externalResponder,"Hidden-source guard stole unrelated editor focus")
+            external.removeFromSuperview();nativeWindow.makeFirstResponder(nil)
             var transitions=0
             for preset in WorkspaceLayoutPreset.allCases {layout.apply(preset);await settle();try assertIdentity(preset.rawValue);transitions+=1}
             layout.apply(.balanced);await settle()
@@ -275,16 +293,16 @@ private struct LayoutHarness:View {
             for index in 1...11 {try require(layout.saveCurrent(named:"Layout \(index)"),"Bounded save unexpectedly rejected")}
             try require(layout.saved.count==12 && !layout.saveCurrent(named:"overflow"),"Saved layout cap")
             layout.remove(saved.id);try require(layout.saved.count==11,"Named layout remove")
-            layout.reset();try require(layout.configuration == .preset(.balanced,scope:.document),"Reset default")
+            layout.reset();try require(layout.configuration == .preset(.sourceFirst,scope:.document),"Reset default")
             let before=layout.configuration;layout.update{$0.sidebarWidth = .nan};layout.update{$0.changesWidth=9999};layout.update{$0.pageFraction = .infinity}
             try require(layout.configuration==before,"Nonfinite or out of range mutation accepted")
             let envelope=WorkspaceLayoutPreferences.data(.document)!,raw=try JSONSerialization.jsonObject(with:envelope) as! [String:Any]
             var corrupt=raw;var current=raw["current"] as! [String:Any];current["changesDock"]="floating";corrupt["current"]=current
             WorkspaceLayoutPreferences.save(try JSONSerialization.data(withJSONObject:corrupt),scope:.document)
-            try require(WorkspaceLayoutStore(scope:.document).configuration == .preset(.balanced,scope:.document),"Unknown enum fallback")
+            try require(WorkspaceLayoutStore(scope:.document).configuration == .preset(.sourceFirst,scope:.document),"Unknown enum fallback")
             current["changesDock"]="bottom";current["sidebarWidth"]=99999;corrupt["current"]=current
             WorkspaceLayoutPreferences.save(try JSONSerialization.data(withJSONObject:corrupt),scope:.document)
-            var recoveredBottom=WorkspaceLayoutConfiguration.preset(.balanced,scope:.document);recoveredBottom.changesDock = .bottom
+            var recoveredBottom=WorkspaceLayoutConfiguration.preset(.sourceFirst,scope:.document);recoveredBottom.changesDock = .bottom
             try require(WorkspaceLayoutStore(scope:.document).configuration == recoveredBottom,"Out of range field fallback discarded the valid saved bottom dock")
             current["changesDock"]="left";current["pageFraction"]=0.37;current["sidebarWidth"]=true;corrupt["current"]=current
             var entries=raw["saved"] as! [[String:Any]],first=entries[0],savedConfiguration=first["configuration"] as! [String:Any]
@@ -299,7 +317,7 @@ private struct LayoutHarness:View {
             let recoveredAgain=WorkspaceLayoutStore(scope:.document)
             try require(recoveredAgain.saved==recovered.saved && recoveredAgain.configuration==recovered.configuration,"Recovered named layouts were lost on the next write/reopen")
             WorkspaceLayoutPreferences.save(Data("{broken".utf8),scope:.document)
-            try require(WorkspaceLayoutStore(scope:.document).configuration == .preset(.balanced,scope:.document),"Malformed JSON fallback")
+            try require(WorkspaceLayoutStore(scope:.document).configuration == .preset(.sourceFirst,scope:.document),"Malformed JSON fallback")
             for marker in ["\"2\"","\"1\"","true","false","null","2","0","-1","1.1","1.0","1e0"] {
                 let bytes=Data(("{\"schemaVersion\":"+marker+",\"current\":{},\"saved\":[]}").utf8)
                 WorkspaceLayoutPreferences.save(bytes,scope:.document)
@@ -323,7 +341,7 @@ private struct LayoutHarness:View {
             let oldApp=WorkspaceLayoutStore(scope:.document);oldApp.apply(.focus);_ = oldApp.saveCurrent(named:"session")
             try require(oldApp.persistenceReadOnly && WorkspaceLayoutPreferences.data(.document)==futureData,"Future schema overwritten")
             let book=WorkspaceLayoutStore(scope:.workbook);book.apply(.review)
-            try require(WorkspaceLayoutPreferences.data(.document)==futureData && book.configuration.inspectorVisible && !book.configuration.sidebarVisible && book.configuration.changesDock == .left,"Workspace preferences crossed scopes")
+            try require(WorkspaceLayoutPreferences.data(.document)==futureData && book.configuration.inspectorVisible && !book.configuration.sidebarVisible && book.configuration.changesDock == .bottom,"Workspace preferences crossed scopes")
             print("PASS native customizable layouts: \(transitions) transitions, persistent hosts/PDF ancestry/grid coordinator/draft/page/zoom/manual viewport, hosted disabled/locale, reversible focus, divider/reopen/clamp, named presets/per-field recovery/deep/schema/test isolation")
             fflush(stdout);NSApp.terminate(nil)
         }catch{fputs("Native layout failed: \(error)\n",stderr);exit(1)}

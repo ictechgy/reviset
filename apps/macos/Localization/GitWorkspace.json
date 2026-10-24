@@ -142,5 +142,21 @@
   "git.observed": {
     "en": "Observed",
     "ko": "관측"
+  },
+  "git.invalidObservation": {
+    "en": "Source metadata invalid · no complete diff asserted",
+    "ko": "원문 메타데이터 확인 불가 · 완전한 diff로 단정하지 않음"
+  },
+  "git.requestedOffset": {
+    "en": "Requested UTF-16 offset {0}",
+    "ko": "요청 UTF-16 위치 {0}"
+  },
+  "git.selectedEvent": {
+    "en": "Selected event",
+    "ko": "선택한 변경"
+  },
+  "git.excerptNote": {
+    "en": "Selected change excerpts · not the complete pages. Extracted source line breaks are preserved.",
+    "ko": "선택 변경의 발췌문 · 전체 페이지가 아닙니다. 추출 원문의 줄바꿈을 유지합니다."
   }
 }

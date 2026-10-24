@@ -85,6 +85,7 @@ func canHighlightEvidence(_ evidence:JSON,page:JSON)->Bool {
 }
 
 struct OriginalPDFView: NSViewRepresentable {
+    var keyboardEnabled=true
     let path: String
     let pageNumber: Int
     let zoom: Double
@@ -178,6 +179,7 @@ struct OriginalPDFView: NSViewRepresentable {
         coordinator.resetViewport()
     }
     func updateNSView(_ view: PDFView, context: Context) {
+        if !keyboardEnabled {resignHiddenSourceFirstResponder(in:view)}
         let sourceChanged=context.coordinator.path != path
         let selectionChanged = sourceChanged || context.coordinator.pageNumber != pageNumber || context.coordinator.zoom != zoom
         if selectionChanged { context.coordinator.resetViewport() }
@@ -287,7 +289,7 @@ struct PageColumn: View {
                 else if !failure.isEmpty { ContentUnavailableView(L("doc.tail.page.openFailed"),systemImage:"exclamationmark.triangle",description:Text(failure)) }
                 else if payload.isNull { ProgressView(L("doc.tail.sourcePage.loading")).frame(maxWidth:.infinity,maxHeight:.infinity) }
                 else if payload["source"]["kind"].string == "pdf" {
-                    OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:payloadReady && payload["source"]["origin"].string == "original" ? evidence : JSON(),page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
+                    OriginalPDFView(keyboardEnabled:model.diffMode=="source",path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:payloadReady && payload["source"]["origin"].string == "original" ? evidence : JSON(),page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
                 } else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size,inset:8) {
                     ScrollView([.horizontal,.vertical]) {
                         let scale = model.zoom == 0 ? 1 : model.zoom

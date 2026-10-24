@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {diffWorkbooks, WorkbookRevision} from '../../packages/workbook/diff.js';
 import {boundedWorkbookCell} from '../../packages/workbook/query.js';
@@ -37,7 +37,7 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
       }),
     ];
     const contexts=join(root,'engine-contexts.json');await writeFile(contexts,JSON.stringify(cases));
-    const stdout=execFileSync(executable,[contexts],{encoding:'utf8',timeout:10_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata')}});
+    const stdout=execFileSync(executable,[contexts,resolve("tests/fixtures/native-workbook-observation-cases.json")],{encoding:'utf8',timeout:10_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata')}});
     assert.match(stdout,/PASS native Git diff workspace:/u);
   } finally {await rm(root,{recursive:true,force:true});}
 });

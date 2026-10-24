@@ -31,7 +31,7 @@ internal sealed class ComparePane
     private readonly MainWindow owner;
     private readonly bool after;
     private readonly ComboBox revision = new() { Margin = new Thickness(5), MinWidth = 100, HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly ComboBox page = new() { Margin = new Thickness(5), MinWidth = 100 };
+    private readonly ComboBox page = new() { Margin = new Thickness(5, 3, 5, 1), MinWidth = 100, Height = 28, HorizontalContentAlignment = HorizontalAlignment.Stretch };
     private readonly ComboBox sheet = new() { Margin = new Thickness(5), MinWidth = 100 };
     private readonly TextBlock heading = new() { FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 8, 10, 2) };
     private readonly TextBlock versionCaption = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 3, 6, 3), TextTrimming = TextTrimming.CharacterEllipsis };
@@ -41,9 +41,14 @@ internal sealed class ComparePane
     private readonly TextBlock sheetCaption = new() { Margin = new Thickness(7, 2, 4, 0) };
     private readonly TextBox fallback = MainWindow.SourceText();
     internal readonly DataGrid Cells = new() { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, CanUserDeleteRows = false, CanUserReorderColumns = false, HeadersVisibility = DataGridHeadersVisibility.Column, EnableRowVirtualization = true, EnableColumnVirtualization = true, SelectionMode = DataGridSelectionMode.Single, SelectionUnit = DataGridSelectionUnit.Cell, GridLinesVisibility = DataGridGridLinesVisibility.All, RowHeight = 26, FontFamily = new FontFamily("Consolas, Segoe UI"), BorderThickness = new Thickness(0) };
-    internal readonly Image PageImage = new() { Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top };
+    internal readonly Image PageImage = new() { Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
     internal readonly ScrollViewer PageScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-    private readonly Slider zoom = new() { Minimum = .5, Maximum = 2, Value = 1, Width = 95, Margin = new Thickness(5), ToolTip = "50–200%" };
+    private readonly Slider zoom = new() { Minimum = .1, Maximum = 2, Value = 1, Width = 95, Margin = new Thickness(5), VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock zoomCaption = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
+    private readonly TextBlock zoomPercent = new() { VerticalAlignment = VerticalAlignment.Center, MinWidth = 37 };
+    private readonly Button fitWidth;
+    private bool fittingWidth;
+    private bool applyingFit;
     private readonly TextBox address = new() { Text = "A1", Width = 80, Margin = new Thickness(4), MaxLength = 12 };
     private readonly TextBox rowStart = new() { Text = "1", Width = 65, Margin = new Thickness(4), MaxLength = 7 };
     private readonly TextBox colStart = new() { Text = "1", Width = 55, Margin = new Thickness(4), MaxLength = 5 };
@@ -80,7 +85,7 @@ internal sealed class ComparePane
     internal int SelectedRow => row;
     internal int SelectedColumn => column;
     internal string LocationCaption => owner.IsWorkbook ? ((sheet.SelectedItem as Choice)?.Label ?? owner.Copy["missing"]) + (row > 0 && column > 0 ? "!" + ColumnName(column) + row.ToString(System.Globalization.CultureInfo.InvariantCulture) : " · " + owner.Copy["sheetMetadata"]) : PageId.Length == 0 ? owner.Copy["absentPage"] : owner.Copy["pages"] + " " + ((page.SelectedItem as Choice)?.Value.Get("page").Number() ?? 0);
-    internal double Zoom { get => zoom.Value; set => zoom.Value = value; }
+    internal double Zoom { get => zoom.Value; set { fittingWidth = false; zoom.Value = value; } }
 
     public ComparePane(MainWindow owner, bool after)
     {
@@ -89,7 +94,8 @@ internal sealed class ComparePane
         var dock = new DockPanel(); Host.Child = dock;
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); dock.Children.Add(top);
         var versionRow = new DockPanel(); DockPanel.SetDock(heading, Dock.Left); versionRow.Children.Add(heading); versionRow.Children.Add(versionCaption); top.Children.Add(versionRow);
-        var pageRow = new DockPanel(); var zoomRow = new StackPanel { Orientation = Orientation.Horizontal }; zoom.Width = 70; zoomRow.Children.Add(zoom); DockPanel.SetDock(zoomRow, Dock.Right); pageRow.Children.Add(zoomRow); pageRow.Children.Add(page); docControls.Children.Add(pageRow); top.Children.Add(docControls);
+        var pageLabel = new FrameworkElementFactory(typeof(TextBlock)); pageLabel.SetBinding(TextBlock.TextProperty, new Binding(nameof(Choice.Label)) { Converter = new SingleLinePageLabel() }); pageLabel.SetBinding(FrameworkElement.ToolTipProperty, new Binding(nameof(Choice.Label))); pageLabel.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); pageLabel.SetValue(TextBlock.TextWrappingProperty, TextWrapping.NoWrap); page.ItemTemplate = new DataTemplate { VisualTree = pageLabel }; page.SetBinding(FrameworkElement.ToolTipProperty, new Binding("SelectedItem.Label") { Source = page });
+        docControls.Children.Add(page); var zoomRow = new StackPanel { Orientation = Orientation.Horizontal }; zoomRow.Children.Add(zoomCaption); zoomRow.Children.Add(zoom); zoomRow.Children.Add(zoomPercent); fitWidth = Button("fitWidth", () => { FitPreview(); return Task.CompletedTask; }); zoomRow.Children.Add(fitWidth); docControls.Children.Add(zoomRow); top.Children.Add(docControls);
         workbookControls.Children.Add(sheet);
         var coordinates = new WrapPanel(); var rowLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }; owner.BindText(rowLabel, "row"); coordinates.Children.Add(rowLabel); coordinates.Children.Add(rowStart); var columnLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center }; owner.BindText(columnLabel, "column"); coordinates.Children.Add(columnLabel); coordinates.Children.Add(colStart); coordinates.Children.Add(Button("go", LoadCoordinates));
         var navigationRow = new StackPanel { Orientation = Orientation.Horizontal }; var previous = Arrow("previous", "◀", async () => { row = Math.Max(1, row - 50); await ReloadGrid(); }); var next = Arrow("next", "▶", async () => { row = Math.Min(1_048_527, row + 50); await ReloadGrid(); }); navigationRow.Children.Add(previous); navigationRow.Children.Add(next); address.Width = 65; navigationRow.Children.Add(address); navigationRow.Children.Add(Button("go", GoAddress)); workbookControls.Children.Add(navigationRow); workbookControls.Children.Add(showFormula);
@@ -100,8 +106,9 @@ internal sealed class ComparePane
         revision.SelectionChanged += async (_, _) => { if (binding) return; SetRevisionContents(true); selectionRequest = owner.ReloadComparison(); await owner.Guard(() => selectionRequest); };
         page.SelectionChanged += async (_, _) => { if (!binding && !owner.IsWorkbook) { var request = Load(owner.Generation, owner.ReadToken); owner.SourcePresentationChanged(); await owner.Guard(() => request); owner.SourcePresentationChanged(); } };
         sheet.SelectionChanged += async (_, _) => { if (!binding && owner.IsWorkbook) { evidenceAbsence = ""; requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? ""; Invalidate(); row = 1; column = 1; selectionRequest = owner.ReloadSourceWindow(); await owner.Guard(() => selectionRequest); } };
-        zoom.ValueChanged += (_, _) => { PageImage.LayoutTransform = new ScaleTransform(zoom.Value, zoom.Value); };
+        zoom.ValueChanged += (_, _) => { if (!applyingFit) fittingWidth = false; PageImage.LayoutTransform = new ScaleTransform(zoom.Value, zoom.Value); UpdateZoomCaption(); };
         Host.SizeChanged += (_, _) => ResizePreview();
+        PageScroll.SizeChanged += (_, _) => { if (fittingWidth) ResizePreview(); };
         showFormula.Checked += (_, _) => RenderGrid(); showFormula.Unchecked += (_, _) => RenderGrid();
         Cells.SelectedCellsChanged += async (_, _) =>
         {
@@ -116,7 +123,8 @@ internal sealed class ComparePane
     internal void Localize()
     {
         heading.Text = owner.Copy[after ? "after" : "before"]; pageCaption.Text = owner.Copy["pages"]; sheetCaption.Text = owner.Copy["sheet"]; showFormula.Content = owner.Copy["showFormula"]; sparse.Text = owner.Copy["sparseShort"]; sparse.ToolTip = owner.Copy["sparse"]; address.ToolTip = owner.Copy["address"];
-        versionCaption.Text = (revision.SelectedItem as Choice)?.Label ?? ""; versionCaption.ToolTip = RevisionId; zoom.ToolTip = owner.Copy["zoom"] + " · 50–200%";
+        versionCaption.Text = (revision.SelectedItem as Choice)?.Label ?? ""; versionCaption.ToolTip = RevisionId; zoomCaption.Text = owner.Copy["zoom"]; zoom.ToolTip = owner.Copy["zoom"] + " · 10–200%"; UpdateZoomCaption();
+        AutomationProperties.SetName(zoom, heading.Text + " · " + owner.Copy["zoom"]); AutomationProperties.SetName(fitWidth, heading.Text + " · " + owner.Copy["fitWidth"]);
         AutomationProperties.SetName(Cells, owner.Copy[after ? "after" : "before"] + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(revision, heading.Text + " · " + owner.Copy["label"]); AutomationProperties.SetName(sheet, heading.Text + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(page, heading.Text + " · " + owner.Copy["pages"]); AutomationProperties.SetName(address, heading.Text + " · " + owner.Copy["address"]);
         foreach (var arrow in arrows) { arrow.Button.ToolTip = owner.Copy[arrow.Key]; AutomationProperties.SetName(arrow.Button, heading.Text + " · " + owner.Copy[arrow.Key]); }
         docControls.Visibility = owner.IsWorkbook ? Visibility.Collapsed : Visibility.Visible; workbookControls.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed; sparse.Visibility = owner.IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
@@ -386,7 +394,38 @@ internal sealed class ComparePane
     }
     private void ResizePreview()
     {
-        if (PageImage.Source is BitmapSource bitmap) PageImage.Width = Math.Min(bitmap.PixelWidth, Math.Max(100, Host.ActualWidth - 35));
+        if (PageImage.Source is not BitmapSource bitmap) return;
+        // 100% uses source page points where available. Shrinking every page
+        // to a narrow comparison column made ordinary body text unreadable.
+        // A manual scale therefore survives layout and presentation changes;
+        // fitting to the viewport is an explicit user action.
+        PageImage.Width = PreviewPointWidth(bitmap);
+        if (!fittingWidth) return;
+        var viewport = PageScroll.ViewportWidth > 0 ? PageScroll.ViewportWidth : Math.Max(1, PageScroll.ActualWidth - SystemParameters.VerticalScrollBarWidth);
+        if (viewport <= 1) return;
+        applyingFit = true; zoom.Value = Math.Clamp(viewport / PageImage.Width, zoom.Minimum, zoom.Maximum); applyingFit = false;
+    }
+    private double PreviewPointWidth(BitmapSource bitmap)
+    {
+        if (page.SelectedItem is not Choice selected || selected.Value.Get("width") is not { ValueKind: JsonValueKind.Number } widthValue || !widthValue.TryGetDouble(out var width)) return bitmap.Width;
+        var asset = revisions.Find(value => value.Get("revision_occurrence_id").Text() == RevisionId).Get("assets").Items().FirstOrDefault(value => value.Get("asset_id").Text() == selected.Value.Get("asset_id").Text());
+        var format = asset.Get("format").Text();
+        if (format == "pptx") width /= 12_700; // OOXML EMUs per point.
+        else if (format != "pdf") return bitmap.Width;
+        return double.IsFinite(width) && width > 0 ? width : bitmap.Width;
+    }
+    private void FitPreview() { fittingWidth = true; ResizePreview(); }
+    private void UpdateZoomCaption() => zoomPercent.Text = Math.Round(zoom.Value * 100).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
+    internal void FitPreviewForSmoke() => FitPreview();
+    internal object CheckPreviewReadabilityForSmoke()
+    {
+        if (PageImage.Source is not BitmapSource bitmap || PageImage.Width != PreviewPointWidth(bitmap) || zoomPercent.Text != Math.Round(Zoom * 100).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%" || page.Height != 28 || string.IsNullOrWhiteSpace(zoomCaption.Text) || string.IsNullOrWhiteSpace(fitWidth.Content as string)) throw new InvalidOperationException("The native raster scale, labeled zoom or single-line page chooser is unavailable.");
+        return new { source_point_width = PageImage.Width, native_raster_width = bitmap.Width, displayed_raster_width = PageImage.Width * Zoom, viewport_width = PageScroll.ViewportWidth, zoom_percent = zoomPercent.Text, fit_width = fittingWidth, page_picker_height = page.Height };
+    }
+    private sealed class SingleLinePageLabel : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => value is string text ? text.Replace("\r\n", " ", StringComparison.Ordinal).Replace('\r', ' ').Replace('\n', ' ') : "";
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
     }
     private void RerenderPresentation()
     {

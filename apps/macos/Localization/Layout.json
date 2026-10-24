@@ -8,8 +8,8 @@
     "ko": "보던 위치를 유지하면서 패널 배치 변경"
   },
   "layout.preset.balanced": {
-    "en": "Source First",
-    "ko": "원문 중심"
+    "en": "Balanced",
+    "ko": "균형 배치"
   },
   "layout.preset.focus": {
     "en": "Document Focus",
@@ -150,5 +150,9 @@
   "layout.split.help": {
     "en": "Drag this divider, or press Option-Command-L and use the keyboard-accessible layout controls.",
     "ko": "구분선을 끌거나 Option-Command-L을 눌러 키보드로 화면 배치 설정을 조절하세요."
+  },
+  "layout.preset.sourceFirst": {
+    "en": "Source First",
+    "ko": "원문 중심"
   }
 }

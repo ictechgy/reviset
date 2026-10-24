@@ -27,7 +27,7 @@ internal static class Smoke
             if (fixtures is null) throw new ArgumentException("--fixtures is required for --smoke");
             using var manifest = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(fixtures, "windows-smoke.json")));
             var request = manifest.RootElement;
-            await window.Initialize();
+            window.CheckInitializationGateForSmoke(); checks.Add("native_actions_disabled_until_owned_library_initialization_completes"); await window.Initialize();
             var documents = Rows(request.Get("documents"), fixtures, false); var books = Rows(request.Get("workbook"), fixtures, true);
             var formats = documents.SelectMany(r => r.Paths).Concat(books.SelectMany(r => r.Paths)).Select(p => Path.GetExtension(p).ToLowerInvariant()).Distinct().OrderBy(v => v).ToArray();
             foreach (var extension in new[] { ".pdf", ".pptx", ".xlsx", ".csv", ".ods" }) Require(formats.Contains(extension), "Missing required fixture format " + extension);
@@ -51,7 +51,9 @@ internal static class Smoke
             result["document_revisions"] = window.Report.Get("revisions").Items().Count;
             var documentProject = window.ProjectId; var documentReport = window.ReportId;
             checks.Add("document_create_analyze_staged_commit_fixed_report");
+            await window.CheckRetainedImportRecoveryForSmoke(documents); checks.Add("existing_document_report_new_import_actual_process_cancel_and_postcreate_failure_restore_populated_exact_query_selectors_source_pair_and_next_native_endpoint_action");
             await window.CheckGitWorkflowForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "document-git-" + name + ".png")); }); checks.Add("document_source_first_native_version_log_v1_read_history_query_event_context_bounded_text_diff_focus_and_retained_hosts");
+            result["document_native_preview_scale"] = window.Before.CheckPreviewReadabilityForSmoke(); checks.Add("native_pdf_point_scale_readable_control_labelled_zoom_explicit_fit_and_fixed_height_page_chooser");
             await window.CheckTypedDiffPresentationForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "document-git-" + name + ".png")); }); checks.Add("synthetic_native_document_presentation_controls_neutral_appearance_coverage_topology_null_empty_and_selected_inference_limits_visible_in_sourcefirst_focus_without_report_mutation");
             var revertedFixture = Path.Combine(fixtures, "v3-reverted.pdf"); Require(File.Exists(revertedFixture), "Missing byte-identical reverted PDF fixture.");
             var beforeRevertedLayout = window.Layout;
@@ -114,6 +116,7 @@ internal static class Smoke
             await window.ImportAndAnalyze(request.Get("workbook").Get("title").Text(), books);
             Require(window.ProjectId.StartsWith("wprj_", StringComparison.Ordinal) && window.ReportId.StartsWith("wreport_", StringComparison.Ordinal), "Workbook report was not pinned");
             result["workbook_project_id"] = window.ProjectId; result["workbook_report_id"] = window.ReportId; result["workbook_revisions"] = window.Report.Get("revisions").Items().Count;
+            await window.CheckRetainedImportRecoveryForSmoke(books); checks.Add("existing_workbook_report_new_import_actual_process_cancel_and_postcreate_failure_restore_populated_exact_query_selectors_physical_pair_and_next_native_endpoint_action");
             await window.CheckGitWorkflowForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "workbook-git-" + name + ".png")); }); checks.Add("workbook_source_first_native_version_log_v1_read_history_query_event_context_stored_formula_address_text_diff_focus_and_retained_hosts");
             await window.CheckTypedDiffPresentationForSmoke(async name => { await Tick(window); Screenshot(window, Path.Combine(output, "workbook-git-" + name + ".png")); }); checks.Add("synthetic_native_workbook_presentation_controls_missing_cache_null_observation_and_topology_neutral_exact_formula_diff_independent_of_cache_without_report_mutation");
             checks.Add("workbook_create_analyze_staged_commit_fixed_report"); result["workbook_lost_reply_recovery"] = await window.CheckLostAnalysisReplyForSmoke(); checks.Add("workbook_real_staged_reply_lost_cancel_then_same_session_reanalyze_retires_orphan_preserves_fixed_report"); await window.CheckMissingVersionSheetForSmoke(); checks.Add("explicit_version_change_preserves_missing_sheet_absence_until_native_sheet_selection"); await window.CheckIndependentProjectRefreshForSmoke(); checks.Add("workbook_project_list_refresh_survives_same_workspace_mode_and_source_generation_changes"); await window.CheckModesForSmoke(true); checks.Add("workbook_native_history_includes_temporary_row_net_excludes_and_interval_remains_fixed"); await SaveConfig(window, Path.Combine(output, "workbook-mcp.json")); checks.Add("actual_workbook_mcp_configuration");

@@ -387,7 +387,10 @@ private struct SmokeStructureView: View {
         guard let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView != nil}),let content=window.contentView else{throw BridgeError(code:"GIT_WINDOW",message:"No native source window.")}
         let mounted=pdfs(content),identities=Set(mounted.map(ObjectIdentifier.init))
         let state=mounted.map{($0,$0.document,$0.currentPage,$0.scaleFactor,$0.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero)}
-        model.diffMode="text";try await Task.sleep(nanoseconds:250_000_000);try capture(output.appendingPathComponent("native-git-unified.png"));model.diffMode="source";try await Task.sleep(nanoseconds:250_000_000)
+        guard let focusedPDF=mounted.first,window.makeFirstResponder(focusedPDF) else{throw BridgeError(code:"GIT_SOURCE_FOCUS",message:"Actual PDF host could not take keyboard focus for qualification.")}
+        model.diffMode="text";try await Task.sleep(nanoseconds:250_000_000)
+        if let responder=window.firstResponder as? NSView {guard !mounted.contains(where:{responder === $0 || responder.isDescendant(of:$0)}) else{throw BridgeError(code:"GIT_HIDDEN_SOURCE_FOCUS",message:"Text mode left keyboard focus in an invisible PDF host.")}}
+        try capture(output.appendingPathComponent("native-git-unified.png"));model.diffMode="source";try await Task.sleep(nanoseconds:250_000_000)
         guard !mounted.isEmpty,Set(pdfs(content).map(ObjectIdentifier.init))==identities else{throw BridgeError(code:"GIT_HOST",message:"Text mode recreated PDF hosts.")}
         for (view,document,page,zoom,origin) in state {let now=view.documentView?.enclosingScrollView?.contentView.bounds.origin ?? .zero;guard view.document===document,view.currentPage===page,abs(view.scaleFactor-zoom)<0.001,abs(now.x-origin.x)<1,abs(now.y-origin.y)<1 else{throw BridgeError(code:"GIT_VIEWPORT",message:"Text mode changed source page, zoom or viewport.")}}
         layout.setFocus(true);try await Task.sleep(nanoseconds:200_000_000)
@@ -396,8 +399,9 @@ private struct SmokeStructureView: View {
         try capture(output.appendingPathComponent("native-git-focus.png"));layout.setFocus(false)
         model.selectVersion(0);try await model.updateChanges();guard model.readingSingleVersion,model.changes.isEmpty else{throw BridgeError(code:"GIT_V1_READ",message:"First version did not enter single-source reading.")}
         model.selectVersion(max(0,model.revisions.count-1));try await model.updateChanges();model.tab="compare";try await model.updateChanges()
-        guard model.report["report_id"].string==reportID,try model.report.data()==report else{throw BridgeError(code:"GIT_REPORT_MUTATION",message:"Workspace navigation modified report data.")}
-        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"focus_fixed_report_visible":true,"focus_selected_context_visible":true,"first_version_single_read":true,"fixed_report_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
+        let reread=try await model.bridge.call("view",["project_id":model.projectID,"report_id":reportID])
+        guard model.report["report_id"].string==reportID,try model.report.data()==report,try reread.data()==report else{throw BridgeError(code:"GIT_REPORT_MUTATION",message:"Workspace navigation modified the in-memory or stored fixed report.")}
+        return ["passed":true,"default_predecessor_latest":defaultPair,"source_first_default":true,"query_interval_preserved":true,"query_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"net_text_changes":netText.count,"history_text_changes":historyText.count,"reversion_expected":expectReversion,"native_pdf_hosts_preserved":mounted.count,"text_mode_page_zoom_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"focus_fixed_report_visible":true,"focus_selected_context_visible":true,"first_version_single_read":true,"fixed_report_unchanged":true,"stored_report_reread_unchanged":true,"captures":["native-git-source-first.png","native-git-history.png","native-git-unified.png","native-git-focus.png"],"interaction_scope":"production model actions and actual AppKit/PDFKit hosts; no OS gestures or full VoiceOver claim"]
     }
     static func captureSelectedPages(_ model:AppModel,_ output:URL,selectionReady:()->Bool) async throws->[String:Any] {
         let report=model.report["report_id"].string,mode=model.pageMode,left=model.leftPageID,right=model.rightPageID,started=Date()
@@ -797,6 +801,18 @@ private struct SmokeStructureView: View {
         try await Task.sleep(nanoseconds:350_000_000)
         let windows=NSApp.windows.filter{$0.isVisible && $0.contentView != nil}
         let markers=windows.compactMap(\.contentView).flatMap{workspaceLayoutMarkers(in:$0)}
+        let toolbarRoots=windows.flatMap{window->[NSView] in (window.contentView.map{[$0.superview ?? $0]} ?? []) + (window.toolbar?.items.compactMap(\.view) ?? [])}
+        var seenToolbar=Set<ObjectIdentifier>()
+        let toolbarMarkers=toolbarRoots.flatMap{workspaceLayoutMarkers(in:$0)}.filter{seenToolbar.insert(ObjectIdentifier($0)).inserted}
+        let toolbarNames=Set(["Reviset.document.toolbar.projects","Reviset.document.toolbar.import","Reviset.document.toolbar.actions"])
+        let toolbarControls=toolbarMarkers.filter{toolbarNames.contains($0.identifier?.rawValue ?? "")}
+        let toolbarDisabled=Set(toolbarControls.compactMap{$0.identifier?.rawValue})==toolbarNames && toolbarControls.allSatisfy{!$0.contentEnabled}
+        var toolbarPhysical:[String:[String:Bool]]=[:]
+        for marker in toolbarControls {
+            var ancestor:NSView?=marker,control:NSControl?
+            while let candidate=ancestor {if let native=candidate as? NSControl {control=native;break};ancestor=candidate.superview}
+            toolbarPhysical[marker.identifier!.rawValue]=["found":control != nil,"disabled":control.map{!$0.isEnabled} ?? false]
+        }
         guard let sidebar=markers.first(where:{$0.identifier?.rawValue=="Reviset.document.sidebar"}),let window=sidebar.window else{throw BridgeError(code:"LOCK_DOCUMENT_VIEW",message:"The actual document sidebar is unavailable.")}
         var visited=Set<ObjectIdentifier>(),buttons:[NSAccessibilityProtocol]=[]
         func visit(_ element:NSAccessibilityProtocol) {
@@ -817,10 +833,10 @@ private struct SmokeStructureView: View {
         let localeMatches=imports.allSatisfy{$0.contentLocale.identifier==LanguagePreferences.shared.localizer.locale.identifier}
         let unchanged=try fileDigest(database)==before
         let assetsUnchanged=try assetDigests()==assetsBefore
-        let facts:[String:Any]=["library_lock_denied":!model.libraryAvailable,"initialization_settled":!model.initializing,"sidebar_environment_disabled":!sidebar.contentEnabled,"import_controls_disabled":disabled,"disabled_import_controls":imports.filter{!$0.contentEnabled}.count,"native_plus_import_button_found":nativeButton != nil,"native_plus_import_button_disabled":nativeDisabled,"database_bytes_unchanged":unchanged,"source_assets_unchanged":assetsUnchanged,"hosted_locale":sidebar.contentLocale.identifier,"import_locales_match_scene":localeMatches,"ax_import_identifiers_observed":buttons.count,"observation_scope":"two actual Button-label environment markers and physical top-plus sidebar import NSButton; semantic AX identifiers and OS gestures are not qualified"]
+        let facts:[String:Any]=["library_lock_denied":!model.libraryAvailable,"initialization_settled":!model.initializing,"sidebar_environment_disabled":!sidebar.contentEnabled,"toolbar_controls_disabled":toolbarDisabled,"toolbar_control_environments":toolbarControls.map{["identifier":$0.identifier?.rawValue ?? "","enabled":$0.contentEnabled]},"toolbar_native_control_observations":toolbarPhysical,"import_controls_disabled":disabled,"disabled_import_controls":imports.filter{!$0.contentEnabled}.count,"native_plus_import_button_found":nativeButton != nil,"native_plus_import_button_disabled":nativeDisabled,"database_bytes_unchanged":unchanged,"source_assets_unchanged":assetsUnchanged,"hosted_locale":sidebar.contentLocale.identifier,"import_locales_match_scene":localeMatches,"ax_import_identifiers_observed":buttons.count,"observation_scope":"two actual Button-label environment markers and physical top-plus sidebar import NSButton; semantic AX identifiers and OS gestures are not qualified"]
         try JSON(facts).data().write(to:output.appendingPathComponent("lock-observation.json"))
         try captureView(window,output.appendingPathComponent("native-document-library-locked.png"))
-        guard !model.libraryAvailable,!model.initializing,!sidebar.contentEnabled,disabled,nativeDisabled,localeMatches,unchanged,assetsUnchanged else{throw BridgeError(code:"LOCK_DOCUMENT_CONTROLS",message:"The locked document controls, hosted environment or immutable library bytes failed validation; see lock-observation.json.")}
+        guard !model.libraryAvailable,!model.initializing,!sidebar.contentEnabled,toolbarDisabled,disabled,nativeDisabled,localeMatches,unchanged,assetsUnchanged else{throw BridgeError(code:"LOCK_DOCUMENT_CONTROLS",message:"The locked document controls, hosted environment or immutable library bytes failed validation; see lock-observation.json.")}
         try JSON(["completed":true,"checks":facts,"smoke_invocation_id":request["smoke_invocation_id"].string,"interaction_scope":"actual second app process, two production Button-label environments and physical top-plus sidebar import NSButton; no OS AX/gesture or VoiceOver automation"]).data().write(to:output.appendingPathComponent("validation.json"))
     }
     static func captureView(_ window:NSWindow,_ url:URL) throws {

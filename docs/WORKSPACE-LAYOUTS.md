@@ -17,6 +17,8 @@ Settings are versioned and size-limited. Unsupported positions and invalid dimen
 
 The fixed report and query controls stay available in Focus. The comparison interval belongs to the change list; source headers identify the selected event's actual versions/pages/cells. Selecting an intermediate event keeps the wider query interval. Previous/next change actions stay in the same list. A text-diff view provides bounded before/after snippets with `−/+` markers while retaining the native source hosts; appearance observations and unavailable content use neutral labels rather than semantic deletion markers. Detailed source evidence remains available separately.
 
+The version-history menu opens a version against its predecessor. Selecting the first version opens a single source. The query's **Two-version diff** compares the interval's endpoints; **Intermediate history** includes changes between them. Content that changed and later reverted can therefore have no endpoint difference and still have an intermediate history. Manual page, sheet or cell browsing does not turn an unrelated source pair into the selected event's text edit; use **Return to selected change** to restore that pair.
+
 On Windows, a visible project panel remains accessible in narrow windows. Hide it explicitly from Layout or choose Document Focus to give the source more room. The change-mode selector switches between net changes and intermediate history while preserving the selected version interval.
 
 ## Reading wide or long sources

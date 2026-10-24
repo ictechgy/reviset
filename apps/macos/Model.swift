@@ -109,6 +109,7 @@ struct ReorderConfirmation:Identifiable {
     private var mcpGeneration = 0
     private var mcpProjectID = ""
     private var pendingRange: (key: String, generation: Int, task: Task<[JSON], Error>)?
+    private var rejectedEventScope:(project:String,report:String,from:Int,to:Int)?
     private var pageNavigation: (report:String, from:Int, to:Int, left:String, right:String)?
     init() {
         let resources = Bundle.main.resourceURL!
@@ -201,7 +202,7 @@ struct ReorderConfirmation:Identifiable {
             generation=pending.generation;task=pending.task
         } else {
             pendingRange?.task.cancel()
-            rangeGeneration += 1;generation=rangeGeneration;loadingChanges=true;changesFailure="";changes=[];selectedChangeID=nil
+            rangeGeneration += 1;generation=rangeGeneration;rejectedEventScope=nil;evidenceWarning="";loadingChanges=true;changesFailure="";changes=[];selectedChangeID=nil
             task=Task { try await self.bridge.call("changes",["project_id":project,"report_id":reportID,"from":before,"to":after,"mode":mode]).array }
             pendingRange=(key,generation,task)
         }
@@ -230,7 +231,8 @@ struct ReorderConfirmation:Identifiable {
             return
         }
         guard !selected.isNull else {
-            if selectedChangeID==nil && !evidenceWarning.isEmpty {return}
+            if let rejected=rejectedEventScope,selectedChangeID==nil,rejected.project==projectID,rejected.report==report["report_id"].string,rejected.from==from,rejected.to==to {return}
+            rejectedEventScope=nil
             evidenceWarning=""
             leftPageID=normalizedPage(leftPageID,in:revision(a))
             rightPageID=normalizedPage(rightPageID,in:revision(b))
@@ -272,10 +274,10 @@ struct ReorderConfirmation:Identifiable {
         guard !loadingChanges, changes.contains(where:{$0["change_id"].string==id}) else{return}
         if tab=="history",let change=changes.first(where:{$0["change_id"].string==id}) {
             guard let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["from_occurrence"].string}),let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["to_occurrence"].string}),a<b,a>=from,b<=to else {
-                selectedChangeID=nil;pageNavigation=nil;leftPageID="";rightPageID="";evidenceWarningMessage=UIMessage("doc.evidence.selectionUnavailable");return
+                selectedChangeID=nil;pageNavigation=nil;leftPageID="";rightPageID="";rejectedEventScope=(projectID,report["report_id"].string,from,to);evidenceWarningMessage=UIMessage("doc.evidence.selectionUnavailable");return
             }
         }
-        evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence()
+        rejectedEventScope=nil;evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence()
     }
     func stepChange(_ offset:Int) {
         let rows=filteredChanges
@@ -661,7 +663,7 @@ func unifiedTextDiff(before:String,after:String,semantic:Bool)->UnifiedTextDiff 
     guard before.utf16.count<=4096,after.utf16.count<=4096 else{return UnifiedTextDiff(lines:[],bounded:false,semantic:false)}
     let old=before.components(separatedBy:"\n"),new=after.components(separatedBy:"\n")
     guard old.count<=128,new.count<=128 else{return UnifiedTextDiff(lines:[],bounded:false,semantic:false)}
-    guard semantic else{return UnifiedTextDiff(lines:old.map{UnifiedTextDiffLine(prefix:"",text:$0)}+[UnifiedTextDiffLine(prefix:"",text:"→")]+new.map{UnifiedTextDiffLine(prefix:"",text:$0)},bounded:true,semantic:false)}
+    guard semantic else{return UnifiedTextDiff(lines:old.map{UnifiedTextDiffLine(prefix:"",text:$0)}+new.map{UnifiedTextDiffLine(prefix:"",text:$0)},bounded:true,semantic:false)}
     let difference=new.difference(from:old,by:{$0.utf16.elementsEqual($1.utf16)})
     let removed=Set(difference.compactMap{entry->Int? in if case let .remove(offset,_,_)=entry{return offset};return nil})
     let added=Set(difference.compactMap{entry->Int? in if case let .insert(offset,_,_)=entry{return offset};return nil})
