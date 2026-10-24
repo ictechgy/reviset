@@ -204,7 +204,7 @@ internal static class SourceDiff
             else if (x < a.Length && (y == b.Length || table[x + 1, y] >= table[x, y + 1])) result.Add(a[x++] with { Prefix = '-' });
             else result.Add(b[y++] with { Prefix = '+' });
         }
-        return new(result, truncated, false, string.Concat(a.Select(line => line.Terminator)) != string.Concat(b.Select(line => line.Terminator)));
+        return new(result, truncated, false, !a.Select(line => line.Terminator).SequenceEqual(b.Select(line => line.Terminator)));
     }
     internal static (int Before, int After) PreviousToSelected(int selected, int count)
     {

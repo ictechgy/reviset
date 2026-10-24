@@ -1129,6 +1129,12 @@ internal sealed class MainWindow : Window
             Install(J(new { kind = "text_modified", before = (string?)null, after = "" }));
             if (Colored() || !Text().Contains(Copy["observationNull"], StringComparison.Ordinal) || !Text().Contains(Copy["observationEmpty"], StringComparison.Ordinal)) throw new InvalidOperationException("Native text view collapsed null observation into explicit empty/deletion.");
             Install(J(new { kind = "text_modified", before = "SYNTHETIC same\r\n", after = "SYNTHETIC same\n" })); if (!Colored() || !Text().Contains("⟦CRLF⟧", StringComparison.Ordinal) || !Text().Contains("⟦LF⟧", StringComparison.Ordinal)) throw new InvalidOperationException("Terminator-only source edit lost its exact CRLF/LF presentation."); await capture("synthetic-newline-only-diff");
+            foreach (var pair in new[] { ("a\rb\n", "a\r\nb"), ("a\r\nb", "a\rb\n") })
+            {
+                Install(J(new { kind = "text_modified", before = pair.Item1, after = pair.Item2 }));
+                if (!Colored() || new[] { "⟦CR⟧", "⟦LF⟧", "⟦CRLF⟧", "⟦EOF⟧" }.Any(marker => !Text().Contains(marker, StringComparison.Ordinal))) throw new InvalidOperationException("Native text view conflated distinct per-line terminators with the same concatenated characters.");
+            }
+            await capture("synthetic-newline-boundary-collision");
             foreach (var source in new[] { "SYNTHETIC boundary\r\n" + new string('x', SourceDiff.CharacterLimit + 20), string.Concat(Enumerable.Repeat("SYNTHETIC line\r\n", SourceDiff.LineLimit + 1)) })
             {
                 var after = source.Length > SourceDiff.CharacterLimit ? source.Insert(SourceDiff.CharacterLimit - 4, "inserted near cut boundary\r\n") : "inserted near beginning\n" + source; Install(J(new { kind = "text_modified", before = source, after })); RerenderInspector();
