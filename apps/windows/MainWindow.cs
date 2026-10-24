@@ -39,7 +39,7 @@ internal sealed class MainWindow : Window
     private readonly Grid comparison = new();
     private readonly DockPanel sourceStage = new();
     private readonly RichTextBox unified = new() { IsReadOnly = true, BorderThickness = new Thickness(0), FontFamily = new FontFamily("Consolas, Segoe UI"), FontSize = 13, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, Visibility = Visibility.Collapsed };
-    private readonly TextBlock sourceNotice = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(10, 3, 10, 4), Foreground = Brushes.DimGray, FontSize = 12 };
+    private readonly TextBlock sourceNotice = new() { TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = 16, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, MaxHeight = 48, ClipToBounds = true, Margin = new Thickness(10, 3, 10, 4), Foreground = Brushes.DimGray, FontSize = 12 };
     private Button selectedLimitsButton = new();
     private readonly ComboBox sourceView = new() { Width = 155, Margin = new Thickness(4, 2, 4, 2) };
     private readonly StackPanel rawTextPaging = new() { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed };
@@ -536,7 +536,11 @@ internal sealed class MainWindow : Window
     private string SelectedNoticeText((string Key, string Value) notice) => Copy[notice.Key] + ": " + (notice.Value is "inferred" or "observed" or "human_confirmed" or "needs_review" ? Copy["assessment_" + notice.Value] : notice.Value);
     private Window CreateReportDetailsDialog()
     {
-        var fixedReport = reportId; var content = new DockPanel { Margin = new Thickness(16) }; var top = new StackPanel(); top.Children.Add(new TextBlock { Text = currentProject.Get("title").Text(), FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap }); top.Children.Add(new TextBlock { Text = Copy["report"] + " · " + (reports.SelectedItem as Choice)?.Value.Get("created_at").Text(), Margin = new Thickness(0, 10, 0, 4) }); var identity = SourceText(); identity.Text = fixedReport; identity.MinHeight = 48; top.Children.Add(identity); var copy = new Button { Content = Copy["copyReportId"], HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(10, 5, 10, 5), Margin = new Thickness(0, 2, 0, 12) }; copy.Click += (_, _) => Clipboard.SetText(fixedReport); top.Children.Add(copy); top.Children.Add(new TextBlock { Text = Copy["mcpReportScope"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) }); top.Children.Add(new TextBlock { Text = Copy["reportCoverage"] + ": " + currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count), FontWeight = FontWeights.SemiBold }); DockPanel.SetDock(top, Dock.Top); content.Children.Add(top); var limits = SourceText(); limits.Text = currentReport.Get("coverage_gaps").Pretty(); content.Children.Add(limits);
+        var fixedReport = reportId; var content = new DockPanel { Margin = new Thickness(16) }; var top = new StackPanel(); top.Children.Add(new TextBlock { Text = currentProject.Get("title").Text(), FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap }); top.Children.Add(new TextBlock { Text = Copy["report"] + " · " + (reports.SelectedItem as Choice)?.Value.Get("created_at").Text(), Margin = new Thickness(0, 10, 0, 4) }); var identity = SourceText(); identity.Text = fixedReport; identity.MinHeight = 48; top.Children.Add(identity); var copy = new Button { Content = Copy["copyReportId"], HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(10, 5, 10, 5), Margin = new Thickness(0, 2, 0, 12) }; copy.Click += (_, _) => Clipboard.SetText(fixedReport); top.Children.Add(copy); top.Children.Add(new TextBlock { Text = Copy["mcpReportScope"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        var shown = currentReport.Get("coverage_gaps").Items().Count; var total = currentReport.Get("coverage_gap_count").Number(shown);
+        top.Children.Add(new TextBlock { Name = "CoverageProjectionCount", Text = string.Format(CultureInfo.CurrentCulture, Copy["coverageShown"], shown, total), TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold });
+        if (shown < total || currentReport.Get("coverage_truncated").Flag()) top.Children.Add(new TextBlock { Name = "CoverageExportPath", Text = Copy["coverageExportPath"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 8) });
+        DockPanel.SetDock(top, Dock.Top); content.Children.Add(top); var limits = SourceText(); limits.Text = currentReport.Get("coverage_gaps").Pretty(); content.Children.Add(limits);
         return new Window { Owner = this, Title = Copy["reportDetails"], Width = 720, Height = 530, MinWidth = 430, MinHeight = 320, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = content };
     }
     private Window CreateSelectedLimitsDialog()
@@ -547,6 +551,12 @@ internal sealed class MainWindow : Window
     }
     private void RenderSourceDiff()
     {
+        // A single occurrence is source reading, regardless of the previous
+        // presentation. Keep renderer, native picker and pager in one state.
+        if (singleSource) textView = false;
+        var wasBinding = binding; binding = true; sourceView.SelectedIndex = textView ? 1 : 0; binding = wasBinding;
+        sourceView.IsEnabled = !busy && !initializing && !singleSource;
+        sourceView.ToolTip = singleSource ? Copy["singleSourceView"] : Copy["sourceView"];
         // Hidden retains the native visual hosts' measured viewport while the
         // text layer is visible; neither the hosts nor source selections rebuild.
         comparison.Visibility = textView ? Visibility.Hidden : Visibility.Visible; unified.Visibility = textView ? Visibility.Visible : Visibility.Collapsed;
@@ -558,8 +568,8 @@ internal sealed class MainWindow : Window
         var kind = selectedChange.Get("kind").Text(); if (kind == "row_correspondence") notice.Add(Copy["inferredRows"]);
         if (kind is "text_occluded" or "text_revealed" or "text_struck_through" or "coverage_gap") notice.Add(Copy["appearanceOnly"]);
         var selectedNotices = SourceDiffPolicy.SelectedNotices(selectedChange); var selectedGaps = selectedNotices.Where(item => item.Key is "selectedCoverage" or "lineageReason").ToArray();
-        foreach (var selectedNotice in selectedNotices.Where(item => item.Key is not ("selectedCoverage" or "lineageReason"))) notice.Add(SelectedNoticeText(selectedNotice));
-        if (selectedGaps.Length > 0) { var first = selectedGaps[0].Value; if (selectedGaps[0].Key == "lineageReason") { var key = "reason_" + first; if (Copy[key] != key) first = Copy[key]; } if (first.Length > 220) first = first[..(char.IsHighSurrogate(first[219]) ? 219 : 220)] + "…"; notice.Add(Copy[selectedGaps[0].Key] + ": " + first + (selectedGaps.Length > 1 ? " [1/" + selectedGaps.Length + "]" : "")); }
+        foreach (var selectedNotice in selectedNotices.Where(item => item.Key is not ("selectedCoverage" or "lineageReason"))) notice.Add(SelectedNoticeText((selectedNotice.Key, SourceDiff.NoticeSummary(selectedNotice.Value, 160))));
+        if (selectedGaps.Length > 0) { var first = selectedGaps[0].Value; if (selectedGaps[0].Key == "lineageReason") { var key = "reason_" + first; if (Copy[key] != key) first = Copy[key]; } first = SourceDiff.NoticeSummary(first, 160); notice.Add(Copy[selectedGaps[0].Key] + ": " + first + (selectedGaps.Length > 1 ? " [1/" + selectedGaps.Length + "]" : "")); }
         selectedLimitsButton.Visibility = selectedGaps.Length > 0 ? Visibility.Visible : Visibility.Collapsed; selectedLimitsButton.IsEnabled = !busy;
         if (currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count) > 0) notice.Add((Copy["reportCoverage"] + ": " + currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count)).Replace(' ', '\u00a0'));
         sourceNotice.Text = string.Join(" · ", notice); sourceNotice.ToolTip = string.Join("\n", selectedNotices.Select(SelectedNoticeText)); AutomationProperties.SetHelpText(sourceNotice, sourceNotice.ToolTip.ToString()); sourceNotice.Visibility = notice.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -853,7 +863,18 @@ internal sealed class MainWindow : Window
             var preview = JsonSerializer.SerializeToElement(Before.CheckPreviewReadabilityForSmoke()); var zoom = Before.Zoom; if (preview.Get("source_point_width").Number() != 720 || preview.Get("displayed_raster_width").Number() < 600 || preview.Get("page_picker_height").Number() != 28) throw new InvalidOperationException("The known720-point PDF source was shrunk below its readable default or its chooser geometry diverged."); Before.FitPreviewForSmoke(); await Settle(); var fitted = JsonSerializer.SerializeToElement(Before.CheckPreviewReadabilityForSmoke()); if (!fitted.Get("fit_width").Flag() || !fitted.Get("displayed_raster_width").TryGetDouble(out var width) || !fitted.Get("viewport_width").TryGetDouble(out var viewport) || width > viewport + 1) throw new InvalidOperationException("Explicit native Fit width did not fit the retained original page."); Before.Zoom = zoom; await Settle();
         }
         await capture("source-first");
-        await SelectLogVersion(0); await Settle(); if (!singleSource || ComparisonState != "ready" || After.ReadState != "ready" || comparison.Children.Contains(Before.Host) || !comparison.Children.Contains(After.Host) || intervalFrom != intervalTo || reportId != fixedReport) throw new InvalidOperationException("The first version is not a ready, readable single-source within its fixed report."); await capture("first-version-read");
+        void AssertSingleSource(string occurrence)
+        {
+            if (!singleSource || ComparisonState != "ready" || After.ReadState != "ready" || !comparison.IsVisible || unified.Visibility != Visibility.Collapsed || textView || sourceView.SelectedIndex != 0 || sourceView.IsEnabled || rawTextPaging.Visibility != Visibility.Collapsed || comparison.Children.Contains(Before.Host) || !comparison.Children.Contains(After.Host) || intervalFrom != occurrence || intervalTo != occurrence || After.RevisionId != occurrence || reportId != fixedReport || !ReferenceEquals(hostB, After.Host)) throw new InvalidOperationException("Single-source reading retained a text overlay, inconsistent picker/pager, foreign scope or replaced native host.");
+            if (IsWorkbook) { if (!After.Cells.IsVisible || After.Cells.Items.Count != 50 || After.GridScroll is not { ViewportHeight: >= 5 } || After.Cells.ActualHeight < 150) throw new InvalidOperationException("Single workbook source does not expose a useful native grid with at least five rows."); }
+            else if (!After.PageImage.IsVisible || After.PageImage.Source is null || After.PageScroll.ActualHeight < 150) throw new InvalidOperationException("Single PDF source did not expose its verified native image with a useful viewport.");
+        }
+        sourceView.SelectedIndex = 1; await Settle(); if (!unified.IsVisible || !textView) throw new InvalidOperationException("Version-log regression must begin in the actual Text diff presentation.");
+        await SelectLogVersion(0); await Settle(); AssertSingleSource(revisions[0].Get("revision_occurrence_id").Text());
+        sourceView.SelectedIndex = 1; await Settle(); AssertSingleSource(revisions[0].Get("revision_occurrence_id").Text()); await capture("first-version-read-from-text");
+        await SelectLogVersion(revisions.Count - 1); sourceView.SelectedIndex = 1; await Settle(); if (!unified.IsVisible || !textView) throw new InvalidOperationException("Equal-endpoint regression must begin in the actual Text diff presentation.");
+        var sameOccurrence = intervalFrom; queryAfter.SelectedItem = queryAfter.Items.OfType<Choice>().Single(item => item.Id == sameOccurrence); await endpointRequest; await Settle(); AssertSingleSource(sameOccurrence);
+        sourceView.SelectedIndex = 1; await Settle(); AssertSingleSource(sameOccurrence); await capture("equal-endpoints-read-from-text");
         // The real query selectors remain independent of the event source pair.
         await SelectSourcePairForSmoke(0, revisions.Count - 1); comparisonMode.SelectedIndex = 0; await modeRequest; await CheckIntermediateEventForSmoke(); await Settle();
         var representative = changes.FirstOrDefault(item => item.Value.Get("kind").Text() == (IsWorkbook ? "stored_value" : "text_modified") && item.Value.Get(IsWorkbook ? "from_revision_occurrence_id" : "from_occurrence").Text() == revisions[0].Get("revision_occurrence_id").Text() && item.Value.Get(IsWorkbook ? "to_revision_occurrence_id" : "to_occurrence").Text() == revisions[1].Get("revision_occurrence_id").Text()); if (representative is not null) await SelectChange(representative.Value); await Settle();
@@ -976,6 +997,49 @@ internal sealed class MainWindow : Window
         }
         if (reportId != fixedReport || currentReport.GetRawText() != reportBytes) throw new InvalidOperationException("Presentation-only controls changed the fixed report.");
         selectedChange = default; sourceView.SelectedIndex = previousView ? 1 : 0; SetLayout(layout); await SelectSourcePairForSmoke(0, currentReport.Get("revisions").Items().Count - 1); await CheckIntermediateEventForSmoke();
+    }
+    internal async Task CheckNoticeGeometryForSmoke(Func<string, Task> capture, Func<string, object, Task> observe)
+    {
+        // Legal near-limit input in synthetic presentation controls, not an
+        // engine OCR/correspondence claim. Canonical report bytes stay untouched.
+        var fixedReport = reportId; var report = currentReport; var reportBytes = report.GetRawText(); var layout = Layout; var language = Copy.Language; var priorText = textView;
+        var previousChange = selectedChange; var previousBefore = selectedBefore; var previousAfter = selectedAfter; var beforeSource = Before.CaptureSelection(); var afterSource = After.CaptureSelection(); var oldWidth = Width; var oldHeight = Height;
+        var reason = string.Concat(Enumerable.Repeat("x\n", 999));
+        async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        void Reason(string value) { selectedChange = JsonSerializer.SerializeToElement(new { kind = "page_lineage_changed", lineage = new { status = "human_confirmed", reasons = new[] { value } } }); selectedBefore = Before.CaptureSelection(); selectedAfter = After.CaptureSelection(); RenderSourceDiff(); }
+        object Geometry() => new { width = ActualWidth, height = ActualHeight, context_height = sourceNotice.ActualHeight, source_height = comparison.ActualHeight, before_height = Before.Host.ActualHeight, after_height = After.Host.ActualHeight, before_grid_height = Before.Cells.ActualHeight, after_grid_height = After.Cells.ActualHeight, before_grid_rows = Before.GridScroll?.ViewportHeight, after_grid_rows = After.GridScroll?.ViewportHeight };
+        try
+        {
+            Width = 1024; Height = 768; sourceView.SelectedIndex = 0;
+            foreach (var preset in new[] { "sourceFirst", "focus" })
+            {
+                SetLayout(WorkspaceLayout.Preset(preset));
+                foreach (var locale in new[] { "en", "ko" })
+                {
+                    SetLanguage(locale); Reason("short human correspondence reason"); await Settle(); var shortGeometry = Geometry(); var shortHeight = comparison.ActualHeight;
+                    Reason(reason); await Settle(); var longGeometry = Geometry();
+                    await observe("synthetic-multiline-reason-" + preset + "-" + locale, new { provenance = "synthetic legal 1998 UTF16 reason in production WPF presentation; not engine evidence", reason_utf16_length = reason.Length, short_reason = shortGeometry, multiline_reason = longGeometry });
+                    await capture("synthetic-multiline-reason-" + preset + "-" + locale);
+                    if (!sourceNotice.IsVisible || !sourceNotice.ClipToBounds || sourceNotice.ActualHeight > 49 || sourceNotice.Text.Contains('\n') || sourceNotice.Text.Contains('\r') || !sourceNotice.Text.Contains(Copy["assessment_human_confirmed"], StringComparison.Ordinal) || !selectedLimitsButton.IsVisible || !selectedLimitsButton.IsEnabled || comparison.ActualHeight < Math.Max(200, shortHeight - 33) || InspectorPane.IsVisible) throw new InvalidOperationException("A valid multiline reason consumed source height, overflowed the bounded context, or hid uncertainty/details in " + preset + "/" + locale);
+                    if (IsWorkbook && (Before.GridScroll is not { ViewportHeight: >= 5 } || After.GridScroll is not { ViewportHeight: >= 5 } || Before.Cells.ActualHeight < 150 || After.Cells.ActualHeight < 150)) throw new InvalidOperationException("Multiline reason left fewer than five visible native workbook source rows.");
+                    var dialog = CreateSelectedLimitsDialog(); var fullText = ((DockPanel)dialog.Content).Children.OfType<TextBox>().Single();
+                    if (!fullText.IsReadOnly || fullText.VerticalScrollBarVisibility != ScrollBarVisibility.Auto || !fullText.Text.Contains(reason, StringComparison.Ordinal) || SourceDiffPolicy.SelectedNotices(selectedChange).Single(item => item.Key == "lineageReason").Value != reason) throw new InvalidOperationException("The full exact multiline correspondence reason was not retained in native scrolling details.");
+                    dialog.Close();
+                }
+            }
+            // Explicitly qualify the bounded report dialog with a synthetic
+            // projection. Full exports use the unchanged fixed-report action.
+            var projection = report.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value);
+            projection["coverage_gaps"] = new[] { new { feature = "synthetic", reason = "SYNTHETIC shown gap one" }, new { feature = "synthetic", reason = "SYNTHETIC shown gap two" } }; projection["coverage_gap_count"] = 9; projection["coverage_truncated"] = true;
+            foreach (var locale in new[] { "en", "ko" })
+            {
+                SetLanguage(locale); currentReport = JsonSerializer.SerializeToElement(projection); var dialog = CreateReportDetailsDialog(); var panel = ((DockPanel)dialog.Content).Children.OfType<StackPanel>().Single();
+                if (panel.Children.OfType<TextBlock>().Single(block => block.Name == "CoverageProjectionCount").Text != string.Format(CultureInfo.CurrentCulture, Copy["coverageShown"], 2, 9) || panel.Children.OfType<TextBlock>().Single(block => block.Name == "CoverageExportPath").Text != Copy["coverageExportPath"] || !actionItems["export"].IsEnabled) throw new InvalidOperationException("The bounded report dialog did not disclose shown/total coverage and a reachable complete-export path in " + locale);
+                dialog.Close(); currentReport = report;
+            }
+        }
+        finally { currentReport = report; selectedChange = previousChange; selectedBefore = previousBefore; selectedAfter = previousAfter; Width = oldWidth; Height = oldHeight; SetLanguage(language); SetLayout(layout); sourceView.SelectedIndex = priorText ? 1 : 0; RenderSourceDiff(); await Settle(); }
+        if (reportId != fixedReport || currentReport.GetRawText() != reportBytes || Before.CaptureSelection() != beforeSource || After.CaptureSelection() != afterSource) throw new InvalidOperationException("Synthetic notice/report projection controls altered fixed report bytes or actual source selections.");
     }
     internal async Task SelectCell(ComparePane pane, int row, int column)
     {

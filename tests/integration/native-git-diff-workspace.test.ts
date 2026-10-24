@@ -1,7 +1,7 @@
-import {nativeLocalizationTestSources, prepareLegacyNativeLocalization} from '../../scripts/native-swift-sources.js';
+import {nativeSwiftSources, prepareLegacyNativeLocalization} from '../../scripts/native-swift-sources.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, rm, writeFile, readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -13,7 +13,7 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
   try {
     await prepareLegacyNativeLocalization(root);
     const executable=join(root,'probe');
-    execFileSync('swiftc', ['-warnings-as-errors','-swift-version','5','-parse-as-library','-target','arm64-apple-macos14.0',...nativeLocalizationTestSources,'apps/macos/Bridge.swift','apps/macos/Model.swift','apps/macos/WorkbookView.swift','tests/native/GitDiffWorkspace.swift','-o',executable,'-framework','SwiftUI','-framework','AppKit'], {timeout:45_000,stdio:'pipe'});
+    execFileSync('swiftc', ['-warnings-as-errors','-swift-version','5','-parse-as-library','-target','arm64-apple-macos14.0',...nativeSwiftSources.filter(source=>source!=='apps/macos/App.swift'),'tests/native/LocalizationTestSupport.swift','tests/native/GitDiffWorkspace.swift','-o',executable,'-framework','SwiftUI','-framework','AppKit'], {timeout:45_000,stdio:'pipe'});
     const revision=(id:string,format:'xlsx'|'ods',value:string,formula:string,withDate=false,keyed=true)=>WorkbookRevision.parse({
       revision_occurrence_id:id,label:id,index:id==='before'?0:1,asset_id:'sha256:'+'a'.repeat(64),format,date_system:format==='ods'?'iso8601':'1900',calc_flags:{},coverage_gaps:[],calculation:'stored_values_only_no_recalculation',
       sheets:[{sheet_id:id+'_sheet',name:'Sheet',index:0,hidden:false,row_count:1,column_count:2,merges:[],coverage_gaps:[],source_ref:id,row_metadata:[],column_metadata:[],cell_extraction_complete:true,cells:[
@@ -39,5 +39,11 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
     const contexts=join(root,'engine-contexts.json');await writeFile(contexts,JSON.stringify(cases));
     const stdout=execFileSync(executable,[contexts,resolve("tests/fixtures/native-workbook-observation-cases.json")],{encoding:'utf8',timeout:10_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata')}});
     assert.match(stdout,/PASS native Git diff workspace:/u);
+    const contextEvidence=await readFile(join(root,'userdata','context-geometry.json'),'utf8');
+    const context=JSON.parse(contextEvidence) as {summary_height:number;source_height:number;reason_utf16_count:number;full_reader_utf16:number[];expected_utf16:number[];reader_height:number;reader_viewport_height:number};
+    assert.ok(context.summary_height>=46 && context.summary_height<=140 && context.source_height>400);
+    assert.equal(context.reason_utf16_count,1998);assert.deepEqual(context.full_reader_utf16,context.expected_utf16);
+    assert.ok(context.reader_height>context.reader_viewport_height);
+    if(process.env.DOCVER_TEST_CONTEXT_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_CONTEXT_EVIDENCE_OUT,contextEvidence);
   } finally {await rm(root,{recursive:true,force:true});}
 });

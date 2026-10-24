@@ -461,3 +461,35 @@ struct NativeDiffSourceLine:View {
         HStack(alignment:.top,spacing:8){Text(prefix).frame(width:18);Text(verbatim:text).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)}.font(.system(.body,design:.monospaced)).foregroundStyle(foreground).frame(maxWidth:.infinity,alignment:.leading).background {if let markerName {WorkspaceLayoutMarker(name:markerName)}}
     }
 }
+
+// Persistent context is a summary, not an unbounded raw-text canvas. The full
+// exact reason remains available in the independent scrolling native reader.
+struct NativeContextSummaryLine:View {
+    let text:String
+    let symbol:String
+    let warning:Bool
+    var body:some View {
+        HStack(alignment:.center,spacing:5){Image(systemName:symbol);Text(verbatim:text).lineLimit(1).truncationMode(.tail).frame(maxWidth:.infinity,alignment:.leading)}
+            .font(.caption2).foregroundStyle(warning ? Color.orange:Color.secondary)
+            .frame(height:16,alignment:.leading).clipped().accessibilityElement(children:.ignore).accessibilityLabel(text)
+    }
+}
+struct NativeVerbatimReasonReader:NSViewRepresentable {
+    let text:String
+    func makeNSView(context:Context)->NSScrollView {
+        let scroll=NSScrollView();scroll.hasVerticalScroller=true;scroll.autohidesScrollers=false;scroll.borderType = .bezelBorder
+        let reader=NSTextView(frame:scroll.contentView.bounds)
+        reader.isEditable=false;reader.isSelectable=true;reader.isRichText=false
+        reader.font = .monospacedSystemFont(ofSize:NSFont.smallSystemFontSize,weight:.regular)
+        reader.textContainerInset=NSSize(width:8,height:8)
+        reader.isVerticallyResizable=true;reader.isHorizontallyResizable=false;reader.autoresizingMask = [.width]
+        reader.minSize = .zero;reader.maxSize=NSSize(width:CGFloat.greatestFiniteMagnitude,height:CGFloat.greatestFiniteMagnitude)
+        reader.textContainer?.widthTracksTextView=true;reader.textContainer?.containerSize=NSSize(width:scroll.contentSize.width,height:CGFloat.greatestFiniteMagnitude)
+        reader.setAccessibilityIdentifier("Reviset.document.rawContextReasons");reader.setAccessibilityLabel(L("git.rawReasons"))
+        scroll.documentView=reader;return scroll
+    }
+    func updateNSView(_ scroll:NSScrollView,context:Context) {
+        guard let reader=scroll.documentView as? NSTextView else{return}
+        if !reader.string.utf16.elementsEqual(text.utf16) {reader.string=text;reader.scrollToBeginningOfDocument(nil)}
+    }
+}

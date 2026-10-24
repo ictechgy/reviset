@@ -101,6 +101,15 @@ internal static class SourceDiffPolicy
 }
 internal static class SourceDiff
 {
+    // Summary chrome is a display projection. The full, exact source/reason
+    // remains in its scrolling evidence surface and never passes through here.
+    internal static string NoticeSummary(string value, int limit = 220)
+    {
+        var compact = string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (compact.Length <= limit) return compact;
+        var end = limit; if (end > 0 && char.IsHighSurrogate(compact[end - 1])) end--;
+        return compact[..end] + "…";
+    }
     internal const int CharacterLimit = 16384;
     internal const int LineLimit = 300;
     internal static SourceDiffResult Build(string before, string after)

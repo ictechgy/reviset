@@ -283,6 +283,7 @@ struct CompareWorkspace: View {
 }
 struct SelectedChangeContext:View {
     @EnvironmentObject var model:AppModel
+    @State private var detailsPresented=false
     private func label(_ item:DocumentSelectedContextItem)->String {
         let heading:String
         switch item.category {
@@ -311,13 +312,34 @@ struct SelectedChangeContext:View {
                     if !model.selected["coverage_gaps"].array.isEmpty {Menu {ForEach(Array(model.selected["coverage_gaps"].array.enumerated()),id:\.offset){_,gap in Text(coverageReasonName(gap["reason"].string))}}label:{Label(L("doc.coverage.heading"),systemImage:"exclamationmark.circle")}.font(.caption2)}
                     Spacer(minLength:4)
                     if model.manuallyBrowsing {Button(L("git.returnToChange")){model.returnToChange()}.font(.caption)}
+                    Button(L("git.contextDetails")){detailsPresented=true}.font(.caption).accessibilityIdentifier("Reviset.document.contextDetails")
                 }else {Text(model.readingSingleVersion ? L("git.reading"):model.emptyChangesMessage).font(.caption).foregroundStyle(.secondary);Spacer()}
-            }
+            }.lineLimit(1).frame(height:20).clipped()
             ForEach(documentSelectedContext(model.selected),id:\.category.rawValue){item in
-                Label(label(item),systemImage:item.status=="observed" || item.status=="human_confirmed" ? "checkmark.circle":"exclamationmark.circle").font(.caption2).foregroundStyle(item.status=="needs_review" || item.status=="inferred" ? Color.orange:Color.secondary).fixedSize(horizontal:false,vertical:true)
+                NativeContextSummaryLine(text:label(item),symbol:item.status=="observed" || item.status=="human_confirmed" ? "checkmark.circle":"exclamationmark.circle",warning:item.status=="needs_review" || item.status=="inferred")
             }
-            if !model.selected["appearance_assessment"].string.isEmpty {Text(L("doc.coverage.noSemanticDeletion")).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)}
-        }.padding(.horizontal,14).padding(.vertical,5).frame(minHeight:28).background(Color(nsColor:.controlBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.document.selectedContext"))
+            if !model.selected["appearance_assessment"].string.isEmpty {Text(L("doc.coverage.noSemanticDeletion")).font(.caption2).foregroundStyle(.secondary).lineLimit(1).frame(height:16).clipped()}
+        }.padding(.horizontal,14).padding(.vertical,5).fixedSize(horizontal:false,vertical:true).frame(minHeight:28).clipped().background(Color(nsColor:.controlBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.document.selectedContext"))
+        .sheet(isPresented:$detailsPresented){NativeDetailSheet(title:L("git.contextDetails")){SelectedChangeContextDetails().environmentObject(model)}}
+    }
+}
+struct SelectedChangeContextDetails:View {
+    @EnvironmentObject var model:AppModel
+    var body:some View {
+        ScrollView{LazyVStack(alignment:.leading,spacing:16){
+            Text(changeDisplayName(model.selected)).font(.headline)
+            Text(changeVersionSummary(model.selected,revisions:model.revisions)).font(.callout)
+            ForEach(documentSelectedContext(model.selected),id:\.category.rawValue){item in
+                VStack(alignment:.leading,spacing:5){
+                    Text(contextHeading(item.category)).font(.headline)
+                    Text(verbatim:item.status).font(.caption).textSelection(.enabled)
+                    ForEach(Array(item.reasons.enumerated()),id:\.offset){_,reason in NativeVerbatimReasonReader(text:reason).frame(height:220)}
+                }
+            }
+        }.padding(20).frame(maxWidth:.infinity,alignment:.leading)}
+    }
+    private func contextHeading(_ category:DocumentSelectedContextCategory)->String {
+        switch category {case .pageCorrespondence:return L("git.pageCorrespondence");case .textAssessment:return L("git.textAssessment");case .regionCorrespondence:return L("git.regionCorrespondence");case .appearanceAssessment:return L("git.appearanceAssessment")}
     }
 }
 struct DocumentUnifiedDiff:View {

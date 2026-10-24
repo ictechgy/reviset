@@ -70,8 +70,39 @@ import AppKit
         try require(model.addressFailure.isEmpty && model.cellFailure.isEmpty,"GridSelectionKeptInvalidAddressError")
         model.addressInput="ZZZZ1";await model.goToAddress()
         model.changes=[JSON(["change_id":"good","from_revision_occurrence_id":"old","to_revision_occurrence_id":"new","from_sheet_id":"sheet-old","to_sheet_id":"sheet-new","before_address":"A2","after_address":"A2"])]
+        model.changesFromID="old";model.changesToID="new";model.changesMode="history"
         await model.chooseChange("good")
         try require(model.addressFailure.isEmpty && model.cellFailure.isEmpty && model.beforeAddress=="A2" && model.afterAddress=="A2","ChangeSelectionKeptInvalidAddressError")
+        let pinnedRows=try JSON(model.changes.map(\.raw)).data(),pinnedQuery=model.comparisonScope
+        func rangeQueryCount()throws->Int {
+            try String(contentsOf:root.appendingPathComponent("read-events.jsonl"),encoding:.utf8).split(separator:"\n").filter{$0.contains("list_workbook_changes")}.count
+        }
+        let queryCount=try rangeQueryCount()
+        await model.changeSheet(before:"another-physical-sheet")
+        try require(model.selectedChange.isNull && model.canReturnToChange && model.beforeSheetID=="another-physical-sheet","ManualSheetKeptSemanticEventOrLostReturn")
+        try require(workbookFieldDiffEligibility(change:model.selectedChange,before:model.beforeCell,after:model.afterCell,scope:WorkbookSelectedEventScope(beforeOccurrence:model.beforeID,afterOccurrence:model.afterID,beforeSheet:model.beforeSheetID,afterSheet:model.afterSheetID)) == .neutral,"ForeignSheetClaimedSelectedFieldEdit")
+        await model.returnToChange()
+        try require(model.selectedChangeID=="good" && model.beforeSheetID=="sheet-old" && model.afterSheetID=="sheet-new" && model.beforeAddress=="A2" && model.afterAddress=="A2","ReturnDidNotRestorePhysicalEventSources")
+        await model.selectCell(2,1);try require(model.selectedChange.isNull && model.canReturnToChange,"ManualCellLostReturn")
+        await model.returnToChange()
+        await model.moveWindow(columns:12);try require(model.selectedChange.isNull && model.canReturnToChange,"ManualWindowLostReturn")
+        await model.returnToChange()
+        try require(model.selectedChangeID=="good" && model.comparisonScope==pinnedQuery && (try JSON(model.changes.map(\.raw)).data())==pinnedRows && (try rangeQueryCount())==queryCount,"ReturnRequeriedOrReplacedPinnedChangeList")
+        for field in ["project","report","from","to","mode","membership","event-bytes"] {
+            await model.chooseChange("good");await model.selectCell(2,1)
+            switch field {
+            case "project":model.projectID="other-project";model.projectID="project"
+            case "report":model.reportID="other-report";model.reportID="report"
+            case "from":model.changesFromID="other-from";model.changesFromID="old"
+            case "to":model.changesToID="other-to";model.changesToID="new"
+            case "mode":model.changesMode="range_net";model.changesMode="history"
+            case "membership":model.changes=[]
+            default:var changed=model.changes[0].dictionary;changed["after_address"]="B2";model.changes=[JSON(changed)]
+            }
+            try require(!model.canReturnToChange,"StaleWorkbookAnchorSurvived-"+field)
+            await model.returnToChange();try require(model.selectedChangeID.isEmpty,"StaleWorkbookAnchorRestored-"+field)
+            model.changes=[JSON(["change_id":"good","from_revision_occurrence_id":"old","to_revision_occurrence_id":"new","from_sheet_id":"sheet-old","to_sheet_id":"sheet-new","before_address":"A2","after_address":"A2"])]
+        }
         model.addressInput="A2";await model.goToAddress()
         try require(model.addressFailure.isEmpty && model.cellFailure.isEmpty,"ValidAddressDidNotClearValidation")
         model.changes=[JSON(["change_id":"bad","from_revision_occurrence_id":"foreign","to_revision_occurrence_id":"new"])]

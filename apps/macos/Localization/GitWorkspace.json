@@ -206,5 +206,13 @@
   "git.quality.pptx_without_render": {
     "en": "PPTX pages without original render · {0}",
     "ko": "원본 렌더 없는 PPTX 페이지 · {0}"
+  },
+  "git.contextDetails": {
+    "en": "Context details…",
+    "ko": "판독·대응 상세…"
+  },
+  "git.rawReasons": {
+    "en": "Exact recorded reason",
+    "ko": "기록된 사유 원문"
   }
 }

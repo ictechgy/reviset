@@ -123,6 +123,33 @@ enum Smoke { @MainActor static func captureView(_ window:NSWindow,_ url:URL)thro
         try require(model.effectiveDiffMode=="source","EqualEndpointsDidNotImmediatelyShowSource")
         try await model.updateChanges();try require(model.diffMode=="source" && model.leftPageID=="page_1","DocumentEndpointPickerKeptTextOverlay")
         model.setDiffMode("text");try require(model.effectiveDiffMode=="source" && model.diffMode=="source","SingleDocumentReadAllowedTextPicker")
+        // Mount the production persistent context and complete detail, including
+        // a valid 1998-UTF16 human reason that previously painted over controls.
+        _ = NSApplication.shared;NSApp.setActivationPolicy(.prohibited)
+        let reason=String(repeating:"x\n",count:999),canonicalReason="e\u{301} · é"
+        var longChange=changes[0].dictionary;longChange["lineage"]=["status":"human_confirmed","reasons":[reason,canonicalReason]];longChange["text_assessment"]="observed";longChange["region_pairing_assessment"]="inferred";longChange["appearance_assessment"]="observed"
+        let contextModel=AppModel();contextModel.report=model.report;contextModel.projectID=model.projectID;contextModel.changes=[JSON(longChange)];contextModel.selectedChangeID="change_0";contextModel.from=0;contextModel.to=2;contextModel.tab="history"
+        retained.setFocus(true)
+        let contextWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:800,height:600),styleMask:[.titled],backing:.buffered,defer:false)
+        contextWindow.isReleasedWhenClosed=false
+        contextWindow.contentView=NSHostingView(rootView:VStack(spacing:0){Text("Query interval").frame(height:28).background(WorkspaceLayoutMarker(name:"probe.context.query"));SelectedChangeContext().environmentObject(contextModel);Color.clear.frame(maxHeight:.infinity).background(WorkspaceLayoutMarker(name:"probe.context.source"))})
+        contextWindow.orderFront(nil);try await Task.sleep(nanoseconds:150_000_000);contextWindow.contentView?.layoutSubtreeIfNeeded()
+        guard let contextRoot=contextWindow.contentView,
+              let contextMarker=workspaceLayoutMarkers(in:contextRoot).first(where:{$0.identifier?.rawValue=="Reviset.document.selectedContext"}),
+              let queryMarker=workspaceLayoutMarkers(in:contextRoot).first(where:{$0.identifier?.rawValue=="probe.context.query"}),
+              let sourceMarker=workspaceLayoutMarkers(in:contextRoot).first(where:{$0.identifier?.rawValue=="probe.context.source"}) else{throw NSError(domain:"ContextGeometryMarkersMissing",code:1)}
+        let contextRect=contextMarker.convert(contextMarker.bounds,to:contextRoot),queryRect=queryMarker.convert(queryMarker.bounds,to:contextRoot),sourceRect=sourceMarker.convert(sourceMarker.bounds,to:contextRoot)
+        try require(contextRect.height>=46 && contextRect.height<=140 && (!contextRect.intersects(queryRect) || contextRect.intersection(queryRect).height<=1) && (!contextRect.intersects(sourceRect) || contextRect.intersection(sourceRect).height<=1) && sourceRect.height>400,"LongReasonEscapedPersistentContextGeometry_\(contextRect)_query_\(queryRect)_source_\(sourceRect)")
+        let detailWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:800,height:400),styleMask:[.titled],backing:.buffered,defer:false)
+        detailWindow.isReleasedWhenClosed=false;detailWindow.contentView=NSHostingView(rootView:SelectedChangeContextDetails().environmentObject(contextModel))
+        detailWindow.orderFront(nil);try await Task.sleep(nanoseconds:150_000_000);detailWindow.contentView?.layoutSubtreeIfNeeded()
+        func textReaders(_ view:NSView)->[NSTextView] {(view as? NSTextView).map{[$0]} ?? view.subviews.flatMap{textReaders($0)}}
+        guard let reader=detailWindow.contentView.flatMap({textReaders($0).first(where:{$0.string.utf16.elementsEqual(reason.utf16)})}),let reasonScroll=reader.enclosingScrollView else{throw NSError(domain:"ExactFullReasonReaderMissing",code:1)}
+        try require(!reader.isEditable && reader.isSelectable && reasonScroll.hasVerticalScroller && reader.bounds.height>reasonScroll.contentSize.height && reader.accessibilityIdentifier()=="Reviset.document.rawContextReasons","FullReasonNotAccessibleScrollableVerbatim")
+        try require(documentSelectedContext(contextModel.selected).first?.reasons.first?.utf16.elementsEqual(reason.utf16)==true && reason.utf16.count==1998,"HumanReasonWasNormalizedOrTruncated")
+        let contextEvidence:[String:Any]=["scope":"actual production SelectedChangeContext and native full-reason reader; synthetic valid human reason in Focus","summary_height":Double(contextRect.height),"query_height":Double(queryRect.height),"source_height":Double(sourceRect.height),"reason_utf16_count":reason.utf16.count,"full_reader_utf16":Array(reader.string.utf16).map(Int.init),"expected_utf16":Array(reason.utf16).map(Int.init),"reader_height":Double(reader.bounds.height),"reader_viewport_height":Double(reasonScroll.contentSize.height),"reader_selectable":reader.isSelectable,"reader_editable":reader.isEditable,"details_independent_of_focus_panels":retained.isFocused]
+        if let userData=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:contextEvidence,options:[.sortedKeys]).write(to:URL(fileURLWithPath:userData).appendingPathComponent("context-geometry.json"))}
+        detailWindow.close();contextWindow.close()
         let workbook=WorkbookModel(bridge:model.bridge);await workbook.start();workbook.projectID="workbook";workbook.reportID="workbook_report";workbook.report=JSON(["report_id":"workbook_report","revisions":[["revision_occurrence_id":"w0","index":0,"sheets":[]],["revision_occurrence_id":"w1","index":1,"sheets":[]]]]);workbook.beforeID="w0";workbook.afterID="w1";workbook.changesFromID="w0";workbook.changesToID="w1"
         workbook.diffMode="text";await workbook.selectVersion("w0");try require(workbook.diffMode=="source" && workbook.effectiveDiffMode=="source","WorkbookVersionMenuKeptTextOverlay")
         try require(workbook.beforeID=="w0" && workbook.afterID=="w0" && workbook.changesFromID=="w0" && workbook.changesToID=="w0" && workbook.changes.isEmpty && !workbook.loadingChanges && workbook.changesFailure.isEmpty,"WorkbookFirstVersionDidNotReadSingleSource")

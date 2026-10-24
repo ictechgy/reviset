@@ -15,8 +15,8 @@ private extension JSON {
     @Published var projects: [JSON] = []
     @Published var reports: [JSON] = []
     @Published var report = JSON()
-    @Published var projectID = ""
-    @Published var reportID = ""
+    @Published var projectID = "" {didSet {if oldValue != projectID {eventAnchor=nil}}}
+    @Published var reportID = "" {didSet {if oldValue != reportID {eventAnchor=nil}}}
     @Published var beforeID = ""
     @Published var afterID = ""
     @Published var beforeSheetID = ""
@@ -51,9 +51,9 @@ private extension JSON {
     @Published var changePageNumber = 1
     private var changePageCursor = ""
     @Published var changeTotal = 0
-    @Published var changesFromID = ""
-    @Published var changesToID = ""
-    @Published var changesMode = "range_net"
+    @Published var changesFromID = "" {didSet {if oldValue != changesFromID {eventAnchor=nil}}}
+    @Published var changesToID = "" {didSet {if oldValue != changesToID {eventAnchor=nil}}}
+    @Published var changesMode = "range_net" {didSet {if oldValue != changesMode {eventAnchor=nil}}}
     @Published private var cellHistoryMessageContent = UIMessage.raw("")
     var cellHistoryMessage: String { get { cellHistoryMessageContent.text } set { cellHistoryMessageContent = .raw(newValue) } }
     @Published var cellHistoryCursor = ""
@@ -110,6 +110,8 @@ private extension JSON {
     private var started = false
     private var active = false
     private var mcpScope = ""
+    private struct EventAnchor {let scope:String;let id:String;let event:Data}
+    @Published private var eventAnchor:EventAnchor?
 
     struct Ticket {
         let channel: String
@@ -145,6 +147,18 @@ private extension JSON {
     var ready: Bool { active && !reportID.isEmpty && report["report_id"].string == reportID && !loadingReport && !busy && !loadingDemo }
     var project: JSON { projects.first { $0["project_id"].string == projectID } ?? JSON() }
     var selectedChange: JSON { changes.first { $0["change_id"].string == selectedChangeID } ?? JSON() }
+    private var anchoredChange:JSON {
+        guard let anchor=eventAnchor,anchor.scope==comparisonScope,
+              let change=changes.first(where:{$0["change_id"].string==anchor.id}),
+              (try? change.data())==anchor.event else{return JSON()}
+        return change
+    }
+    var canReturnToChange:Bool {ready && selectedChangeID.isEmpty && !loadingChanges && !anchoredChange.isNull}
+    func returnToChange() async {
+        guard canReturnToChange else{eventAnchor=nil;return}
+        let id=anchoredChange["change_id"].string
+        await chooseChange(id)
+    }
     func revision(_ id: String) -> JSON { revisions.first { $0["revision_occurrence_id"].string == id } ?? JSON() }
     func sheets(_ occurrence: String) -> [JSON] { revision(occurrence)["sheets"].array }
     func sheet(_ occurrence: String, _ id: String) -> JSON { sheets(occurrence).first { $0["sheet_id"].string == id } ?? JSON() }
@@ -176,6 +190,7 @@ private extension JSON {
         generations[channel] = (generations[channel] ?? 0) + 1
     }
     func invalidateReads() {
+        eventAnchor=nil
         for channel in Array(owners.keys) { invalidate(channel) }
         loadingReport = false; loadingRange = false; loadingChanges = false; loadingCell = false; loadingHistory = false; loadingMCP = false
         mcp = ""; mcpScope = ""; mcpFailure = ""; blankFormattingWarningScope = ""
@@ -191,6 +206,7 @@ private extension JSON {
         rangeFailure = ""; addressFailure = ""; cellFailure = ""; loadingRange = false; loadingCell = false
     }
     func clearSelection() {
+        eventAnchor=nil
         clearCells(); changes = []; coverage = []; releases = []; resetChangePaging(); changeTotal = 0
         changesFailure = ""; comparisonNotice = ""; blankFormattingWarningScope = ""; changesFromID = ""; changesToID = ""; loadingChanges = false; report = JSON(); reportID = ""
         beforeID = ""; afterID = ""; beforeSheetID = ""; afterSheetID = ""
@@ -279,7 +295,7 @@ private extension JSON {
         var left = before ?? (changesFromID.isEmpty ? beforeID:changesFromID),right = after ?? (changesToID.isEmpty ? afterID:changesToID)
         guard let leftIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == left}),let rightIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == right}) else { return }
         if leftIndex > rightIndex { swap(&left,&right); statusContent = UIMessage("workbook.status.sortedVersions") }
-        clearCells(); invalidate("changes")
+        eventAnchor=nil;clearCells(); invalidate("changes")
         beforeID = left; afterID = right;enforceSingleSourcePresentation(); comparisonNotice = ""; blankFormattingWarningScope = ""
         changes = []; resetChangePaging(); changeTotal = 0
         rowStart = 1; columnStart = 1; addressInput = "A1"; selectInitialSheets()
@@ -328,6 +344,7 @@ private extension JSON {
         }
     }
     func loadChanges(next: Bool = false,previous: Bool = false,preserveEndpoints: Bool = false) async {
+        eventAnchor=nil
         guard ready, !beforeID.isEmpty, !afterID.isEmpty else { return }
         guard !(next && previous),!next || !changeCursor.isEmpty,!previous || !changePreviousCursors.isEmpty else { return }
         if beforeID==afterID, !preserveEndpoints {
@@ -452,7 +469,7 @@ private extension JSON {
         invalidate("cell"); resetCellHistory(); beforeCell = JSON(); afterCell = JSON(); cellFailure = ""; loadingCell = true
         let a = change["from_revision_occurrence_id"].string, b = change["to_revision_occurrence_id"].string
         guard revisions.contains(where:{$0["revision_occurrence_id"].string == a}), revisions.contains(where:{$0["revision_occurrence_id"].string == b}) else {
-            beforeAddress = ""; afterAddress = ""; selectedChangeID = ""; selectedRow = 0; selectedColumn = 0; cellTextOffset = 0; cellTextNext = nil
+            eventAnchor=nil;beforeAddress = ""; afterAddress = ""; selectedChangeID = ""; selectedRow = 0; selectedColumn = 0; cellTextOffset = 0; cellTextNext = nil
             loadingCell = false; cellFailureContent = UIMessage("workbook.error.changeVersion"); return
         }
         beforeID = a; afterID = b
@@ -462,6 +479,7 @@ private extension JSON {
             rowStart = min(row,1_048_576-rowLimit+1); columnStart = min(column,16_384-columnLimit+1)
             selectedRow = row; selectedColumn = column; addressInput = address
         } else { selectedRow = 0; selectedColumn = 0 }
+        eventAnchor=(try? change.data()).map{EventAnchor(scope:comparisonScope,id:id,event:$0)}
         selectedChangeID = id; beforeAddress = change["before_address"].string; afterAddress = change["after_address"].string
         if let coordinate = paneCoordinate(before:true) { beforeRowStart = min(coordinate.row,1_048_576-rowLimit+1); beforeColumnStart = min(coordinate.column,16_384-columnLimit+1) }
         if let coordinate = paneCoordinate(before:false) { afterRowStart = min(coordinate.row,1_048_576-rowLimit+1); afterColumnStart = min(coordinate.column,16_384-columnLimit+1) }
@@ -808,7 +826,7 @@ struct WorkbookWorkspace: View {
                     .overlay { if model.loadingRange { ZStack { Color(nsColor:.windowBackgroundColor).opacity(0.94); ProgressView(L("workbook.status.loadingRange")) } } }
                     Text(model.independentPaneCoordinates ? L("workbook.nav.independentDetail") : L("workbook.nav.sameAddressDetail")).font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)
                     WorkbookSelectedWarnings(model:model).padding(.horizontal,12).padding(.bottom,4)
-                    HStack{Text(L("workbook.cell.storedOnly")).font(.caption2).foregroundStyle(.secondary);if !model.selectedChange.isNull{Text(WorkbookLabels.association(model.selectedChange["association"].string)).font(.caption2).foregroundStyle(.orange)};Spacer()}.padding(.horizontal,12).padding(.bottom,5)
+                    HStack{Text(L("workbook.cell.storedOnly")).font(.caption2).foregroundStyle(.secondary);if !model.selectedChange.isNull{Text(WorkbookLabels.association(model.selectedChange["association"].string)).font(.caption2).foregroundStyle(.orange)};Spacer();if model.canReturnToChange {Button(L("git.returnToChange")){Task{await model.returnToChange()}}.font(.caption).background(WorkspaceLayoutMarker(name:"Reviset.workbook.returnToChange"))}}.padding(.horizontal,12).padding(.bottom,5)
                 }
             } auxiliary:{changesPane}
         }
@@ -1924,6 +1942,19 @@ struct WorkbookGrid: NSViewRepresentable {
         guard query==[model.changesFromID,model.changesToID,model.changesMode],try JSON(model.changes.map(\.raw)).data()==rows,!queried,model.beforeID==change["from_revision_occurrence_id"].string,model.afterID==change["to_revision_occurrence_id"].string,model.beforeAddress==change["before_address"].string,model.afterAddress==change["after_address"].string else{throw BridgeError(code:"WORKBOOK_GIT_SCOPE",message:"Workbook event selection replaced query/list or physical addresses.")}
         observation.cancel();let selectionDidNotQuery = !queried
         try await Task.sleep(nanoseconds:200_000_000);try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-git-history.png"))
+        var manualQueried=false;let manualObservation=model.$loadingChanges.dropFirst().sink{if $0{manualQueried=true}};defer{manualObservation.cancel()}
+        await model.changeSheet(before:model.beforeSheetID,after:model.afterSheetID)
+        guard model.selectedChange.isNull,model.canReturnToChange else{throw BridgeError(code:"WORKBOOK_GIT_RETURN_SHEET",message:"Manual sheet browsing kept event authority or lost Return.")}
+        await model.selectCell(1,1)
+        guard model.selectedChange.isNull,model.canReturnToChange else{throw BridgeError(code:"WORKBOOK_GIT_RETURN_CELL",message:"Manual cell browsing lost Return.")}
+        await model.moveWindow(rows:model.rowLimit)
+        guard model.selectedChange.isNull,model.canReturnToChange else{throw BridgeError(code:"WORKBOOK_GIT_RETURN_WINDOW",message:"Manual window browsing lost Return.")}
+        layout.setFocus(true);try await Task.sleep(nanoseconds:200_000_000)
+        guard workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.returnToChange" && !$0.isHiddenOrHasHiddenAncestor && !$0.visibleRect.isEmpty}) else{throw BridgeError(code:"WORKBOOK_GIT_RETURN_FOCUS",message:"Focus hid Return to selected workbook event.")}
+        try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-git-manual-return.png"))
+        await model.returnToChange();layout.setFocus(false);try await Task.sleep(nanoseconds:200_000_000)
+        guard !manualQueried,query==[model.changesFromID,model.changesToID,model.changesMode],try JSON(model.changes.map(\.raw)).data()==rows,model.selectedChangeID==change["change_id"].string,model.beforeSheetID==change["from_sheet_id"].string,model.afterSheetID==change["to_sheet_id"].string,model.beforeAddress==change["before_address"].string,model.afterAddress==change["after_address"].string else{throw BridgeError(code:"WORKBOOK_GIT_RETURN_SCOPE",message:"Return changed the query/list or failed to restore exact sheet and cell sources.")}
+        manualObservation.cancel()
         let tables=["before","after"].compactMap{grid(content,pane:$0)},selection=[model.beforeID,model.afterID,model.beforeAddress,model.afterAddress,model.selectedChangeID]
         let state=tables.map{($0,$0.dataSource as AnyObject?,$0.enclosingScrollView!.contentView.bounds.origin)}
         guard let focusedTable=tables.first,window.makeFirstResponder(focusedTable) else{throw BridgeError(code:"WORKBOOK_GIT_SOURCE_FOCUS",message:"Actual grid could not take keyboard focus for qualification.")}
@@ -1946,7 +1977,7 @@ struct WorkbookGrid: NSViewRepresentable {
         guard visibleTables.count==1,!workspaceLayoutMarkers(in:content).contains(where:{$0.identifier?.rawValue=="Reviset.workbook.unifiedDiff"}),Set(["before","after"].compactMap{grid(content,pane:$0)}.map(ObjectIdentifier.init))==Set(tables.map(ObjectIdentifier.init)) else{throw BridgeError(code:"WORKBOOK_GIT_SINGLE_SOURCE_VISIBLE",message:"Single workbook source was covered or its grid hosts were replaced.")}
         try Smoke.captureView(window,folder.appendingPathComponent("native-workbook-git-single-source.png"))
         await model.selectVersion(last);await model.changeMode("range_net")
-        return ["passed":true,"default_predecessor_latest":true,"source_first_default":true,"query_interval_and_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"physical_addresses_preserved":true,"native_grid_hosts_preserved":tables.count,"coordinator_and_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"focus_fixed_report_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"captures":["native-workbook-git-source-first.png","native-workbook-git-history.png","native-workbook-git-unified.png","native-workbook-git-focus.png","native-workbook-git-single-source.png"]]
+        return ["passed":true,"default_predecessor_latest":true,"source_first_default":true,"query_interval_and_rows_preserved":true,"selection_started_no_range_query":selectionDidNotQuery,"physical_addresses_preserved":true,"native_grid_hosts_preserved":tables.count,"coordinator_and_viewport_preserved":true,"hidden_source_keyboard_focus_resigned":true,"focus_fixed_report_visible":true,"first_version_single_read":true,"single_source_from_text_routes_verified":2,"single_source_native_source_visible":true,"manual_sheet_cell_window_return_without_requery":true,"focus_return_action_visible":true,"captures":["native-workbook-git-source-first.png","native-workbook-git-history.png","native-workbook-git-unified.png","native-workbook-git-focus.png","native-workbook-git-single-source.png","native-workbook-git-manual-return.png"]]
     }
     private static func exerciseLayouts(_ model:WorkbookModel,layout:WorkspaceLayoutStore,window:NSWindow,folder:URL)async throws->[String:Any] {
         let original=layout.configuration
