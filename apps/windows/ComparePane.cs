@@ -73,6 +73,10 @@ internal sealed class ComparePane
     private (string Project, string Report, string Revision, string Sheet, int Row, int Column)? loadedGridScope;
     internal string ReadState { get; private set; } = "empty";
     private string evidenceAbsence = "";
+    private sealed record IntendedPageCaption(string Kind, string Project, string Report, string Revision, string Page, long Generation);
+    private IntendedPageCaption? intendedPageCaption;
+    internal string CurrentIntendedEventKind => intendedPageCaption is { } value && owner.IsCurrent(value.Generation) && !owner.ReadToken.IsCancellationRequested && value.Project == owner.ProjectId && value.Report == owner.ReportId && value.Revision == RevisionId && value.Page == PageId ? value.Kind : "";
+    internal void ClearEventPageCaption() => intendedPageCaption = null;
     private string requestedSheetName = "";
     private Task selectionRequest = Task.CompletedTask;
     private string previewSource = "";
@@ -135,7 +139,7 @@ internal sealed class ComparePane
         PageScroll.Content = PageImage; visual.Children.Add(PageScroll); visual.Children.Add(fallback); visual.Children.Add(Cells); dock.Children.Add(visual);
         VirtualizingPanel.SetVirtualizationMode(Cells, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(Cells, true);
         revision.SelectionChanged += async (_, _) => { if (binding) return; SetRevisionContents(true); selectionRequest = owner.ReloadComparison(); await owner.Guard(() => selectionRequest); };
-        page.SelectionChanged += async (_, _) => { if (!binding && !owner.IsWorkbook) { var request = Load(owner.Generation, owner.ReadToken); owner.SourcePresentationChanged(); await owner.Guard(() => request); owner.SourcePresentationChanged(); } };
+        page.SelectionChanged += async (_, _) => { if (!binding && !owner.IsWorkbook) { owner.ClearEventPageCaptions(); var request = Load(owner.Generation, owner.ReadToken); owner.SourcePresentationChanged(); await owner.Guard(() => request); owner.SourcePresentationChanged(); } };
         sheet.SelectionChanged += async (_, _) => { if (!binding && owner.IsWorkbook) { evidenceAbsence = ""; metadataKind = ""; requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? ""; Invalidate(); row = 1; column = 1; SetFocusCoordinates(row, column); selectionRequest = owner.ReloadSourceWindow(); await owner.Guard(() => selectionRequest); } };
         zoom.ValueChanged += (_, _) => { if (!applyingFit) fittingWidth = false; PageImage.LayoutTransform = new ScaleTransform(zoom.Value, zoom.Value); UpdateZoomCaption(); };
         Host.SizeChanged += (_, _) => ResizePreview();
@@ -186,11 +190,12 @@ internal sealed class ComparePane
     }
     internal void Clear()
     {
-        pageRead.Cancel(); ++pageGeneration; ++gridGeneration;
+        pageRead.Cancel(); ++pageGeneration; ++gridGeneration; ClearEventPageCaption();
         Invalidate("empty"); binding = true; revision.ItemsSource = null; page.ItemsSource = null; sheet.ItemsSource = null; row = 1; column = 1; SetFocusCoordinates(0, 0); fallback.Text = owner.Copy["selectPage"]; evidenceAbsence = ""; metadataKind = ""; requestedSheetName = ""; binding = false; RefreshReadingChrome();
     }
     internal void Invalidate(string state = "loading")
     {
+        if (state is "failed" or "invalid" or "empty") ClearEventPageCaption();
         ++gridGeneration; ++pageGeneration; pageRead.Cancel(); ReadState = state; loadedGridScope = null; gridValue = default; previewScope = null; previewSource = ""; previewReason = ""; previewText = ""; previewObservation = new(SourceTextState.Missing, ""); RefreshCellDetails();
         var previous = binding; binding = true; Cells.SelectedCells.Clear(); Cells.ItemsSource = null; binding = previous; Cells.IsEnabled = false; showFormula.IsEnabled = false;
         PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; fallback.Text = owner.Copy[state == "invalid" ? "reverse" : state == "failed" ? "failed" : "loading"]; source.Text = ""; retry.Visibility = state == "failed" ? Visibility.Visible : Visibility.Collapsed;
@@ -302,7 +307,7 @@ internal sealed class ComparePane
     }
     private void SetRevisionContents(bool explicitVersionChange = false)
     {
-        Invalidate(); evidenceAbsence = ""; metadataKind = "";
+        ClearEventPageCaption(); Invalidate(); evidenceAbsence = ""; metadataKind = "";
         var selected = revisions.Find(v => v.Get("revision_occurrence_id").Text() == RevisionId); var oldPage = PageId; var oldSheet = (sheet.SelectedItem as Choice)?.Label ?? requestedSheetName;
         binding = true;
         if (owner.IsWorkbook)
@@ -319,11 +324,12 @@ internal sealed class ComparePane
     internal void RestoreDefaultSelection() => SetRevisionContents();
     internal async Task SelectPage(string id, long ticket, CancellationToken token)
     {
-        if (page.ItemsSource is not List<Choice> choices || !choices.Any(v => v.Id == id)) return; binding = true; page.SelectedItem = choices.Find(v => v.Id == id); binding = false; await LoadPage(ticket, token);
+        if (page.ItemsSource is not List<Choice> choices || !choices.Any(v => v.Id == id)) return; owner.ClearEventPageCaptions(); binding = true; page.SelectedItem = choices.Find(v => v.Id == id); binding = false; await LoadPage(ticket, token);
     }
-    internal void SetEventPage(string? id)
+    internal void SetEventPage(string? id, string eventKind = "")
     {
-        binding = true; page.SelectedItem = page.ItemsSource is List<Choice> choices ? choices.Find(v => v.Id == id) : null; binding = false;
+        if (eventKind.Length == 0) owner.ClearEventPageCaptions(); else ClearEventPageCaption(); binding = true; page.SelectedItem = page.ItemsSource is List<Choice> choices ? choices.Find(v => v.Id == id) : null; binding = false;
+        if (eventKind.Length > 0) intendedPageCaption = new(eventKind, owner.ProjectId, owner.ReportId, RevisionId, PageId, owner.Generation);
         evidenceAbsence = PageId.Length == 0 ? "noEvidencePageListed" : "";
     }
     internal void SetEvidenceRevision(string id, string sheetId = "", JsonElement observation = default, string eventKind = "")
