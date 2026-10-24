@@ -186,7 +186,7 @@ internal sealed class ComparePane
     internal void Clear()
     {
         pageRead.Cancel(); ++pageGeneration; ++gridGeneration;
-        Invalidate("empty"); binding = true; revision.ItemsSource = null; page.ItemsSource = null; sheet.ItemsSource = null; row = 1; column = 1; SetFocusCoordinates(0, 0); fallback.Text = owner.Copy["selectPage"]; evidenceAbsence = ""; requestedSheetName = ""; binding = false; RefreshReadingChrome();
+        Invalidate("empty"); binding = true; revision.ItemsSource = null; page.ItemsSource = null; sheet.ItemsSource = null; row = 1; column = 1; SetFocusCoordinates(0, 0); fallback.Text = owner.Copy["selectPage"]; evidenceAbsence = ""; metadataKind = ""; requestedSheetName = ""; binding = false; RefreshReadingChrome();
     }
     internal void Invalidate(string state = "loading")
     {
@@ -200,9 +200,14 @@ internal sealed class ComparePane
         focusedRow = requestedRow is >= 1 and <= 1_048_576 && requestedColumn is >= 1 and <= 16_384 ? requestedRow : 0;
         focusedColumn = focusedRow > 0 ? requestedColumn : 0; address.Text = FocusedAddress; RefreshCellDetails();
     }
+    private bool MetadataWithoutPhysicalCell => owner.IsWorkbook && RevisionId.Length > 0 && owner.ReportId.Length > 0 && focusedRow == 0 && focusedColumn == 0 && SourceDiffPolicy.SheetScoped(metadataKind);
     private void RefreshCellDetails()
     {
-        cellDetailsCaption.Text = (FocusedAddress.Length > 0 ? FocusedAddress + " · " : "") + owner.Copy["cellPreviewNotice"];
+        var metadata = MetadataWithoutPhysicalCell;
+        foreach (var field in new FrameworkElement[] { cellValueLabel, cellValue, cellFormulaLabel, cellFormula }) field.Visibility = metadata ? Visibility.Collapsed : Visibility.Visible;
+        showFormula.Visibility = metadata ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var arrow in arrows) arrow.Button.IsEnabled = lastNavigationEnabled && !metadata;
+        cellDetailsCaption.Text = metadata ? owner.Copy[ReadState == "failed" ? "failed" : evidenceAbsence.Length > 0 ? evidenceAbsence : "metadataObservation"] : (FocusedAddress.Length > 0 ? FocusedAddress + " · " : "") + owner.Copy["cellPreviewNotice"];
         var materialized = TryGetFocusedMaterializedCell(out var cell);
         cellValue.Text = materialized && cell.Get("value").ValueKind == JsonValueKind.String ? cell.Get("value").Text() : "";
         cellFormula.Text = materialized && cell.Get("formula").ValueKind == JsonValueKind.String ? cell.Get("formula").Text() : "";
@@ -210,7 +215,7 @@ internal sealed class ComparePane
         string Qualifier(string field) => " · " + string.Join(" · ", SourceDiffPolicy.WorkbookPreviewKeys(cell, field).Select(key => owner.Copy[key]));
         cellValueLabel.Text = owner.Copy["cached"] + (materialized ? SourceDiffPolicy.WorkbookPreviewKeys(cell, "value").Count > 0 ? Qualifier("value") : "" : " · " + unavailable);
         cellFormulaLabel.Text = owner.Copy["formula"] + (materialized ? SourceDiffPolicy.WorkbookPreviewKeys(cell, "formula").Count > 0 ? Qualifier("formula") : "" : " · " + unavailable);
-        if (openCellSource is not null) { openCellSource.IsEnabled = lastNavigationEnabled && owner.AllowsEvidence && AuthorizesCell(focusedRow, focusedColumn); AutomationProperties.SetName(openCellSource, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["openCellSource"]); }
+        if (openCellSource is not null) { openCellSource.Visibility = metadata ? Visibility.Collapsed : Visibility.Visible; openCellSource.IsEnabled = lastNavigationEnabled && owner.AllowsEvidence && AuthorizesCell(focusedRow, focusedColumn); AutomationProperties.SetName(openCellSource, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["openCellSource"]); }
         AutomationProperties.SetName(cellValue, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["cached"]); AutomationProperties.SetName(cellFormula, PresentedSideName + " " + FocusedAddress + " · " + owner.Copy["formula"]);
     }
     internal async Task<object> OpenCellDetailsForSmoke(string expectedValue)
@@ -239,6 +244,23 @@ internal sealed class ComparePane
             return new { scope = "Synthetic bounded preview controls on actual WPF labels, not canonical engine cells", address = FocusedAddress, cases = results };
         }
         finally { gridValue = saved; NavigationEnabled(enabled); RefreshCellDetails(); if (!TryGetFocusedMaterializedCell(out var restored) || restored.GetRawText() != raw) throw new InvalidOperationException("Cell-details label controls did not restore the exact scoped grid observation."); }
+    }
+    internal object CheckMetadataCellDetailsForSmoke(bool expectedMetadata)
+    {
+        var expanded = cellDetails.IsExpanded; var selection = CaptureSelection();
+        try
+        {
+            cellDetails.IsExpanded = true; RefreshCellDetails(); Host.UpdateLayout();
+            var fields = new FrameworkElement[] { cellValueLabel, cellValue, cellFormulaLabel, cellFormula };
+            if (MetadataWithoutPhysicalCell != expectedMetadata || !cellDetails.IsVisible || !rowStart.IsVisible || !colStart.IsVisible || !rowStart.IsEnabled || !colStart.IsEnabled) throw new InvalidOperationException("Metadata Cell details did not preserve its explicit native coordinate Go exit.");
+            if (expectedMetadata)
+            {
+                if (fields.Any(field => field.Visibility != Visibility.Collapsed) || openCellSource.Visibility != Visibility.Collapsed || arrows.Any(arrow => arrow.Button.IsEnabled) || cellDetailsCaption.Text != owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : "metadataObservation"]) throw new InvalidOperationException("A metadata event without a physical focused cell retained empty stored-value/formula rows or ineffective window arrows.");
+            }
+            else if (fields.Any(field => !field.IsVisible) || !TryGetFocusedMaterializedCell(out var cell) || cellValue.Text != cell.Get("value").Text() || openCellSource.Visibility != Visibility.Visible || !openCellSource.IsEnabled || arrows.Any(arrow => !arrow.Button.IsEnabled)) throw new InvalidOperationException("Manual navigation to an actual physical cell did not restore its real stored-value/formula rows and native window navigation.");
+            return new { physical_address = FocusedAddress, metadata_kind = metadataKind, metadata_without_physical_cell = expectedMetadata, native_field_rows_visible = fields.All(field => field.IsVisible), metadata_caption = cellDetailsCaption.Text, coordinate_go_controls_visible_and_enabled = true, window_arrows_enabled = arrows.All(arrow => arrow.Button.IsEnabled), scope = "Production expanded WPF Cell details properties, not OS input or screen-reader traversal" };
+        }
+        finally { cellDetails.IsExpanded = expanded; if (CaptureSelection() != selection) throw new InvalidOperationException("Inspecting metadata Cell details moved its source selection."); }
     }
     internal void CloseCellDetailsForSmoke() => cellDetails.IsExpanded = false;
     internal void FocusCell(int requestedRow, int requestedColumn)
@@ -592,8 +614,8 @@ internal sealed class ComparePane
     }
     private string MetadataPreview()
     {
-        var value = SourceDiffPolicy.WorkbookMetadata(revisions.Find(item => item.Get("revision_occurrence_id").Text() == RevisionId), SheetId, metadataKind);
-        return owner.Copy["metadataObservation"] + "\n" + value.Pretty() + (value.Get("metadata_truncated").Flag() ? "\n" + owner.Copy["metadataBounded"] : "");
+        var projection = SourceDiffPolicy.WorkbookMetadataProjection(revisions.Find(item => item.Get("revision_occurrence_id").Text() == RevisionId), SheetId, metadataKind);
+        return !projection.Available ? owner.Copy["observationMissing"] : owner.Copy["metadataObservation"] + "\n" + owner.Copy["metadataProjection"] + "\n" + projection.Json + (projection.Bounded ? "\n\n" + owner.Copy["metadataBounded"] : "");
     }
     private void RerenderPresentation()
     {

@@ -657,11 +657,27 @@ internal sealed class MainWindow : Window
         var revision = currentReport.Get("revisions").Items().Find(item => item.Get("revision_occurrence_id").Text() == (after ? After.RevisionId : Before.RevisionId));
         return SourceDiffPolicy.WorkbookMetadata(revision, after ? After.SheetId : Before.SheetId, selectedChange.Get("kind").Text());
     }
-    private string MetadataSideText(bool after)
+    private MetadataProjection MetadataSideProjection(bool after)
     {
-        var value = MetadataSide(after); var raw = value.ValueKind == JsonValueKind.Undefined ? Copy["missing"] : value.Pretty();
-        return raw + (value.Get("metadata_truncated").Flag() ? "\n\n" + Copy["metadataBounded"] : "");
+        var revision = currentReport.Get("revisions").Items().Find(item => item.Get("revision_occurrence_id").Text() == (after ? After.RevisionId : Before.RevisionId));
+        return SourceDiffPolicy.WorkbookMetadataProjection(revision, after ? After.SheetId : Before.SheetId, selectedChange.Get("kind").Text());
     }
+    private string MetadataBoundedNotice(MetadataProjection projection) => Copy["metadataBounded"];
+    private void AppendMetadataProjection(FlowDocument target, string side, MetadataProjection projection)
+    {
+        void System(string text, string tag) => target.Blocks.Add(new Paragraph(new Run(text)) { Margin = new Thickness(0), Foreground = Brushes.DimGray, Tag = tag });
+        System(side, "metadataSide");
+        if (!projection.Available) { System(Copy["observationMissing"], "metadataMissing"); return; }
+        System(Copy["metadataProjection"], "metadataProjectionCaption");
+        target.Blocks.Add(new Paragraph(new Run(projection.Json)) { Margin = new Thickness(0), Foreground = Brushes.Black, Tag = "metadataJsonProjection" });
+        if (projection.Bounded) System(MetadataBoundedNotice(projection), "metadataBoundedNotice");
+    }
+    private string FormatMetadataDetail(MetadataProjection before, MetadataProjection after)
+    {
+        string Side(string label, MetadataProjection projection) => label + "\n" + (projection.Available ? projection.Json : Copy["observationMissing"]);
+        return Copy["metadataObservation"] + "\n" + Copy["metadataProjection"] + "\n\n" + Side(Copy["before"], before) + "\n\n" + Side(Copy["after"], after);
+    }
+    private string FormatMetadataSummary(MetadataProjection before, MetadataProjection after) => string.Join("\n", new[] { Copy["metadataObservation"] }.Concat(new[] { (Label: Copy["before"], Projection: before), (Label: Copy["after"], Projection: after) }.Where(side => side.Projection.Bounded).Select(side => side.Label + " · " + MetadataBoundedNotice(side.Projection))));
     private (string Before, string After) DocumentEventPages(JsonElement change)
     {
         // Resolve through the existing native page choices, including their
@@ -751,10 +767,10 @@ internal sealed class MainWindow : Window
         if (ComparisonState != "ready") { Add(Copy[ComparisonState == "failed" ? "failed" : ComparisonState == "invalid" ? "reverse" : ComparisonState == "empty" ? "chooseProject" : "loading"]); return; }
         string Location(ComparePane pane) { if (IsWorkbook) return pane.LocationCaption; if (pane.PageId.Length == 0) return Copy["absentPage"]; var number = currentReport.Get("revisions").Items().Find(revision => revision.Get("revision_occurrence_id").Text() == pane.RevisionId).Get("pages").Items().Find(page => page.Get("page_id").Text() == pane.PageId).Get("page").Number(); return number > 0 ? "p." + number : Copy["missing"]; }
         Add(Copy[AtSelectedChange ? "event" : "reading"] + " · " + VersionOrdinal(Before.RevisionId) + " " + Location(Before) + " → " + VersionOrdinal(After.RevisionId) + " " + Location(After), Brushes.DimGray);
-        Add(Copy["textDiffCompact"], Brushes.DimGray);
+        if (!SelectedWorkbookMetadata) Add(Copy["textDiffCompact"], Brushes.DimGray);
         if (sourceDiagnostics.IsChecked == true)
         {
-            Add(Copy["textDiffNotice"], Brushes.DimGray); Add(Copy["report"] + ": " + reportId + "\n" + sourcePair.Text, Brushes.DimGray);
+            if (!SelectedWorkbookMetadata) Add(Copy["textDiffNotice"], Brushes.DimGray); Add(Copy["report"] + ": " + reportId + "\n" + sourcePair.Text, Brushes.DimGray);
             if (!singleSource) Add(Copy["before"] + " · " + Before.LocationCaption + " · " + Before.PresentedSourceCaption, Brushes.DimGray);
             Add(Copy["after"] + " · " + After.LocationCaption + " · " + After.PresentedSourceCaption, Brushes.DimGray);
         }
@@ -785,7 +801,7 @@ internal sealed class MainWindow : Window
             if (WorkbookMetadataPayload(detailPayload))
             {
                 Add(Copy["kind_" + selectedChange.Get("kind").Text()], Brushes.DimGray); Add(Copy["metadataObservation"], Brushes.DimGray);
-                foreach (var side in new[] { false, true }) { Add(Copy[side ? "after" : "before"], Brushes.DimGray); Observation(SourceTextObservation.Read(JsonSerializer.SerializeToElement(MetadataSideText(side)))); }
+                foreach (var side in new[] { false, true }) AppendMetadataProjection(flow, Copy[side ? "after" : "before"], MetadataSideProjection(side));
                 return;
             }
             Add(Copy["textSegmentOnly"], Brushes.DimGray);
@@ -971,7 +987,7 @@ internal sealed class MainWindow : Window
         {
             var occurrence = change.Get(IsWorkbook ? after ? "to_revision_occurrence_id" : "from_revision_occurrence_id" : after ? "to_occurrence" : "from_occurrence").Text(); var version = VersionOrdinal(occurrence);
             if (IsWorkbook) { var sheetId = change.Get(after ? "to_sheet_id" : "from_sheet_id").Text(); var sheet = currentReport.Get("revisions").Items().Find(v => v.Get("revision_occurrence_id").Text() == occurrence).Get("sheets").Items().Find(s => s.Get("sheet_id").Text() == sheetId).Get("name").Text().Replace('\r', ' ').Replace('\n', ' '); var address = change.Get(after ? "after_address" : "before_address").Text(); return version + " · " + (sheet.Length > 0 ? sheet : Copy[SourceDiffPolicy.WorkbookScoped(change.Get("kind").Text()) ? "workbookMetadata" : sheetId.Length == 0 ? "absentSheet" : "unsupportedSheet"]) + (address.Length > 0 ? "!" + address : sheet.Length > 0 ? " · " + Copy[SourceDiffPolicy.SheetScoped(change.Get("kind").Text()) ? "sheetLevelSource" : "cellNotMaterialized"] : ""); }
-            var pages = change.Get("evidence").Items().Where(item => item.Get("revision_occurrence_id").Text() == occurrence).Select(item => item.Get("page").Number()).Where(page => page > 0).Distinct().ToArray(); return version + " · " + (pages.Length > 0 ? "p." + string.Join(",", pages.Take(3)) + (pages.Length > 3 ? " " + string.Format(CultureInfo.CurrentCulture, Copy["morePages"], pages.Length - 3) : "") : Copy["absentPage"]);
+            var pages = change.Get("evidence").Items().Where(item => item.Get("revision_occurrence_id").Text() == occurrence).Select(item => item.Get("page").Number()).Where(page => page > 0).Distinct().ToArray(); return version + " · " + (pages.Length > 0 ? "p." + string.Join(",", pages.Take(3)) + (pages.Length > 3 ? " " + string.Format(CultureInfo.CurrentCulture, Copy["morePages"], pages.Length - 3) : "") : Copy[SourceDiffPolicy.DocumentMissingPageCaption(change.Get("kind").Text(), after)]);
         }
         var summaryKey = IsWorkbook ? SourceDiffPolicy.WorkbookSummaryKey(change) : ""; var summary = summaryKey.Length == 0 ? change.Get("description").Text() : summaryKey == "summaryRowPosition" ? string.Format(CultureInfo.CurrentCulture, Copy[summaryKey], SourceDiffPolicy.WorkbookRow(change, false), SourceDiffPolicy.WorkbookRow(change, true)) : Copy[summaryKey];
         string Excerpt(JsonElement value) => value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? Copy["missing"] : value.Text().Length == 0 ? Copy["observationEmpty"] : value.Text().Split('\r', '\n').FirstOrDefault(line => !string.IsNullOrWhiteSpace(line)) ?? Copy["whitespaceText"];
@@ -1460,7 +1476,7 @@ internal sealed class MainWindow : Window
     }
     private string FormatDetail(JsonElement value)
     {
-        if (WorkbookMetadataPayload(value)) return Copy["metadataObservation"] + "\n\n" + Copy["before"] + "\n" + MetadataSideText(false) + "\n\n" + Copy["after"] + "\n" + MetadataSideText(true);
+        if (WorkbookMetadataPayload(value)) return FormatMetadataDetail(MetadataSideProjection(false), MetadataSideProjection(true));
         string Cell(JsonElement source)
         {
             if (source.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return Copy["missing"];
@@ -1472,7 +1488,7 @@ internal sealed class MainWindow : Window
     }
     private string FormatRanges(JsonElement value)
     {
-        if (WorkbookMetadataPayload(value)) return Copy["metadataObservation"];
+        if (WorkbookMetadataPayload(value)) return FormatMetadataSummary(MetadataSideProjection(false), MetadataSideProjection(true));
         var lines = new List<string> { Copy["textRange"] };
         void Cell(JsonElement cell, string side)
         {
@@ -2132,6 +2148,22 @@ internal sealed class MainWindow : Window
         await Before.SelectAvailableSheetForSmoke(); if (Before.ReadState != "ready" || Before.SheetId.Length == 0 || !Before.AuthorizesCell(1, 1)) throw new InvalidOperationException("Explicit available-sheet selection did not load its own source.");
         await SelectSourcePairForSmoke(0, currentReport.Get("revisions").Items().Count - 1);
     }
+    private object CheckMetadataProjectionControlForSmoke()
+    {
+        var saved = unified.Document; var savedDetail = detail.Text; var savedRange = detailRange.Text; var report = currentReport.GetRawText(); var before = Before.CaptureSelection(); var after = After.CaptureSelection();
+        try
+        {
+            var source = JsonSerializer.SerializeToElement(new { name = "SYNTHETIC metadata name\r\n한글 {0}%", merges = new[] { "A1:C1" }, merge_count = 12, metadata_truncated = true, metadata_query = "list_workbook_sheets" });
+            var projection = MetadataProjection.Read(source); var flow = new FlowDocument(); unified.Document = flow;
+            detail.Text = FormatMetadataDetail(MetadataProjection.Read(default), projection); detailRange.Text = FormatMetadataSummary(MetadataProjection.Read(default), projection);
+            if (!detail.Text.Contains(projection.Json, StringComparison.Ordinal) || detail.Text.Contains(Copy["metadataBounded"], StringComparison.Ordinal) || !detailRange.Text.Contains(Copy["after"] + " · " + Copy["metadataBounded"], StringComparison.Ordinal) || !detail.Text.Contains(Copy["observationMissing"], StringComparison.Ordinal)) throw new InvalidOperationException("Inspector metadata mixed a secondary bounded notice into its generated JSON detail body.");
+            AppendMetadataProjection(flow, Copy["before"], MetadataProjection.Read(default)); AppendMetadataProjection(flow, Copy["after"], projection); unified.UpdateLayout();
+            var paragraphs = flow.Blocks.OfType<Paragraph>().ToArray(); var body = paragraphs.Where(item => item.Tag as string == "metadataJsonProjection").ToArray(); var missing = paragraphs.Where(item => item.Tag as string == "metadataMissing").ToArray(); var bounded = paragraphs.Where(item => item.Tag as string == "metadataBoundedNotice").ToArray();
+            if (body.Length != 1 || body[0].Inlines.OfType<Run>().Single().Text != projection.Json || !ReferenceEquals(body[0].Foreground, Brushes.Black) || missing.Length != 1 || missing[0].Inlines.OfType<Run>().Single().Text != Copy["observationMissing"] || !ReferenceEquals(missing[0].Foreground, Brushes.DimGray) || bounded.Length != 1 || bounded[0].Inlines.OfType<Run>().Single().Text != MetadataBoundedNotice(projection) || !ReferenceEquals(bounded[0].Foreground, Brushes.DimGray) || paragraphs.Any(item => item.Inlines.OfType<Run>().Any(run => run.Text.Contains(Copy["observationPresent"], StringComparison.Ordinal) || run.Text.Contains("⟦LF⟧", StringComparison.Ordinal) || run.Text.Contains("⟦EOF⟧", StringComparison.Ordinal))) || JsonSerializer.Deserialize<JsonElement>(body[0].Inlines.OfType<Run>().Single().Text).Get("name").Text() != source.Get("name").Text() || body[0].Inlines.OfType<Run>().Single().Text.Contains("metadata_query", StringComparison.Ordinal) || body[0].Inlines.OfType<Run>().Single().Text.Contains("metadata_truncated", StringComparison.Ordinal) || projection.QueryHint != "list_workbook_sheets") throw new InvalidOperationException("The native typed metadata projection manufactured a missing-side body or mixed its bounded UI note/source terminators into generated JSON.");
+            return new { scope = "Explicit synthetic metadata projection controls through the production native renderer; not engine facts", language = Copy.Language, json_body = body[0].Inlines.OfType<Run>().Single().Text, missing_side_has_no_json_body = true, bounded_notice_separate_dimgray = true, decoded_name_exact = true };
+        }
+        finally { unified.Document = saved; detail.Text = savedDetail; detailRange.Text = savedRange; if (currentReport.GetRawText() != report || Before.CaptureSelection() != before || After.CaptureSelection() != after) throw new InvalidOperationException("Metadata projection controls mutated fixed source state."); }
+    }
     internal async Task<object> CheckWorkbookMetadataForSmoke(IReadOnlyList<ImportRow> sources, Func<string, Task> capture)
     {
         if (!IsWorkbook) throw new InvalidOperationException("Metadata QA requires workbook sources.");
@@ -2140,21 +2172,25 @@ internal sealed class MainWindow : Window
         try
         {
             await ImportAndAnalyze("Actual workbook and sheet metadata", sources); await SelectSourcePairForSmoke(0, 1); if (NetMode) await ChangeComparisonMode(false);
+            foreach (var locale in new[] { "en", "ko" }) { SetLanguage(locale); results.Add(CheckMetadataProjectionControlForSmoke()); }
             var metadataReport = currentReport.GetRawText(); var rows = changes.ToArray(); var cursor = nextChanges; var scope = CurrentChangeScope; var queryReads = changeQueryReadsForSmoke; SetLayout(WorkspaceLayout.Preset("sourceFirst"));
             foreach (var kind in new[] { "date_system", "calculation_settings", "sheet_name", "merges" })
             {
                 var row = changes.Single(item => item.Value.Get("kind").Text() == kind); await SelectChange(row.Value); var anchorA = selectedBefore; var anchorB = selectedAfter;
                 foreach (var locale in new[] { "en", "ko" })
                 {
-                    SetLanguage(locale); sourceView.SelectedIndex = 1; UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                    SetLanguage(locale); sourceView.SelectedIndex = 0; results.Add(Before.CheckMetadataCellDetailsForSmoke(true)); results.Add(After.CheckMetadataCellDetailsForSmoke(true)); sourceView.SelectedIndex = 1; UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                     var valueA = MetadataSide(false); var valueB = MetadataSide(true); var body = Text(); var rawA = valueA.Pretty(); var rawB = valueB.Pretty();
-                    if (!SelectedWorkbookMetadata || !WorkbookMetadataPayload(detailPayload) || !AtSelectedChange || Before.FocusedAddress.Length != 0 || After.FocusedAddress.Length != 0 || !body.Contains(Copy["metadataObservation"], StringComparison.Ordinal) || body.Contains(Copy["cellNotMaterialized"], StringComparison.Ordinal) || body.Contains(Copy["invalidSourceSegment"], StringComparison.Ordinal) || !detail.Text.Contains(rawA, StringComparison.Ordinal) || !detail.Text.Contains(rawB, StringComparison.Ordinal) || detailRange.Text != Copy["metadataObservation"] || body.Length == 0 || unified.Document.Blocks.OfType<Paragraph>().Any(item => ReferenceEquals(item.Foreground, Brushes.DarkRed) || ReferenceEquals(item.Foreground, Brushes.DarkGreen))) throw new InvalidOperationException("A real metadata event rendered missing/invalid cell fields or lost its exact neutral metadata in " + kind + "/" + locale);
+                    if (!SelectedWorkbookMetadata || !WorkbookMetadataPayload(detailPayload) || !AtSelectedChange || Before.FocusedAddress.Length != 0 || After.FocusedAddress.Length != 0 || !body.Contains(Copy["metadataObservation"], StringComparison.Ordinal) || !body.Contains(Copy["metadataProjection"], StringComparison.Ordinal) || body.Contains(Copy["observationPresent"], StringComparison.Ordinal) || body.Contains("⟦LF⟧", StringComparison.Ordinal) || body.Contains("⟦EOF⟧", StringComparison.Ordinal) || body.Contains(Copy["cellNotMaterialized"], StringComparison.Ordinal) || body.Contains(Copy["invalidSourceSegment"], StringComparison.Ordinal) || !detail.Text.Contains(rawA, StringComparison.Ordinal) || !detail.Text.Contains(rawB, StringComparison.Ordinal) || detailRange.Text != Copy["metadataObservation"] || body.Length == 0 || unified.Document.Blocks.OfType<Paragraph>().Any(item => ReferenceEquals(item.Foreground, Brushes.DarkRed) || ReferenceEquals(item.Foreground, Brushes.DarkGreen))) throw new InvalidOperationException("A real metadata event rendered missing/invalid cell fields or lost its exact neutral metadata in " + kind + "/" + locale);
+                    var jsonParagraphs = unified.Document.Blocks.OfType<Paragraph>().Where(paragraph => paragraph.Tag as string == "metadataJsonProjection").ToArray();
+                    if (jsonParagraphs.Length != 2 || !string.Equals(jsonParagraphs[0].Inlines.OfType<Run>().Single().Text, rawA, StringComparison.Ordinal) || !string.Equals(jsonParagraphs[1].Inlines.OfType<Run>().Single().Text, rawB, StringComparison.Ordinal)) throw new InvalidOperationException("Generated metadata was split into source lines, annotated as raw source terminators, or rendered more than once.");
                     if (SourceDiffPolicy.WorkbookScoped(kind) && (Before.LocationCaption.Contains(Copy["absentSheet"], StringComparison.Ordinal) || After.LocationCaption.Contains(Copy["absentSheet"], StringComparison.Ordinal) || !row.Location.Contains(Copy["workbookMetadata"], StringComparison.Ordinal))) throw new InvalidOperationException("A workbook-wide metadata event invented an absent sheet.");
                     if (!Before.PresentedFallback.Contains(rawA, StringComparison.Ordinal) || !After.PresentedFallback.Contains(rawB, StringComparison.Ordinal)) throw new InvalidOperationException("Original source did not retain its actual metadata observation.");
                     await capture("actual-metadata-" + kind + "-" + locale); results.Add(new { kind, language = locale, event_id = row.Id, canonical_event = row.Value, before_metadata = valueA, after_metadata = valueB, neutral_metadata_visible = true });
                 }
                 if (Before.SheetId.Length == 0) await Before.SelectAvailableSheetForSmoke(); await Before.GoForSmoke("B2"); sourceView.SelectedIndex = 0;
                 if (SelectedWorkbookMetadata || AtSelectedChange || Before.ReadState != "ready" || Before.FocusedAddress != "B2" || !Before.TryGetFocusedMaterializedCell(out var cell) || cell.Get("value").Text() != "42" || !detail.Text.Contains("42", StringComparison.Ordinal) || detail.Text.Contains(Copy["metadataObservation"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy["outsideChange"], StringComparison.Ordinal)) throw new InvalidOperationException("Manual metadata-to-cell browsing retained event metadata instead of its real physical cell.");
+                foreach (var locale in new[] { "en", "ko" }) { SetLanguage(locale); results.Add(Before.CheckMetadataCellDetailsForSmoke(false)); }
                 await capture("actual-metadata-" + kind + "-manual-cell"); await ReturnToChange();
                 if (!SelectedWorkbookMetadata || selectedBefore != anchorA || selectedAfter != anchorB || !rows.SequenceEqual(changes) || cursor != nextChanges || CurrentChangeScope != scope || changeQueryReadsForSmoke != queryReads || currentReport.GetRawText() != metadataReport) throw new InvalidOperationException("Return from a metadata event's manual cell replaced its exact query, canonical event or metadata anchor.");
             }
@@ -2230,6 +2266,12 @@ internal sealed class MainWindow : Window
                 var evidence = Enumerable.Range(1, 5).Select(page => new { revision_occurrence_id = before.Revision, page }).Concat(Enumerable.Range(1, 4).Select(page => new { revision_occurrence_id = after.Revision, page }));
                 var captionControl = ChangeCaption(JsonSerializer.SerializeToElement(new { kind = "text_modified", from_occurrence = before.Revision, to_occurrence = after.Revision, before = (string?)null, after = "SYNTHETIC caption only", evidence }));
                 if (!captionControl.Contains(string.Format(CultureInfo.CurrentCulture, Copy["morePages"], 2), StringComparison.Ordinal) || !captionControl.Contains(string.Format(CultureInfo.CurrentCulture, Copy["morePages"], 1), StringComparison.Ordinal) || !captionControl.Contains(Copy["missing"] + " → SYNTHETIC caption only", StringComparison.Ordinal)) throw new InvalidOperationException("Synthetic bounded page caption concealed the additional page count or an absent observation.");
+                foreach (var kind in new[] { "coverage_gap", "visual_region_changed", "text_modified", "page_added", "page_deleted" })
+                {
+                    var sparse = ChangeCaption(JsonSerializer.SerializeToElement(new { kind, from_occurrence = before.Revision, to_occurrence = after.Revision, before = "SYNTHETIC before", after = "SYNTHETIC after", evidence = Array.Empty<object>() }));
+                    var location = sparse.Split('\n')[1]; var absentCount = location.Split(Copy["absentPage"], StringSplitOptions.None).Length - 1; var unknownCount = location.Split(Copy["noEvidencePageListed"], StringSplitOptions.None).Length - 1; var structural = kind is "page_added" or "page_deleted";
+                    if (absentCount != (structural ? 1 : 0) || unknownCount != (structural ? 1 : 2)) throw new InvalidOperationException("A native document row caption asserted absent pages from an omitted evidence list rather than structural event semantics.");
+                }
                 var emptyControl = ChangeCaption(JsonSerializer.SerializeToElement(new { kind = "text_modified", from_occurrence = before.Revision, to_occurrence = after.Revision, before = "", after = " \r\n\t", evidence }));
                 if (!emptyControl.Contains(Copy["observationEmpty"] + " → " + Copy["whitespaceText"], StringComparison.Ordinal) || emptyControl.Contains(Copy["missing"], StringComparison.Ordinal)) throw new InvalidOperationException("Synthetic preview caption conflated explicit empty or whitespace source with an absent observation.");
             }
@@ -2379,6 +2421,15 @@ internal sealed class MainWindow : Window
             if (absent is null) throw new InvalidOperationException("Expected a genuine one-sided sheet event fixture.");
             status.Text = "SYNTHETIC stale source loading banner"; await SelectChange(absent.Value); Before.CheckReadingChromeForSmoke(); After.CheckReadingChromeForSmoke();
             if (status.Text != Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"]) throw new InvalidOperationException("A terminal absent-side event kept a stale loading banner.");
+            var priorText = textView; var priorLanguage = Copy.Language; var metadataReportBytes = currentReport.GetRawText();
+            foreach (var locale in new[] { "en", "ko" })
+            {
+                SetLanguage(locale); sourceView.SelectedIndex = 0; Before.CheckMetadataCellDetailsForSmoke(true); After.CheckMetadataCellDetailsForSmoke(true); sourceView.SelectedIndex = 1; RenderSourceDiff(); var projections = unified.Document.Blocks.OfType<Paragraph>().Where(item => item.Tag as string == "metadataJsonProjection").ToArray(); var missingMetadata = unified.Document.Blocks.OfType<Paragraph>().Where(item => item.Tag as string == "metadataMissing").ToArray();
+                var sideA = MetadataSideProjection(false); var sideB = MetadataSideProjection(true); var expected = sideA.Available ? sideA : sideB;
+                if (!SelectedWorkbookMetadata || sideA.Available == sideB.Available || projections.Length != 1 || projections[0].Inlines.OfType<Run>().Single().Text != expected.Json || missingMetadata.Length != 1 || missingMetadata[0].Inlines.OfType<Run>().Single().Text != Copy["observationMissing"] || !ReferenceEquals(missingMetadata[0].Foreground, Brushes.DimGray) || detail.Text.Contains(Copy["metadataBounded"], StringComparison.Ordinal) || unified.Document.Blocks.OfType<Paragraph>().Any(item => item.Inlines.OfType<Run>().Any(run => run.Text.Contains(Copy["observationPresent"], StringComparison.Ordinal) || run.Text.Contains("⟦LF⟧", StringComparison.Ordinal) || run.Text.Contains("⟦EOF⟧", StringComparison.Ordinal))) || currentReport.GetRawText() != metadataReportBytes) throw new InvalidOperationException("An actual one-sided sheet metadata event promoted its absent side to a stored text observation or annotated generated JSON source terminators.");
+            }
+            SetLanguage(priorLanguage); sourceView.SelectedIndex = priorText ? 1 : 0;
+
             var absentQueryReads = changeQueryReadsForSmoke; var absentRows = changes.ToArray(); var absentCursor = nextChanges; FailComparison(false); status.Text = "SYNTHETIC stale retry banner"; await RetryComparison();
             if (ComparisonState != "ready" || status.Text != Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"] || !absentRows.SequenceEqual(changes) || absentCursor != nextChanges || absentQueryReads != changeQueryReadsForSmoke) throw new InvalidOperationException("Retry of legitimate absent-side source did not settle ready while retaining its query.");
             if (!absent.Location.Contains(Copy["sheetLevelSource"], StringComparison.Ordinal) || !absent.Location.Contains(Copy["absentSheet"], StringComparison.Ordinal) || absent.Location.Contains(Copy["missing"], StringComparison.Ordinal)) throw new InvalidOperationException("A genuine one-sided sheet event did not distinguish present sheet metadata from its absent sheet side.");

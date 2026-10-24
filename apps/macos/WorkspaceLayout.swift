@@ -473,12 +473,28 @@ struct NativeNeutralSourceText:View {
     let text:String
     let lines:[(text:String,terminator:String)]?
     var body:some View {
-        if let lines {
-            VStack(alignment:.leading,spacing:1){ForEach(Array(lines.enumerated()),id:\.offset){_,line in NativeDiffSourceLine(prefix:"",text:line.text,semantic:false,terminator:line.terminator)}}
-        } else {
-            Text(verbatim:text).font(.system(.body,design:.monospaced)).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)
-        }
+        HStack(alignment:.top,spacing:6){
+            NativeRawSourceCopyButton(text:text).frame(width:24,height:22)
+            if let lines {
+                VStack(alignment:.leading,spacing:1){ForEach(Array(lines.enumerated()),id:\.offset){_,line in NativeDiffSourceLine(prefix:"",text:line.text,semantic:false,terminator:line.terminator)}}
+            } else {
+                Text(verbatim:text).font(.system(.body,design:.monospaced)).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)
+            }
+        }.frame(maxWidth:.infinity,alignment:.leading)
     }
+}
+struct NativeRawSourceCopyButton:NSViewRepresentable {
+    let text:String
+    @MainActor final class Coordinator:NSObject {
+        var text=""
+        var pasteboard:NSPasteboard = .general
+        @objc func copyRaw(_ sender:NSButton) {pasteboard.clearContents();pasteboard.setString(text,forType:.string)}
+    }
+    func makeCoordinator()->Coordinator {Coordinator()}
+    func makeNSView(context:Context)->NSButton {
+        let button=NSButton(image:NSImage(systemSymbolName:"doc.on.doc",accessibilityDescription:nil) ?? NSImage(),target:context.coordinator,action:#selector(Coordinator.copyRaw(_:)));button.bezelStyle = .rounded;button.imagePosition = .imageOnly;button.identifier=NSUserInterfaceItemIdentifier("Reviset.source.copyRaw");return button
+    }
+    func updateNSView(_ button:NSButton,context:Context) {context.coordinator.text=text;button.toolTip=L("common.copyRaw");button.setAccessibilityLabel(L("common.copyRaw"))}
 }
 
 // Persistent context is a summary, not an unbounded raw-text canvas. The full

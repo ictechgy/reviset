@@ -1289,15 +1289,18 @@ private struct WorkbookCellDetailsButton:NSViewRepresentable {
     func makeNSView(context:Context)->NSButton {let button=NSButton(title:"",target:context.coordinator,action:#selector(Coordinator.open(_:)));button.bezelStyle = .rounded;button.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.cellDetailsAction");return button}
     func updateNSView(_ button:NSButton,context:Context) {context.coordinator.model=model;button.title=L("workbook.action.cellDetails");button.setAccessibilityLabel(button.title);button.isEnabled=model.canOpenCellDetails}
 }
-private struct WorkbookSourceScopeCaption:NSViewRepresentable {
+struct WorkbookSourceScopeCaption:NSViewRepresentable {
     let text:String
     func makeNSView(context:Context)->NSTextField {
         let field=NSTextField(wrappingLabelWithString:"");field.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.queryEventScopeCopy");field.font = .systemFont(ofSize:NSFont.smallSystemFontSize);field.textColor = .secondaryLabelColor;field.setContentHuggingPriority(.defaultLow,for:.horizontal);return field
     }
     func updateNSView(_ field:NSTextField,context:Context) {field.stringValue=text;field.setAccessibilityLabel(text)}
+    static func finiteWidth(_ proposed:CGFloat?)->CGFloat {max(1,proposed.flatMap{$0.isFinite ? $0:nil} ?? 280)}
     func sizeThatFits(_ proposal:ProposedViewSize,nsView:NSTextField,context:Context)->CGSize? {
-        let width=max(1,proposal.width ?? 280),bounds=nsView.attributedStringValue.boundingRect(with:NSSize(width:width,height:.greatestFiniteMagnitude),options:[.usesLineFragmentOrigin,.usesFontLeading])
-        return CGSize(width:width,height:ceil(bounds.height)+2)
+        let width=Self.finiteWidth(proposal.width)
+        nsView.preferredMaxLayoutWidth=width
+        let height=nsView.cell?.cellSize(forBounds:NSRect(x:0,y:0,width:width,height:CGFloat.greatestFiniteMagnitude)).height ?? nsView.fittingSize.height
+        return CGSize(width:width,height:ceil(max(1,height))+2)
     }
 }
 private struct WorkbookInspector: View {

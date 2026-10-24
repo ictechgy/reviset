@@ -551,8 +551,24 @@ private struct SoleDocumentImportProbeHarness:View {
         }
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1280,height:800),styleMask:[.titled],backing:.buffered,defer:false);window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:WorkbookWorkspace(model:model));window.orderFront(nil);defer{window.close()};try await settle(window)
         model.projectID="neutral-project"
+        let isolatedPasteboard=NSPasteboard.withUniqueName();defer{isolatedPasteboard.clearContents()}
+        var copyActions=0
+        func checkCopies(_ content:NSView,_ expected:[String])throws {
+            let buttons=views(content).compactMap{$0 as? NSButton}.filter{$0.identifier?.rawValue=="Reviset.source.copyRaw"}
+            try require(buttons.count==expected.count,"NeutralRawCopyActionCount")
+            var remaining=expected
+            for button in buttons {
+                guard let target=button.target as? NativeRawSourceCopyButton.Coordinator,let index=remaining.firstIndex(where:{$0.utf16.elementsEqual(target.text.utf16)}) else{throw NSError(domain:"NeutralRawCopyWrongPhysicalSource",code:1)}
+                let source=remaining.remove(at:index)
+                try require(!button.isHiddenOrHasHiddenAncestor && !button.visibleRect.isEmpty && button.isEnabled && button.toolTip==L("common.copyRaw") && button.accessibilityLabel()==L("common.copyRaw"),"NeutralRawCopyActionNotDiscoverable")
+                target.pasteboard=isolatedPasteboard;isolatedPasteboard.clearContents();button.performClick(nil)
+                try require(isolatedPasteboard.string(forType:.string)?.utf16.elementsEqual(source.utf16)==true,"NeutralRawCopyAlteredUTF16OrIncludedAnnotation")
+                copyActions+=1
+            }
+            try require(remaining.isEmpty,"NeutralRawCopyMissedSource")
+        }
         var cases:[[String:Any]]=[]
-        for (name,before,after,offset,expected) in [("crlf-to-lf","a\r\nx","a\nx",nil as Int?,["⟦CRLF⟧","⟦EOF⟧","⟦LF⟧","⟦EOF⟧"]),("terminated-to-eof","a\n","a",nil,["⟦LF⟧","⟦EOF⟧"]),("literal-marker","⟦LF⟧\r","⟦LF⟧",nil,["⟦CR⟧","⟦EOF⟧"]),("partial-fragment","a\r\nx",nil,0,[]),("continued-partial-fragment","a\r",nil,6,[]),("missing-before",nil,"a\n",nil,["⟦LF⟧"]),("empty-observation","",nil,nil,[])] as [(String,String?,String?,Int?,[String])] {
+        for (name,before,after,offset,expected) in [("crlf-to-lf","a\r\nx","a\nx",nil as Int?,["⟦CRLF⟧","⟦EOF⟧","⟦LF⟧","⟦EOF⟧"]),("terminated-to-eof","a\n","a",nil,["⟦LF⟧","⟦EOF⟧"]),("literal-marker","⟦LF⟧ 👨‍👩‍👧‍👦e\u{301}\r","⟦LF⟧ 👨‍👩‍👧‍👦e\u{301}",nil,["⟦CR⟧","⟦EOF⟧"]),("partial-fragment","a\r\nx",nil,0,[]),("continued-partial-fragment","a\r",nil,6,[]),("missing-before",nil,"a\n",nil,["⟦LF⟧"]),("empty-observation","",nil,nil,[])] as [(String,String?,String?,Int?,[String])] {
             model.beforeCell=source(fixture["before"],before,partialOffset:offset);model.afterCell=source(fixture["after"],after);model.cellTextOffset=offset ?? 0;try await settle(window)
             let actual=labels(window.contentView!),old=workbookRawField(model.beforeCell,field:"value"),new=workbookRawField(model.afterCell,field:"value")
             try require(actual.sorted()==expected.sorted(),"NeutralWorkbookTerminatorLabels-"+name+"-"+actual.joined(separator:","))
@@ -560,6 +576,7 @@ private struct SoleDocumentImportProbeHarness:View {
             if offset != nil {try require(old.state == .partial && !old.complete && workspaceLayoutMarkers(in:window.contentView!).contains{$0.identifier?.rawValue=="Reviset.workbook.rawField.value.before"},"PartialRawReaderWasSuppressedOrClaimedComplete")}
             let context=WorkbookSelectedEventScope(beforeOccurrence:model.beforeID,afterOccurrence:model.afterID,beforeSheet:model.beforeSheetID,afterSheet:model.afterSheetID)
             try require(workbookFieldDiffEligibility(change:model.selectedChange,before:model.beforeCell,after:model.afterCell,scope:context) == .neutral,"NeutralObservationClaimedFieldEdit")
+            try checkCopies(window.contentView!,[before,after].compactMap{$0}.filter{!$0.isEmpty})
             cases.append(["name":name,"native_secondary_labels":actual,"before_raw_utf16":Array((before ?? "").utf16).map(Int.init),"after_raw_utf16":Array((after ?? "").utf16).map(Int.init),"before_state":old.state.rawValue,"after_state":new.state.rawValue,"neutral":true])
         }
         let document=AppModel();document.report=JSON(["report_id":"fixed","revisions":[["revision_occurrence_id":"a"],["revision_occurrence_id":"b"]]]);document.from=0;document.to=1;document.diffMode="text"
@@ -570,9 +587,10 @@ private struct SoleDocumentImportProbeHarness:View {
             let actual=labels(docWindow.contentView!),diff=documentTextDiff(document.selected)
             try require(actual.sorted()==expected.sorted() && !diff.semantic && diff.lines.allSatisfy{$0.prefix.isEmpty},"NeutralDocumentTerminatorLabelsMissingOrSemantic")
             try require(document.selected["before"].string.utf16.elementsEqual(before.utf16) && document.selected["after"].string.utf16.elementsEqual(after.utf16),"NeutralDocumentSourceChanged")
+            try checkCopies(docWindow.contentView!,[before,after])
             docCases.append(["native_secondary_labels":actual,"before_raw_utf16":Array(before.utf16).map(Int.init),"after_raw_utf16":Array(after.utf16).map(Int.init),"neutral":true])
         }
-        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["scope":"mounted production neutral WorkbookUnifiedDiff and DocumentUnifiedDiff secondary native terminator labels; no OS input or extraction claim","workbook_cases":cases,"document_cases":docCases,"partial_and_missing_not_claimed_eof":true,"raw_utf16_preserved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("source17-proof.json"))}
+        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["scope":"mounted production neutral WorkbookUnifiedDiff and DocumentUnifiedDiff secondary native terminator labels; no OS input or extraction claim","workbook_cases":cases,"document_cases":docCases,"partial_and_missing_not_claimed_eof":true,"raw_utf16_preserved":true,"source18_raw_copy":["actual_native_actions":copyActions,"isolated_unique_pasteboard_only":true,"normal_user_clipboard_read_or_written":false,"clipboard_contents_logged":false,"exact_utf16_including_terminators":true,"complete_and_partial_sources_verified":true]],options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("source17-proof.json"))}
     }
 
     @MainActor static func checkSource16Presentation(_ metadataEvent:JSON)async throws {
@@ -613,6 +631,27 @@ private struct SoleDocumentImportProbeHarness:View {
             model.setDiffMode("source");try await settle(window)
             observations.append(["language":language.rawValue,"native_details_action_visible_and_performed":true,"existing_inspector_visible":true,"query_event_copy":scopeLabel.stringValue,"mounted_native_scope_label_verified":true,"raw_literal":raw,"raw_utf16_preserved":true,"no_new_bridge_requests_or_list_replacement":true,"grid_hosts_and_viewports_retained":true,"text_navigation_explicit_original_route":true])
         }
+        let originalReport=model.report
+        var longReport=model.report.dictionary,longRevisions=model.revisions.map(\.dictionary)
+        for index in longRevisions.indices {longRevisions[index]["label"]="\(index+1) · "+String(repeating:"긴 버전 이름 👨‍👩‍👧‍👦 e\u{301} العربية עברית · ",count:2)}
+        longReport["revisions"]=longRevisions;model.report=JSON(longReport)
+        var captionGeometry:[[String:Any]]=[]
+        for proposed in [nil,CGFloat.infinity,CGFloat.nan,-CGFloat.infinity,0,184] as [CGFloat?] {let width=WorkbookSourceScopeCaption.finiteWidth(proposed);try require(width.isFinite && width>0 && (proposed?.isFinite==true || width==280),"ScopeCaptionAcceptedNonFiniteWidth")}
+        for language in [UILanguage.en,.ko] {
+            preferences.selection=language
+            let expected=model.sourceScopeDescription
+            try require(expected.utf16.count>300,"LongUnicodeVersionScopeFixtureMissing")
+            for width in [CGFloat(184),239,317] {
+                let captionWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:width,height:700),styleMask:[.titled],backing:.buffered,defer:false);captionWindow.isReleasedWhenClosed=false
+                let captionHost=NSHostingView(rootView:WorkbookSourceScopeCaption(text:expected).frame(width:width));captionWindow.contentView=captionHost;captionWindow.orderFront(nil);try await settle(captionWindow)
+                guard let field=views(captionHost).compactMap({$0 as? NSTextField}).first(where:{$0.identifier?.rawValue=="Reviset.workbook.queryEventScopeCopy"}),let cell=field.cell else{throw NSError(domain:"LongUnicodeMountedScopeCaptionMissing",code:1)}
+                let required=cell.cellSize(forBounds:NSRect(x:0,y:0,width:field.bounds.width,height:CGFloat.greatestFiniteMagnitude)).height
+                let alignmentRect=field.alignmentRect(forFrame:field.bounds),visible=field.visibleRect.intersection(field.bounds)
+                guard field.bounds.width.isFinite && field.bounds.height.isFinite && abs(alignmentRect.width-width)<1 && field.bounds.height>=ceil(required) && required>30 && visible.height>=field.bounds.height-1 && field.stringValue.utf16.elementsEqual(expected.utf16) else {throw NSError(domain:"LongUnicodeScopeCaptionWrappedTailClipped",code:1,userInfo:[NSLocalizedDescriptionKey:"language=\(language.rawValue), proposed=\(width), native=\(field.bounds), alignment=\(alignmentRect), required=\(required), visible=\(visible), utf16=\(expected.utf16.count), exact=\(field.stringValue.utf16.elementsEqual(expected.utf16))"])}
+                captionGeometry.append(["language":language.rawValue,"proposed_width":Double(width),"native_width":Double(field.bounds.width),"native_alignment_width":Double(alignmentRect.width),"allocated_height":Double(field.bounds.height),"required_native_cell_height":Double(required),"visible_height":Double(visible.height),"scope_copy_utf16_count":expected.utf16.count,"exact_scope_copy":true,"wrapped_tail_has_native_height":true]);captionWindow.close()
+            }
+        }
+        model.report=originalReport;try await settle(window)
         model.beforeID="old";model.afterID="old";model.afterSheetID="sheet-old";model.beforeAddress="A2";model.afterAddress="A2";model.beforeCell=JSON(["address":"A2","cached_result":"missing","value":NSNull()]);model.afterCell=model.beforeCell
         try require(model.selectedSourceWarnings.count==1 && model.selectedSourceWarnings[0].hasPrefix(L("doc.common.source")) && model.navigationDetail==L("workbook.nav.singleSourceDetail"),"SingleSourceRetainedPairedWarningsOrFooter")
         // A real diffWorkbooks metadata event has no cell payload or cell warning.
@@ -639,7 +678,7 @@ private struct SoleDocumentImportProbeHarness:View {
         try require(!workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"UnselectedDocumentDiffClaimedSelectedEvent")
         document.changes=[JSON(["change_id":"selected","kind":"text_modified","before":"100","after":"120"])];document.selectedChangeID="selected";try await settle(docWindow)
         try require(workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"SelectedDocumentEventHeaderMissing")
-        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
+        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true,"source18_scope_caption_geometry":captionGeometry,"source18_nonfinite_width_resolved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
     }
 
 }

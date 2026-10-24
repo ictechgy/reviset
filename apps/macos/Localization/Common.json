@@ -1,4 +1,8 @@
 {
+  "common.copyRaw": {
+    "en": "Copy raw text",
+    "ko": "원문 복사"
+  },
   "language.system": {
     "en": "System Default",
     "ko": "시스템 기본값"

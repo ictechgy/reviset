@@ -73,8 +73,20 @@ internal sealed record SourceTextObservation(SourceTextState State, string Text,
 }
 internal sealed record SourceDiffField(string Key, SourceTextObservation Before, SourceTextObservation After, bool Eligible, string Reason);
 internal sealed record WorkbookSourceScope(string BeforeOccurrence, string AfterOccurrence, string BeforeSheet, string AfterSheet, string BeforeAddress, string AfterAddress);
+// App-generated metadata JSON is a typed projection, never source text.
+// Its formatting newlines must not enter the source-line/terminator differ.
+internal sealed record MetadataProjection(bool Available, string Json, bool Bounded, string QueryHint = "")
+{
+    internal static MetadataProjection Read(JsonElement value, bool bounded = false, string queryHint = "")
+    {
+        if (value.ValueKind != JsonValueKind.Object) return new(false, "", false);
+        var source = JsonSerializer.SerializeToElement(value.EnumerateObject().Where(property => property.Name is not ("metadata_truncated" or "metadata_query")).ToDictionary(property => property.Name, property => property.Value));
+        return new(true, source.Pretty(), bounded || value.Get("metadata_truncated").Flag(), queryHint.Length > 0 ? queryHint : value.Get("metadata_query").Text());
+    }
+}
 internal static class SourceDiffPolicy
 {
+    internal static string DocumentMissingPageCaption(string kind, bool after) => kind == "page_added" && !after || kind == "page_deleted" && after ? "absentPage" : "noEvidencePageListed";
     internal static bool SheetScoped(string kind) => kind.StartsWith("sheet_", StringComparison.Ordinal) || kind is "merges" or "date_system" or "calculation_settings";
     internal static bool WorkbookScoped(string kind) => kind is "date_system" or "calculation_settings";
     internal static bool WorkbookMetadataContext(JsonElement change, WorkbookSourceScope scope) => SheetScoped(change.Get("kind").Text())
@@ -90,11 +102,16 @@ internal static class SourceDiffPolicy
         var keys = kind switch
         {
             "date_system" => new[] { "date_system" }, "calculation_settings" => ["calc_flags"], "sheet_name" => ["name"], "sheet_position" => ["index"], "sheet_visibility" => ["hidden"],
-            "merges" => ["merges", "merge_count", "metadata_truncated", "metadata_query"], "sheet_dimensions" => ["row_count", "column_count", "row_metadata", "row_metadata_count", "column_metadata", "column_metadata_count", "metadata_truncated", "metadata_query"],
+            "merges" => ["merges", "merge_count"], "sheet_dimensions" => ["row_count", "column_count", "row_metadata", "row_metadata_count", "column_metadata", "column_metadata_count"],
             _ => ["name", "index", "hidden", "row_count", "column_count", "cell_count"]
         };
         if (source.ValueKind != JsonValueKind.Object) return default;
         return JsonSerializer.SerializeToElement(keys.Where(key => source.Get(key).ValueKind != JsonValueKind.Undefined).ToDictionary(key => key, key => source.Get(key)));
+    }
+    internal static MetadataProjection WorkbookMetadataProjection(JsonElement revision, string sheetId, string kind)
+    {
+        var sheet = revision.Get("sheets").Items().Find(item => item.Get("sheet_id").Text() == sheetId);
+        return MetadataProjection.Read(WorkbookMetadata(revision, sheetId, kind), !WorkbookScoped(kind) && sheet.Get("metadata_truncated").Flag(), WorkbookScoped(kind) ? "" : sheet.Get("metadata_query").Text());
     }
     internal static IReadOnlyList<string> WorkbookPreviewKeys(JsonElement cell, string field)
     {
