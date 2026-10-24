@@ -710,12 +710,9 @@ private struct SoleDocumentImportProbeHarness:View {
         for (table,owner,origin,row) in oversizedStates {
             guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,let index=table.tableColumns.firstIndex(where:{$0.identifier.rawValue=="4"}) else{throw NSError(domain:"OversizedDetailsNativeScopeMissing",code:1)}
             try require(table.rect(ofColumn:index).width>scroll.contentView.bounds.width && !scroll.columnVisibleToRightOfGutter(index) && scroll.pendingCellDetailsReveal==nil && scroll.contentView.bounds.minY==origin.y && table.selectedRow==row && (table.dataSource as AnyObject?) === owner,"OversizedDetailsRetainedRevealAuthorityOrMovedPhysicalSource")
-            guard let cell=table.view(atColumn:index,row:row,makeIfNecessary:true) as? NSTableCellView,let text=cell.textField else{throw NSError(domain:"OversizedD4NativeTextMissing",code:1)}
-            cell.layoutSubtreeIfNeeded()
-            let leadingError=abs(table.rect(ofColumn:index).minX-scroll.contentView.bounds.minX-scroll.pinnedRowGutter.frame.width),fragment=text.convert(NSRect(x:text.bounds.minX,y:text.bounds.midY-2,width:min(12,text.bounds.width),height:4),to:scroll)
-            var usable=scroll.contentView.convert(scroll.contentView.bounds,to:scroll);usable.origin.x += scroll.pinnedRowGutter.frame.width;usable.size.width -= scroll.pinnedRowGutter.frame.width
-            try require(leadingError<0.5 && usable.contains(fragment) && !text.visibleRect.isEmpty && text.stringValue.utf16.elementsEqual(raw.utf16),"OversizedD4LeadingTextNotVisibleBesidePinnedGutter")
-            oversizedGeometry.append(["pane":(table.dataSource as! WorkbookGrid.Coordinator).parent.pane,"column_width":Double(table.rect(ofColumn:index).width),"viewport_width":Double(scroll.contentView.bounds.width),"cannot_fit_whole_column":true,"pending_nil_after_attempt":true,"leading_edge_alignment_error":Double(leadingError),"native_text_leading_fragment_visible":true,"leading_fragment_rect":NSStringFromRect(fragment),"usable_viewport_rect":NSStringFromRect(usable)])
+            let fact=try WorkbookNativeSmoke.oversizedLeadingSourceFacts(table,column:index,row:row)
+            try require(fact["source_observation_state"] as? String=="nonempty_string" && fact["native_text_leading_fragment_visible"] as? Bool==true && fact["expected_raw_utf16"] as? [Int]==Array(raw.utf16).map(Int.init),"OversizedD4LeadingTextNotVisibleBesidePinnedGutter")
+            oversizedGeometry.append(fact)
             scroll.contentView.scroll(to:NSPoint(x:127,y:origin.y));scroll.reflectScrolledClipView(scroll.contentView)
         }
         let manualOrigins=oversizedTables.map{$0.enclosingScrollView!.contentView.bounds.origin}
@@ -732,6 +729,33 @@ private struct SoleDocumentImportProbeHarness:View {
         readinessMarker.identifier=readinessID
         for (table,origin) in zip(oversizedTables,manualOrigins) {let scroll=table.enclosingScrollView as! WorkbookTableScrollView;try require(scroll.pendingCellDetailsReveal==nil && scroll.contentView.bounds.origin==origin,"UnavailableInspectorMarkerRetainedRevealAuthority")}
         try require(try model.beforeCell.data()==oversizedBefore && model.afterCell.data()==oversizedAfter && model.report.data()==oversizedFixed && model.comparisonScope==oversizedQuery && Data(contentsOf:library.appendingPathComponent("read-events.jsonl"))==oversizedRequests,"OversizedDetailsChangedSourceQueryOrReadAgain")
+        var mixedObservationFacts:[[String:Any]]=[]
+        let originalBeforeCells=model.beforeCells,originalBeforeCell=model.beforeCell
+        let emptyCell=JSON(["address":"D4","row":4,"column":4,"value":"","value_type":"string"]),nullCell=JSON(["address":"D4","row":4,"column":4,"value":NSNull(),"value_type":"blank"])
+        for (expectedState,source) in [("missing_observation",[JSON]()),("empty_string",[emptyCell]),("null_value",[nullCell])] {
+            model.beforeCells=source;model.beforeCell=source.first ?? JSON();model.revealGeneration += 1;try await settle(window)
+            for table in oversizedTables {let scroll=table.enclosingScrollView!;scroll.contentView.scroll(to:NSPoint(x:0,y:scroll.contentView.bounds.minY));scroll.reflectScrolledClipView(scroll.contentView)}
+            oversizedButton.performClick(nil);try await settle(window)
+            for table in oversizedTables {
+                guard let owner=table.dataSource as? WorkbookGrid.Coordinator,let index=table.tableColumns.firstIndex(where:{$0.identifier.rawValue=="4"}) else{throw NSError(domain:"MixedObservationNativeOwnerMissing",code:1)}
+                let fact=try WorkbookNativeSmoke.oversizedLeadingSourceFacts(table,column:index,row:table.selectedRow),before=owner.parent.pane=="before"
+                try require(fact["source_observation_state"] as? String == (before ? expectedState:"nonempty_string") && fact["raw_utf16_exact"] as? Bool==true && fact["native_cell_present"] as? Bool==true && fact["native_text_field_present"] as? Bool==true && fact["pending_nil_after_attempt"] as? Bool==true,"MixedObservationLostExactNativeSourceOrOwner")
+                if before {try require(fact["source_text_visibility_applicable"] as? Bool==false && fact["native_text_leading_fragment_visible"] is NSNull && fact["expected_raw_utf16"] as? [Int]==[] && fact["native_raw_utf16"] as? [Int]==[],"MissingOrEmptySourceFalselyClaimedVisibleText")}
+                else {try require(fact["native_text_leading_fragment_visible"] as? Bool==true && fact["native_raw_utf16"] as? [Int]==Array(raw.utf16).map(Int.init),"ObservedOppositeSourceLostActualLeadingText")}
+                var recorded=fact;recorded["controlled_before_observation_state"]=expectedState;mixedObservationFacts.append(recorded)
+                if before && expectedState=="missing_observation",let cell=table.view(atColumn:index,row:table.selectedRow,makeIfNecessary:true) as? NSTableCellView,let field=cell.textField {
+                    var missingFieldCode="",wrongRawCode=""
+                    cell.textField=nil
+                    do {_ = try WorkbookNativeSmoke.oversizedLeadingSourceFacts(table,column:index,row:table.selectedRow)} catch let error as BridgeError {missingFieldCode=error.code}
+                    cell.textField=field;field.stringValue="invented text"
+                    do {_ = try WorkbookNativeSmoke.oversizedLeadingSourceFacts(table,column:index,row:table.selectedRow)} catch let error as BridgeError {wrongRawCode=error.code}
+                    field.stringValue=""
+                    try require(missingFieldCode=="WORKBOOK_CELL_DETAILS_OVERSIZED_FIELD" && wrongRawCode=="WORKBOOK_CELL_DETAILS_OVERSIZED_RAW","MissingNativeFieldOrInventedRawWasTreatedAsAbsentObservation")
+                }
+            }
+        }
+        model.beforeCells=originalBeforeCells;model.beforeCell=originalBeforeCell;model.revealGeneration += 1;try await settle(window)
+        try require(try model.beforeCell.data()==oversizedBefore && model.afterCell.data()==oversizedAfter && model.report.data()==oversizedFixed && model.comparisonScope==oversizedQuery && Data(contentsOf:library.appendingPathComponent("read-events.jsonl"))==oversizedRequests,"MixedObservationQualificationChangedFixedQueryOrQueriedAgain")
         for (column,width,maxWidth) in oversizedColumns {column.width=width;column.maxWidth=maxWidth}
         pageSizing.resizeAuxiliary(to:savedPageExtent,commit:true);window.setContentSize(originalWindowSize);model.inspectorVisible=false;try await settle(window)
         model.selectedRow=savedCellState.0;model.selectedColumn=savedCellState.1;model.beforeAddress=savedCellState.2;model.afterAddress=savedCellState.3;model.beforeCell=savedCellState.4;model.afterCell=savedCellState.5;model.beforeCells=savedCellState.6;model.afterCells=savedCellState.7;model.selectedChangeID=savedCellState.8;model.columnStart=savedCellState.9;model.rowStart=savedCellState.10;model.revealGeneration += 1;try await settle(window)
@@ -782,7 +806,7 @@ private struct SoleDocumentImportProbeHarness:View {
         try require(!workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"UnselectedDocumentDiffClaimedSelectedEvent")
         document.changes=[JSON(["change_id":"selected","kind":"text_modified","before":"100","after":"120"])];document.selectedChangeID="selected";try await settle(docWindow)
         try require(workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"SelectedDocumentEventHeaderMissing")
-        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true,"source24_oversized_cell_details":oversizedGeometry,"source24_passive_window_and_divider_resize_keeps_manual_origin":true,"source24_missing_native_marker_readiness_expires":true,"source23_cell_details_both_directions_after_final_inspector_geometry":directionalGeometry,"source18_scope_caption_geometry":captionGeometry,"source18_nonfinite_width_resolved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
+        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true,"source26_shared_shipped_oversized_assertion_used":true,"source26_mixed_observation_leading_source":mixedObservationFacts,"source26_missing_native_field_and_invented_raw_hard_fail":true,"source24_oversized_cell_details":oversizedGeometry,"source24_passive_window_and_divider_resize_keeps_manual_origin":true,"source24_missing_native_marker_readiness_expires":true,"source23_cell_details_both_directions_after_final_inspector_geometry":directionalGeometry,"source18_scope_caption_geometry":captionGeometry,"source18_nonfinite_width_resolved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
     }
 
 }

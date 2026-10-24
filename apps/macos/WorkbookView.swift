@@ -2436,14 +2436,11 @@ struct WorkbookGrid: NSViewRepresentable {
         button.performClick(nil);try await Task.sleep(nanoseconds:150_000_000)
         for (table,owner,row,y) in states {
             guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,let coordinator=table.dataSource as? WorkbookGrid.Coordinator,let index=table.tableColumns.firstIndex(where:{$0.identifier.rawValue==String(coordinator.parent.selectedColumn)}),table.rect(ofColumn:index).width>scroll.contentView.bounds.width,!scroll.columnVisibleToRightOfGutter(index),scroll.pendingCellDetailsReveal==nil,scroll.contentView.bounds.origin.y==y,table.selectedRow==row,(table.dataSource as AnyObject?) === owner else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"A column that cannot fit retained reveal authority or moved its physical source.")}
-            guard let cell=table.view(atColumn:index,row:row,makeIfNecessary:true) as? NSTableCellView,let text=cell.textField,!text.stringValue.isEmpty else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Oversized column has no native source text.")}
-            cell.layoutSubtreeIfNeeded()
-            let leadingError=abs(table.rect(ofColumn:index).minX-scroll.contentView.bounds.minX-scroll.pinnedRowGutter.frame.width),fragment=text.convert(NSRect(x:text.bounds.minX,y:text.bounds.midY-2,width:min(12,text.bounds.width),height:4),to:scroll)
-            var usable=scroll.contentView.convert(scroll.contentView.bounds,to:scroll);usable.origin.x += scroll.pinnedRowGutter.frame.width;usable.size.width -= scroll.pinnedRowGutter.frame.width
-            guard leadingError<0.5,usable.contains(fragment),!text.visibleRect.isEmpty else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Oversized column reveal did not expose its leading source text beside the gutter.")}
-            facts.append(["pane":coordinator.parent.pane,"physical_address":WorkbookGrid.address(coordinator.parent.selectedRow,coordinator.parent.selectedColumn),"column_width":Double(table.rect(ofColumn:index).width),"viewport_width":Double(scroll.contentView.bounds.width),"whole_column_cannot_fit":true,"pending_nil_after_attempt":true,"leading_edge_alignment_error":Double(leadingError),"native_text_leading_fragment_visible":true,"leading_fragment_rect":NSStringFromRect(fragment),"usable_viewport_rect":NSStringFromRect(usable)])
+            facts.append(try oversizedLeadingSourceFacts(table,column:index,row:row))
             scroll.contentView.scroll(to:NSPoint(x:127,y:y));scroll.reflectScrolledClipView(scroll.contentView)
         }
+        let fragmentCount=facts.filter{$0["native_text_leading_fragment_visible"] as? Bool == true}.count
+        guard fragmentCount>0 else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED_TEXT",message:"Oversized column qualification has no observed nonempty leading source text fragment.")}
         let origins=tables.map{$0.enclosingScrollView!.contentView.bounds.origin}
         window.setContentSize(NSSize(width:originalSize.width+64,height:originalSize.height));try await Task.sleep(nanoseconds:100_000_000)
         guard let pages=views(content).compactMap({$0 as? NSSplitView}).first(where:{$0.identifier?.rawValue=="Reviset.workspace.workbook.pages"}),let sizing=pages.delegate as? WorkspacePaneSizing,let auxiliary=pages.arrangedSubviews.last else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Oversized column qualification has no native page divider.")}
@@ -2452,7 +2449,28 @@ struct WorkbookGrid: NSViewRepresentable {
             guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,scroll.pendingCellDetailsReveal==nil,scroll.contentView.bounds.origin==origin,table.selectedRow==row,(table.dataSource as AnyObject?) === owner else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Passive window/divider geometry replayed a completed oversized-column reveal or changed selection/owner.")}
         }
         guard try model.beforeCell.data()==before,try model.afterCell.data()==after,identity==[model.rangeScope,model.comparisonScope,model.beforeAddress,model.afterAddress,model.selectedChangeID,String(model.selectedRow),String(model.selectedColumn),String(model.revealGeneration)] else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED",message:"Oversized column qualification changed physical raw source or query scope.")}
-        return ["qualified":true,"panes":facts,"manual_horizontal_origin":127,"pending_consumed_after_first_ready_attempt":true,"later_passive_window_and_divider_geometry_did_not_pan":true,"vertical_selection_hosts_and_source_scope_retained":true,"widths_layout_window_and_viewports_restored_before_return":true]
+        return ["qualified":true,"panes":facts,"observed_nonempty_leading_fragment_count":fragmentCount,"manual_horizontal_origin":127,"pending_consumed_after_first_ready_attempt":true,"later_passive_window_and_divider_geometry_did_not_pan":true,"vertical_selection_hosts_and_source_scope_retained":true,"widths_layout_window_and_viewports_restored_before_return":true]
+    }
+    // Shared shipped-qualification assertion: local native regressions exercise
+    // the same distinction between missing observations and missing native views.
+    static func oversizedLeadingSourceFacts(_ table:NSTableView,column:Int,row:Int)throws->[String:Any] {
+        guard let scroll=table.enclosingScrollView as? WorkbookTableScrollView,let owner=table.dataSource as? WorkbookGrid.Coordinator,column>0,column<table.numberOfColumns,row>=0,row<table.numberOfRows,let physicalColumn=Int(table.tableColumns[column].identifier.rawValue) else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED_OWNER",message:"Oversized source qualification has no valid native physical owner or coordinate.")}
+        let physicalRow=owner.parent.rowStart+row,address=WorkbookGrid.address(physicalRow,physicalColumn),observation=owner.sparse["\(physicalRow):\(physicalColumn)"],value=observation?["value"] ?? JSON(),raw=value.isNull ? "":value.string
+        let state=observation==nil ? "missing_observation":value.isNull ? "null_value":raw.isEmpty ? "empty_string":"nonempty_string",diagnostic="pane=\(owner.parent.pane), address=\(address), source=\(state), expectedUTF16=\(raw.utf16.count)"
+        guard let cell=table.view(atColumn:column,row:row,makeIfNecessary:true) as? NSTableCellView else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED_CELL",message:"Oversized source has no native cell; "+diagnostic)}
+        guard let text=cell.textField else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED_FIELD",message:"Oversized source cell has no native text field; "+diagnostic)}
+        guard text.stringValue.utf16.elementsEqual(raw.utf16) else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED_RAW",message:"Oversized native source differs from the exact grid observation; "+diagnostic+", nativeUTF16=\(text.stringValue.utf16.count)")}
+        cell.layoutSubtreeIfNeeded()
+        let leadingError=abs(table.rect(ofColumn:column).minX-scroll.contentView.bounds.minX-scroll.pinnedRowGutter.frame.width),applicable = !raw.isEmpty
+        var usable=scroll.contentView.convert(scroll.contentView.bounds,to:scroll);usable.origin.x += scroll.pinnedRowGutter.frame.width;usable.size.width -= scroll.pinnedRowGutter.frame.width
+        guard leadingError<0.5 else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED_LEADING",message:"Oversized source column is not aligned beside the gutter; "+diagnostic)}
+        var fragmentValue:Any=NSNull(),fragmentRect:Any=NSNull()
+        if applicable {
+            let fragment=text.convert(NSRect(x:text.bounds.minX,y:text.bounds.midY-2,width:min(12,text.bounds.width),height:4),to:scroll)
+            guard usable.contains(fragment),!text.visibleRect.isEmpty else{throw BridgeError(code:"WORKBOOK_CELL_DETAILS_OVERSIZED_TEXT",message:"Oversized observed source text has no visible leading fragment; "+diagnostic)}
+            fragmentValue=true;fragmentRect=NSStringFromRect(fragment)
+        }
+        return ["pane":owner.parent.pane,"physical_address":address,"source_observation_state":state,"source_observation_present":observation != nil,"native_cell_present":true,"native_text_field_present":true,"expected_raw_utf16":Array(raw.utf16).map(Int.init),"native_raw_utf16":Array(text.stringValue.utf16).map(Int.init),"raw_utf16_exact":true,"column_width":Double(table.rect(ofColumn:column).width),"viewport_width":Double(scroll.contentView.bounds.width),"whole_column_cannot_fit":table.rect(ofColumn:column).width>usable.width,"pending_nil_after_attempt":scroll.pendingCellDetailsReveal==nil,"leading_edge_alignment_error":Double(leadingError),"source_text_visibility_applicable":applicable,"text_visibility_check":applicable ? "visible":"not_applicable_no_raw_text","native_text_leading_fragment_visible":fragmentValue,"leading_fragment_rect":fragmentRect,"usable_viewport_rect":NSStringFromRect(usable)]
     }
     private static func rawSavedValueCellFacts(_ model:WorkbookModel,content:NSView)throws->[[String:Any]] {
         var facts:[[String:Any]]=[]
