@@ -3014,6 +3014,180 @@
       "expected_formula_eligible": false,
       "expected_value_state_before": "invalid",
       "expected_value_state_after": "complete"
+    },
+    {
+      "name": "unresolved-selected-value-with-companion-formula",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "stored_value",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "unresolved",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          }
+        }
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
+    },
+    {
+      "name": "neutral-number-format-observation",
+      "change": {
+        "change_id": "synthetic_event",
+        "kind": "number_format",
+        "association": "inferred",
+        "alignment_method": "unique_nonempty_first_column_key",
+        "from_revision_occurrence_id": "occ_before",
+        "to_revision_occurrence_id": "occ_after",
+        "from_sheet_id": "sheet_before",
+        "to_sheet_id": "sheet_after",
+        "before_address": "B1",
+        "after_address": "B1"
+      },
+      "before": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "100",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          },
+          "number_format": {
+            "state": "complete",
+            "offset": 0,
+            "total_length": 1,
+            "next_offset": null
+          }
+        },
+        "number_format": "0"
+      },
+      "after": {
+        "address": "B1",
+        "row": 1,
+        "column": 2,
+        "value": "120",
+        "value_type": "number",
+        "formula": "SUM(C1)",
+        "formula_dialect": "xlsx_a1",
+        "formula_interpretation": "explicit",
+        "cached_result": "present",
+        "cache_freshness": "unknown",
+        "source_ref": "synthetic!B1",
+        "text_continuations": {
+          "value": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 3
+          },
+          "formula": {
+            "state": "complete",
+            "offset": 0,
+            "next_offset": null,
+            "total_length": 7
+          },
+          "number_format": {
+            "state": "complete",
+            "offset": 0,
+            "total_length": 4,
+            "next_offset": null
+          }
+        },
+        "number_format": "0.00"
+      },
+      "scope": {
+        "before_occurrence": "occ_before",
+        "after_occurrence": "occ_after",
+        "before_sheet": "sheet_before",
+        "after_sheet": "sheet_after"
+      },
+      "text_offset": 0,
+      "expected_value_eligible": false,
+      "expected_formula_eligible": false,
+      "expected_value_state_before": "complete",
+      "expected_value_state_after": "complete"
     }
   ],
   "warning_cases": [
@@ -3132,6 +3306,267 @@
         "resultMissingShort",
         "freshnessUnknownShort"
       ]
+    }
+  ],
+  "caption_cases": [
+    {
+      "name": "eligible-stored-value/value",
+      "case": "eligible-stored-value",
+      "field": "value",
+      "expected_gate": "compared"
+    },
+    {
+      "name": "eligible-stored-value/formula",
+      "case": "eligible-stored-value",
+      "field": "formula",
+      "expected_gate": "notAsserted"
+    },
+    {
+      "name": "eligible-same-dialect-formula/formula",
+      "case": "eligible-same-dialect-formula",
+      "field": "formula",
+      "expected_gate": "compared"
+    },
+    {
+      "name": "formula-event-does-not-authorize-value/value",
+      "case": "formula-event-does-not-authorize-value",
+      "field": "value",
+      "expected_gate": "notAsserted"
+    },
+    {
+      "name": "cross-dialect-formula-neutral/formula",
+      "case": "cross-dialect-formula-neutral",
+      "field": "formula",
+      "expected_gate": "dialect"
+    },
+    {
+      "name": "cross-dialect-formula-neutral/value",
+      "case": "cross-dialect-formula-neutral",
+      "field": "value",
+      "expected_gate": "notAsserted"
+    },
+    {
+      "name": "cross-value-type-neutral/value",
+      "case": "cross-value-type-neutral",
+      "field": "value",
+      "expected_gate": "valueType"
+    },
+    {
+      "name": "association-needs_review/value",
+      "case": "association-needs_review",
+      "field": "value",
+      "expected_gate": "withheld"
+    },
+    {
+      "name": "association-needs_review/formula",
+      "case": "association-needs_review",
+      "field": "formula",
+      "expected_gate": "withheld"
+    },
+    {
+      "name": "association-unknown/formula",
+      "case": "association-unknown",
+      "field": "formula",
+      "expected_gate": "withheld"
+    },
+    {
+      "name": "withheld-alignment/value",
+      "case": "withheld-alignment",
+      "field": "value",
+      "expected_gate": "withheld"
+    },
+    {
+      "name": "cross-format-date-observation/formula",
+      "case": "cross-format-date-observation",
+      "field": "formula",
+      "expected_gate": "withheld"
+    },
+    {
+      "name": "physical-address-mismatch/value",
+      "case": "physical-address-mismatch",
+      "field": "value",
+      "expected_gate": "withheld"
+    },
+    {
+      "name": "occurrence-scope-mismatch/value",
+      "case": "occurrence-scope-mismatch",
+      "field": "value",
+      "expected_gate": "withheld"
+    },
+    {
+      "name": "sheet-scope-mismatch/value",
+      "case": "sheet-scope-mismatch",
+      "field": "value",
+      "expected_gate": "withheld"
+    },
+    {
+      "name": "same-occurrence-neutral/value",
+      "case": "same-occurrence-neutral",
+      "field": "value",
+      "expected_gate": "withheld"
+    },
+    {
+      "name": "cache-whitelist-unknown/value",
+      "case": "cache-whitelist-unknown",
+      "field": "value",
+      "expected_gate": "cache"
+    },
+    {
+      "name": "cache-whitelist-unknown/formula",
+      "case": "cache-whitelist-unknown",
+      "field": "formula",
+      "expected_gate": "notAsserted"
+    },
+    {
+      "name": "missing-later-offset4096/value",
+      "case": "missing-later-offset4096",
+      "field": "value",
+      "expected_gate": "missing"
+    },
+    {
+      "name": "empty-versus-zero/value",
+      "case": "empty-versus-zero",
+      "field": "value",
+      "expected_gate": "compared"
+    },
+    {
+      "name": "shorter-exhausted-versus-later-fragment/value",
+      "case": "shorter-exhausted-versus-later-fragment",
+      "field": "value",
+      "expected_gate": "fragment"
+    },
+    {
+      "name": "valid-first-partial/value",
+      "case": "valid-first-partial",
+      "field": "value",
+      "expected_gate": "fragment"
+    },
+    {
+      "name": "invalid-inconsistent-total/value",
+      "case": "invalid-inconsistent-total",
+      "field": "value",
+      "expected_gate": "invalid"
+    },
+    {
+      "name": "unavailable-cell-observation/value",
+      "case": "unavailable-cell-observation",
+      "field": "value",
+      "expected_gate": "unavailable"
+    },
+    {
+      "name": "unresolved-selected-value-with-companion-formula/value",
+      "case": "unresolved-selected-value-with-companion-formula",
+      "field": "value",
+      "expected_gate": "formulaRole"
+    },
+    {
+      "name": "unresolved-selected-value-with-companion-formula/formula",
+      "case": "unresolved-selected-value-with-companion-formula",
+      "field": "formula",
+      "expected_gate": "notAsserted"
+    },
+    {
+      "name": "neutral-number-format-observation/number_format",
+      "case": "neutral-number-format-observation",
+      "field": "number_format",
+      "expected_gate": "observed"
+    }
+  ],
+  "observation_caption_cases": [
+    {
+      "name": "materialized-blank",
+      "field": "value",
+      "cell": {
+        "value": null,
+        "value_type": "blank",
+        "cached_result": "not_applicable",
+        "text_continuations": {
+          "value": {
+            "state": "missing",
+            "offset": 0,
+            "total_length": 0,
+            "next_offset": null
+          }
+        }
+      },
+      "expected_observation_key": "valueBlankShort"
+    },
+    {
+      "name": "missing-result-is-not-blank",
+      "field": "value",
+      "cell": {
+        "value": null,
+        "value_type": "blank",
+        "cached_result": "missing",
+        "text_continuations": {
+          "value": {
+            "state": "missing",
+            "offset": 0,
+            "total_length": 0,
+            "next_offset": null
+          }
+        }
+      },
+      "expected_observation_key": "resultMissingShort"
+    },
+    {
+      "name": "absent-formula",
+      "field": "formula",
+      "cell": {
+        "formula": null,
+        "formula_interpretation": "not_formula",
+        "text_continuations": {
+          "formula": {
+            "state": "missing",
+            "offset": 0,
+            "total_length": 0,
+            "next_offset": null
+          }
+        }
+      },
+      "expected_observation_key": "formulaAbsent"
+    },
+    {
+      "name": "unrecorded-value",
+      "field": "value",
+      "cell": {
+        "value": null,
+        "value_type": "number",
+        "cached_result": "not_applicable",
+        "text_continuations": {
+          "value": {
+            "state": "missing",
+            "offset": 0,
+            "total_length": 0,
+            "next_offset": null
+          }
+        }
+      },
+      "expected_observation_key": "observationNull"
+    },
+    {
+      "name": "explicit-empty",
+      "field": "value",
+      "cell": {
+        "value": "",
+        "value_type": "string",
+        "cached_result": "not_applicable",
+        "text_continuations": {
+          "value": {
+            "state": "empty",
+            "offset": 0,
+            "total_length": 0,
+            "next_offset": null
+          }
+        }
+      },
+      "expected_observation_key": "observationEmpty"
+    },
+    {
+      "name": "cell-not-materialized",
+      "field": "value",
+      "cell": null,
+      "expected_observation_key": "cellNotMaterialized"
     }
   ]
 }

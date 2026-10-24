@@ -8,16 +8,34 @@ private struct PageColumnProbeHarness:View {
     @ObservedObject var model:AppModel
     var body:some View {PageColumn(revision:model.revision(0),side:"Source",pageID:$model.leftPageID).environmentObject(model)}
 }
+private struct SoleDocumentImportProbeHarness:View {
+    @ObservedObject var model:AppModel
+    let layout:WorkspaceLayoutStore
+    var body:some View {ChangeListView().environmentObject(model).environmentObject(layout).sheet(isPresented:$model.importSheet){ImportView().environmentObject(model)}}
+}
 
 @main struct GitDiffWorkspaceProbe {
-    @MainActor static func main() async throws {
+    // AppKit owns this probe's event loop. An async @main drain can return when
+    // a real SwiftUI modal stops CFRunLoop, before the remaining checks finish.
+    @MainActor static func main() {
+        let application=NSApplication.shared
+        application.setActivationPolicy(.prohibited)
+        Task { @MainActor in
+            do {try await runChecks();fflush(stdout);exit(0)}
+            catch {FileHandle.standardError.write(Data(("FAIL native Git diff workspace: \(error)\n").utf8));exit(1)}
+        }
+        application.run()
+        FileHandle.standardError.write(Data("FAIL native Git diff workspace: AppKit loop returned before checks completed\n".utf8))
+        exit(1)
+    }
+    @MainActor static func runChecks() async throws {
         configureLegacyNativeLocalization()
         func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
         for (before,after) in [("100","120"),("a\nb\na","a\na\nb"),("", ""),("a\n","\na"),("문서 👨‍👩‍👧‍👦\r\n금액 100", "문서 👨‍👩‍👧‍👦\r\n금액 120"),("a\r\nb", "a\nb"),("a\rb", "a\rc"),("é", "e\u{301}"),("e\u{301}","é"),("각\n내용", "\u{1100}\u{1161}\u{11a8}\n내용")] {
             let diff=unifiedTextDiff(before:before,after:after,semantic:true)
             try require(diff.bounded && diff.semantic,"UnexpectedDiffFallback")
-            try require(Array(diff.lines.filter{$0.prefix != "+"}.map(\.text).joined(separator:"\n").utf16)==Array(before.utf16),"BeforeTextChangedByDiff")
-            try require(Array(diff.lines.filter{$0.prefix != "−"}.map(\.text).joined(separator:"\n").utf16)==Array(after.utf16),"AfterTextChangedByDiff")
+            try require(Array(diff.lines.filter{$0.prefix != "+"}.map(\.rawText).joined().utf16)==Array(before.utf16),"BeforeTextChangedByDiff")
+            try require(Array(diff.lines.filter{$0.prefix != "−"}.map(\.rawText).joined().utf16)==Array(after.utf16),"AfterTextChangedByDiff")
         }
         for long in [String(repeating:"가",count:4097),String(repeating:"😀",count:2049),String(repeating:"x\n",count:128)] {
             let diff=unifiedTextDiff(before:long,after:"short",semantic:true)
@@ -36,6 +54,11 @@ private struct PageColumnProbeHarness:View {
         // UTF-16 sequence even when Swift String == considers it the same text.
         let canonical=unifiedTextDiff(before:"é",after:"e\u{301}",semantic:true)
         try require(canonical.lines.contains(where:{$0.prefix=="−"}) && canonical.lines.contains(where:{$0.prefix=="+"}),"CanonicalEquivalentSourceDifferenceHidden")
+        for (before,after) in [("a","a\n"),("a\r\nb","a\nb"),("a\rb","a\nb"),("é\r\ne\u{301}\r","é\ne\u{301}\n")] {
+            let diff=unifiedTextDiff(before:before,after:after,semantic:true)
+            try require(diff.terminatorsDiffer && diff.lines.filter{$0.prefix != "+"}.map(\.rawText).joined().utf16.elementsEqual(before.utf16) && diff.lines.filter{$0.prefix != "−"}.map(\.rawText).joined().utf16.elementsEqual(after.utf16),"TerminatorOnlyChangeLostExactSource")
+            try require(diff.lines.allSatisfy{!$0.text.contains("\r") && !$0.text.contains("\n")} && Set(diff.lines.map{sourceTerminatorLabel($0.terminator)}).isSubset(of:["⟦CR⟧","⟦LF⟧","⟦CRLF⟧","⟦EOF⟧"]),"TerminatorMarkersWereInsertedIntoRawText")
+        }
         func cell(_ value:Any,state:String,total:Int,offset:Int=0,cache:String="present",role:String="explicit",type:String="string")->JSON {
             JSON(["address":"C3","source_ref":"source!C3","value":value,"value_type":type,"formula":"SUM(C1:C2)","formula_interpretation":role,"cached_result":cache,"cache_freshness":"unknown","text_continuations":["value":["state":state,"offset":offset,"next_offset":NSNull(),"total_length":total],"formula":["state":"complete","offset":0,"next_offset":NSNull(),"total_length":10]]])
         }
@@ -87,6 +110,22 @@ private struct PageColumnProbeHarness:View {
             }
             try require(workbookRawField(before,field:"value").state.rawValue==item["expected_value_state_before"].string && workbookRawField(after,field:"value").state.rawValue==item["expected_value_state_after"].string,"SharedObservationStates_"+item["name"].string)
         }
+        let shared=JSON(try JSONSerialization.jsonObject(with:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[2]))))
+        try require(shared["caption_cases"].array.count>=27 && shared["observation_caption_cases"].array.count>=6,"SharedCaptionCasesMissing")
+        for test in shared["caption_cases"].array {
+            guard let item=golden.first(where:{$0["name"].string==test["case"].string}) else{throw NSError(domain:"CaptionFixtureReferenceMissing",code:1)}
+            let scope=item["scope"],context=WorkbookSelectedEventScope(beforeOccurrence:scope["before_occurrence"].string,afterOccurrence:scope["after_occurrence"].string,beforeSheet:scope["before_sheet"].string,afterSheet:scope["after_sheet"].string)
+            let actual=workbookFieldCaption(change:item["change"],before:item["before"],after:item["after"],field:test["field"].string,textOffset:item["text_offset"].int,scope:context)
+            try require(actual.rawValue==test["expected_gate"].string,"SharedCaptionGate_"+test["name"].string+"_actual_"+actual.rawValue)
+        }
+        for test in shared["observation_caption_cases"].array {try require(workbookObservationCaptionKey(cell:test["cell"],field:test["field"].string)==test["expected_observation_key"].string,"SharedObservationCaption_"+test["name"].string)}
+        guard let eligible=golden.first(where:{$0["name"].string=="eligible-stored-value"}) else{throw NSError(domain:"EligibleFieldFixtureMissing",code:1)}
+        let multiline=String(repeating:"x\n",count:129)
+        var longOld=eligible["before"].dictionary,longNew=eligible["after"].dictionary
+        for old in [true,false] {var cell=old ? longOld:longNew,metadata=JSON(cell["text_continuations"] ?? [:]).dictionary;let text=multiline+(old ? "100":"120");cell["value"]=text;metadata["value"]=["state":"complete","offset":0,"total_length":text.utf16.count,"next_offset":NSNull()];cell["text_continuations"]=metadata;if old{longOld=cell}else{longNew=cell}}
+        let longScope=eligible["scope"],longContext=WorkbookSelectedEventScope(beforeOccurrence:longScope["before_occurrence"].string,afterOccurrence:longScope["after_occurrence"].string,beforeSheet:longScope["before_sheet"].string,afterSheet:longScope["after_sheet"].string)
+        let longCaption=workbookFieldCaption(change:eligible["change"],before:JSON(longOld),after:JSON(longNew),field:"value",textOffset:0,scope:longContext),longDiff=workbookFieldTextDiff(before:JSON(longOld),after:JSON(longNew),field:"value",textOffset:0,eligibility:.storedValue)
+        try require(longCaption == .compared && longDiff?.bounded==false && workbookFieldShowsRaw(caption:longCaption,diff:longDiff) && workbookRawField(JSON(longOld),field:"value").text?.utf16.elementsEqual((multiline+"100").utf16)==true,"DiffLineBudgetSuppressedCompleteRawObservations")
         let sharedWarnings=JSON(try JSONSerialization.jsonObject(with:Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[2]))))["warning_cases"].array
         try require(sharedWarnings.count>=9,"SharedWarningCasesMissing")
         for item in sharedWarnings {try require(workbookSelectedWarningKeys(item["cell"])==item["expected_warning_keys"].array.map(\.string),"SharedWarningPolicy_"+item["name"].string)}
@@ -173,12 +212,17 @@ private struct PageColumnProbeHarness:View {
         try await checkOneBasedPager()
         try await checkGridSourceAndHiddenInput()
         try await checkHiddenSourceHeaders()
+        try await checkReviewRefinements()
+        try await checkOneSidedSheetReads()
+        guard let formatCase=golden.first(where:{$0["name"].string=="neutral-number-format-observation"}) else{throw NSError(domain:"NeutralNumberFormatFixtureMissing",code:1)}
+        try await checkRawFieldHosting(change:eligible["change"],before:JSON(longOld),after:JSON(longNew),format:formatCase)
         let workbook=WorkbookModel(bridge:model.bridge);await workbook.start();workbook.projectID="workbook";workbook.reportID="workbook_report";workbook.report=JSON(["report_id":"workbook_report","revisions":[["revision_occurrence_id":"w0","index":0,"sheets":[]],["revision_occurrence_id":"w1","index":1,"sheets":[]]]]);workbook.beforeID="w0";workbook.afterID="w1";workbook.changesFromID="w0";workbook.changesToID="w1"
         workbook.diffMode="text";await workbook.selectVersion("w0");try require(workbook.diffMode=="source" && workbook.effectiveDiffMode=="source","WorkbookVersionMenuKeptTextOverlay")
         try require(workbook.beforeID=="w0" && workbook.afterID=="w0" && workbook.changesFromID=="w0" && workbook.changesToID=="w0" && workbook.changes.isEmpty && !workbook.loadingChanges && workbook.changesFailure.isEmpty,"WorkbookFirstVersionDidNotReadSingleSource")
         workbook.beforeID="w0";workbook.afterID="w1";workbook.changesFromID="w0";workbook.changesToID="w1";workbook.diffMode="text"
         await workbook.changeVersions(before:"w0",after:"w0");try require(workbook.diffMode=="source" && workbook.effectiveDiffMode=="source" && workbook.beforeID==workbook.afterID,"WorkbookEndpointPickerKeptTextOverlay")
         workbook.setDiffMode("text");try require(workbook.diffMode=="source","SingleWorkbookReadAllowedTextPicker")
+        try require(workbook.changeListProvenance==L("git.reading"),"EqualWorkbookEndpointsClaimedComparedEvents")
         try await checkWorkbookReadingGuidance(workbook)
         let reportProjection=documentReportDetails(JSON(["coverage_gap_count":750,"coverage_gaps":(0..<500).map{["reason":"gap_\($0)"]},"quality_counts":["ocr_inferred_pages":3,"ocr_failed_pages":1,"pptx_without_render":4,"unknown_future_key":999]]))
         try require(reportProjection.totalCoverageGaps==750 && reportProjection.gaps.count==50 && reportProjection.coverageTruncated && reportProjection.gaps.first?["reason"].string=="gap_0" && reportProjection.gaps.last?["reason"].string=="gap_49","ReportLimitProjectionLostCountOrBound")
@@ -245,7 +289,8 @@ private struct PageColumnProbeHarness:View {
     @MainActor static func checkGridSourceAndHiddenInput()async throws {
         func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
         let raw="stored only; not recalculated"
-        let cells=[JSON(["address":"D4","row":4,"column":4,"value":raw,"value_type":"string","formula":NSNull(),"cached_result":"not_applicable","source_lengths":["value":raw.utf16.count]]),JSON(["address":"E4","row":4,"column":5,"value":"50","value_type":"number","formula":NSNull()])]
+        let preview=String(repeating:"p",count:64)
+        let cells=[JSON(["address":"D4","row":4,"column":4,"value":raw,"value_type":"string","formula":NSNull(),"cached_result":"not_applicable","source_lengths":["value":raw.utf16.count]]),JSON(["address":"E4","row":4,"column":5,"value":"50","value_type":"number","formula":NSNull()]),JSON(["address":"F4","row":4,"column":6,"value":preview,"value_type":"string","formula":NSNull(),"cached_result":"not_applicable","text_truncated":true,"source_lengths":["value":200]])]
         func source(_ enabled:Bool)->WorkbookGrid {WorkbookGrid(keyboardEnabled:enabled,language:"en",pane:"source-probe",revealIntent:"fixed",cells:cells,rowStart:4,columnStart:4,rowCount:10,columnCount:12,selectedRow:4,selectedColumn:4,onSelect:{_,_ in})}
         let host=NSHostingView(rootView:source(true)),window=NSWindow(contentRect:NSRect(x:0,y:0,width:500,height:300),styleMask:[.titled],backing:.buffered,defer:false)
         window.isReleasedWhenClosed=false;window.contentView=host;window.orderFront(nil);defer{window.close()}
@@ -255,6 +300,8 @@ private struct PageColumnProbeHarness:View {
         guard let table=tables(host).first,let cell=table.view(atColumn:1,row:0,makeIfNecessary:true) as? NSTableCellView,let text=cell.textField,let scroll=table.enclosingScrollView else{throw NSError(domain:"ActualGridSourceCellMissing",code:1)}
         try require(text.stringValue==raw && cell.toolTip?.contains(raw)==true,"RawStoredValueReplacedOrMissingFromTooltip")
         try require(text.maximumNumberOfLines==1 && text.lineBreakMode == .byTruncatingTail && cell.layer?.masksToBounds==true && text.frame.minX>=2 && text.frame.maxX<=cell.bounds.maxX-2,"RawGridCellNotSingleLineClippedPadded_lines_\(text.maximumNumberOfLines)_mode_\(text.lineBreakMode.rawValue)_clip_\(String(describing:cell.layer?.masksToBounds))_text_\(text.frame)_cell_\(cell.bounds)")
+        guard let previewCell=table.view(atColumn:3,row:0,makeIfNecessary:true) as? NSTableCellView else{throw NSError(domain:"LongGridPreviewCellMissing",code:1)}
+        try require(previewCell.toolTip?.contains(L("git.savedValuePreview"))==true && previewCell.toolTip?.contains(L("git.gridPreviewRoute"))==true && previewCell.toolTip?.contains(preview)==true,"BoundedGridPreviewClaimedCompleteSavedValue")
         let coordinator=table.dataSource as AnyObject?,origin=scroll.contentView.bounds.origin,selected=table.selectedRow
         try require(window.makeFirstResponder(table),"VisibleGridCouldNotTakeFocus")
         host.rootView=source(false);try await settle()
@@ -357,6 +404,8 @@ private struct PageColumnProbeHarness:View {
             let sheets=workspaceLayoutMarkers(in:bookRoot).filter{$0.identifier?.rawValue.hasPrefix("Reviset.workbook.sheetPicker.")==true},tables=views(bookRoot).compactMap{$0 as? NSTableView}
             try require(sheets.count==2 && sheets.allSatisfy{$0.contentEnabled} && tables.count==2,"ProductionWorkbookSheetHeadersNotMounted")
             let bookFixed=try workbook.report.data(),bookSource=[workbook.beforeID,workbook.afterID,workbook.beforeSheetID,workbook.afterSheetID],tableState=tables.map{($0,$0.dataSource as AnyObject?,$0.enclosingScrollView!.contentView.bounds.origin,$0.selectedRow)}
+            workbook.busy=true;try await settle(bookWindow);try require(sheets.allSatisfy{!$0.contentEnabled},"SheetPickerEnabledWhenWorkbookNotReady");workbook.busy=false
+            workbook.loadingRange=true;try await settle(bookWindow);try require(sheets.allSatisfy{!$0.contentEnabled},"SheetPickerEnabledDuringRangeRead");workbook.loadingRange=false;try await settle(bookWindow)
             try require(bookWindow.makeFirstResponder(tables[0]),"VisibleWorkbookSourceCouldNotTakeFocus")
             workbook.diffMode="text";try await settle(bookWindow)
             try require(sheets.allSatisfy{!$0.contentEnabled} && tables.allSatisfy{!$0.acceptsFirstResponder && !$0.canBecomeKeyView},"HiddenWorkbookSheetOrGridStayedEnabled")
@@ -365,9 +414,104 @@ private struct PageColumnProbeHarness:View {
             workbook.diffMode="source";try await settle(bookWindow)
             try require(sheets.allSatisfy{$0.contentEnabled} && bookSource==[workbook.beforeID,workbook.afterID,workbook.beforeSheetID,workbook.afterSheetID] && (try workbook.report.data())==bookFixed,"WorkbookHeaderGateChangedFixedSource")
             for (table,coordinator,origin,selected) in tableState {try require(views(bookRoot).contains{$0===table} && (table.dataSource as AnyObject?) === coordinator && table.enclosingScrollView!.contentView.bounds.origin==origin && table.selectedRow==selected,"WorkbookHeaderGateRebuiltGridOrMovedViewport")}
-            facts.append(["workspace":"workbook","language":locale.rawValue,"evaluated_sheet_picker_environments":sheets.count,"hidden_sheet_pickers_disabled":true,"text_overlay_enabled":true,"actual_native_grid_hosts":tables.count,"native_popup_views_in_closed_tree":views(bookRoot).compactMap{$0 as? NSPopUpButton}.count,"local_next_previous_steps":24,"source_report_grid_coordinator_viewport_selection_retained":true,"picker_proof_scope":"evaluated production Picker enabled environment; no native popup/OS AX activation claim"]);bookWindow.close()
+            workbook.inspectorVisible=true;try await settle(bookWindow)
+            guard let inspector=views(bookRoot).compactMap({$0 as? NSSplitView}).first(where:{$0.identifier?.rawValue=="Reviset.workspace.workbook.inspector"}) else{throw NSError(domain:"WorkbookInspectorSplitMissing",code:1)}
+            let inspectorFrames=inspector.arrangedSubviews.map(\.frame),gridOrigins=tables.map{$0.enclosingScrollView!.contentView.bounds.origin}
+            workbook.tab="ai";try await settle(bookWindow)
+            try require(inspector.arrangedSubviews.map(\.frame)==inspectorFrames && tables.map{$0.enclosingScrollView!.contentView.bounds.origin}==gridOrigins,"AIReportSheetCollapsedUnderlyingInspectorOrMovedSource")
+            workbook.tab="compare";for _ in 0..<30 {if bookWindow.sheets.isEmpty{break};try await Task.sleep(nanoseconds:10_000_000)}
+            try require(bookWindow.sheets.isEmpty,"AIReportSheetDidNotDismissInProbe")
+            facts.append(["workspace":"workbook","language":locale.rawValue,"evaluated_sheet_picker_environments":sheets.count,"hidden_sheet_pickers_disabled":true,"busy_and_range_loading_disable_sheet_pickers":true,"ai_sheet_preserves_inspector_frames_and_source_viewports":true,"text_overlay_enabled":true,"actual_native_grid_hosts":tables.count,"native_popup_views_in_closed_tree":views(bookRoot).compactMap{$0 as? NSPopUpButton}.count,"local_next_previous_steps":24,"source_report_grid_coordinator_viewport_selection_retained":true,"picker_proof_scope":"evaluated production Picker enabled environment; no native popup/OS AX activation claim"]);bookWindow.close()
         }
         if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["scope":"production CompareWorkspace and WorkbookWorkspace in controlled native NSHostingViews; synthetic fixed reports, local AppKit responder/editor/traversal actions; no OS Full Keyboard Access or VoiceOver automation","observations":facts],options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("hidden-header-proof.json"))}
+    }
+
+    @MainActor static func checkReviewRefinements()async throws {
+        func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
+        func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
+        let preferences=LanguagePreferences.shared,previous=preferences.selection
+        defer{preferences.selection=previous}
+        preferences.selection = .en
+        let exact="é / e\u{301}\r\n"+String(repeating:"raw reason\n",count:80),readerHost=NSHostingView(rootView:NativeVerbatimReasonReader(text:exact).environment(\.locale,Locale(identifier:"en_US")))
+        let readerWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:700,height:200),styleMask:[.titled],backing:.buffered,defer:false);readerWindow.isReleasedWhenClosed=false;readerWindow.contentView=readerHost;readerWindow.orderFront(nil)
+        preferences.selection = .en;try await Task.sleep(nanoseconds:100_000_000)
+        guard let reader=views(readerHost).compactMap({$0 as? NSTextView}).first,let scroll=reader.enclosingScrollView else{throw NSError(domain:"ReviewReasonReaderMissing",code:1)}
+        try require(reader.accessibilityLabel()==L("git.rawReasons"),"InitialReasonReaderLabelNotEnglish")
+        reader.setSelectedRange(NSRange(location:7,length:11));scroll.contentView.scroll(to:NSPoint(x:0,y:80));scroll.reflectScrolledClipView(scroll.contentView)
+        let selected=reader.selectedRange(),origin=scroll.contentView.bounds.origin
+        preferences.selection = .ko;readerHost.rootView=NativeVerbatimReasonReader(text:exact).environment(\.locale,Locale(identifier:"ko_KR"));try await Task.sleep(nanoseconds:100_000_000)
+        try require(reader.accessibilityLabel()==L("git.rawReasons") && reader.string.utf16.elementsEqual(exact.utf16) && reader.selectedRange()==selected && scroll.contentView.bounds.origin==origin && views(readerHost).contains{$0===reader},"ReasonAccessibilityLocaleRefreshChangedRawSelectionOrViewport");readerWindow.close()
+        guard let originalRoot=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] else{throw NSError(domain:"IsolatedGuidanceLibraryMissing",code:1)}
+        setenv("DOCVER_TEST_USER_DATA",originalRoot+"/sole-document-guidance",1);let model=AppModel();setenv("DOCVER_TEST_USER_DATA",originalRoot,1)
+        try require(model.libraryAvailable,"IsolatedSoleDocumentLibraryNotAdmitted")
+        model.initializing=false;model.projectID="review-guidance";model.report=JSON(["report_id":"review-fixed","revisions":[["revision_occurrence_id":"only","pages":[["page_id":"one-page","page":1]],"assets":[]]]]);model.from=0;model.to=0;model.leftPageID="one-page";model.rightPageID="one-page"
+        let layout=WorkspaceLayoutStore(scope:.document),host=NSHostingView(rootView:CompareWorkspace().environmentObject(model).environmentObject(layout)),window=NSWindow(contentRect:NSRect(x:0,y:0,width:1280,height:800),styleMask:[.titled],backing:.buffered,defer:false);window.isReleasedWhenClosed=false;window.contentView=host;window.orderFront(nil);defer{window.close()}
+        let actionHost=NSHostingView(rootView:SoleDocumentImportProbeHarness(model:model,layout:layout)),actionWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:360,height:600),styleMask:[.titled],backing:.buffered,defer:false);actionWindow.isReleasedWhenClosed=false;actionWindow.contentView=actionHost;actionWindow.orderFront(nil);defer{model.importSheet=false;for sheet in actionWindow.sheets{actionWindow.endSheet(sheet);sheet.orderOut(nil)};actionWindow.close()}
+        var observations:[[String:Any]]=[]
+        for language in [UILanguage.en,.ko] {
+            preferences.selection=language;try await Task.sleep(nanoseconds:100_000_000);host.layoutSubtreeIfNeeded()
+            guard let button=views(actionHost).compactMap({$0 as? NSButton}).first(where:{$0.identifier?.rawValue=="Reviset.document.newComparison"}) else{throw NSError(domain:"ActualSoleDocumentNewComparisonButtonMissing",code:1)}
+            let fields=views(host).compactMap{$0 as? NSTextField}.filter{$0.isEditable}
+            try require(button.isEnabled && !button.visibleRect.isEmpty && button.title==L("git.workbookNewComparison") && fields.count==1 && !views(host).contains{String(describing:type(of:$0)).contains("SegmentedControl")},"SoleImportKeptIrrelevantChangeFiltersOrEndpointMode")
+            let fixed=try model.report.data(),source=[model.leftPageID,model.rightPageID];button.performClick(nil)
+            for _ in 0..<50 {if let sheet=actionWindow.sheets.first,views(sheet.contentView!).compactMap({$0 as? NSTextField}).contains(where:{$0.isEditable && $0.placeholderString==L("doc.import.projectName")}){break};try await Task.sleep(nanoseconds:10_000_000)}
+            try require(model.importSheet,"SoleDocumentNativeImportActionDidNotOpen_target_\(String(describing:button.target))_action_\(String(describing:button.action))_library_\(model.libraryAvailable)_busy_\(model.busy)_loading_\(model.loading)_initializing_\(model.initializing)")
+            try require(actionWindow.sheets.first?.contentView.map{views($0).compactMap{$0 as? NSTextField}.contains{$0.isEditable && $0.placeholderString==L("doc.import.projectName") && $0.stringValue==L("doc.import.defaultTitle")}}==true,"SoleDocumentActionDidNotMountExistingImportSheet")
+            try require((try model.report.data())==fixed && source==[model.leftPageID,model.rightPageID],"SoleDocumentImportActionChangedFixedReportOrSource");model.importSheet=false
+            for _ in 0..<50 {if actionWindow.sheets.isEmpty{break};try await Task.sleep(nanoseconds:10_000_000)};try require(actionWindow.sheets.isEmpty,"SoleDocumentImportSheetDidNotDismiss")
+            observations.append(["language":language.rawValue,"native_new_comparison_button_action":true,"only_source_page_field_remains":true,"no_segmented_query_mode":true,"fixed_report_and_source_unchanged":true])
+        }
+        model.report=JSON(["report_id":"review-fixed","revisions":(0..<3).map{["revision_occurrence_id":"review-\($0)","pages":[["page_id":"review-page-\($0)","page":1]],"assets":[]]}]);model.from=0;model.to=0;model.selectEvidence();try await Task.sleep(nanoseconds:100_000_000)
+        try require(!views(host).compactMap({$0 as? NSButton}).contains{$0.identifier?.rawValue=="Reviset.document.newComparison"} && views(host).compactMap({$0 as? NSTextField}).filter{$0.isEditable}.count>=2,"MultiVersionEqualEndpointsLostQueryOrFilters")
+        try require(model.changeListProvenance==L("git.reading"),"EqualDocumentEndpointsClaimedComparedEvents")
+        model.to=1;try require(model.changeListProvenance==L("git.documentStoredAdjacent"),"AdjacentDocumentListClaimedComputedNet");model.to=2;try require(model.changeListProvenance==L("git.documentComputedNet"),"WiderDocumentListClaimedStoredEvents");model.tab="history";try require(model.changeListProvenance==L("git.documentStoredHistory"),"HistoryListProvenanceMissing")
+        try require(documentReportTimestamp(JSON(["report_id":"fixed"]),reports:[JSON(["report_id":"other","created_at":"wrong"]),JSON(["report_id":"fixed","created_at":"2026-10-25T00:00:00Z"])])=="2026-10-25T00:00:00Z" && documentReportTimestamp(JSON(["report_id":"missing"]),reports:[]).isEmpty,"ReportDateNotBoundToActualMetadata")
+        let gap=JSON(["revision_id":"revision-physical","page_id":"page-scoped","feature":"table boundaries","reason":"verbatim human reason"])
+        try require(documentGapScope(gap)=="revision-physical · page-scoped" && documentGapScope(JSON(["page_id":"page-only"]))=="page-only" && selectedCoverageCaption(gap).contains("table boundaries"),"CoverageFeatureOrRevisionIdentityLost")
+        let change=JSON(["before":"Revenue 120\nsource", "after":"Revenue 100\nsource"]),raw=try JSON(["before":"Revenue 120\nsource", "after":"Revenue 100\nsource"]).data()
+        try require(documentChangeExcerpt(change).contains("Revenue 120") && documentChangeExcerpt(change).contains(" → Revenue 100") && (try change.data())==raw,"NavigationExcerptOmittedBeforeOrChangedCanonicalSource")
+        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["scope":"actual native sole-document CTA, reason-reader accessibility label/selection/scroll; typed report/caption/provenance projections; synthetic fixed data, no submitted import or OS gestures","sole_document":observations,"reason_reader_locale_identity_selection_scroll_retained":true,"coverage_revision_feature_and_metadata_timestamp_verified":true,"before_after_navigation_excerpt_without_source_mutation":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("review13-proof.json"))}
+    }
+
+    @MainActor static func checkOneSidedSheetReads()async throws {
+        func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
+        guard let data=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"],let resource=ProcessInfo.processInfo.environment["DOCVER_TEST_ONE_SIDED_RESOURCES"] else{throw NSError(domain:"OneSidedFixtureEnvironmentMissing",code:1)}
+        let root=URL(fileURLWithPath:data),library=root.appendingPathComponent("one-sided-library");try FileManager.default.createDirectory(at:library,withIntermediateDirectories:true)
+        try JSON(["mode":"ok","value":"valid opposite source"]).data().write(to:library.appendingPathComponent("control.json"))
+        let model=WorkbookModel(bridge:Bridge(resources:URL(fileURLWithPath:resource),library:library));await model.start();model.projectID="project";model.reportID="report";model.report=JSON(["report_id":"report","revisions":[["revision_occurrence_id":"old"],["revision_occurrence_id":"new"]]]);model.beforeID="old";model.afterID="new";model.rowStart=2;model.columnStart=1
+        let fixed=try model.report.data()
+        model.beforeSheetID="";model.afterSheetID="sheet-new";await model.loadRange()
+        try require(model.rangeFailure.isEmpty && model.beforeCells.isEmpty && model.afterCells.first?["value"].string=="valid opposite source","MissingBeforeSheetDiscardedAvailableAfterGrid")
+        model.beforeSheetID="sheet-old";model.afterSheetID="";await model.loadRange()
+        try require(model.rangeFailure.isEmpty && model.afterCells.isEmpty && model.beforeCells.first?["value"].string=="valid opposite source","MissingAfterSheetDiscardedAvailableBeforeGrid")
+        model.beforeSheetID="";await model.loadRange();try require(model.rangeFailure.isEmpty && model.beforeCells.isEmpty && model.afterCells.isEmpty,"BothMissingSheetsBecameFailedQueries")
+        let log=try String(contentsOf:library.appendingPathComponent("read-events.jsonl"),encoding:.utf8),requests=try log.split(separator:"\n").map{JSON(try JSONSerialization.jsonObject(with:Data($0.utf8)))}.filter{$0["action"].string=="workbookGrid"}
+        try require(requests.count==2 && requests[0]["query"]["sheet_id"].string=="sheet-new" && requests[1]["query"]["sheet_id"].string=="sheet-old" && requests.allSatisfy{$0["query"]["project_id"].string=="project" && $0["query"]["report_id"].string=="report"} && (try model.report.data())==fixed,"OneSidedSheetQueryLostScopeOrCalledMissingPane")
+        try JSONSerialization.data(withJSONObject:["scope":"production WorkbookModel.loadRange through isolated existing bridge fixture; no extraction or user navigation claim","valid_after_preserved":true,"valid_before_preserved":true,"both_missing_neutral":true,"grid_requests":requests.map(\.raw),"fixed_report_unchanged":true],options:[.sortedKeys]).write(to:root.appendingPathComponent("one-sided-proof.json"))
+    }
+
+    @MainActor static func checkRawFieldHosting(change:JSON,before:JSON,after:JSON,format:JSON)async throws {
+        func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
+        func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
+        let owner=AppModel(),model=WorkbookModel(bridge:owner.bridge)
+        func install(_ event:JSON,_ old:JSON,_ new:JSON) {
+            model.projectID="raw-field-project";model.reportID="raw-field-fixed";model.report=JSON(["report_id":model.reportID,"revisions":[["revision_occurrence_id":event["from_revision_occurrence_id"].string,"index":0,"sheets":[["sheet_id":event["from_sheet_id"].string,"name":"Before"]]],["revision_occurrence_id":event["to_revision_occurrence_id"].string,"index":1,"sheets":[["sheet_id":event["to_sheet_id"].string,"name":"After"]]]]])
+            model.beforeID=event["from_revision_occurrence_id"].string;model.afterID=event["to_revision_occurrence_id"].string;model.beforeSheetID=event["from_sheet_id"].string;model.afterSheetID=event["to_sheet_id"].string;model.changesFromID=model.beforeID;model.changesToID=model.afterID;model.changes=[event];model.selectedChangeID=event["change_id"].string;model.beforeAddress=event["before_address"].string;model.afterAddress=event["after_address"].string;model.beforeCell=old;model.afterCell=new;model.diffMode="text"
+        }
+        install(change,before,after)
+        let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1280,height:800),styleMask:[.titled],backing:.buffered,defer:false);window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:WorkbookWorkspace(model:model));window.orderFront(nil);defer{window.close()};try await Task.sleep(nanoseconds:150_000_000);window.contentView?.layoutSubtreeIfNeeded()
+        guard let content=window.contentView else{throw NSError(domain:"RawFieldHostMissing",code:1)}
+        let fallback=workspaceLayoutMarkers(in:content).filter{$0.identifier?.rawValue.hasPrefix("Reviset.workbook.rawField.value.")==true}
+        try require(fallback.count==2 && fallback.allSatisfy{$0.bounds.height>1000 && $0.bounds.width>0} && model.beforeCell["value"].string.utf16.elementsEqual(before["value"].string.utf16) && model.afterCell["value"].string.utf16.elementsEqual(after["value"].string.utf16),"CompleteOverLineBudgetRawFieldsNotMounted")
+        let heights=fallback.map{Double($0.bounds.height)}
+        install(format["change"],format["before"],format["after"]);try await Task.sleep(nanoseconds:100_000_000);content.layoutSubtreeIfNeeded()
+        let formats=workspaceLayoutMarkers(in:content).filter{$0.identifier?.rawValue.hasPrefix("Reviset.workbook.rawField.number_format.")==true}
+        try require(formats.count==2 && formats.allSatisfy{$0.bounds.height>0},"NeutralNumberFormatRawObservationsMissing")
+        let diff=unifiedTextDiff(before:"a\r\n",after:"a\n",semantic:true)
+        let markerWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:500,height:220),styleMask:[.titled],backing:.buffered,defer:false);markerWindow.isReleasedWhenClosed=false;markerWindow.contentView=NSHostingView(rootView:VStack(alignment:.leading){ForEach(Array(diff.lines.enumerated()),id:\.offset){_,line in NativeDiffSourceLine(prefix:line.prefix,text:line.text,semantic:true,terminator:line.terminator)}});markerWindow.orderFront(nil);defer{markerWindow.close()};try await Task.sleep(nanoseconds:100_000_000)
+        let labels=markerWindow.contentView.map{views($0).compactMap{$0 as? NSTextField}.filter{$0.identifier?.rawValue=="Reviset.diff.terminator"}} ?? []
+        try require(labels.count==diff.lines.count && Set(labels.map(\.stringValue)).isSuperset(of:["⟦CRLF⟧","⟦LF⟧","⟦EOF⟧"]) && labels.allSatisfy{!$0.isHiddenOrHasHiddenAncestor && !$0.visibleRect.isEmpty && !$0.isEditable},"ActualSecondaryTerminatorLabelsMissingOrHidden")
+        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["scope":"production workbook text overlay raw fallback/number-format geometry with synthetic complete cells, and actual secondary AppKit terminator labels; no extraction or OS input claim","complete_value_utf16":before["value"].string.utf16.count,"raw_source_marker_heights":heights,"number_format_raw_sections":formats.count,"actual_visible_secondary_terminator_labels":labels.map(\.stringValue),"raw_utf16_preserved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("raw-fallback-proof.json"))}
     }
 
 }

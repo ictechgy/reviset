@@ -1,10 +1,10 @@
 import {nativeSwiftSources, prepareLegacyNativeLocalization} from '../../scripts/native-swift-sources.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, rm, writeFile, readFile} from 'node:fs/promises';
+import {mkdtemp, rm, writeFile, readFile,mkdir,copyFile,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
 import {diffWorkbooks, WorkbookRevision} from '../../packages/workbook/diff.js';
 import {boundedWorkbookCell} from '../../packages/workbook/query.js';
 
@@ -37,8 +37,9 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
       }),
     ];
     const contexts=join(root,'engine-contexts.json');await writeFile(contexts,JSON.stringify(cases));
-    const stdout=execFileSync(executable,[contexts,resolve("tests/fixtures/native-workbook-observation-cases.json")],{encoding:'utf8',timeout:15_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata')}});
-    assert.match(stdout,/PASS native Git diff workspace:/u);
+    const oneSidedResources=join(root,'one-sided','Resources');await mkdir(join(oneSidedResources,'backend'),{recursive:true});await mkdir(join(root,'one-sided','Helpers'),{recursive:true});await symlink(process.execPath,join(root,'one-sided','Helpers','node'));await copyFile(resolve('tests/native/workbook-read-fixture.mjs'),join(oneSidedResources,'backend','bridge.mjs'));
+    const run=spawnSync(executable,[contexts,resolve("tests/fixtures/native-workbook-observation-cases.json")],{encoding:'utf8',timeout:20_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata'),DOCVER_TEST_ONE_SIDED_RESOURCES:oneSidedResources}});
+    assert.equal(run.status,0,run.error?.message ?? run.stderr);assert.match(run.stdout,/PASS native Git diff workspace:/u,run.stderr);
     const contextEvidence=await readFile(join(root,'userdata','context-geometry.json'),'utf8');
     const context=JSON.parse(contextEvidence) as {summary_height:number;source_height:number;reason_utf16_count:number;full_reader_utf16:number[];expected_utf16:number[];reader_height:number;reader_viewport_height:number};
     assert.ok(context.summary_height>=46 && context.summary_height<=140 && context.source_height>400);
@@ -62,5 +63,11 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
     const headers=JSON.parse(headerEvidence) as {observations:{workspace:string;language:string}[]};
     assert.equal(headers.observations.length,4);assert.equal(new Set(headers.observations.map(item=>[item.workspace,item.language].join('/'))).size,4);
     if(process.env.DOCVER_TEST_HIDDEN_HEADER_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_HIDDEN_HEADER_EVIDENCE_OUT,headerEvidence);
+    const reviewEvidence=await readFile(join(root,'userdata','review13-proof.json'),'utf8');
+    if(process.env.DOCVER_TEST_REVIEW13_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_REVIEW13_EVIDENCE_OUT,reviewEvidence);
+    const oneSidedEvidence=await readFile(join(root,'userdata','one-sided-proof.json'),'utf8');
+    if(process.env.DOCVER_TEST_ONE_SIDED_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_ONE_SIDED_EVIDENCE_OUT,oneSidedEvidence);
+    const rawEvidence=await readFile(join(root,'userdata','raw-fallback-proof.json'),'utf8');
+    if(process.env.DOCVER_TEST_RAW_FALLBACK_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_RAW_FALLBACK_EVIDENCE_OUT,rawEvidence);
   } finally {await rm(root,{recursive:true,force:true});}
 });

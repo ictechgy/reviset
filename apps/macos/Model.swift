@@ -164,6 +164,13 @@ struct ReorderConfirmation:Identifiable {
         if !changes.isEmpty {return L("doc.tail.change.selectPrompt")}
         return emptyChangesMessage
     }
+    var changeListProvenance:String {
+        if from==to {return L("git.reading")}
+        if tab=="history" {return L("git.documentStoredHistory")}
+        return to==from+1 ? L("git.documentStoredAdjacent"):L("git.documentComputedNet")
+    }
+    var canStartNewComparison:Bool {libraryAvailable && !initializing && !busy && !loading}
+    func openNewComparisonImport() {guard canStartNewComparison else{return};importSheet=true}
     func primaryPages(_ revision: JSON) -> [JSON] {
         let pptx = revision["assets"].array.filter { $0["format"].string == "pptx" }.map { $0["asset_id"].string }
         return revision["pages"].array.filter { pptx.isEmpty || pptx.contains($0["asset_id"].string) }
@@ -675,30 +682,48 @@ func changeTextRuns(_ text:String,comparedWith other:String)->[ChangeTextRun] {
     return "\(side) · v\(index+1) · p.\(evidence["page"].int)"
 }
 
-struct UnifiedTextDiffLine:Equatable {let prefix:String;let text:String}
+struct UnifiedTextDiffLine:Equatable {
+    let prefix:String
+    let text:String
+    var terminator:String=""
+    var rawText:String {text+terminator}
+}
 struct UnifiedTextDiff {
     let lines:[UnifiedTextDiffLine]
     let bounded:Bool
     let semantic:Bool
+    var terminatorsDiffer=false
+}
+private struct StoredDiffLine {let text:String;let terminator:String;var rawText:String{text+terminator}}
+private func storedDiffLines(_ text:String)->[StoredDiffLine] {
+    let units=Array(text.utf16);var result:[StoredDiffLine]=[],start=0,index=0
+    while index<units.count {
+        if units[index]==13 || units[index]==10 {
+            let end=index;index += units[index]==13 && index+1<units.count && units[index+1]==10 ? 2:1
+            result.append(StoredDiffLine(text:String(decoding:units[start..<end],as:UTF16.self),terminator:String(decoding:units[end..<index],as:UTF16.self)));start=index
+        } else {index+=1}
+    }
+    result.append(StoredDiffLine(text:String(decoding:units[start..<units.count],as:UTF16.self),terminator:""));return result
 }
 func unifiedTextDiff(before:String,after:String,semantic:Bool)->UnifiedTextDiff {
     // Never truncate a source and then present that fragment as a complete diff.
     guard before.utf16.count<=4096,after.utf16.count<=4096 else{return UnifiedTextDiff(lines:[],bounded:false,semantic:false)}
-    let old=before.components(separatedBy:"\n"),new=after.components(separatedBy:"\n")
+    let old=storedDiffLines(before),new=storedDiffLines(after)
     guard old.count<=128,new.count<=128 else{return UnifiedTextDiff(lines:[],bounded:false,semantic:false)}
-    guard semantic else{return UnifiedTextDiff(lines:old.map{UnifiedTextDiffLine(prefix:"",text:$0)}+new.map{UnifiedTextDiffLine(prefix:"",text:$0)},bounded:true,semantic:false)}
-    let difference=new.difference(from:old,by:{$0.utf16.elementsEqual($1.utf16)})
+    let endingChange=old.map(\.terminator) != new.map(\.terminator)
+    guard semantic else{return UnifiedTextDiff(lines:old.map{UnifiedTextDiffLine(prefix:"",text:$0.text,terminator:$0.terminator)}+new.map{UnifiedTextDiffLine(prefix:"",text:$0.text,terminator:$0.terminator)},bounded:true,semantic:false,terminatorsDiffer:endingChange)}
+    let difference=new.difference(from:old,by:{$0.rawText.utf16.elementsEqual($1.rawText.utf16)})
     let removed=Set(difference.compactMap{entry->Int? in if case let .remove(offset,_,_)=entry{return offset};return nil})
     let added=Set(difference.compactMap{entry->Int? in if case let .insert(offset,_,_)=entry{return offset};return nil})
     var result:[UnifiedTextDiffLine]=[],a=0,b=0
     while a<old.count || b<new.count {
-        if a<old.count,removed.contains(a) {result.append(UnifiedTextDiffLine(prefix:"−",text:old[a]));a+=1}
-        else if b<new.count,added.contains(b) {result.append(UnifiedTextDiffLine(prefix:"+",text:new[b]));b+=1}
-        else if a<old.count,b<new.count {result.append(UnifiedTextDiffLine(prefix:" ",text:old[a]));a+=1;b+=1}
-        else if a<old.count {result.append(UnifiedTextDiffLine(prefix:"−",text:old[a]));a+=1}
-        else {result.append(UnifiedTextDiffLine(prefix:"+",text:new[b]));b+=1}
+        if a<old.count,removed.contains(a) {result.append(UnifiedTextDiffLine(prefix:"−",text:old[a].text,terminator:old[a].terminator));a+=1}
+        else if b<new.count,added.contains(b) {result.append(UnifiedTextDiffLine(prefix:"+",text:new[b].text,terminator:new[b].terminator));b+=1}
+        else if a<old.count,b<new.count {result.append(UnifiedTextDiffLine(prefix:" ",text:old[a].text,terminator:old[a].terminator));a+=1;b+=1}
+        else if a<old.count {result.append(UnifiedTextDiffLine(prefix:"−",text:old[a].text,terminator:old[a].terminator));a+=1}
+        else {result.append(UnifiedTextDiffLine(prefix:"+",text:new[b].text,terminator:new[b].terminator));b+=1}
     }
-    return UnifiedTextDiff(lines:result,bounded:true,semantic:true)
+    return UnifiedTextDiff(lines:result,bounded:true,semantic:true,terminatorsDiffer:endingChange)
 }
 func documentTextDiff(_ change:JSON)->UnifiedTextDiff {
     let semantic=change["kind"].string=="text_modified" && change["topology"].isNull && !change["before"].isNull && !change["after"].isNull

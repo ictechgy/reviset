@@ -451,14 +451,21 @@ struct NativeDetailSheet<Content:View>:View {
 
 // Fixed intrinsic width prevents horizontal-scroll layout from wrapping each
 // source word independently. Explicit source newlines remain unchanged.
+func sourceTerminatorLabel(_ value:String)->String {switch value {case "\r\n":return "⟦CRLF⟧";case "\r":return "⟦CR⟧";case "\n":return "⟦LF⟧";default:return "⟦EOF⟧"}}
+struct NativeTerminatorLabel:NSViewRepresentable {
+    let terminator:String
+    func makeNSView(context:Context)->NSTextField {let field=NSTextField(labelWithString:"");field.font = .systemFont(ofSize:NSFont.smallSystemFontSize);field.textColor = .secondaryLabelColor;field.identifier=NSUserInterfaceItemIdentifier("Reviset.diff.terminator");return field}
+    func updateNSView(_ field:NSTextField,context:Context) {field.stringValue=sourceTerminatorLabel(terminator);field.setAccessibilityLabel(L("git.lineEndingAnnotation",.verbatim(field.stringValue)))}
+}
 struct NativeDiffSourceLine:View {
     let prefix:String
     let text:String
     let semantic:Bool
+    var terminator:String?=nil
     var markerName:String?=nil
     private var foreground:Color {guard semantic else{return .primary};return prefix=="−" ? Color(red:0.55,green:0.12,blue:0.12):prefix=="+" ? Color(red:0.08,green:0.36,blue:0.18):.primary}
     var body:some View {
-        HStack(alignment:.top,spacing:8){Text(prefix).frame(width:18);Text(verbatim:text).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)}.font(.system(.body,design:.monospaced)).foregroundStyle(foreground).frame(maxWidth:.infinity,alignment:.leading).background {if let markerName {WorkspaceLayoutMarker(name:markerName)}}
+        HStack(alignment:.top,spacing:8){Text(prefix).frame(width:18);Text(verbatim:text).fixedSize(horizontal:true,vertical:true).textSelection(.enabled);if let terminator {NativeTerminatorLabel(terminator:terminator).fixedSize()}}.font(.system(.body,design:.monospaced)).foregroundStyle(foreground).frame(maxWidth:.infinity,alignment:.leading).background {if let markerName {WorkspaceLayoutMarker(name:markerName)}}
     }
 }
 
@@ -490,6 +497,7 @@ struct NativeVerbatimReasonReader:NSViewRepresentable {
     }
     func updateNSView(_ scroll:NSScrollView,context:Context) {
         guard let reader=scroll.documentView as? NSTextView else{return}
+        reader.setAccessibilityLabel(L("git.rawReasons"))
         if !reader.string.utf16.elementsEqual(text.utf16) {reader.string=text;reader.scrollToBeginningOfDocument(nil)}
     }
 }
@@ -508,4 +516,42 @@ struct NativeVerbatimReasonReader:NSViewRepresentable {
         if let responder=window.firstResponder as? NSView,sources.contains(where:{responder === $0 || responder.isDescendant(of:$0)}) {throw NSError(domain:"KeyViewEnteredHiddenSource",code:1)}
     }}
     return ["source_count":sources.count,"accepts_first_responder":false,"can_become_key_view":false,"native_accessibility_hidden":true,"direct_reacquisition_rejected":true,"local_keyview_steps":24,"scope":"controlled public AppKit source controls and local next/previous traversal; no OS Full Keyboard Access or VoiceOver claim"]
+}
+
+// Shared native empty-state guidance; actions are provided by each workspace.
+private final class WorkbookEmptyGuidanceDocument:NSView {override var isFlipped:Bool {true}}
+final class WorkbookEmptyGuidanceView:NSScrollView {
+    let message=NSTextField(wrappingLabelWithString:"")
+    let importButton=NSButton(title:"",target:nil,action:nil)
+    private let bodyView=WorkbookEmptyGuidanceDocument()
+    override init(frame:NSRect) {
+        super.init(frame:frame);drawsBackground=false;borderType = .noBorder;hasVerticalScroller=true;autohidesScrollers=true
+        message.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.emptyGuidance");message.font = .systemFont(ofSize:NSFont.systemFontSize);message.textColor = .secondaryLabelColor;message.alignment = .center;message.maximumNumberOfLines=0
+        importButton.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.newComparison");importButton.bezelStyle = .rounded
+        bodyView.addSubview(message);bodyView.addSubview(importButton);documentView=bodyView
+    }
+    required init?(coder:NSCoder) {fatalError("init(coder:) is unavailable")}
+    override func layout() {
+        super.layout()
+        let width=max(1,contentSize.width-28)
+        message.preferredMaxLayoutWidth=width
+        let textHeight=max(20,message.cell?.cellSize(forBounds:NSRect(x:0,y:0,width:width,height:CGFloat.greatestFiniteMagnitude)).height ?? 20)
+        let buttonHeight=importButton.isHidden ? 0:importButton.fittingSize.height+12
+        let block=textHeight+buttonHeight,documentHeight=max(contentSize.height,block+24)
+        bodyView.frame=NSRect(x:0,y:0,width:contentSize.width,height:documentHeight)
+        let top=max(12,(documentHeight-block)/2)
+        message.frame=NSRect(x:14,y:top,width:width,height:textHeight)
+        if !importButton.isHidden {let size=importButton.fittingSize;importButton.frame=NSRect(x:max(14,(contentSize.width-size.width)/2),y:top+textHeight+12,width:min(size.width,width),height:size.height)}
+    }
+}
+struct NativeEmptyComparisonGuidance:NSViewRepresentable {
+    let message:String
+    let showsImport:Bool
+    let canImport:Bool
+    let onImport:()->Void
+    var actionIdentifier="Reviset.workbook.newComparison"
+    final class Coordinator:NSObject {var onImport:()->Void={};@objc func openImport(_ sender:NSButton){onImport()}}
+    func makeCoordinator()->Coordinator {Coordinator()}
+    func makeNSView(context:Context)->WorkbookEmptyGuidanceView {let view=WorkbookEmptyGuidanceView();view.importButton.target=context.coordinator;view.importButton.action=#selector(Coordinator.openImport(_:));return view}
+    func updateNSView(_ view:WorkbookEmptyGuidanceView,context:Context) {context.coordinator.onImport=onImport;view.message.stringValue=message;view.importButton.title=L("git.workbookNewComparison");view.importButton.identifier=NSUserInterfaceItemIdentifier(actionIdentifier);view.importButton.isHidden = !showsImport;view.importButton.isEnabled=canImport;view.needsLayout=true}
 }

@@ -760,8 +760,8 @@
     "ko": "변경 목록을 불러오지 못했습니다. 구간을 다시 선택하거나 보고서를 다시 여세요."
   },
   "doc.changes.needRevisions": {
-    "en": "Import at least two revisions to compare changes.",
-    "ko": "두 버전 이상을 가져오면 변경을 비교할 수 있습니다."
+    "en": "Import at least two versions into a new timeline with New comparison to compare changes.",
+    "ko": "새 비교에서 두 버전 이상을 새 타임라인으로 가져오면 변경을 비교할 수 있습니다."
   },
   "doc.changes.none": {
     "en": "No changes were detected in this range. Review source evidence for withheld readings and observation limits.",

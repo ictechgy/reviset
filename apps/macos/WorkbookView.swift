@@ -146,6 +146,12 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     var scope: String { projectID + "|" + reportID }
     var rangeScope: String { [scope,beforeID,afterID,beforeSheetID,afterSheetID,String(beforeRowStart),String(beforeColumnStart),String(afterRowStart),String(afterColumnStart)].joined(separator:"|") }
     var comparisonScope: String { [scope,changesFromID,changesToID,changesMode].joined(separator:"|") }
+    var changeListProvenance:String {
+        if changesFromID==changesToID {return L("git.reading")}
+        if changesMode=="history" {return L("git.documentStoredHistory")}
+        if let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==changesFromID}),let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==changesToID}),b==a+1 {return L("git.documentStoredAdjacent")}
+        return L("git.workbookComputedNet")
+    }
     var blankFormattingWarning: String {
         guard ready,!loadingChanges,changesFailure.isEmpty,blankFormattingWarningScope == comparisonScope else { return "" }
         return L("workbook.warning.blankFormatting")
@@ -721,7 +727,7 @@ struct WorkbookWorkspace: View {
     var body: some View {
         VStack(spacing:0) {
             WorkspacePaneSplit(name:"workbook.projects",auxiliaryFirst:true,auxiliaryVisible:layout.configuration.sidebarVisible,extent:.points(layout.configuration.sidebarWidth),primaryMinimum:760,auxiliaryMinimum:180,onResize:{value in if case .points(let width)=value {layout.update{$0.sidebarWidth=min(380,max(180,width))}}}) {
-                WorkspacePaneSplit(name:"workbook.inspector",auxiliaryFirst:layout.configuration.inspectorDock == .left,auxiliaryVisible:layout.configuration.inspectorVisible && model.tab == "compare" && !model.report.isNull,extent:.points(layout.configuration.inspectorWidth),primaryMinimum:layout.configuration.changesVisible && layout.configuration.changesDock != .bottom ? 500:300,auxiliaryMinimum:260,onResize:{value in if case .points(let width)=value {layout.update{$0.inspectorWidth=min(480,max(260,width))}}}) {
+                WorkspacePaneSplit(name:"workbook.inspector",auxiliaryFirst:layout.configuration.inspectorDock == .left,auxiliaryVisible:layout.configuration.inspectorVisible && !model.report.isNull,extent:.points(layout.configuration.inspectorWidth),primaryMinimum:layout.configuration.changesVisible && layout.configuration.changesDock != .bottom ? 500:300,auxiliaryMinimum:260,onResize:{value in if case .points(let width)=value {layout.update{$0.inspectorWidth=min(480,max(260,width))}}}) {
                     VStack(spacing:0) {
                         reportBar
                         if model.loadingReport { WorkbookStatus(title:L("workbook.status.loadingReport"),detail:L("workbook.status.loadingReportDetail"),loading:true) }
@@ -847,11 +853,14 @@ struct WorkbookWorkspace: View {
     private var versionBar: some View {
         HStack(spacing:8) {
             Text(L("git.query")).font(.caption).foregroundStyle(.secondary)
+            if model.revisions.count==1 {Text(verbatim:model.versionLabel(model.revisions[0]["revision_occurrence_id"].string)).font(.caption.weight(.semibold))} else {
             Menu {ForEach(model.revisions,id:\.id){revision in Button(model.versionLabel(revision["revision_occurrence_id"].string)){Task{await model.selectVersion(revision["revision_occurrence_id"].string)}}}} label:{Image(systemName:"clock.arrow.circlepath")}.help(L("git.versions")).accessibilityLabel(L("git.versions"))
             versionPicker(title:L("workbook.before"),selection:model.changesFromID.isEmpty ? model.beforeID:model.changesFromID,before:true)
             Image(systemName:"arrow.right").foregroundStyle(.secondary)
             versionPicker(title:L("workbook.after"),selection:model.changesToID.isEmpty ? model.afterID:model.changesToID,before:false)
             Picker(L("workbook.comparison.mode"),selection:Binding(get:{model.mode},set:{value in Task { await model.changeMode(value) }})) { Text(L("git.net")).tag("range_net"); Text(L("git.history")).tag("history") }.labelsHidden().pickerStyle(.segmented).frame(width:275).disabled(model.changesFromID==model.changesToID)
+            }
+            Spacer(minLength:4)
             Menu {Picker(L("git.view"),selection:Binding(get:{model.effectiveDiffMode},set:{model.setDiffMode($0)})){Text(L("git.original")).tag("source");Text(L("git.textDiff")).tag("text")}.disabled(model.readingSingleVersion)} label:{Label(model.effectiveDiffMode=="source" ? L("git.original"):L("git.textDiff"),systemImage:"rectangle.split.2x1")}
             Button{layout.update{$0.changesVisible.toggle()}}label:{Image(systemName:"list.bullet")}.help(L("layout.panel.changes")).accessibilityLabel(L("layout.panel.changes"))
             Button{model.inspectorVisible.toggle()}label:{Image(systemName:"sidebar.right")}.help(L("workbook.inspector.title")).accessibilityLabel(L("workbook.inspector.title"))
@@ -868,7 +877,7 @@ struct WorkbookWorkspace: View {
         return Picker(before ? L("workbook.sheet.before") : L("workbook.sheet.after"),selection:Binding(get:{current},set:{id in Task { if before { await model.changeSheet(before:id) } else { await model.changeSheet(after:id) } }})) {
             if current.isEmpty { Text(L("workbook.sheet.none")).tag("") }
             ForEach(model.sheets(occurrence),id:\.workbookSheetID) { s in Text(verbatim:s["name"].string + (s["hidden"].bool ? L("workbook.sheet.hiddenSuffix") : "") + " (\(s["row_count"].int)×\(s["column_count"].int))").tag(s["sheet_id"].string) }
-        }.frame(maxWidth:.infinity).background(WorkspaceLayoutMarker(name:"Reviset.workbook.sheetPicker."+(before ? "before":"after")))
+        }.frame(maxWidth:.infinity).background(WorkspaceLayoutMarker(name:"Reviset.workbook.sheetPicker."+(before ? "before":"after"))).disabled(!model.ready || model.loadingRange)
     }
     private func gridPane(before: Bool) -> some View {
         let occurrence = before ? model.beforeID : model.afterID
@@ -892,9 +901,10 @@ struct WorkbookWorkspace: View {
     private var changesPane: some View {
         VStack(spacing:0) {
             let compact=layout.configuration.changesDock != .bottom
+            if model.revisions.count != 1 {
             let arrangement=compact ? AnyLayout(VStackLayout(alignment:.leading,spacing:6)):AnyLayout(HStackLayout())
             arrangement {
-                Text(model.changesMode == "history" ? L("workbook.changes.historyTitle") : L("workbook.changes.netTitle")).font(.headline)
+                Text(model.changesFromID==model.changesToID ? L("git.reading"):(model.changesMode == "history" ? L("workbook.changes.historyTitle") : L("workbook.changes.netTitle"))).font(.headline)
                 Text(L("workbook.changes.page",.integer(model.changePageNumber),.count(model.changes.count),.count(model.changeTotal))).font(.caption).foregroundStyle(.secondary)
                 if !compact {Spacer()}
                 HStack(spacing:6) {
@@ -905,6 +915,9 @@ struct WorkbookWorkspace: View {
                     if !model.changeCursor.isEmpty { Button { Task { await model.loadChanges(next:true) } } label: {if compact {Image(systemName:"chevron.right")} else {Text(L("workbook.paging.next"))}}.accessibilityLabel(L("workbook.paging.next")).help(L("workbook.paging.next")) }
                 }.controlSize(compact ? .small:.regular)
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready || model.loadingChanges)
+            Text(model.changeListProvenance).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
+            Text(verbatim:model.versionLabel(model.changesFromID)+" → "+model.versionLabel(model.changesToID)).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
+            }
             if !model.changesFromID.isEmpty,!model.changesToID.isEmpty,(model.changesFromID != model.beforeID || model.changesToID != model.afterID) { Text(L("workbook.changes.intervalDifference")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.changeCursor.isEmpty { Text(L("workbook.paging.more")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             else if !model.changePreviousCursors.isEmpty { Text(L("workbook.paging.last")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
@@ -1012,7 +1025,7 @@ struct WorkbookSelectedEventScope {
     let beforeSheet:String
     let afterSheet:String
 }
-func workbookFieldDiffEligibility(change:JSON,before:JSON,after:JSON,scope:WorkbookSelectedEventScope)->WorkbookFieldDiffEligibility {
+func workbookFieldContextAuthorized(change:JSON,before:JSON,after:JSON,scope:WorkbookSelectedEventScope)->Bool {
     guard !change.isNull,!before.isNull,!after.isNull,
           ["exact","inferred"].contains(change["association"].string),
           ["unique_nonempty_first_column_key","unique_exact_row_content"].contains(change["alignment_method"].string),
@@ -1022,8 +1035,11 @@ func workbookFieldDiffEligibility(change:JSON,before:JSON,after:JSON,scope:Workb
           change["from_revision_occurrence_id"].string==scope.beforeOccurrence,change["to_revision_occurrence_id"].string==scope.afterOccurrence,
           change["from_sheet_id"].string==scope.beforeSheet,change["to_sheet_id"].string==scope.afterSheet,
           !before["address"].string.isEmpty,!after["address"].string.isEmpty,
-          change["before_address"].string==before["address"].string,change["after_address"].string==after["address"].string,
-          before["formula_interpretation"].string != "unresolved",after["formula_interpretation"].string != "unresolved" else{return .neutral}
+          change["before_address"].string==before["address"].string,change["after_address"].string==after["address"].string else{return false}
+    return true
+}
+func workbookFieldDiffEligibility(change:JSON,before:JSON,after:JSON,scope:WorkbookSelectedEventScope)->WorkbookFieldDiffEligibility {
+    guard workbookFieldContextAuthorized(change:change,before:before,after:after,scope:scope),before["formula_interpretation"].string != "unresolved",after["formula_interpretation"].string != "unresolved" else{return .neutral}
     switch change["kind"].string {
     case "formula":
         let old=before["formula_dialect"].string,new=after["formula_dialect"].string
@@ -1058,7 +1074,32 @@ func workbookSelectedWarningKeys(_ cell:JSON)->[String] {
     }
     return keys
 }
-enum WorkbookFieldCaption:String {case compared,notAsserted,withheld,formulaRole,cache,valueType,dialect,missing,fragment,invalid,unavailable,identical,observedBlank}
+enum WorkbookFieldCaption:String {case compared,notAsserted,withheld,formulaRole,cache,valueType,dialect,missing,fragment,invalid,unavailable,identical,observedBlank,observed}
+func workbookObservationCaptionKey(cell:JSON,field:String)->String {
+    guard !cell.isNull else{return "cellNotMaterialized"}
+    switch workbookRawField(cell,field:field).state {
+    case .unavailable:return "cellNotMaterialized"
+    case .invalid:return "invalidSourceSegment"
+    case .partial,.earlier:return "partialSourceSegment"
+    case .empty:return "observationEmpty"
+    case .missing:
+        if field=="formula" {return "formulaAbsent"}
+        if field=="value",cell["cached_result"].string=="missing" {return "resultMissingShort"}
+        return field=="value" && cell["value_type"].string=="blank" ? "valueBlankShort":"observationNull"
+    case .complete:return "observationPresent"
+    }
+}
+@MainActor func workbookObservationCaption(cell:JSON,field:String)->String {
+    switch workbookObservationCaptionKey(cell:cell,field:field) {
+    case "formulaAbsent":return L("git.formulaAbsent")
+    case "resultMissingShort":return L("git.cacheMissing")
+    case "valueBlankShort":return L("git.observedBlank")
+    case "observationEmpty":return L("workbook.cell.emptyString")
+    case "cellNotMaterialized":return L("workbook.cell.noObservation")
+    default:return L("workbook.cell.valueAbsent")
+    }
+}
+func workbookFieldShowsRaw(caption:WorkbookFieldCaption,diff:UnifiedTextDiff?)->Bool {caption != .compared || diff?.bounded != true}
 func workbookFieldCaption(change:JSON,before:JSON,after:JSON,field:String,textOffset:Int,scope:WorkbookSelectedEventScope)->WorkbookFieldCaption {
     let old=workbookRawField(before,field:field),new=workbookRawField(after,field:field)
     if old.state == .unavailable || new.state == .unavailable {return .unavailable}
@@ -1068,13 +1109,14 @@ func workbookFieldCaption(change:JSON,before:JSON,after:JSON,field:String,textOf
         return .missing
     }
     if textOffset>0 || !old.complete || !new.complete {return .fragment}
+    if change.isNull {return .notAsserted}
+    if !workbookFieldContextAuthorized(change:change,before:before,after:after,scope:scope) {return .withheld}
+    if (field=="formula" && change["kind"].string != "formula") || (field=="value" && change["kind"].string != "stored_value") || (field=="number_format" && change["kind"].string != "number_format") {return .notAsserted}
+    if field=="number_format" {return .observed}
     if before["formula_interpretation"].string=="unresolved" || after["formula_interpretation"].string=="unresolved" {return .formulaRole}
     if field=="value",!["present","not_applicable"].contains(before["cached_result"].string) || !["present","not_applicable"].contains(after["cached_result"].string) {return .cache}
     if field=="value",before["value_type"].string != after["value_type"].string {return .valueType}
     if field=="formula",before["formula_dialect"].string != after["formula_dialect"].string {return .dialect}
-    if change.isNull {return .notAsserted}
-    if !["exact","inferred"].contains(change["association"].string) || !["unique_nonempty_first_column_key","unique_exact_row_content"].contains(change["alignment_method"].string) {return .withheld}
-    if (field=="formula" && change["kind"].string != "formula") || (field=="value" && change["kind"].string != "stored_value") {return .notAsserted}
     let eligibility=workbookFieldDiffEligibility(change:change,before:before,after:after,scope:scope)
     if eligibility == .neutral {return .withheld}
     if let a=old.text,let b=new.text,a.utf16.elementsEqual(b.utf16) {return .identical}
@@ -1095,6 +1137,7 @@ func workbookFieldCaption(change:JSON,before:JSON,after:JSON,field:String,textOf
     case .unavailable:return L("workbook.cell.noObservation")
     case .identical:return L("git.fieldIdentical")
     case .observedBlank:return L("git.observedBlank")
+    case .observed:return L("git.fieldObserved")
     }
 }
 @MainActor func workbookSelectedWarningMessages(_ cell:JSON)->[String] {
@@ -1121,46 +1164,11 @@ private struct WorkbookSelectedWarnings:View {
         }
     }
 }
-private final class WorkbookEmptyGuidanceDocument:NSView {override var isFlipped:Bool {true}}
-final class WorkbookEmptyGuidanceView:NSScrollView {
-    let message=NSTextField(wrappingLabelWithString:"")
-    let importButton=NSButton(title:"",target:nil,action:nil)
-    private let bodyView=WorkbookEmptyGuidanceDocument()
-    override init(frame:NSRect) {
-        super.init(frame:frame);drawsBackground=false;borderType = .noBorder;hasVerticalScroller=true;autohidesScrollers=true
-        message.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.emptyGuidance");message.font = .systemFont(ofSize:NSFont.systemFontSize);message.textColor = .secondaryLabelColor;message.alignment = .center;message.maximumNumberOfLines=0
-        importButton.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.newComparison");importButton.bezelStyle = .rounded
-        bodyView.addSubview(message);bodyView.addSubview(importButton);documentView=bodyView
-    }
-    required init?(coder:NSCoder) {fatalError("init(coder:) is unavailable")}
-    override func layout() {
-        super.layout()
-        let width=max(1,contentSize.width-28)
-        message.preferredMaxLayoutWidth=width
-        let textHeight=max(20,message.cell?.cellSize(forBounds:NSRect(x:0,y:0,width:width,height:CGFloat.greatestFiniteMagnitude)).height ?? 20)
-        let buttonHeight=importButton.isHidden ? 0:importButton.fittingSize.height+12
-        let block=textHeight+buttonHeight,documentHeight=max(contentSize.height,block+24)
-        bodyView.frame=NSRect(x:0,y:0,width:contentSize.width,height:documentHeight)
-        let top=max(12,(documentHeight-block)/2)
-        message.frame=NSRect(x:14,y:top,width:width,height:textHeight)
-        if !importButton.isHidden {let size=importButton.fittingSize;importButton.frame=NSRect(x:max(14,(contentSize.width-size.width)/2),y:top+textHeight+12,width:min(size.width,width),height:size.height)}
-    }
-}
 struct WorkbookEmptyChangesState:View {
     @ObservedObject var model:WorkbookModel
     var body:some View {
-        WorkbookEmptyChangesNative(message:model.emptyChangesMessage,showsImport:model.emptyChangesKind == .additionalVersion,canImport:model.ready,onImport:{model.openNewComparisonImport()})
+        NativeEmptyComparisonGuidance(message:model.emptyChangesMessage,showsImport:model.emptyChangesKind == .additionalVersion,canImport:model.ready,onImport:{model.openNewComparisonImport()})
     }
-}
-private struct WorkbookEmptyChangesNative:NSViewRepresentable {
-    let message:String
-    let showsImport:Bool
-    let canImport:Bool
-    let onImport:()->Void
-    final class Coordinator:NSObject {var onImport:()->Void={};@objc func openImport(_ sender:NSButton){onImport()}}
-    func makeCoordinator()->Coordinator {Coordinator()}
-    func makeNSView(context:Context)->WorkbookEmptyGuidanceView {let view=WorkbookEmptyGuidanceView();view.importButton.target=context.coordinator;view.importButton.action=#selector(Coordinator.openImport(_:));return view}
-    func updateNSView(_ view:WorkbookEmptyGuidanceView,context:Context) {context.coordinator.onImport=onImport;view.message.stringValue=message;view.importButton.title=L("git.workbookNewComparison");view.importButton.isHidden = !showsImport;view.importButton.isEnabled=canImport;view.needsLayout=true}
 }
 private struct WorkbookUnifiedDiff:View {
     @ObservedObject var model:WorkbookModel
@@ -1175,7 +1183,7 @@ private struct WorkbookUnifiedDiff:View {
                     if model.cellTextOffset>0 {Button(L("workbook.action.sourceStartBoth")){Task{await model.loadSelectedCells(offset:0)}}}
                     if let next=model.cellTextNext {Button(L("workbook.action.sourceNextBoth")){Task{await model.loadSelectedCells(offset:next)}}}
                 }.controlSize(.small).disabled(!model.ready || model.loadingCell)
-                ScrollView([.horizontal,.vertical]){VStack(alignment:.leading,spacing:16){field("formula",title:L("workbook.cell.formula"));field("value",title:L("git.savedObservation"))}}
+                ScrollView([.horizontal,.vertical]){VStack(alignment:.leading,spacing:16){field("formula",title:L("workbook.cell.formula"));field("value",title:L("git.savedObservation"));field("number_format",title:L("workbook.cell.numberFormat"))}}
             }
             Spacer(minLength:0)
         }.padding(20).frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading).background(Color(nsColor:.textBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.workbook.unifiedDiff"))
@@ -1188,14 +1196,15 @@ private struct WorkbookUnifiedDiff:View {
         VStack(alignment:.leading,spacing:7){
             Text(title).font(.caption.weight(.semibold))
             // Status/offset/type labels live outside the verbatim source text.
-            observation(old,before:true,showSource:caption != .compared,field:key)
-            observation(new,before:false,showSource:caption != .compared,field:key)
+            observation(old,before:true,showSource:workbookFieldShowsRaw(caption:caption,diff:diff),field:key)
+            observation(new,before:false,showSource:workbookFieldShowsRaw(caption:caption,diff:diff),field:key)
             if let diff {
                 if !diff.bounded {Text(L("git.diffBound")).font(.caption).foregroundStyle(.secondary)}
                 else {
                     if caption != .compared {Text(workbookFieldCaptionText(caption)).font(.caption).foregroundStyle(.secondary)}
+                    if diff.terminatorsDiffer {Text(L("git.terminatorsDiffer")).font(.caption).foregroundStyle(.secondary)}
                     if diff.semantic && caption == .compared {
-                    ForEach(Array(diff.lines.enumerated()),id:\.offset){_,line in NativeDiffSourceLine(prefix:line.prefix,text:line.text,semantic:diff.semantic)}
+                    ForEach(Array(diff.lines.enumerated()),id:\.offset){_,line in NativeDiffSourceLine(prefix:line.prefix,text:line.text,semantic:diff.semantic,terminator:line.terminator)}
                     }
                 }
             } else {Text(workbookFieldCaptionText(caption)).font(.caption2).foregroundStyle(.secondary)}
@@ -1206,15 +1215,15 @@ private struct WorkbookUnifiedDiff:View {
         let status:String = {switch value.state {
             case .unavailable:return L("workbook.cell.noObservation")
             case .invalid:return L("git.invalidObservation")
-            case .missing:return (field=="formula" ? L("git.formulaAbsent"):(cell["value_type"].string=="blank" && cell["cached_result"].string != "missing" ? L("git.observedBlank"):L("workbook.cell.valueAbsent")))+(value.offset==0 ? "":" · "+L("git.requestedOffset",.integer(value.offset)))
+            case .missing:return workbookObservationCaption(cell:cell,field:field)+(value.offset==0 ? "":" · "+L("git.requestedOffset",.integer(value.offset)))
             case .empty:return L("workbook.cell.emptyString")
             case .earlier:return L("workbook.cell.valueEarlier")
             case .partial:return L("git.fragmentRange",.integer(value.offset),.integer(value.offset+(value.text?.utf16.count ?? 0)),.integer(value.total))
-            case .complete:return field=="value" ? WorkbookLabels.valueType(cell["value_type"].string):L("workbook.cell.formula")
+            case .complete:return field=="value" ? WorkbookLabels.valueType(cell["value_type"].string):field=="formula" ? L("workbook.cell.formula"):L("workbook.cell.numberFormat")
         }}()
         VStack(alignment:.leading,spacing:3){
             Text(side+" · "+status).font(.caption).foregroundStyle(.secondary)
-            if showSource,let text=value.text,!text.isEmpty {Text(verbatim:text).font(.system(.body,design:.monospaced)).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)}
+            if showSource,let text=value.text,!text.isEmpty {Text(verbatim:text).font(.system(.body,design:.monospaced)).fixedSize(horizontal:true,vertical:true).textSelection(.enabled).background(WorkspaceLayoutMarker(name:"Reviset.workbook.rawField."+field+"."+(before ? "before":"after")))}
         }
     }
 }
@@ -1818,7 +1827,7 @@ struct WorkbookGrid: NSViewRepresentable {
                 text.stringValue = (flags.isEmpty ? "" : flags + " ") + String(raw.prefix(400)) + (valueTruncated ? "…" : ""); text.font = .systemFont(ofSize:12); text.textColor = value["hidden_row"].bool || value["hidden_column"].bool ? .secondaryLabelColor : .labelColor
                 let formula = value["formula"].isNull ? "" : L("workbook.grid.formulaPrefix") + String(value["formula"].string.prefix(600))
                 let interpretation = value["formula_interpretation"].string == "unresolved" ? L("workbook.grid.unresolvedSuffix") : value["formula"].isNull ? "" : L("workbook.grid.resultSuffix")
-                cell.toolTip = WorkbookGrid.address(physicalRow,column) + (value.isNull ? L("workbook.grid.absentSuffix") : " · " + WorkbookLabels.valueType(value["value_type"].string) + formula + interpretation + "\n" + L("git.savedValue") + ": " + raw + (valueTruncated ? "\n"+L("workbook.cell.sourceMoreChunks"):""))
+                cell.toolTip = WorkbookGrid.address(physicalRow,column) + (value.isNull ? L("workbook.grid.absentSuffix") : " · " + WorkbookLabels.valueType(value["value_type"].string) + formula + interpretation + "\n" + (valueTruncated ? L("git.savedValuePreview"):L("git.savedValue")) + ": " + raw + (value["text_truncated"].bool || valueTruncated ? "\n"+L("git.gridPreviewRoute"):""))
                 text.setAccessibilityLabel(WorkbookGrid.address(physicalRow,column) + " " + text.stringValue + interpretation)
             }
             return cell

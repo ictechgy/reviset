@@ -43,6 +43,13 @@ test('provided appearance creates qualified PDF evidence without exact-source ra
  const different={...structuredClone(right.source),text:'Completely unrelated material'};assert.ok(matchPages([left.source],[different]).matches.every(m=>!m.reasons.includes('exact_native_raster')));
  const a=revision('a',left),b=revision('b',right),edge={from_page_id:left.source.page_id,to_page_id:right.source.page_id,score:1,status:'human_confirmed' as const,reasons:['source_pair']};
  const changes=diffRevisions({...a,pages:[left.source]},{...b,pages:[right.source]},[edge],[],()=> 'family');const visual=changes.find(c=>c.kind==='visual_region_changed')!;assert.ok(visual);assert.equal(visual.appearance_assessment,'inferred');assert.deepEqual(visual.evidence.map(e=>[e.asset_id,e.page_id,e.render_sha256,e.provenance]),[[left.pdf.asset_id,left.pdf.page_id,left.pdf.raster.sha256,'inferred'],[right.pdf.asset_id,right.pdf.page_id,right.pdf.raster.sha256,'inferred']]);assert.ok(!changes.some(c=>c.kind==='text_modified'));Report.parse(report([a,b]));
+ const stored=report([a,b]);stored.matches=[edge];stored.lineages=[{entity_id:'family',page_ids:[left.source.page_id,right.source.page_id],status:'human_confirmed'}];stored.changes=changes.map((change,index)=>({...change,report_id:stored.report_id,change_id:'chg_synthetic_reference_'+index}));
+ const rawStored=JSON.stringify(stored),query=new QueryService({} as Store,new Set([stored.project_id]),()=>stored),scope={project_id:stored.project_id,report_id:stored.report_id,from:a.revision_occurrence_id,to:b.revision_occurrence_id};
+ for(const mode of ['history','range_net']){
+  const events=query.changeSet({...scope,mode});assert.ok(events.some(c=>c.kind==='visual_region_changed'));assert.ok(!events.some(c=>c.kind==='page_added'||c.kind==='page_deleted'));
+  const event=events.find(c=>c.kind==='visual_region_changed')!;assert.deepEqual(event.evidence.map(e=>[e.asset_id,e.page_id]),[[left.pdf.asset_id,left.pdf.page_id],[right.pdf.asset_id,right.pdf.page_id]]);
+ }
+ assert.equal(JSON.stringify(stored),rawStored,'Provided-PDF query qualification must leave the fixed report untouched');
  assert.ok(visual.coverage_gaps.every(g=>g.feature==='visual_comparison'),'Supplied-PDF visual uncertainty must not be labelled text uncertainty');
  const tampered=structuredClone(report([a,b]));tampered.revisions[0].pages[0].appearance!.asset_id=right.pdf.asset_id;assert.equal(Report.safeParse(tampered).success,false);
  const c=structuredClone(right);c.source.text='Unique topic 120';c.source.elements[0].text=c.source.text;c.source.elements[0].normalized_text=c.source.text;c.pdf.raster.sha256=left.pdf.raster.sha256;c.source.appearance!.raster!.sha256=left.pdf.raster.sha256;

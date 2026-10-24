@@ -274,5 +274,41 @@
   "git.workbookNewComparison": {
     "en": "New comparison…",
     "ko": "새 비교…"
+  },
+  "git.fieldObserved": {
+    "en": "Saved source observation. No text edit is inferred for this field.",
+    "ko": "저장된 원문 관측입니다. 이 필드에서 텍스트 수정을 추론하지 않습니다."
+  },
+  "git.terminatorsDiffer": {
+    "en": "Line endings differ. CR, LF, CRLF and EOF markers are display annotations; the source remains exact.",
+    "ko": "줄 끝이 다릅니다. CR·LF·CRLF·EOF 표시는 화면 설명이며 원문은 그대로 유지됩니다."
+  },
+  "git.savedValuePreview": {
+    "en": "Saved value preview",
+    "ko": "저장된 값 미리보기"
+  },
+  "git.gridPreviewRoute": {
+    "en": "Bounded grid preview. Select the cell, then open Evidence to read the full field and source continuations.",
+    "ko": "길이가 제한된 그리드 미리보기입니다. 셀을 선택하고 근거를 열면 전체 필드와 이어지는 원문을 읽을 수 있습니다."
+  },
+  "git.documentStoredHistory": {
+    "en": "Stored events in the query interval",
+    "ko": "조회 구간에 저장된 변경 사건"
+  },
+  "git.documentStoredAdjacent": {
+    "en": "Stored events between adjacent versions",
+    "ko": "인접 버전 사이에 저장된 변경 사건"
+  },
+  "git.documentComputedNet": {
+    "en": "Computed changes between query endpoints",
+    "ko": "조회 양 끝 버전을 비교한 변경"
+  },
+  "git.workbookComputedNet": {
+    "en": "Computed cell changes between query endpoints",
+    "ko": "조회 양 끝 통합문서를 비교한 셀 변경"
+  },
+  "git.lineEndingAnnotation": {
+    "en": "Line ending {0}",
+    "ko": "줄 끝 {0}"
   }
 }

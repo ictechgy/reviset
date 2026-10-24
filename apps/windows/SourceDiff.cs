@@ -45,6 +45,50 @@ internal sealed record SourceDiffField(string Key, SourceTextObservation Before,
 internal sealed record WorkbookSourceScope(string BeforeOccurrence, string AfterOccurrence, string BeforeSheet, string AfterSheet, string BeforeAddress, string AfterAddress);
 internal static class SourceDiffPolicy
 {
+    internal static bool SheetScoped(string kind) => kind.StartsWith("sheet_", StringComparison.Ordinal) || kind is "merges" or "date_system" or "calculation_settings";
+    internal static int WorkbookRow(JsonElement change, bool after)
+    {
+        var address = change.Get(after ? "after_address" : "before_address").Text(); var index = 0;
+        while (index < address.Length && address[index] is >= 'A' and <= 'Z') index++;
+        return index > 0 && index < address.Length && int.TryParse(address.AsSpan(index), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var row) && row is >= 1 and <= 1_048_576 ? row : 0;
+    }
+    // Translate only recognized producer templates. Unknown descriptions stay
+    // verbatim; cell strings and authored descriptions never enter this table.
+    internal static string WorkbookSummaryKey(JsonElement change) => change.Get("description").Text() switch
+    {
+        "Stored value changed; formula results may be stale" when change.Get("kind").Text() == "stored_value" => "summaryStoredValue",
+        "Formula source changed; formulas were not recalculated" when change.Get("kind").Text() == "formula" => "summaryFormula",
+        "Saved formula result availability changed; a missing cache is not a deleted cell" when change.Get("kind").Text() == "cache_availability" => "summaryCache",
+        "Stored value type changed" when change.Get("kind").Text() == "value_type" => "summaryValueType",
+        "Number format changed" when change.Get("kind").Text() == "number_format" => "summaryNumberFormat",
+        "Supported basic style changed" when change.Get("kind").Text() == "style" => "summaryStyle",
+        "Hidden row/column observation changed" when change.Get("kind").Text() == "visibility" => "summaryVisibility",
+        "Cell observed on an unmatched row; no confirmed semantic deletion/addition" when change.Get("kind").Text() == "row_correspondence" => "summaryRowCorrespondence",
+        "Materialized cell present on one endpoint; missing observation is distinct from explicit blank/zero" when change.Get("kind").Text() == "cell_observation" => "summaryCellObservation",
+        "Sheet observed only on one endpoint; correspondence requires review, not confirmed addition/deletion" when change.Get("kind").Text() == "sheet_observation" => "summarySheetObservation",
+        "Supported stored calculation flags changed; this neither executes recalculation nor certifies cached-result freshness" when change.Get("kind").Text() == "calculation_settings" => "summaryCalculation",
+        "Supported row/column dimensions or hidden ranges changed, including unmaterialized blank cells" when change.Get("kind").Text() == "sheet_dimensions" => "summaryDimensions",
+        "Merged range observations changed" when change.Get("kind").Text() == "merges" => "summaryMerges",
+        "Raw cell/formula/cache observations changed; shared/array/spill formula role is unresolved. This is not an asserted formula removal, direct-input edit or recalculated result." when change.Get("kind").Text() == "cell_observation" => "summaryUnresolved",
+        "Numeric date/time serial and ISO/date/time source representations are not normalized across formats; equivalence is unavailable and this is not an asserted value/type edit." when change.Get("kind").Text() == "cell_observation" => "summaryDateRepresentation",
+        var text when change.Get("kind").Text() == "row_position" && WorkbookRow(change, false) > 0 && WorkbookRow(change, true) > 0 && text == "Inferred corresponding row moved from " + WorkbookRow(change, false) + " to " + WorkbookRow(change, true) => "summaryRowPosition",
+        var text when change.Get("kind").Text() == "sheet_name" && text.StartsWith("Sheet name: ", StringComparison.Ordinal) && text.Contains(" → ", StringComparison.Ordinal) => "summarySheetName",
+        var text when change.Get("kind").Text() == "sheet_position" && System.Text.RegularExpressions.Regex.IsMatch(text, @"\ASheet index: [0-9]+ → [0-9]+\z") => "summarySheetPosition",
+        var text when change.Get("kind").Text() == "sheet_visibility" && System.Text.RegularExpressions.Regex.IsMatch(text, @"\ASheet hidden: (true|false) → (true|false)\z") => "summarySheetVisibility",
+        var text when change.Get("kind").Text() == "date_system" && System.Text.RegularExpressions.Regex.IsMatch(text, @"\ADate system changed from (1900|1904|unknown) to (1900|1904|unknown); stored numeric dates are not converted or equated\z") => "summaryDateSystem",
+        _ => ""
+    };
+    internal static string WorkbookObservationCaption(string field, JsonElement cell, SourceTextObservation value)
+    {
+        if (cell.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return "cellNotMaterialized";
+        if (value.State == SourceTextState.Null && value.Range is { Valid: true })
+        {
+            if (field == "formula") return "formulaAbsent";
+            if (field == "value" && cell.Get("cached_result").Text() == "missing") return "resultMissingShort";
+            if (field == "value" && cell.Get("value_type").Text() == "blank") return "valueBlankShort";
+        }
+        return value.State switch { SourceTextState.Missing => "observationMissing", SourceTextState.Null => "observationNull", SourceTextState.Empty => "observationEmpty", SourceTextState.Partial => "partialSourceSegment", SourceTextState.AlreadyRead => "alreadyReadSegment", SourceTextState.Invalid => "invalidSourceSegment", _ => "observationPresent" };
+    }
     internal static IReadOnlyList<string> WorkbookWarningKeys(JsonElement cell)
     {
         if (cell.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return ["cellNotMaterialized"];
@@ -96,7 +140,10 @@ internal static class SourceDiffPolicy
             var unresolved = before.Get("formula_interpretation").Text() == "unresolved" || after.Get("formula_interpretation").Text() == "unresolved";
             var cacheMissing = field == "value" && (before.Get("cached_result").Text() is not ("present" or "not_applicable") || after.Get("cached_result").Text() is not ("present" or "not_applicable"));
             var eligibleKind = field == "formula" ? kind == "formula" && before.Get("formula_dialect").Text() is "xlsx_a1" or "ods_openformula" && before.Get("formula_dialect").Text() == after.Get("formula_dialect").Text() : field == "value" && kind == "stored_value" && before.Get("value_type").Text() is "blank" or "string" or "number" or "boolean" or "date" or "time" or "error" && before.Get("value_type").Text() == after.Get("value_type").Text();
-            result.Add(new(field, a, b, context && textOffset == 0 && a.Available && b.Available && !unresolved && !cacheMissing && eligibleKind, !context ? "unmatchedSourceObservation" : a.State == SourceTextState.Invalid || b.State == SourceTextState.Invalid ? "invalidSourceSegment" : textOffset != 0 || a.State is SourceTextState.Partial or SourceTextState.AlreadyRead || b.State is SourceTextState.Partial or SourceTextState.AlreadyRead ? "partialSourceSegment" : cacheMissing ? "missingCacheObservation" : unresolved ? "unresolvedObservation" : "neutralObservation"));
+            var asserted = field == "formula" ? kind == "formula" : field == "value" && kind == "stored_value";
+            var observedBlank = field == "value" && new[] { before, after }.Any(cell => cell.Get("value").ValueKind == JsonValueKind.Null && cell.Get("value_type").Text() == "blank" && cell.Get("cached_result").Text() != "missing");
+            var reason = !paired ? "unavailableText" : a.State == SourceTextState.Invalid || b.State == SourceTextState.Invalid ? "invalidSourceSegment" : a.State is SourceTextState.Missing or SourceTextState.Null || b.State is SourceTextState.Missing or SourceTextState.Null ? observedBlank ? "valueBlankShort" : "missingObservation" : textOffset != 0 || a.State is SourceTextState.Partial or SourceTextState.AlreadyRead || b.State is SourceTextState.Partial or SourceTextState.AlreadyRead ? "partialSourceSegment" : !context ? "unmatchedSourceObservation" : field == "number_format" && kind == "number_format" ? "numberFormatObservation" : !asserted ? "notAssertedObservation" : unresolved ? "unresolvedObservation" : cacheMissing ? "missingCacheObservation" : !eligibleKind ? field == "formula" ? "formulaDialectObservation" : "valueTypeObservation" : a.Text == b.Text ? "identicalObservation" : "neutralObservation";
+            result.Add(new(field, a, b, context && textOffset == 0 && a.Available && b.Available && !unresolved && !cacheMissing && eligibleKind, reason));
         }
         return result;
     }

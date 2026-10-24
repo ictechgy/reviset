@@ -36,6 +36,34 @@ test('typed split/merge reserves all members and emits one structural event, pre
   const c=revision('v3',[page('c')]),merge=canonicalRelation([b,c],{kind:'merge',from_occurrence:'v2',to_occurrence:'v3',from_page_ids:['b2','b1'],to_page_ids:['c'],reason:'병합'}),merged=diffRevisions(b,c,relationEdges(merge),[],()=> 'family');assert.equal(merged.filter(c=>c.kind==='page_merged').length,1);
 });
 
+test('adjacent stored split and merge IDs remain recoverable without claiming endpoint-net equivalence',()=>{
+  for(const kind of ['split','merge'] as const){
+    const a=revision('before',kind==='split'?[page('a')]:[page('a1'),page('a2',2)]),b=revision('after',kind==='split'?[page('b1'),page('b2',2)]:[page('b')]);
+    const group=canonicalRelation([a,b],{kind,from_occurrence:'before',to_occurrence:'after',from_page_ids:a.pages.map(p=>p.page_id),to_page_ids:b.pages.map(p=>p.page_id),reason:'Synthetic reviewed topology'});
+    const matched=matchPages(a.pages,b.pages,[],[group]),r=report([a,b],matched.matches);r.mapping_relations=[group];r.candidates=matched.candidates;
+    r.changes=diffRevisions(a,b,matched.matches,matched.candidates,()=> 'family').map((change,index)=>({...change,report_id:r.report_id,change_id:'chg_synthetic_'+kind+'_'+index}));
+    const raw=JSON.stringify(r),q=new QueryService({} as Store,new Set([r.project_id]),()=>r),scope={project_id:r.project_id,report_id:r.report_id,from:'before',to:'after',max_output_tokens:8000};
+    const history=q.changeSet({...scope,mode:'history'}),adjacent=q.changeSet({...scope,mode:'adjacent'}),net=q.changeSet({...scope,mode:'range_net'});
+    assert.deepEqual(adjacent,history);assert.equal(history.length,1);assert.equal(history[0].kind,kind==='split'?'page_split':'page_merged');assert.equal(history[0].topology?.semantics,'direct_edges');
+    assert.equal(net.length,1);assert.equal(net[0].kind,'page_lineage_changed');assert.equal(net[0].topology?.semantics,'directed_reachability');assert.notEqual(net[0].change_id,history[0].change_id);
+    assert.deepEqual(new Set(net[0].evidence.map(e=>e.page_id)),new Set(history[0].evidence.map(e=>e.page_id)));
+    const storedSummary=q.query('get_change',{...scope,change_id:history[0].change_id,component:'summary'}).items[0];
+    assert.equal(storedSummary.computed_range,false);assert.equal(storedSummary.resource_uri,`docver://projects/${r.project_id}/reports/${r.report_id}/changes/${history[0].change_id}/detail`);
+    assert.equal(q.query('get_change',{...scope,change_id:net[0].change_id,component:'summary'}).items[0].computed_range,true);
+    assert.throws(()=>q.query('get_change',{...scope,change_id:history[0].change_id,mode:'history'}),'get_change must reject a mode argument');
+    assert.equal(all(q,'get_change',{...scope,change_id:history[0].change_id,component:'evidence',limit:1}).length,3);assert.equal(JSON.stringify(r),raw);
+  }
+});
+
+test('adjacent manual unlink can change event membership on a fresh endpoint computation',()=>{
+  const a=revision('before',[page('a')]),b=revision('after',[page('b')]),decisions=[{from_page_id:'a',to_page_id:'b',action:'unlink' as const,reason:'Synthetic explicit unlink'}];
+  const matched=matchPages(a.pages,b.pages,decisions),r=report([a,b],matched.matches);r.mapping_decisions=decisions;r.candidates=matched.candidates;
+  r.changes=diffRevisions(a,b,matched.matches,matched.candidates,()=> 'family').map((change,index)=>({...change,report_id:r.report_id,change_id:'chg_synthetic_unlink_'+index}));
+  const raw=JSON.stringify(r),q=new QueryService({} as Store,new Set([r.project_id]),()=>r),scope={project_id:r.project_id,report_id:r.report_id,from:'before',to:'after'};
+  assert.deepEqual(q.changeSet({...scope,mode:'history'}).map(c=>c.kind).sort(),['page_added','page_deleted']);
+  const net=q.changeSet({...scope,mode:'range_net'});assert.equal(net.length,2);assert.ok(net.every(c=>c.kind==='coverage_gap'&&c.coverage_gaps.some(g=>g.reason==='unresolved_mapping')));assert.equal(JSON.stringify(r),raw);
+});
+
 test('manual relation boundaries reject duplicates, secondary sources, nonadjacency, conflicts and over32 members',()=>{
   const revisions=[revision('v1',[page('a')]),revision('v2',Array.from({length:33},(_,i)=>page('b'+i,i+1))),revision('v3',[page('c')])],selection={kind:'split' as const,from_occurrence:'v1',to_occurrence:'v2',from_page_ids:['a'],to_page_ids:['b0','b1'],reason:'검토'};
   for(const invalid of [{...selection,to_page_ids:['b0','b0']},{...selection,to_occurrence:'v3',to_page_ids:['c']},{...selection,to_page_ids:['b0']},{...selection,to_page_ids:revisions[1].pages.map(p=>p.page_id)},{...selection,reason:' \n '},{...selection,from_page_ids:['unknown']}])assert.throws(()=>canonicalRelation(revisions,invalid));

@@ -87,6 +87,23 @@ import UniformTypeIdentifiers
     default: return L("doc.coverage.unknownCode", .verbatim(value))
     }
 }
+func documentReportTimestamp(_ report:JSON,reports:[JSON])->String {
+    if !report["created_at"].string.isEmpty {return report["created_at"].string}
+    return reports.first{$0["report_id"].string==report["report_id"].string}?["created_at"].string ?? ""
+}
+func documentGapScope(_ gap:JSON)->String {
+    [gap["revision_occurrence_id"].string.isEmpty ? gap["revision_id"].string:gap["revision_occurrence_id"].string,gap["page_id"].string].filter{!$0.isEmpty}.joined(separator:" · ")
+}
+@MainActor func selectedCoverageCaption(_ gap:JSON)->String {
+    [gap["feature"].string,coverageReasonName(gap["reason"].string)].filter{!$0.isEmpty}.joined(separator:" · ")
+}
+func documentChangeExcerpt(_ change:JSON)->String {
+    // A bounded navigation excerpt; canonical change/source strings stay exact.
+    func excerpt(_ value:String)->String {let compact=value.split(whereSeparator:{$0.isWhitespace}).joined(separator:" ");return String(compact.prefix(100))+(compact.count>100 ? "…":"")}
+    if change["before"].isNull {return excerpt(change["after"].string)}
+    if change["after"].isNull {return excerpt(change["before"].string)}
+    return excerpt(change["before"].string)+" → "+excerpt(change["after"].string)
+}
 
 struct CoverageGapEvidence:View {
     let gaps:[JSON]
@@ -222,12 +239,12 @@ struct DocumentReportDetailsView:View {
         let details=documentReportDetails(model.report)
         ScrollView{LazyVStack(alignment:.leading,spacing:14){
             Text(model.report["report_id"].string).font(.system(.body,design:.monospaced)).textSelection(.enabled)
-            Text(localizedISODate(model.report["created_at"].string)).font(.caption).foregroundStyle(.secondary)
+            if !documentReportTimestamp(model.report,reports:model.reports).isEmpty {Text(localizedISODate(documentReportTimestamp(model.report,reports:model.reports))).font(.caption).foregroundStyle(.secondary)}
             Text(L("git.reportQuality")).font(.headline)
             ForEach(details.quality,id:\.key){count in Text(qualityLabel(count)).font(.callout)}
             Text(L("git.reportGapCount",.count(details.totalCoverageGaps))).font(.headline)
             if details.gaps.isEmpty {Text(L("git.reportGapsEmpty")).font(.caption).foregroundStyle(.secondary)}
-            ForEach(Array(details.gaps.enumerated()),id:\.offset){_,gap in VStack(alignment:.leading,spacing:3){Text(coverageReasonName(gap["reason"].string)).font(.callout);if !gap["feature"].string.isEmpty {Text(gap["feature"].string).font(.caption).foregroundStyle(.secondary)};if !gap["revision_occurrence_id"].string.isEmpty || !gap["page_id"].string.isEmpty {Text(gap["revision_occurrence_id"].string+" · "+gap["page_id"].string).font(.system(.caption,design:.monospaced)).textSelection(.enabled)}}}
+            ForEach(Array(details.gaps.enumerated()),id:\.offset){_,gap in VStack(alignment:.leading,spacing:3){Text(coverageReasonName(gap["reason"].string)).font(.callout);if !gap["feature"].string.isEmpty {Text(verbatim:gap["feature"].string).font(.caption).foregroundStyle(.secondary)};if !documentGapScope(gap).isEmpty {Text(verbatim:documentGapScope(gap)).font(.system(.caption,design:.monospaced)).textSelection(.enabled)}}}
             if details.coverageTruncated {Text(L("git.reportGapProjection",.count(details.gaps.count),.count(details.totalCoverageGaps))).font(.caption).foregroundStyle(.secondary)}
             Divider();Text(L("doc.limitations.appearance"));Text(L("doc.limitations.ocr"))
             Button(L("git.exportCompleteReport")){Task{await model.exportReport()}}
@@ -256,11 +273,14 @@ struct CompareWorkspace: View {
         VStack(spacing:0){
             HStack(spacing:8){
                 Text(L("git.query")).font(.caption).foregroundStyle(.secondary)
+                if model.revisions.count==1 {Text(versionDisplayName(0,model.revision(0))).font(.caption.weight(.semibold))} else {
                 Menu {ForEach(Array(model.revisions.enumerated()),id:\.offset){index,revision in Button(versionDisplayName(index,revision)){model.selectVersion(index)}}} label:{Image(systemName:"clock.arrow.circlepath")}.help(L("git.versions")).accessibilityLabel(L("git.versions"))
                 Picker(L("doc.common.before"),selection:$model.from){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i<=model.to{Text(versionDisplayName(i,r)).tag(i)}}}.labelsHidden().frame(maxWidth:170)
                 Image(systemName:"arrow.right").foregroundStyle(.secondary)
                 Picker(L("doc.common.after"),selection:$model.to){ForEach(Array(model.revisions.enumerated()),id:\.offset){i,r in if i>=model.from{Text(versionDisplayName(i,r)).tag(i)}}}.labelsHidden().frame(maxWidth:170)
                 Picker(L("git.mode"),selection:$model.tab){Text(L("git.net")).tag("compare");Text(L("git.history")).tag("history")}.labelsHidden().pickerStyle(.segmented).frame(width:275).disabled(model.from==model.to)
+                }
+                if model.revisions.count>1 {Text(model.changeListProvenance).font(.caption2).foregroundStyle(.secondary).lineLimit(2).frame(maxWidth:240,alignment:.leading)}
                 Spacer(minLength:4)
                 Menu {
                     Picker(L("git.view"),selection:Binding(get:{model.effectiveDiffMode},set:{model.setDiffMode($0)})){Text(L("git.original")).tag("source");Text(L("git.textDiff")).tag("text")}.disabled(model.readingSingleVersion)
@@ -310,7 +330,7 @@ struct SelectedChangeContext:View {
                 if !model.selected.isNull {
                     Text(changeDisplayName(model.selected)).font(.caption.weight(.medium)).lineLimit(1)
                     if model.eventInsideQuery {Text(L("git.selectedEvent")+" · "+changeVersionSummary(model.selected,revisions:model.revisions)).font(.caption.weight(.semibold));Text(L("git.eventInsideQuery")).font(.caption2).foregroundStyle(.secondary)}
-                    if !model.selected["coverage_gaps"].array.isEmpty {Menu {ForEach(Array(model.selected["coverage_gaps"].array.enumerated()),id:\.offset){_,gap in Text(coverageReasonName(gap["reason"].string))}}label:{Label(L("doc.coverage.heading"),systemImage:"exclamationmark.circle")}.font(.caption2)}
+                    if !model.selected["coverage_gaps"].array.isEmpty {Menu {ForEach(Array(model.selected["coverage_gaps"].array.enumerated()),id:\.offset){_,gap in Text(verbatim:String(selectedCoverageCaption(gap).prefix(240)))}}label:{Label(L("doc.coverage.heading"),systemImage:"exclamationmark.circle")}.font(.caption2)}
                     Spacer(minLength:4)
                     if model.manuallyBrowsing {Button(L("git.returnToChange")){model.returnToChange()}.font(.caption)}
                     Button(L("git.contextDetails")){detailsPresented=true}.font(.caption).accessibilityIdentifier("Reviset.document.contextDetails")
@@ -330,6 +350,12 @@ struct SelectedChangeContextDetails:View {
         ScrollView{LazyVStack(alignment:.leading,spacing:16){
             Text(changeDisplayName(model.selected)).font(.headline)
             Text(changeVersionSummary(model.selected,revisions:model.revisions)).font(.callout)
+            if !model.selected["coverage_gaps"].array.isEmpty {
+                Text(L("doc.coverage.heading")).font(.headline)
+                ForEach(Array(model.selected["coverage_gaps"].array.enumerated()),id:\.offset){_,gap in
+                    VStack(alignment:.leading,spacing:5){Text(verbatim:gap["feature"].string).font(.caption);NativeVerbatimReasonReader(text:gap["reason"].string).frame(height:120)}
+                }
+            }
             ForEach(documentSelectedContext(model.selected),id:\.category.rawValue){item in
                 VStack(alignment:.leading,spacing:5){
                     Text(contextHeading(item.category)).font(.headline)
@@ -355,12 +381,13 @@ struct DocumentUnifiedDiff:View {
             else if !diff.bounded {Text(L("git.diffBound")).foregroundStyle(.secondary)}
             else {
                 if !diff.semantic {Text(L("git.neutralDiff")).font(.caption).foregroundStyle(.secondary)}
+                if diff.terminatorsDiffer {Text(L("git.terminatorsDiffer")).font(.caption).foregroundStyle(.secondary)}
                 if model.selected["before"].isNull {Text(L("doc.common.before")+" · "+L("doc.inspector.noSource")).font(.caption).foregroundStyle(.secondary)}
                 if model.selected["after"].isNull {Text(L("doc.common.after")+" · "+L("doc.inspector.noSource")).font(.caption).foregroundStyle(.secondary)}
                 if !diff.semantic {
                     ScrollView([.horizontal,.vertical]){VStack(alignment:.leading,spacing:14){neutralSource(model.selected["before"],title:L("doc.common.before"));neutralSource(model.selected["after"],title:L("doc.common.after"))}}
                 } else {
-                ScrollView([.horizontal,.vertical]){LazyVStack(alignment:.leading,spacing:1){ForEach(Array(diff.lines.enumerated()),id:\.offset){index,line in NativeDiffSourceLine(prefix:line.prefix,text:line.text,semantic:diff.semantic,markerName:"Reviset.document.diffLine.\(index)")}}}
+                ScrollView([.horizontal,.vertical]){LazyVStack(alignment:.leading,spacing:1){ForEach(Array(diff.lines.enumerated()),id:\.offset){index,line in NativeDiffSourceLine(prefix:line.prefix,text:line.text,semantic:diff.semantic,terminator:line.terminator,markerName:"Reviset.document.diffLine.\(index)")}}}
                 }
             }
             Spacer(minLength:0)
@@ -375,11 +402,16 @@ struct ChangeListView: View {
     @EnvironmentObject var layout:WorkspaceLayoutStore
     private var compact:Bool {layout.configuration.changesDock != .bottom}
     var body: some View {VStack(spacing:5){
+        if model.revisions.count != 1 {
         ViewThatFits(in:.horizontal) {
             HStack{filters;Spacer();changeCount}
             VStack(alignment:.leading,spacing:8){filters;changeCount}
         }.padding(.horizontal,12).padding(.top,8)
-        if model.filteredChanges.isEmpty {VStack(spacing:10){Text(model.emptyChangesMessage).font(.callout).foregroundStyle(.secondary);if model.canOpenStoredHistory {Button(L("git.openStoredHistory")){Task{await model.openStoredHistory()}}}}.frame(maxWidth:.infinity,maxHeight:.infinity).padding(12)}
+        }
+        if model.filteredChanges.isEmpty {
+            if model.revisions.count==1 {NativeEmptyComparisonGuidance(message:model.emptyChangesMessage,showsImport:true,canImport:model.canStartNewComparison,onImport:{model.openNewComparisonImport()},actionIdentifier:"Reviset.document.newComparison").frame(maxWidth:.infinity,maxHeight:.infinity)}
+            else {VStack(spacing:10){Text(model.emptyChangesMessage).font(.callout).foregroundStyle(.secondary);if model.canOpenStoredHistory {Button(L("git.openStoredHistory")){Task{await model.openStoredHistory()}}}}.frame(maxWidth:.infinity,maxHeight:.infinity).padding(12)}
+        }
         else {ScrollViewReader {reader in ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c,compact:compact).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges || !model.changesFailure.isEmpty).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear).id(c["change_id"].string) } }.padding(6) }.onChange(of:model.selectedChangeID){if let id=model.selectedChangeID{reader.scrollTo(id,anchor:.center)}}}}
     }}
     private var filters:some View {
@@ -397,13 +429,13 @@ struct ChangeRow: View {
     let change: JSON
     var compact=false
     var kindName: String {changeDisplayName(change)}
-    var text: String {(change["after"].isNull ? change["before"].string:change["after"].string).replacingOccurrences(of:"\n",with:" ")}
+    var text: String {documentChangeExcerpt(change)}
     var status: String {let value=change["lineage"]["status"].string;return value=="human_confirmed" ? L("doc.matching.humanConfirmed"):value=="needs_review" ? L("doc.matching.needsReview"):L("doc.matching.inferred")}
     var body:some View {
         let arrangement=compact ? AnyLayout(VStackLayout(alignment:.leading,spacing:5)):AnyLayout(HStackLayout(spacing:10))
         arrangement {
             Text(kindName).font(.caption).foregroundStyle(change["kind"].string=="coverage_gap" ? Color.secondary:Color.blue).lineLimit(2).fixedSize(horizontal:false,vertical:true).frame(width:compact ? nil:155,alignment:.leading).help(kindName)
-            VStack(alignment:.leading,spacing:3){Text(text).lineLimit(compact ? 3:1).font(.caption);if model.tab=="history"{Text(changeVersionSummary(change,revisions:model.revisions)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)};Text(evidencePageSummary(change)).font(.caption2).foregroundStyle(.secondary)}
+            VStack(alignment:.leading,spacing:3){Text(verbatim:text).lineLimit(compact ? 4:2).font(.caption);if model.tab=="history"{Text(changeVersionSummary(change,revisions:model.revisions)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)};Text(evidencePageSummary(change)).font(.caption2).foregroundStyle(.secondary)}
             if !compact {Spacer()}
             if change["region_pairing_assessment"].string == "inferred"{Text(L("doc.matching.regionInferred")).font(.caption2).foregroundStyle(.orange)}
             if change["text_assessment"].string == "inferred"{Text(L("doc.ocr.inferredReview")).font(.caption2).foregroundStyle(.orange)}
