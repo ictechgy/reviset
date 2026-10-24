@@ -104,7 +104,7 @@ internal sealed class ComparePane
     internal string HeadingForSmoke => heading.Text;
     internal string SourceAutomationNameForSmoke => AutomationProperties.GetName(owner.IsWorkbook ? Cells : PageScroll);
     internal string FocusedAddress => focusedRow > 0 && focusedColumn > 0 ? ColumnName(focusedColumn) + focusedRow.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
-    internal string LocationCaption => owner.IsWorkbook ? WorkbookLocationCaption : PageId.Length == 0 ? owner.Copy["absentPage"] : owner.Copy["pages"] + " " + ((page.SelectedItem as Choice)?.Value.Get("page").Number() ?? 0);
+    internal string LocationCaption => owner.IsWorkbook ? WorkbookLocationCaption : PageId.Length == 0 ? owner.Copy[owner.MissingDocumentPageCaptionKey(after)] : owner.Copy["pages"] + " " + ((page.SelectedItem as Choice)?.Value.Get("page").Number() ?? 0);
     private string WorkbookLocationCaption
     {
         get
@@ -167,6 +167,7 @@ internal sealed class ComparePane
         AutomationProperties.SetName(zoom, heading.Text + " · " + owner.Copy["zoom"]); AutomationProperties.SetName(fitWidth, heading.Text + " · " + owner.Copy["fitWidth"]);
         AutomationProperties.SetName(Cells, heading.Text + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(PageScroll, heading.Text + " · " + owner.Copy["pages"]); AutomationProperties.SetName(PageImage, heading.Text + " · " + owner.Copy["pages"]); AutomationProperties.SetName(revision, heading.Text + " · " + owner.Copy["label"]); AutomationProperties.SetName(sheet, heading.Text + " · " + owner.Copy["sheet"]); AutomationProperties.SetName(page, heading.Text + " · " + owner.Copy["pages"]); AutomationProperties.SetName(address, heading.Text + " · " + owner.Copy["address"]);
         foreach (var arrow in arrows) AutomationProperties.SetName(arrow.Button, heading.Text + " · " + owner.Copy[arrow.Key]); RefreshCellDetails();
+        if (!owner.IsWorkbook && PageId.Length == 0 && ReadState == "absent") RerenderPresentation();
     }
     internal object CheckReadingChromeForSmoke()
     {
@@ -323,7 +324,7 @@ internal sealed class ComparePane
     internal void SetEventPage(string? id)
     {
         binding = true; page.SelectedItem = page.ItemsSource is List<Choice> choices ? choices.Find(v => v.Id == id) : null; binding = false;
-        evidenceAbsence = PageId.Length == 0 ? "absentPage" : "";
+        evidenceAbsence = PageId.Length == 0 ? "noEvidencePageListed" : "";
     }
     internal void SetEvidenceRevision(string id, string sheetId = "", JsonElement observation = default, string eventKind = "")
     {
@@ -380,7 +381,7 @@ internal sealed class ComparePane
         // Retire the old page's text, provenance and bitmap before replacing its
         // request owner. A locale update during the await may render only loading.
         Invalidate(); pageRead.Dispose(); pageRead = CancellationTokenSource.CreateLinkedTokenSource(token); token = pageRead.Token;
-        var sequence = pageGeneration; var selected = PageId; var project = owner.ProjectId; var report = owner.ReportId; var occurrence = RevisionId; if (selected.Length == 0) { Invalidate("absent"); ReadState = "absent"; fallback.Text = owner.Copy["absentPage"]; return; }
+        var sequence = pageGeneration; var selected = PageId; var project = owner.ProjectId; var report = owner.ReportId; var occurrence = RevisionId; if (selected.Length == 0) { Invalidate("absent"); ReadState = "absent"; fallback.Text = owner.Copy[owner.MissingDocumentPageCaptionKey(after)]; return; }
         PageImage.Source = null; fallback.Text = owner.Copy["analyzing"]; source.Text = ""; fallback.Visibility = Visibility.Visible; PageScroll.Visibility = Visibility.Collapsed; Cells.Visibility = Visibility.Collapsed;
         try {
         var value = await owner.Bridge.Call("pagePreview", new { project_id = project, report_id = report, page_id = selected, max_width = 1600 }, token);
@@ -625,7 +626,7 @@ internal sealed class ComparePane
         if (ReadState == "empty") { fallback.Text = owner.Copy["selectPage"]; return; }
         if (ReadState == "absent")
         {
-            fallback.Text = owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : owner.IsWorkbook ? "absentSheet" : "absentPage"] + (evidenceAbsence == "missingSelectedSheet" ? "\n\n" + requestedSheetName : "");
+            fallback.Text = owner.Copy[!owner.IsWorkbook ? owner.MissingDocumentPageCaptionKey(after) : evidenceAbsence.Length > 0 ? evidenceAbsence : "absentSheet"] + (evidenceAbsence == "missingSelectedSheet" ? "\n\n" + requestedSheetName : "");
             if (evidenceAbsence is "sheetMetadata" or "workbookMetadata") fallback.Text += "\n\n" + MetadataPreview(); return;
         }
         if (!owner.IsWorkbook && ReadState == "ready")

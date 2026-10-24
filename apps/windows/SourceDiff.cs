@@ -111,7 +111,9 @@ internal static class SourceDiffPolicy
     internal static MetadataProjection WorkbookMetadataProjection(JsonElement revision, string sheetId, string kind)
     {
         var sheet = revision.Get("sheets").Items().Find(item => item.Get("sheet_id").Text() == sheetId);
-        return MetadataProjection.Read(WorkbookMetadata(revision, sheetId, kind), !WorkbookScoped(kind) && sheet.Get("metadata_truncated").Flag(), WorkbookScoped(kind) ? "" : sheet.Get("metadata_query").Text());
+        bool Truncated(string count, string values) => sheet.Get(count).Number() > sheet.Get(values).Items().Count;
+        var bounded = kind switch { "merges" => Truncated("merge_count", "merges"), "sheet_dimensions" => Truncated("row_metadata_count", "row_metadata") || Truncated("column_metadata_count", "column_metadata"), _ => false };
+        return MetadataProjection.Read(WorkbookMetadata(revision, sheetId, kind), bounded, bounded ? sheet.Get("metadata_query").Text() : "");
     }
     internal static IReadOnlyList<string> WorkbookPreviewKeys(JsonElement cell, string field)
     {
