@@ -10,6 +10,43 @@ internal sealed record WorkbookCellSource(string Occurrence, string Sheet, strin
     internal bool Matches(string occurrence, string sheet, string address, int row, int column) => Occurrence == occurrence && Sheet == sheet && Address == address && Row == row && Column == column;
     internal bool CellMatches(JsonElement cell) => HasCell ? cell.ValueKind == JsonValueKind.Object && cell.Get("address").Text() == Address && cell.Get("row").Number() == Row && cell.Get("column").Number() == Column : cell.ValueKind == JsonValueKind.Null;
 }
+// A single reader also owns the pane that supplied its immutable physical
+// request. Style and absent-cell envelopes do not echo coordinates: those stay
+// bound to this owner, while all identity actually returned is checked below.
+internal sealed record WorkbookSingleSource(string Project, string Report, string Side, WorkbookCellSource Cell)
+{
+    internal bool Matches(string project, string report, string occurrence, string sheet, string address, int row, int column) => Project == project && Report == report && Cell.Matches(occurrence, sheet, address, row, column);
+    internal bool ReadResponse(WorkbookCellRead read, JsonElement response, out JsonElement cell)
+    {
+        cell = default;
+        if (!ReferenceEquals(read.Source, this) || !Cell.HasCell || read.Component is not ("cell" or "style") || response.Get("schema_version").Text() != "workbook.1" || response.Get("project_id").Text() != Project || response.Get("report_id").Text() != Report || response.Get("revision_occurrence_id").Text() != Cell.Occurrence || response.Get("sheet_id").Text() != Cell.Sheet || response.Get("items").ValueKind != JsonValueKind.Array || response.Get("total").ValueKind != JsonValueKind.Number || !response.Get("total").TryGetInt32(out var total) || total < 0 || response.Get("next_cursor").ValueKind is not (JsonValueKind.Null or JsonValueKind.String)) return false;
+        var component = response.Get("component"); var style = read.Component == "style";
+        if (style ? component.ValueKind != JsonValueKind.String || component.Text() != "style" : !WorkbookCellRead.IsCellComponent(component)) return false;
+        var items = response.Get("items").Items(); var availability = response.Get("availability").Text();
+        if (availability == "not_materialized") return total == 0 && items.Count == 0 && response.Get("next_cursor").ValueKind == JsonValueKind.Null;
+        if (availability != "available" || items.Count > read.Limit || total < items.Count) return false;
+        if (!style)
+        {
+            if (read.Cursor.Length != 0 || total != 1 || items.Count != 1 || response.Get("next_cursor").ValueKind != JsonValueKind.Null || !Cell.CellMatches(items[0])) return false;
+            cell = items[0]; return true;
+        }
+        // An available cell may have no style observations. A terminal style
+        // cursor may also return no items; item cursors and text offsets differ.
+        if (items.Count == 0 && (read.Cursor.Length == 0 && total > 0 || response.Get("next_cursor").ValueKind != JsonValueKind.Null) || read.Cursor.Length == 0 && total > items.Count && response.Get("next_cursor").Text().Length == 0 || total == 0 && response.Get("next_cursor").ValueKind != JsonValueKind.Null) return false;
+        return items.All(item => item.ValueKind == JsonValueKind.Object && item.Get("key").ValueKind == JsonValueKind.String && item.Get("value").ValueKind == JsonValueKind.String && item.Get("text_continuations").Get("value").ValueKind == JsonValueKind.Object);
+    }
+}
+internal sealed record WorkbookCellRead(WorkbookSingleSource Source, string Component, int Offset, string Cursor, int Limit = 1)
+{
+    internal static bool IsCellComponent(JsonElement component) => component.ValueKind == JsonValueKind.Undefined || component.ValueKind == JsonValueKind.String && component.Text() == "cell";
+    internal Dictionary<string, object?> Arguments()
+    {
+        var cell = Source.Cell;
+        var args = new Dictionary<string, object?> { ["revision_occurrence_id"] = cell.Occurrence, ["sheet_id"] = cell.Sheet, ["row"] = cell.Row, ["column"] = cell.Column, ["text_offset"] = Offset, ["text_length"] = 4096, ["component"] = Component, ["limit"] = Limit };
+        if (Component == "style" && Cursor.Length > 0) args["cursor"] = Cursor;
+        return args;
+    }
+}
 internal sealed record WorkbookPairSource(string Project, string Report, WorkbookCellSource Before, WorkbookCellSource After)
 {
     internal WorkbookCellSource Side(string side) => side == "before" ? Before : After;
@@ -26,7 +63,7 @@ internal sealed record WorkbookPairSource(string Project, string Report, Workboo
     internal bool ReadCellResponse(string side, JsonElement response, out JsonElement cell)
     {
         cell = default; var source = Side(side); var items = response.Get("items").Items();
-        if (!source.HasCell || response.Get("project_id").Text() != Project || response.Get("report_id").Text() != Report || response.Get("revision_occurrence_id").Text() != source.Occurrence || response.Get("sheet_id").Text() != source.Sheet || response.Get("availability").Text() != "available" || response.Get("component").Text() == "style" || items.Count != 1 || !source.CellMatches(items[0])) return false;
+        if (!source.HasCell || response.Get("project_id").Text() != Project || response.Get("report_id").Text() != Report || response.Get("revision_occurrence_id").Text() != source.Occurrence || response.Get("sheet_id").Text() != source.Sheet || response.Get("availability").Text() != "available" || !WorkbookCellRead.IsCellComponent(response.Get("component")) || items.Count != 1 || !source.CellMatches(items[0])) return false;
         cell = items[0]; return true;
     }
     internal int? NextOffset(JsonElement payload, int current)
