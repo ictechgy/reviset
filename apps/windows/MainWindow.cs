@@ -1885,6 +1885,8 @@ internal sealed class MainWindow : Window
         return new { analysis_run_id = run, status_before = before.Get("status").Text(), status_after = after.Get("status").Text(), stage_existed_before = true, stage_exists_after = false, previous_report_id = fixedReport, previous_report_unchanged = true, boundary = "verified real helper reply withheld before caller receives descriptor" };
     }
     internal double WorkspaceHeightForSmoke => workspace.ActualHeight;
+    internal double WorkspaceWidthForSmoke => workspace.ActualWidth;
+    internal bool EvidenceBottomDockForSmoke => evidenceBottomDock;
     internal double EffectiveChangesHeightForSmoke => Math.Min(Layout.ChangesHeight, Math.Max(100, workspace.ActualHeight - 240));
     internal async Task<object> CheckDocumentEventAnchorRaceForSmoke(Func<string, Task> capture, Func<string, object, Task> observe)
     {
@@ -2377,20 +2379,21 @@ internal sealed class MainWindow : Window
         if (detailOffset != expectedNext || fragment.Get("offset").Number() != expectedNext || Before.CaptureSelection() != a || After.CaptureSelection() != b || reportId != report || changeQueryReadsForSmoke != reads + 2) throw new InvalidOperationException("The retained raw Next action after mode changes lost its actual UTF16 continuation or issued another changes query.");
         await FirstDetail(); return new { physical_before = a, physical_after = b, first_payload = JsonSerializer.Deserialize<JsonElement>(raw), continuation_offset_after_mode = expectedNext, next_fragment_range = fragment, query_reads_for_two_modes_only = changeQueryReadsForSmoke - reads, exact_first_raw_restored = detailPayload.GetRawText() == raw, source_hosts_rows_and_viewports_retained = true, scope = "Real D4 formula source and actual mode/First/Next production handlers; no OS input claim" };
     }
-    internal async Task<object> CheckSource27PresentationForSmoke(Func<string, Task> capture)
+    internal async Task<object> CheckSource27PresentationForSmoke(Func<string, Task> capture, Func<string, object, Task> observe)
     {
         if (!IsWorkbook || Before.FocusedAddress != "D4") throw new InvalidOperationException("Source27 requires the real workbook D4 source control.");
         var layout = Layout; var width = Width; var height = Height; var language = Copy.Language; var oldText = textView; var a = Before.CaptureSelection(); var b = After.CaptureSelection();
         var report = reportId; var reportBytes = currentReport.GetRawText(); var scope = CurrentChangeScope; var rows = changes.ToArray(); var cursor = nextChanges; var eventBytes = selectedChange.ValueKind == JsonValueKind.Undefined ? "" : selectedChange.GetRawText(); var anchorA = selectedBefore; var anchorB = selectedAfter; var queryReads = changeQueryReadsForSmoke;
-        var hostA = Before.Host; var hostB = After.Host; var inspector = InspectorPane; var list = ChangesPane; var results = new List<object>();
+        var hostA = Before.Host; var hostB = After.Host; var inspector = InspectorPane; var list = ChangesPane; var results = new List<object>(); var wideQualified = true; string? wideBoundary = null;
         async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        object Geometry() => new { requested_window_width = Width, actual_window_width = ActualWidth, requested_window_height = Height, actual_window_height = ActualHeight, workspace_width = workspace.ActualWidth, workspace_height = workspace.ActualHeight, breakpoint_workspace_width = 1200, temporary_evidence_bottom_dock = evidenceBottomDock, before_width = Before.Host.ActualWidth, after_width = After.Host.ActualWidth, inspector_width = InspectorPane.ActualWidth, changes_height = ChangesPane.ActualHeight, persisted_layout = Layout };
         void ScopeUnchanged()
         {
             if (reportId != report || currentReport.GetRawText() != reportBytes || CurrentChangeScope != scope || !rows.SequenceEqual(changes) || cursor != nextChanges || queryReads != changeQueryReadsForSmoke || selectedBefore != anchorA || selectedAfter != anchorB || eventBytes != (selectedChange.ValueKind == JsonValueKind.Undefined ? "" : selectedChange.GetRawText()) || !ReferenceEquals(hostA, Before.Host) || !ReferenceEquals(hostB, After.Host) || !ReferenceEquals(inspector, InspectorPane) || !ReferenceEquals(list, ChangesPane)) throw new InvalidOperationException("Source27 presentation changed fixed report/query/event/list authority or native hosts.");
         }
         try
         {
-            Width = 1440; Height = 940; SetLayout(WorkspaceLayout.Preset("sourceFirst")); sourceView.SelectedIndex = 0; await Settle();
+            Width = 1440; Height = 940; SetLayout(WorkspaceLayout.Preset("sourceFirst")); sourceView.SelectedIndex = 0; await Settle(); await observe("source29-window-geometry-initial-wide-attempt", Geometry());
             foreach (var pane in new[] { Before, After })
             {
                 await pane.GoForSmoke("C2"); await Settle(); results.Add(new { route = "programmatic_address_C2", side = pane.PresentedSideName, header = pane.CheckFocusedHeaderForSmoke() });
@@ -2405,23 +2408,34 @@ internal sealed class MainWindow : Window
             SetLayout(intent); await Settle(); var preferenceBytes = await File.ReadAllBytesAsync(PreferencesPath);
             foreach (var locale in new[] { "en", "ko" })
             {
-                SetLanguage(locale); preferenceBytes = await File.ReadAllBytesAsync(PreferencesPath); Width = 1024; Height = 768; await Settle();
+                SetLanguage(locale); preferenceBytes = await File.ReadAllBytesAsync(PreferencesPath); Width = 1024; Height = 768; await Settle(); await observe("source29-window-geometry-narrow-" + locale, Geometry());
                 if (!evidenceBottomDock || Layout != intent || InspectorPane.ActualWidth < 600 || Before.Host.ActualWidth < 400 || After.Host.ActualWidth < 400 || !InspectorPane.IsVisible || !ChangesPane.IsVisible || Before.CaptureSelection() != focusedA || After.CaptureSelection() != focusedB || !ReferenceEquals(gridA, Before.Cells.ItemsSource) || !ReferenceEquals(gridB, After.Cells.ItemsSource) || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath))) throw new InvalidOperationException("Narrow Evidence did not retain large two-source geometry, raw-grid hosts and exact saved layout intent.");
                 ViewportsUnchanged(); var headerA = Before.CheckFocusedHeaderForSmoke(); var headerB = After.CheckFocusedHeaderForSmoke();
                 var homeA = Before.CheckEvidenceHomeForSmoke(); var homeB = After.CheckEvidenceHomeForSmoke();
                 if (detail.ActualHeight < 140 || detail.ActualWidth < 300 || detailPayload.GetRawText() != rawDetail || detailMetadata.Text != rawMetadata || technicalDetails.Header as string != Copy["technicalDetails"] || !detail.Text.Contains(Copy["number_format"], StringComparison.Ordinal) || detail.Text.Contains("cache_freshness:", StringComparison.Ordinal) || detail.Text.Contains("cached_result:", StringComparison.Ordinal) || detailRange.Text.Contains(" · complete", StringComparison.Ordinal) || detailRange.Text.Contains(" · truncated", StringComparison.Ordinal)) throw new InvalidOperationException("Ordinary source detail retained raw enum keys or unlabeled technical metadata.");
                 await capture("source27-narrow-evidence-" + locale); results.Add(new { language = locale, before = homeA, after = homeB, header_before = headerA, header_after = headerB, bottom_evidence_width = InspectorPane.ActualWidth, bottom_evidence_height = InspectorPane.ActualHeight, source_detail_localized = true, raw_reader_width = detail.ActualWidth, raw_reader_height = detail.ActualHeight, raw_source_identity_retained = true });
-                Width = 1440; Height = 940; await Settle();
-                if (evidenceBottomDock || Layout != intent || !ReferenceEquals(VisualTreeHelper.GetParent(InspectorPane), workspace) || Math.Abs(InspectorPane.ActualWidth - intent.InspectorWidth) > 1 || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath)) || Before.CaptureSelection() != focusedA || After.CaptureSelection() != focusedB) throw new InvalidOperationException("Widening did not restore the saved Evidence side/width without a preference write.");
+                Width = 1440; Height = 940; await Settle(); await observe("source29-window-geometry-widen-attempt-" + locale, Geometry());
+                if (workspace.ActualWidth >= 1200)
+                {
+                    if (evidenceBottomDock || !ReferenceEquals(VisualTreeHelper.GetParent(InspectorPane), workspace) || Math.Abs(InspectorPane.ActualWidth - intent.InspectorWidth) > 1) throw new InvalidOperationException("An actually wide workspace did not restore the saved Evidence side and width.");
+                }
+                else
+                {
+                    wideQualified = false; wideBoundary = "Requested window width 1440 produced actual window " + ActualWidth.ToString(CultureInfo.InvariantCulture) + " and workspace " + workspace.ActualWidth.ToString(CultureInfo.InvariantCulture) + "; the 1200-workspace wide placement was not reached. Wide native geometry remains unqualified.";
+                    if (!evidenceBottomDock) throw new InvalidOperationException("An actually narrow workspace lost its required temporary Evidence placement.");
+                }
+                if (Layout != intent || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath)) || Before.CaptureSelection() != focusedA || After.CaptureSelection() != focusedB) throw new InvalidOperationException("An Evidence resize changed saved layout intent/preferences or physical selections.");
                 ScopeUnchanged(); ViewportsUnchanged();
             }
             // Exercise a saved bottom Changes arrangement through the same temporary dock.
             var balancedIntent = intent with { Sidebar = true, Changes = "bottom" }; SetLayout(balancedIntent); await Settle(); preferenceBytes = await File.ReadAllBytesAsync(PreferencesPath); Width = 1024; Height = 768; await Settle();
             if (!evidenceBottomDock || Layout != balancedIntent || Before.Cells.ActualHeight < 150 || After.Cells.ActualHeight < 150 || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath))) throw new InvalidOperationException("Saved bottom Changes stacked with Evidence or changed the saved height/dock.");
-            Width = 1440; Height = 940; await Settle(); if (Layout != balancedIntent || evidenceBottomDock || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath))) throw new InvalidOperationException("Saved bottom Changes geometry was not restored after narrow Evidence.");
-            ChangeVisibility(inspector: false); await Settle(); if (InspectorPane.IsVisible || Layout != balancedIntent with { Inspector = false } || Before.CaptureSelection() != focusedA || After.CaptureSelection() != focusedB) throw new InvalidOperationException("Closing Evidence lost its saved layout baseline or physical selections.");
+            Width = 1440; Height = 940; await Settle(); await observe("source29-window-geometry-balanced-widen-attempt", Geometry());
+            if (Layout != balancedIntent || evidenceBottomDock != (workspace.ActualWidth < 1200) || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath))) throw new InvalidOperationException("Saved bottom Changes intent or responsive placement was not retained after resizing Evidence.");
+            ChangeVisibility(inspector: false); await Settle(); await observe("source29-window-geometry-Evidence-closed", Geometry());
+            if (InspectorPane.IsVisible || evidenceBottomDock || Layout != balancedIntent with { Inspector = false } || Math.Abs(ChangesPane.ActualHeight - Math.Min(balancedIntent.ChangesHeight, Math.Max(100, workspace.ActualHeight - 240))) > 2 || Before.CaptureSelection() != focusedA || After.CaptureSelection() != focusedB) throw new InvalidOperationException("Closing Evidence did not restore the saved bottom Changes height, baseline and physical selections.");
             SetLayout(WorkspaceLayout.Preset("sourceFirst")); await Settle(); if (InspectorPane.IsVisible || Layout.Changes != "left" || !ChangesPane.IsVisible) throw new InvalidOperationException("Default closed Evidence source-first behavior changed.");
-            ScopeUnchanged(); ViewportsUnchanged(); return new { cases = results, retained_manual_viewports = new { before = new { viewA.X, viewA.Y }, after = new { viewB.X, viewB.Y } }, raw_report_and_event_exact = true, query_reads_unchanged = true, retained_native_hosts_and_grids = true, narrow_wide_preference_bytes_unchanged = true, saved_bottom_changes_not_stacked = true, scope = "Actual production WPF event handlers/control geometry and real workbook queries; not OS mouse input" };
+            ScopeUnchanged(); ViewportsUnchanged(); return new { cases = results, retained_manual_viewports = new { before = new { viewA.X, viewA.Y }, after = new { viewB.X, viewB.Y } }, raw_report_and_event_exact = true, query_reads_unchanged = true, retained_native_hosts_and_grids = true, wide_geometry_qualified = wideQualified, wide_qualification_boundary = wideBoundary, resize_preference_bytes_unchanged = true, saved_bottom_changes_not_stacked = true, Evidence_close_restores_saved_bottom_changes_height = true, scope = "Actual production WPF event handlers/control geometry and real workbook queries; not OS mouse input" };
         }
         finally { Before.RestoreSelection(a); After.RestoreSelection(b); await ReloadSourceOnly(); Width = width; Height = height; SetLanguage(language); SetLayout(layout); sourceView.SelectedIndex = oldText ? 1 : 0; await Settle(); }
     }

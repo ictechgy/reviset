@@ -180,6 +180,7 @@ import AppKit
         }
         try await checkPagedFirstSelection(resources:resources,root:root)
         try await checkMethodIntervalPreservation(resources:resources,root:root)
+        try await checkInitialPhysicalOwnership(resources:resources,root:root)
         model.closeReads()
         try require(model.blankFormattingWarning.isEmpty,"ClosedWindowKeptFormattingWarning")
         await model.loadSelectedCells()
@@ -203,7 +204,7 @@ import AppKit
         model.projectID="project";model.reportID="report";model.report=JSON(["report_id":"report","revisions":[["revision_occurrence_id":"old","sheets":[["sheet_id":"sheet-old"]]],["revision_occurrence_id":"new","sheets":[["sheet_id":"sheet-new"]]]]])
         model.beforeID="old";model.afterID="new";model.beforeSheetID="sheet-old";model.afterSheetID="sheet-new"
         let queriesBefore=try listCount()
-        await model.loadChanges()
+        await model.changeVersions(before:"old",after:"new")
         try require(model.changesFailure.isEmpty && model.cellFailure.isEmpty && model.selectedChangeID=="paged-first" && (try model.selectedChange.data())==(try JSON(first).data()),"FirstSuccessfulQueryDidNotChooseFirstEligibleEvent")
         try require(model.beforeCell["address"].string=="A2" && model.afterCell["address"].string=="A2" && model.beforeCell["value"].string.utf16.elementsEqual(raw.utf16) && model.afterCell["value"].string.utf16.elementsEqual(raw.utf16),"AutomaticFirstEventDidNotLoadExactLinkedRawSources")
         try require(model.rowStart==1 && model.columnStart==1 && model.beforeRowStart==1 && model.afterRowStart==1 && model.beforeColumnStart==1 && model.afterColumnStart==1 && model.beforeCells.first?["address"].string=="A2" && model.afterCells.first?["address"].string=="A2","AutomaticFirstEventRebasedAlreadyVisibleAtoLRowOneWindow")
@@ -271,7 +272,7 @@ import AppKit
         }
         try control();await model.start()
         model.projectID="project";model.reportID="method-report";model.report=JSON(["report_id":"method-report","revisions":["old","mid","new"].map{["revision_occurrence_id":$0,"sheets":[["sheet_id":"sheet-"+$0,"name":"Sheet"]]]}]);model.beforeID="old";model.afterID="new";model.beforeSheetID="sheet-old";model.afterSheetID="sheet-new";model.mode="history"
-        await model.loadChanges()
+        await model.changeVersions(before:"old",after:"new")
         try require(model.selectedChangeID=="history-old-mid" && model.beforeID=="old" && model.afterID=="mid" && model.beforeAddress=="D4" && model.afterAddress=="D4" && model.rangeFailure.isEmpty && model.cellFailure.isEmpty,"InitialWideHistoryQueryDidNotSelectIntermediatePhysicalEvent")
         try require(model.beforeCell["value"].string.utf16.elementsEqual((raw+":old:sheet-old:D4").utf16) && model.afterCell["value"].string.utf16.elementsEqual((raw+":mid:sheet-mid:D4").utf16),"ThreeVersionFixtureDidNotLoadDistinctExactPhysicalRaw")
         let selectedPhysical=try physical(),selectedReads=try sourceReadCount(),fixedReport=try model.report.data()
@@ -309,6 +310,98 @@ import AppKit
         if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_WORKBOOK_MODE_INTERVAL_EVIDENCE_OUT"],!path.isEmpty {try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:path))}
         print("PASS native workbook method interval: three-version intermediate source, manual browse, failure retry, automatic history fallback and fresh-version initial selection")
         model.closeReads()
+    }
+
+    @MainActor private static func checkInitialPhysicalOwnership(resources:URL,root:URL) async throws {
+        func require(_ value:Bool,_ name:String)throws {if !value{throw NSError(domain:name,code:1)}}
+        let raw="INITIAL RAW\r\n한글 🧪 e\u{301}"
+        let revisions:[[String:Any]]=["old","mid","new"].map{["revision_occurrence_id":$0,"sheets":[["sheet_id":"sheet-"+$0,"name":"Sheet"],["sheet_id":"other-"+$0,"name":"Other"]]]}
+        func event(_ id:String,_ kind:String="stored_value",from:String="old",to:String="new",before:String="D4",after:String="D4",beforeSheet:String?=nil,afterSheet:String?=nil)->JSON {JSON(["change_id":id,"kind":kind,"from_revision_occurrence_id":from,"to_revision_occurrence_id":to,"from_sheet_id":beforeSheet ?? "sheet-"+from,"to_sheet_id":afterSheet ?? "sheet-"+to,"before_address":before,"after_address":after])}
+        let metadata=[event("date-first","date_system",before:"",after:"",beforeSheet:"",afterSheet:""),event("calculation-second","calculation_settings",before:"",after:"",beforeSheet:"",afterSheet:""),event("sheet-third","sheet_name",before:"",after:""),event("merges-fourth","merges",before:"",after:"")]
+        let physical=event("physical-D4"),foreign=event("foreign-sheet",beforeSheet:"not-in-old",afterSheet:"not-in-new"),typedMetadata=event("typed-metadata-with-address","date_system")
+        func control(_ rows:[JSON],mode:String="changes-supported",delay:Int=0,report:JSON?=nil)throws {
+            var value:[String:Any]=["mode":mode,"value":raw,"scoped_cells":true,"changes":rows.map(\.raw),"list_delay":delay]
+            if let report {value["report_fixture"]=report.raw}
+            try JSON(value).data().write(to:root.appendingPathComponent("control.json"),options:.atomic)
+        }
+        func model()async->WorkbookModel {
+            let value=WorkbookModel(bridge:Bridge(resources:resources,library:root));await value.start();value.projectID="project";value.reportID="ownership-report";value.report=JSON(["project_id":"project","report_id":"ownership-report","revisions":revisions]);value.beforeID="old";value.afterID="new";value.beforeSheetID="sheet-old";value.afterSheetID="sheet-new";return value
+        }
+        func events()throws->[JSON] {try String(contentsOf:root.appendingPathComponent("read-events.jsonl"),encoding:.utf8).split(separator:"\n").map{JSON(try JSONSerialization.jsonObject(with:Data($0.utf8)))}}
+        func listCount()throws->Int {try events().filter{$0["name"].string=="list_workbook_changes"}.count}
+        func sourceReads()throws->Int {try events().filter{$0["action"].string=="workbookGrid" || $0["name"].string=="get_workbook_cell"}.count}
+        func source(_ value:WorkbookModel)throws->Data {try JSON(["before":value.beforeID,"after":value.afterID,"before_sheet":value.beforeSheetID,"after_sheet":value.afterSheetID,"before_address":value.beforeAddress,"after_address":value.afterAddress,"selected_row":value.selectedRow,"selected_column":value.selectedColumn,"row_start":value.rowStart,"column_start":value.columnStart,"before_row_start":value.beforeRowStart,"before_column_start":value.beforeColumnStart,"after_row_start":value.afterRowStart,"after_column_start":value.afterColumnStart,"address_input":value.addressInput,"reveal_generation":value.revealGeneration,"before_raw":value.beforeCell.raw,"after_raw":value.afterCell.raw,"before_grid":value.beforeCells.map(\.raw),"after_grid":value.afterCells.map(\.raw),"text_offset":value.cellTextOffset,"text_next":value.cellTextNext as Any? ?? NSNull()]).data()}
+        func rawCell(_ value:WorkbookModel,before:Bool,address:String)throws {
+            let occurrence=before ? value.beforeID:value.afterID,sheet=before ? value.beforeSheetID:value.afterSheetID,cell=before ? value.beforeCell:value.afterCell
+            try require(cell["address"].string==address && cell["value"].string.utf16.elementsEqual((raw+":"+occurrence+":"+sheet+":"+address).utf16),"InitialPhysicalExactRawMissing_"+occurrence+"_"+sheet+"_"+address)
+        }
+        try control(metadata+[typedMetadata,foreign,physical]);let first=await model();await first.changeVersions(before:"old",after:"new")
+        try require(first.changesFailure.isEmpty && first.cellFailure.isEmpty && first.rangeFailure.isEmpty && first.selectedChangeID=="physical-D4" && first.selectedRow==4 && first.selectedColumn==4 && first.changes.map{$0["change_id"].string}==(metadata+[typedMetadata,foreign,physical]).map{$0["change_id"].string},"InitialSelectionDidNotSkipMetadataOrForeignPhysicalSheet")
+        try rawCell(first,before:true,address:"D4");try rawCell(first,before:false,address:"D4");first.closeReads()
+        try control(metadata);let only=await model();await only.changeVersions(before:"old",after:"new")
+        try require(only.changes.count==4 && only.changesFailure.isEmpty && only.selectedChangeID.isEmpty && only.selectedRow==0 && only.beforeCell.isNull && only.afterCell.isNull,"MetadataOnlyQueryInventedInitialPhysicalSelection")
+        let metadataSource=try source(only),metadataReads=try sourceReads()
+        try control([physical]);await only.loadChanges()
+        try require(only.changes.first?["change_id"].string=="physical-D4" && only.selectedChangeID.isEmpty && (try source(only))==metadataSource && (try sourceReads())==metadataReads,"SuccessfulMetadataOnlyQueryLeftAnAutomaticSelectionLease")
+        only.closeReads()
+        var oneSided:[[String:Any]]=[]
+        for before in [true,false] {
+            let observed=event(before ? "before-only":"after-only","cell_observation",before:before ? "D4":"",after:before ? "":"D4",beforeSheet:before ? "sheet-old":"",afterSheet:before ? "":"sheet-new")
+            try control(metadata+[observed]);let value=await model();await value.changeVersions(before:"old",after:"new")
+            try require(value.selectedChangeID==observed["change_id"].string && value.selectedRow==4 && value.cellFailure.isEmpty && value.rangeFailure.isEmpty && (before ? value.afterCell:value.beforeCell).isNull,"OneSidedPhysicalObservationRejectedOrMissingSideInvented")
+            try rawCell(value,before:before,address:"D4")
+            oneSided.append(["observed_side":before ? "before":"after","physical_address":"D4","missing_side_remains_null":true,"exact_observed_utf16":true]);value.closeReads()
+        }
+        var manualObservations:[[String:Any]]=[]
+        for route in ["cell","address","sheet","window"] {
+            try control(metadata+[physical],delay:600);let value=await model(),initialLists=try listCount(),fixed=try value.report.data()
+            let pending=Task {await value.changeVersions(before:"old",after:"new")}
+            var waiting=false
+            for _ in 0..<200 {
+                if try listCount()>initialLists {waiting=true;break}
+                try await Task.sleep(nanoseconds:5_000_000)
+            }
+            try require(waiting && value.loadingChanges && value.ready,"DelayedInitialQueryDidNotLeaveManualNavigationAvailable_"+route)
+            try control(metadata+[physical])
+            switch route {
+            case "cell":await value.selectCell(7,6)
+            case "address":value.addressInput="F7";await value.goToAddress()
+            case "sheet":await value.changeSheet(before:"other-old",after:"other-new")
+            default:await value.moveWindow(rows:100,columns:12)
+            }
+            if route=="cell" || route=="address" {try rawCell(value,before:true,address:"F7");try rawCell(value,before:false,address:"F7")}
+            if route=="sheet" {try require(value.beforeSheetID=="other-old" && value.afterSheetID=="other-new" && value.beforeCells.first?["value"].string.utf16.elementsEqual((raw+":old:other-old:A1").utf16)==true && value.afterCells.first?["value"].string.utf16.elementsEqual((raw+":new:other-new:A1").utf16)==true,"ManualSheetDidNotLoadItsOwnExactRaw")}
+            if route=="window" {try require(value.rowStart==101 && value.columnStart==13 && value.beforeCells.first?["value"].string.utf16.elementsEqual((raw+":old:sheet-old:M101").utf16)==true && value.afterCells.first?["value"].string.utf16.elementsEqual((raw+":new:sheet-new:M101").utf16)==true,"ManualWindowDidNotLoadItsOwnExactRaw")}
+            let manualSource=try source(value),reads=try sourceReads();await pending.value
+            try require(!value.loadingChanges && value.changesFailure.isEmpty && value.selectedChangeID.isEmpty && value.changes.map{$0["change_id"].string}==(metadata+[physical]).map{$0["change_id"].string} && value.changesFromID=="old" && value.changesToID=="new" && value.changesMode=="range_net" && (try source(value))==manualSource && (try sourceReads())==reads && (try value.report.data())==fixed,"LateInitialListOverwroteManualSourceOrWasNotInstalled_"+route)
+            let retryLists=try listCount();await value.loadChanges(preserveEndpoints:true)
+            try require(value.changesFailure.isEmpty && value.selectedChangeID.isEmpty && (try source(value))==manualSource && (try sourceReads())==reads && (try listCount())==retryLists+1,"DefaultRefreshReacquiredCancelledInitialIntent_"+route)
+            manualObservations.append(["route":route,"initial_list_delay_ms":600,"manual_navigation_available_while_loading":true,"valid_late_list_installed":true,"fixed_query_from":"old","fixed_query_to":"new","selected_event_remains_empty":true,"physical_sources_windows_raw_and_generation_retained":true,"late_list_source_request_count":0,"refresh_does_not_reacquire_intent":true]);value.closeReads()
+        }
+        try control([physical],mode:"changes-fail");let failed=await model();await failed.changeVersions(before:"old",after:"new")
+        try require(!failed.changesFailure.isEmpty && failed.selectedChangeID.isEmpty,"InitialFailureNotExercisedForManualRetry")
+        try control([physical]);await failed.selectCell(7,6);try rawCell(failed,before:true,address:"F7");try rawCell(failed,before:false,address:"F7")
+        let failedManual=try source(failed),failedReads=try sourceReads();await failed.loadChanges()
+        try require(failed.changesFailure.isEmpty && failed.changes.first?["change_id"].string=="physical-D4" && failed.selectedChangeID.isEmpty && (try source(failed))==failedManual && (try sourceReads())==failedReads,"FailedInitialQueryManualBrowseDefaultRetryReacquiredIntent")
+        let newPair=event("new-pair-A2",from:"mid",to:"new",before:"A2",after:"A2")
+        try control([newPair]);await failed.changeVersions(before:"mid",after:"new")
+        try require(failed.selectedChangeID=="new-pair-A2" && failed.changesFromID=="mid" && failed.changesToID=="new" && failed.cellFailure.isEmpty,"ExplicitNewVersionPairDidNotMintNewInitialIntent")
+        try rawCell(failed,before:true,address:"A2");try rawCell(failed,before:false,address:"A2")
+        let restored=event("report-restored-A2",from:"mid",to:"new",before:"A2",after:"A2"),newReport=JSON(["project_id":"project","report_id":"report-restored","revisions":revisions])
+        try control([restored],report:newReport);await failed.selectReport("report-restored")
+        try require(failed.reportID=="report-restored" && failed.selectedChangeID=="report-restored-A2" && failed.failure.isEmpty && failed.changesFailure.isEmpty && failed.cellFailure.isEmpty,"ExplicitNewReportDidNotMintNewInitialIntent")
+        try rawCell(failed,before:true,address:"A2");try rawCell(failed,before:false,address:"A2");failed.closeReads()
+        // A retry with no intervening navigation may use the original lease;
+        // it never manufactures a lease from empty successful-query state.
+        try control([physical],mode:"changes-fail");let untouched=await model();await untouched.changeVersions(before:"old",after:"new")
+        try require(!untouched.changesFailure.isEmpty,"InitialFailureNotExercisedForUntouchedRetry")
+        try control([physical]);await untouched.loadChanges()
+        try require(untouched.selectedChangeID=="physical-D4" && untouched.changesFailure.isEmpty && untouched.cellFailure.isEmpty,"UntouchedRetryLostOriginalInitialIntent")
+        try rawCell(untouched,before:true,address:"D4");try rawCell(untouched,before:false,address:"D4");untouched.closeReads()
+        let proof:[String:Any]=["scope":"Actual Bridge with explicit production report/version ownership routes, bounded delayed list responses and controlled distinct UTF16 per revision/sheet/address; no UI disabling or packaged-runtime claim","metadata_before_physical_skipped":true,"typed_metadata_with_address_excluded":true,"foreign_sheet_membership_excluded":true,"metadata_only_stays_unlinked_and_consumes_intent":true,"one_sided_observations":oneSided,"delayed_manual_navigation":manualObservations,"failed_initial_then_manual_default_retry_keeps_sources":true,"explicit_new_version_pair_restores_initial_link":true,"explicit_new_report_restores_initial_link":true,"untouched_retry_uses_original_intent_without_reacquisition":true,"same_query_paged_return_and_mode_suppression_covered_by_existing_regressions":true]
+        try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("initial-ownership-proof.json"))
+        if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_WORKBOOK_INITIAL_OWNERSHIP_EVIDENCE_OUT"],!path.isEmpty {try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:path))}
+        print("PASS native workbook initial ownership: metadata and sheet membership, one-sided physical observations, delayed manual navigation, failure retry and explicit version/report restoration")
     }
 
 }

@@ -17,8 +17,8 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     @Published var projects: [JSON] = []
     @Published var reports: [JSON] = []
     @Published var report = JSON()
-    @Published var projectID = "" {didSet {if oldValue != projectID {eventAnchor=nil;pagedEvent=nil}}}
-    @Published var reportID = "" {didSet {if oldValue != reportID {eventAnchor=nil;pagedEvent=nil}}}
+    @Published var projectID = "" {didSet {if oldValue != projectID {eventAnchor=nil;pagedEvent=nil;cancelInitialSelection()}}}
+    @Published var reportID = "" {didSet {if oldValue != reportID {eventAnchor=nil;pagedEvent=nil;cancelInitialSelection()}}}
     @Published var beforeID = ""
     @Published var afterID = ""
     @Published var beforeSheetID = ""
@@ -117,8 +117,15 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     // Only the exact event retained across an actual same-query page request may
     // outlive the visible list. Manual list edits never mint this authority.
     @Published private var pagedEvent:EventAnchor?
-    private var lastSuccessfulChangeScope = ""
-    private var initialSelectionSuppressedScope = ""
+    private struct InitialSelectionIntent:Equatable {let scope:String;let epoch:Int}
+    private var initialSelectionIntent:InitialSelectionIntent?
+    private var initialNavigationEpoch=0
+    private func cancelInitialSelection() {initialNavigationEpoch += 1;initialSelectionIntent=nil}
+    private func beginInitialSelection(from:String,to:String) {
+        cancelInitialSelection()
+        guard !from.isEmpty,!to.isEmpty,from != to else{return}
+        initialSelectionIntent=InitialSelectionIntent(scope:[scope,from,to,mode].joined(separator:"|"),epoch:initialNavigationEpoch)
+    }
 
     struct Ticket {
         let channel: String
@@ -221,14 +228,19 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         return event
     }
     private func eligibleInitialChange(_ event:JSON)->Bool {
-        guard !event["change_id"].string.isEmpty,
+        let kind=event["kind"].string
+        guard !kind.hasPrefix("sheet_"),!["merges","date_system","calculation_settings"].contains(kind),!event["change_id"].string.isEmpty,
               let lower=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==changesFromID}),
               let upper=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==changesToID}),
               let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==event["from_revision_occurrence_id"].string}),
               let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==event["to_revision_occurrence_id"].string}),
               lower<=a,a<b,b<=upper else{return false}
         if changesMode=="range_net",a != lower || b != upper {return false}
-        return ["before_address","after_address"].allSatisfy {key in event[key].string.isEmpty || WorkbookGrid.parseAddress(event[key].string) != nil}
+        guard ["before_address","after_address"].allSatisfy({key in event[key].string.isEmpty || WorkbookGrid.parseAddress(event[key].string) != nil}) else{return false}
+        return [true,false].contains {before in
+            let occurrence=event[before ? "from_revision_occurrence_id":"to_revision_occurrence_id"].string,sheetID=event[before ? "from_sheet_id":"to_sheet_id"].string,address=event[before ? "before_address":"after_address"].string
+            return !address.isEmpty && !sheetID.isEmpty && !sheet(occurrence,sheetID).isNull
+        }
     }
     var canReturnToChange:Bool {ready && selectedChangeID.isEmpty && !loadingChanges && !anchoredChange.isNull}
     func returnToChange() async {
@@ -267,7 +279,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         generations[channel] = (generations[channel] ?? 0) + 1
     }
     func invalidateReads() {
-        eventAnchor=nil;pagedEvent=nil;lastSuccessfulChangeScope="";initialSelectionSuppressedScope=""
+        eventAnchor=nil;pagedEvent=nil;cancelInitialSelection()
         for channel in Array(owners.keys) { invalidate(channel) }
         loadingReport = false; loadingRange = false; loadingChanges = false; loadingCell = false; loadingHistory = false; loadingMCP = false
         mcp = ""; mcpScope = ""; mcpFailure = ""; blankFormattingWarningScope = ""
@@ -283,7 +295,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         rangeFailure = ""; addressFailure = ""; cellFailure = ""; loadingRange = false; loadingCell = false
     }
     func clearSelection() {
-        eventAnchor=nil;pagedEvent=nil;lastSuccessfulChangeScope="";initialSelectionSuppressedScope=""
+        eventAnchor=nil;pagedEvent=nil;cancelInitialSelection()
         clearCells(); changes = []; coverage = []; releases = []; resetChangePaging(); changeTotal = 0
         changesFailure = ""; comparisonNotice = ""; blankFormattingWarningScope = ""; changesFromID = ""; changesToID = ""; loadingChanges = false; report = JSON(); reportID = ""
         beforeID = ""; afterID = ""; beforeSheetID = ""; afterSheetID = ""
@@ -343,7 +355,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
             report = value; loadingReport = false
             beforeID = revisions.indices.contains(max(0,revisions.count-2)) ? revisions[max(0,revisions.count-2)]["revision_occurrence_id"].string : ""
             afterID = revisions.last?["revision_occurrence_id"].string ?? ""
-            selectInitialSheets()
+            selectInitialSheets();beginInitialSelection(from:beforeID,to:afterID)
             coverage = value["coverage_gaps"].array
             await loadRange()
             guard current(ticket), projectID == project, reportID == id, active else { return }
@@ -372,16 +384,16 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         var left = before ?? (changesFromID.isEmpty ? beforeID:changesFromID),right = after ?? (changesToID.isEmpty ? afterID:changesToID)
         guard let leftIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == left}),let rightIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == right}) else { return }
         if leftIndex > rightIndex { swap(&left,&right); statusContent = UIMessage("workbook.status.sortedVersions") }
-        eventAnchor=nil;initialSelectionSuppressedScope="";clearCells(); invalidate("changes")
+        eventAnchor=nil;cancelInitialSelection();clearCells(); invalidate("changes")
         beforeID = left; afterID = right;enforceSingleSourcePresentation(); comparisonNotice = ""; blankFormattingWarningScope = ""
         changes = []; resetChangePaging(); changeTotal = 0
-        rowStart = 1; columnStart = 1; addressInput = "A1"; selectInitialSheets()
+        rowStart = 1; columnStart = 1; addressInput = "A1"; selectInitialSheets();beginInitialSelection(from:beforeID,to:afterID)
         let identity = rangeScope
         await loadRange()
         guard rangeScope == identity, ready else { return }; await loadChanges()
     }
     func changeSheet(before: String? = nil, after: String? = nil) async {
-        guard ready else { return }; clearCells()
+        guard ready else { return }; cancelInitialSelection();clearCells()
         revealGeneration += 1
         if let before { beforeSheetID = before }; if let after { afterSheetID = after }
         rowStart = 1; columnStart = 1; addressInput = "A1"
@@ -424,6 +436,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         let previousScope=comparisonScope,previousAnchor=eventAnchor,retained=anchoredChange
         guard ready, !beforeID.isEmpty, !afterID.isEmpty else { return }
         guard !(next && previous),!next || !changeCursor.isEmpty,!previous || !changePreviousCursors.isEmpty else { return }
+        if !autoSelectInitial || next || previous {cancelInitialSelection()}
         if beforeID==afterID, !preserveEndpoints {
             enforceSingleSourcePresentation()
             invalidate("changes");changes=[];selectedChangeID="";eventAnchor=nil;pagedEvent=nil;resetChangePaging();changeTotal=0;changesFailure="";loadingChanges=false
@@ -440,10 +453,9 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         if next { back.append(changePageCursor); if back.count > cursorHistoryLimit { back.removeFirst(back.count-cursorHistoryLimit) } }
         if previous { back.removeLast() }
         let ticket = begin("changes"), identity = comparisonScope
-        // Method-only changes never acquire a new physical selection, including
-        // a retry after their first response fails. A new version pick resets it.
-        if !autoSelectInitial {initialSelectionSuppressedScope=identity}
-        let initialScope=lastSuccessfulChangeScope != identity && initialSelectionSuppressedScope != identity
+        // Only the explicit report/version action owns this one-shot intent.
+        // Manual navigation may revoke it while this scoped list request waits.
+        let initialIntent=initialSelectionIntent.flatMap{$0.scope==identity ? $0:nil}
         if identity==previousScope,!retained.isNull,let anchor=previousAnchor {
             pagedEvent=anchor
         } else {
@@ -464,9 +476,11 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
                 // A changed event payload cannot relabel already-mounted raw cells.
                 eventAnchor=nil;pagedEvent=nil;selectedChangeID=""
             }
-            lastSuccessfulChangeScope=identity
-            if initialScope,selectedChangeID.isEmpty,let first=changes.first(where:eligibleInitialChange) {
-                await chooseChange(first["change_id"].string,preservingVisibleWindow:true)
+            if let intent=initialIntent,initialSelectionIntent==intent {
+                cancelInitialSelection()
+                if selectedChangeID.isEmpty,let first=changes.first(where:eligibleInitialChange) {
+                    await chooseChange(first["change_id"].string,preservingVisibleWindow:true)
+                }
             }
         } catch {
             guard current(ticket), comparisonScope == identity else { return }
@@ -487,6 +501,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     }
     func moveWindow(rows: Int = 0, columns: Int = 0) async {
         guard ready else { return }
+        cancelInitialSelection()
         revealGeneration += 1
         rowStart = min(1_048_576-rowLimit+1,max(1,rowStart+rows))
         columnStart = min(16_384-columnLimit+1,max(1,columnStart+columns))
@@ -495,12 +510,14 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     func goToAddress() async {
         guard ready else { return }
         guard let (row,column) = WorkbookGrid.parseAddress(addressInput) else { addressFailureContent = UIMessage("workbook.error.address"); return }
+        cancelInitialSelection()
         rowStart = max(1,min(row,1_048_576-rowLimit+1)); columnStart = max(1,min(column,16_384-columnLimit+1))
         clearCells(); addressInput = WorkbookGrid.address(row,column); let identity = rangeScope
         await loadRange(); guard ready, rangeScope == identity else { return }; await selectCell(row,column)
     }
     func selectCell(_ row: Int, _ column: Int) async {
         guard ready else { return }
+        cancelInitialSelection()
         addressFailure = ""
         revealGeneration += 1
         let previousRange = rangeScope
@@ -561,6 +578,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         guard ready else{return}
         let visible=changes.first(where:{$0["change_id"].string==id}),change=visible ?? retainedEvent(id)
         guard !change.isNull else{return}
+        cancelInitialSelection()
         if visible != nil {pagedEvent=nil}
         let oldBefore=(beforeID,beforeSheetID,beforeRowStart,beforeColumnStart),oldAfter=(afterID,afterSheetID,afterRowStart,afterColumnStart)
         addressFailure = ""

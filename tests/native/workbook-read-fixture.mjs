@@ -15,7 +15,8 @@ process.stdin.on('end',()=>{
     while(n>0){n--;label=String.fromCharCode(65+n%26)+label;n=Math.floor(n/26);}
     return {address:label+row,row,column,value:`${control.value??'fresh'}:${scope.revision_occurrence_id}:${scope.sheet_id}:${label+row}`,formula:null,number_format:'General'};
   }
-  if(action==='workbookProjects') value=[];
+  if(action==='workbookProjects'||action==='workbookReleases') value=[];
+  else if(action==='workbookView'&&control.report_fixture) value=control.report_fixture;
   else if(action==='workbookGrid') {
     value={...args,items:[control.scoped_cells===true?observedCell(args,args.row_start,args.column_start):{address:'A2',row:2,column:1,value:control.value??'fresh'}]};
     if(control.mode==='grid-fail') error={code:'CONTROLLED_GRID_FAILURE',message:'controlled range read failure'};
@@ -60,5 +61,7 @@ process.stdin.on('end',()=>{
     if(control.mode==='unknown-availability')value.availability='unknown';
   } else throw new Error('Unexpected fixture action '+action);
   appendFileSync(join(root,'read-events.jsonl'),JSON.stringify({action,name:args.name,query,mode:control.mode})+'\n');
-  setTimeout(()=>console.log(JSON.stringify({ok:!error,protocol_version:'0.1.0',schema_version:'0.4.0',value,error})),control.delay??0);
+  if(control.list_delay!==undefined&&(!Number.isInteger(control.list_delay)||control.list_delay<0||control.list_delay>3000))throw new Error('Invalid bounded list delay');
+  const delay=action==='workbookQuery'&&args.name==='list_workbook_changes'?(control.list_delay??control.delay??0):(control.delay??0);
+  setTimeout(()=>console.log(JSON.stringify({ok:!error,protocol_version:'0.1.0',schema_version:'0.4.0',value,error})),delay);
 });
