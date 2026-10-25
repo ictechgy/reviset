@@ -32,9 +32,12 @@ internal sealed class ImportWindow : Window
     internal ImportIntent Intent { get; }
     private Button submit = new();
     private readonly TextBlock entryGuidance = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
+    private readonly TextBlock disabledGuidance = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12), Visibility = Visibility.Collapsed };
     internal int RejectedEntrySubmissions { get; private set; }
     internal bool SubmitEnabled => submit.IsEnabled;
     internal string EntryGuidance => entryGuidance.Text;
+    internal string DisabledGuidance => disabledGuidance.Text;
+    internal bool DisabledGuidanceVisible => disabledGuidance.IsVisible;
     internal void SetTitleForSmoke(string value) => title.Text = value;
     internal void SubmitForSmoke() => submit.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
     public ImportWindow(Copy copy, bool workbook, IEnumerable<JsonElement>? existing = null, ImportIntent? importIntent = null)
@@ -47,6 +50,7 @@ internal sealed class ImportWindow : Window
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);
         top.Children.Add(new TextBlock { Text = copy[reorder ? "reorderHint" : workbook ? "workbookHint" : "documentHint"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         if (!reorder && Intent.MinimumEntries == 2) { entryGuidance.Text = copy["comparisonEntryMinimum"] + (workbook ? "" : " " + copy["comparisonDocumentBundle"]); top.Children.Add(entryGuidance); }
+        top.Children.Add(disabledGuidance);
         if (!reorder) { top.Children.Add(new TextBlock { Text = copy["title"] }); top.Children.Add(title); }
         var bottom = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; DockPanel.SetDock(bottom, Dock.Bottom); root.Children.Add(bottom);
         var cancel = Button(copy["cancel"], () => DialogResult = false); cancel.IsCancel = true; bottom.Children.Add(cancel);
@@ -77,7 +81,18 @@ internal sealed class ImportWindow : Window
     }
     private bool FieldsValid => Rows.All(row => !string.IsNullOrWhiteSpace(row.Label) && row.Label.Trim().Length <= 200) && (reorder || ProjectTitle.Length is >= 1 and <= 200);
     private void RowChanged(object? sender, PropertyChangedEventArgs e) => UpdateSubmitState();
-    private void UpdateSubmitState() => submit.IsEnabled = Intent.Accepts(Rows.Count) && FieldsValid;
+    private void UpdateSubmitState()
+    {
+        var messages = new List<string>();
+        if (Rows.Count > 100) messages.Add(copy["importEntryMaximum"]);
+        else if (Rows.Count < Intent.MinimumEntries && Intent.MinimumEntries == 1) messages.Add(copy["importEntryMinimum"]);
+        // Comparison count failures already have the persistent EntryGuidance;
+        // field conditions get their own message without duplicating that hint.
+        if (!reorder && ProjectTitle.Length is < 1 or > 200) messages.Add(copy["importTitleRequired"]);
+        if (Rows.Any(row => string.IsNullOrWhiteSpace(row.Label) || row.Label.Trim().Length > 200)) messages.Add(copy["importLabelRequired"]);
+        disabledGuidance.Text = string.Join("\n", messages); disabledGuidance.Visibility = messages.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        submit.IsEnabled = Intent.Accepts(Rows.Count) && FieldsValid;
+    }
     private void Add()
     {
         if (Rows.Count >= 100) return;

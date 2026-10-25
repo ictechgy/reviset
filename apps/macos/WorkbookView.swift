@@ -211,12 +211,12 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     var ready: Bool { active && !reportID.isEmpty && report["report_id"].string == reportID && !loadingReport && !busy && !loadingDemo }
     var project: JSON { projects.first { $0["project_id"].string == projectID } ?? JSON() }
     private func retainedEvent(_ id:String)->JSON {
-        guard let retained=pagedEvent,retained.scope==comparisonScope,retained.id==id else{return JSON()}
+        guard let retained=pagedEvent,retained.scope==comparisonScope,retained.id==id,eventBelongsToQuery(retained.decoded) else{return JSON()}
         return retained.decoded
     }
     var selectedChange: JSON {
         guard !selectedChangeID.isEmpty else{return JSON()}
-        if let event=changes.first(where:{$0["change_id"].string==selectedChangeID}) {return event}
+        if let event=changes.first(where:{$0["change_id"].string==selectedChangeID}) {return eventBelongsToQuery(event) ? event:JSON()}
         let event=retainedEvent(selectedChangeID)
         guard event["from_revision_occurrence_id"].string==beforeID,event["to_revision_occurrence_id"].string==afterID,event["from_sheet_id"].string==beforeSheetID,event["to_sheet_id"].string==afterSheetID,event["before_address"].string==beforeAddress,event["after_address"].string==afterAddress else{return JSON()}
         return event
@@ -224,27 +224,36 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     private var anchoredChange:JSON {
         guard let anchor=eventAnchor,anchor.scope==comparisonScope else{return JSON()}
         let event=changes.first(where:{$0["change_id"].string==anchor.id}) ?? retainedEvent(anchor.id)
-        guard !event.isNull,(try? event.data())==anchor.event else{return JSON()}
+        guard !event.isNull,eventBelongsToQuery(event),(try? event.data())==anchor.event else{return JSON()}
         return event
     }
-    private func eligibleInitialChange(_ event:JSON)->Bool {
-        let kind=event["kind"].string
-        guard !kind.hasPrefix("sheet_"),!["merges","date_system","calculation_settings"].contains(kind),!event["change_id"].string.isEmpty,
+    private func eventBelongsToQuery(_ event:JSON)->Bool {
+        guard !event["change_id"].string.isEmpty,["history","range_net"].contains(changesMode),
               let lower=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==changesFromID}),
               let upper=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==changesToID}),
               let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==event["from_revision_occurrence_id"].string}),
               let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==event["to_revision_occurrence_id"].string}),
               lower<=a,a<b,b<=upper else{return false}
         if changesMode=="range_net",a != lower || b != upper {return false}
-        guard ["before_address","after_address"].allSatisfy({key in event[key].string.isEmpty || WorkbookGrid.parseAddress(event[key].string) != nil}) else{return false}
-        return [true,false].contains {before in
+        let kind=event["kind"].string,metadata=kind.hasPrefix("sheet_") || ["merges","date_system","calculation_settings"].contains(kind)
+        guard metadata || !event["before_address"].string.isEmpty || !event["after_address"].string.isEmpty else{return false}
+        return [true,false].allSatisfy {before in
             let occurrence=event[before ? "from_revision_occurrence_id":"to_revision_occurrence_id"].string,sheetID=event[before ? "from_sheet_id":"to_sheet_id"].string,address=event[before ? "before_address":"after_address"].string
-            return !address.isEmpty && !sheetID.isEmpty && !sheet(occurrence,sheetID).isNull
+            // Metadata and an unmaterialized cell side can have no coordinate
+            // or sheet. A physical coordinate must belong to its occurrence.
+            return address.isEmpty || (WorkbookGrid.parseAddress(address) != nil && !sheetID.isEmpty && !sheet(occurrence,sheetID).isNull)
         }
+    }
+    private func eligibleInitialChange(_ event:JSON)->Bool {
+        let kind=event["kind"].string
+        return !kind.hasPrefix("sheet_") && !["merges","date_system","calculation_settings"].contains(kind) && eventBelongsToQuery(event) && (!event["before_address"].string.isEmpty || !event["after_address"].string.isEmpty)
     }
     var canReturnToChange:Bool {ready && selectedChangeID.isEmpty && !loadingChanges && !anchoredChange.isNull}
     func returnToChange() async {
-        guard canReturnToChange else{eventAnchor=nil;return}
+        guard canReturnToChange else {
+            if anchoredChange.isNull {selectedChangeID="";eventAnchor=nil;pagedEvent=nil}
+            return
+        }
         let id=anchoredChange["change_id"].string
         await chooseChange(id)
     }
@@ -577,7 +586,9 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     func chooseChange(_ id: String,preservingVisibleWindow:Bool=false) async {
         guard ready else{return}
         let visible=changes.first(where:{$0["change_id"].string==id}),change=visible ?? retainedEvent(id)
-        guard !change.isNull else{return}
+        guard !change.isNull,eventBelongsToQuery(change) else {
+            selectedChangeID="";eventAnchor=nil;pagedEvent=nil;cancelInitialSelection();return
+        }
         cancelInitialSelection()
         if visible != nil {pagedEvent=nil}
         let oldBefore=(beforeID,beforeSheetID,beforeRowStart,beforeColumnStart),oldAfter=(afterID,afterSheetID,afterRowStart,afterColumnStart)
@@ -585,10 +596,6 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         revealGeneration += 1
         invalidate("cell"); resetCellHistory(); beforeCell = JSON(); afterCell = JSON(); cellFailure = ""; loadingCell = true
         let a = change["from_revision_occurrence_id"].string, b = change["to_revision_occurrence_id"].string
-        guard revisions.contains(where:{$0["revision_occurrence_id"].string == a}), revisions.contains(where:{$0["revision_occurrence_id"].string == b}) else {
-            eventAnchor=nil;beforeAddress = ""; afterAddress = ""; selectedChangeID = ""; selectedRow = 0; selectedColumn = 0; cellTextOffset = 0; cellTextNext = nil
-            loadingCell = false; cellFailureContent = UIMessage("workbook.error.changeVersion"); return
-        }
         beforeID = a; afterID = b
         beforeSheetID = change["from_sheet_id"].string; afterSheetID = change["to_sheet_id"].string
         let address = change["after_address"].string.isEmpty ? change["before_address"].string : change["after_address"].string
@@ -616,7 +623,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         await loadRange()
         if currentChangeIs(id) { await loadSelectedCells() }
     }
-    private func currentChangeIs(_ id: String) -> Bool { ready && selectedChangeID == id }
+    private func currentChangeIs(_ id: String) -> Bool { ready && selectedChangeID == id && !selectedChange.isNull }
     func stepChange(_ offset: Int) async {
         guard ready,!loadingChanges,!changes.isEmpty else { return }
         let index = changes.firstIndex(where:{$0["change_id"].string == selectedChangeID}) ?? (offset > 0 ? -1 : changes.count)
@@ -2063,6 +2070,9 @@ struct WorkbookGrid: NSViewRepresentable {
         var lastRevealed = ""
         private var resizedWidths:[String:[Int:CGFloat]]=[:]
         private var widthSources:[String]=[]
+        private var defaultWidths:[String:[Int:CGFloat]]=[:]
+        private var defaultWidthColumns:[String:[Int]]=[:]
+        private var defaultWidthSources:[String]=[]
         private var widthSource:String {parent.sourceIdentity.isEmpty ? parent.pane:parent.sourceIdentity}
         init(_ parent: WorkbookGrid) { self.parent = parent }
         func update(_ value: WorkbookGrid) {
@@ -2080,7 +2090,7 @@ struct WorkbookGrid: NSViewRepresentable {
             }
             for column in table.tableColumns.dropFirst() {
                 guard let physical=Int(column.identifier.rawValue) else{continue}
-                let width=resizedWidths[widthSource]?[physical] ?? compactWidth(physical)
+                let width=resizedWidths[widthSource]?[physical] ?? retainedDefaultWidth(physical)
                 if abs(column.width-width)>0.5 {column.width=width}
             }
             table.tableColumns.first?.title = L("workbook.grid.rowHeader")
@@ -2105,6 +2115,28 @@ struct WorkbookGrid: NSViewRepresentable {
                 }
             } else { table.deselectAll(nil); lastRevealed = "" }
             if let scroll=table.enclosingScrollView as? WorkbookTableScrollView {scroll.synchronizeHeader();scroll.configurePinnedRows(rowStart:value.rowStart,pane:value.pane)}
+        }
+        private func retainedDefaultWidth(_ column:Int)->CGFloat {
+            let source=widthSource,cached=defaultWidths[source]?[column] ?? 64
+            // A pending/failed range is not evidence that the physical column
+            // became narrower. The measurement ceiling also needs no remeasure.
+            guard !parent.cells.isEmpty,cached<180 else{return cached}
+            let width=max(cached,compactWidth(column))
+            if defaultWidths[source]==nil {
+                if defaultWidthSources.count>=16 {
+                    let expired=defaultWidthSources.removeFirst()
+                    defaultWidths.removeValue(forKey:expired);defaultWidthColumns.removeValue(forKey:expired)
+                }
+                defaultWidthSources.append(source);defaultWidths[source]=[:];defaultWidthColumns[source]=[]
+            }
+            if defaultWidths[source]?[column]==nil {
+                if (defaultWidthColumns[source]?.count ?? 0)>=256,let expired=defaultWidthColumns[source]?.removeFirst() {defaultWidths[source]?.removeValue(forKey:expired)}
+                defaultWidthColumns[source]?.append(column)
+            }
+            // Grow only as wider bounded observations arrive. Manual widths use
+            // their separate retention policy and always take precedence.
+            defaultWidths[source]?[column]=width
+            return width
         }
         private func compactWidth(_ column:Int)->CGFloat {
             // Measurement is bounded to the same 64 UTF-16 source preview. It

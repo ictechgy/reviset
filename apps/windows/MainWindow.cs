@@ -1165,7 +1165,7 @@ internal sealed class MainWindow : Window
         var scope = CurrentChangeScope; if (append && loadedChangeScope != scope) return; var retainedEventFailure = append ? eventRetry : null;
         var revisions = currentReport.Get("revisions").Items(); var from = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalFrom); var to = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalTo);
         if (from > to || from < 0 || to < 0) { if (IsCurrent(ticket)) { ComparisonState = "invalid"; changesReady = false; detail.Text = Copy["reverse"]; } return; }
-        if (from == to) { if (IsCurrent(ticket)) { loadedChangeScope = scope; changes.Clear(); nextChanges = ""; changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = !busy; more.IsEnabled = false; detail.Text = SingleSourceGuidance; } return; }
+        if (from == to) { if (IsCurrent(ticket)) { loadedChangeScope = scope; changes.Clear(); nextChanges = ""; changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = !busy; more.IsEnabled = false; if (!HasIndependentSourceDetail) detail.Text = SingleSourceGuidance; } return; }
         List<JsonElement> values; string next = "";
         if (IsWorkbook)
         {
@@ -2269,7 +2269,9 @@ internal sealed class MainWindow : Window
                         var bundleRejected = workbook;
                         if (!workbook && bundledSource is not null) { dialog.Rows.Clear(); dialog.Rows.Add(new() { Label = bundledSource.Label, Paths = bundledSource.Paths }); dialog.SubmitForSmoke(); bundleRejected = !dialog.SubmitEnabled && dialog.IsVisible && dialog.DialogResult is null && dialog.RejectedEntrySubmissions == 2; }
                         dialog.Rows.Add(new() { Label = "SYNTHETIC second version", Paths = source.Paths });
-                        var fields = new Dictionary<string, bool> { ["captured_minimum_two"] = initial, ["one_entry_start_disabled"] = oneDisabled, ["actual_one_entry_submit_rejected"] = oneRejected, ["PPTX_PDF_bundle_is_one_entry"] = bundleRejected, ["two_entries_start_enabled"] = dialog.Rows.Count == 2 && dialog.SubmitEnabled, ["localized_minimum_guidance"] = dialog.EntryGuidance == Copy["comparisonEntryMinimum"] + (workbook ? "" : " " + Copy["comparisonDocumentBundle"]) };
+                        dialog.SetTitleForSmoke(""); var titleExplained = !dialog.SubmitEnabled && dialog.DisabledGuidance == Copy["importTitleRequired"] && dialog.DisabledGuidanceVisible;
+                        dialog.SetTitleForSmoke("SYNTHETIC cancelled comparison"); var firstLabel = dialog.Rows[0].Label; dialog.Rows[0].Label = ""; var labelExplained = !dialog.SubmitEnabled && dialog.DisabledGuidance == Copy["importLabelRequired"] && dialog.DisabledGuidanceVisible; dialog.Rows[0].Label = firstLabel;
+                        var fields = new Dictionary<string, bool> { ["captured_minimum_two"] = initial, ["one_entry_start_disabled"] = oneDisabled, ["actual_one_entry_submit_rejected"] = oneRejected, ["PPTX_PDF_bundle_is_one_entry"] = bundleRejected, ["two_entries_start_enabled"] = dialog.Rows.Count == 2 && dialog.SubmitEnabled, ["localized_minimum_guidance"] = dialog.EntryGuidance == Copy["comparisonEntryMinimum"] + (workbook ? "" : " " + Copy["comparisonDocumentBundle"]), ["comparison_blank_title_explained"] = titleExplained, ["comparison_blank_label_explained"] = labelExplained, ["valid_fields_clear_active_guidance"] = dialog.DisabledGuidance.Length == 0 && !dialog.DisabledGuidanceVisible };
                         dialogObservation = new { language = locale, preset, dialog.Intent, guidance = dialog.EntryGuidance, rows = dialog.Rows.Select(row => new { row.Label, files = row.Paths.Length }).ToArray(), checks = fields };
                         foreach (var field in fields) if (!field.Value) throw new InvalidOperationException("New comparison dialog failed: " + field.Key);
                         Visit(dialog).OfType<Button>().Single(button => button.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -2285,9 +2287,29 @@ internal sealed class MainWindow : Window
                 _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, () =>
                 {
                     ImportWindow? dialog = null;
-                    try { dialog = Application.Current.Windows.OfType<ImportWindow>().Single(window => ReferenceEquals(window.Owner, this)); dialog.SetTitleForSmoke("SYNTHETIC ordinary import"); dialog.Rows.Add(new() { Label = source.Label, Paths = source.Paths }); ordinaryObservation = new { dialog.Intent, entry_count = dialog.Rows.Count, one_entry_start_enabled = dialog.SubmitEnabled }; if (dialog.Intent != ImportIntent.Reading(workbook) || !dialog.SubmitEnabled) throw new InvalidOperationException("Cancelled comparison minimum leaked into ordinary Import."); Visit(dialog).OfType<Button>().Single(control => control.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); } catch (Exception error) { dialogFailure = error; dialog?.Close(); }
+                    try
+                    {
+                        dialog = Application.Current.Windows.OfType<ImportWindow>().Single(window => ReferenceEquals(window.Owner, this));
+                        var conditions = new Dictionary<string, bool>();
+                        var messages = new List<object>();
+                        void Inspect(string condition, string expected, bool enabled)
+                        {
+                            var matches = dialog.SubmitEnabled == enabled && dialog.DisabledGuidance == expected && dialog.DisabledGuidanceVisible == (expected.Length > 0);
+                            conditions[condition] = matches; messages.Add(new { condition, expected_guidance = expected, actual_guidance = dialog.DisabledGuidance, visible = dialog.DisabledGuidanceVisible, start_enabled = dialog.SubmitEnabled });
+                        }
+                        dialog.SetTitleForSmoke("SYNTHETIC ordinary import"); Inspect("ordinary_zero_entries", Copy["importEntryMinimum"], false);
+                        dialog.Rows.Add(new() { Label = source.Label, Paths = source.Paths }); Inspect("ordinary_one_entry_valid", "", true);
+                        dialog.SetTitleForSmoke(""); Inspect("blank_title", Copy["importTitleRequired"], false);
+                        dialog.SetTitleForSmoke("SYNTHETIC ordinary import"); dialog.Rows[0].Label = " "; Inspect("blank_label", Copy["importLabelRequired"], false);
+                        dialog.Rows[0].Label = new string('x', 201); Inspect("overlong_label", Copy["importLabelRequired"], false);
+                        dialog.Rows[0].Label = source.Label; Inspect("corrected_fields_clear_guidance", "", true);
+                        ordinaryObservation = new { dialog.Intent, entry_count = dialog.Rows.Count, one_entry_start_enabled = dialog.SubmitEnabled, inline_conditions = messages, checks = conditions };
+                        if (dialog.Intent != ImportIntent.Reading(workbook) || !dialog.SubmitEnabled || conditions.Any(item => !item.Value)) throw new InvalidOperationException("Ordinary import minimum or localized disabled guidance is inconsistent.");
+                        Visit(dialog).OfType<Button>().Single(control => control.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    }
+                    catch (Exception error) { dialogFailure = error; dialog?.Close(); }
                 });
-                await Import(); await Settle(); if (dialogFailure is not null || ordinaryObservation is null || QueryIdentityForSmoke != beforeIdentity || generation != sourceTicket) throw new InvalidOperationException("Ordinary import reopen changed its minimum or the retained sole source.", dialogFailure); newComparisonCases.Add(new { language = locale, preset, ordinary_reopen = ordinaryObservation });
+                await Import(); await Settle(); if (observe is not null) await observe("source34-disabled-import-" + preset + "-" + locale, ordinaryObservation ?? new { error = dialogFailure?.Message }); if (dialogFailure is not null || ordinaryObservation is null || QueryIdentityForSmoke != beforeIdentity || generation != sourceTicket) throw new InvalidOperationException("Ordinary import reopen changed its minimum or the retained sole source.", dialogFailure); newComparisonCases.Add(new { language = locale, preset, ordinary_reopen = ordinaryObservation });
             }
             SetLayout(WorkspaceLayout.Preset("sourceFirst")); await Settle(); Exception? submitFailure = null; object? acceptedDialog = null;
             _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, () =>
@@ -2751,6 +2773,35 @@ internal sealed class MainWindow : Window
         }
         finally { SetLanguage(language); await SelectCell(Before, a.Row, a.Column); }
     }
+    internal async Task<object> CheckEqualSourceReaderReloadForSmoke(Func<string, object, Task> observe)
+    {
+        if (!IsWorkbook) throw new InvalidOperationException("Equal-source raw qualification requires a workbook.");
+        var a = Before.CaptureSelection(); var b = After.CaptureSelection(); var from = intervalFrom; var to = intervalTo; var report = reportId; var reportBytes = currentReport.GetRawText(); var language = Copy.Language; var layout = Layout; var previousText = textView; var observations = new List<object>();
+        async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        try
+        {
+            var index = currentReport.Get("revisions").Items().FindIndex(revision => revision.Get("revision_occurrence_id").Text() == a.Revision);
+            await SelectSourcePairForSmoke(index, index); await Before.Load(generation, reads.Token); await After.GoForSmoke("D4"); ChangeVisibility(inspector: true); await NextDetail(); await Settle();
+            if (!singleSource || !HasIndependentSourceDetail || singleCellSource is not { Side: "after" } || detailOffset <= 0 || detailNext is null) throw new InvalidOperationException("Equal-source fixture did not establish the actual visible D4 cell reader and nonzero continuation.");
+            foreach (var locale in new[] { "en", "ko" })
+            {
+                SetLanguage(locale); await Settle();
+                var source = singleCellSource; var request = detailCellRead; var loader = detailLoader; var payload = detailPayload.GetRawText(); var body = detail.Text; var metadata = detailMetadata.Text; var ranges = detailRange.Text; var offset = detailOffset; var next = detailNext; var cursor = detailCursor; var itemNext = detailItemNext; var first = firstDetail.IsEnabled; var moreText = nextDetail.IsEnabled; var scope = CurrentChangeScope; var queryReads = changeQueryReadsForSmoke; var physicalA = Before.CaptureSelection(); var physicalB = After.CaptureSelection(); var rows = After.Cells.ItemsSource; var hostA = Before.Host; var hostB = After.Host;
+                object Reading() => new { query = CurrentChangeScope, loaded_query = loadedChangeScope, comparison_state = ComparisonState, physical_before = Before.CaptureSelection(), physical_after = After.CaptureSelection(), owner = singleCellSource, request = detailCellRead, payload = detailPayload, raw_body = detail.Text, technical = detailMetadata.Text, ranges = detailRange.Text, offset = detailOffset, next = detailNext, first_enabled = firstDetail.IsEnabled, next_enabled = nextDetail.IsEnabled, visible_after_native = SourceViewportForSmoke(After) };
+                var beforeReload = Reading(); await observe("source34-equal-source-baseline-" + locale, beforeReload);
+                // This is the real production retaining reload, not a mounted
+                // sole-source mode action (those choices remain disabled).
+                await ReloadQueryKeepingSources(); await Settle();
+                var fields = new Dictionary<string, bool> { ["same_fixed_equal_query"] = CurrentChangeScope == scope && loadedChangeScope == scope && ComparisonState == "ready" && singleSource && changeQueryReadsForSmoke == queryReads, ["same_owned_source_request"] = ReferenceEquals(source, singleCellSource) && ReferenceEquals(request, detailCellRead) && ReferenceEquals(loader, detailLoader) && SingleSourceCurrent && HasIndependentSourceDetail, ["exact_raw_payload_and_body"] = detailPayload.GetRawText() == payload && detail.Text == body && detailMetadata.Text == metadata && detailRange.Text == ranges, ["exact_continuation_and_pagers"] = detailOffset == offset && detailNext == next && detailCursor == cursor && detailItemNext == itemNext && firstDetail.IsEnabled == first && nextDetail.IsEnabled == moreText, ["physical_sources_and_native_hosts"] = Before.CaptureSelection() == physicalA && After.CaptureSelection() == physicalB && ReferenceEquals(rows, After.Cells.ItemsSource) && ReferenceEquals(hostA, Before.Host) && ReferenceEquals(hostB, After.Host), ["fixed_report_bytes"] = reportId == report && currentReport.GetRawText() == reportBytes };
+                var observed = new { language = locale, route = "Programmatic actual production source-preserving same-query reload; no mounted sole-source mode or OS input claim", before = beforeReload, after = Reading(), checks = fields }; await observe("source34-equal-source-reloaded-" + locale, observed); foreach (var field in fields) if (!field.Value) throw new InvalidOperationException("Equal-source raw retention failed: " + field.Key); observations.Add(observed);
+            }
+            return observations;
+        }
+        finally
+        {
+            Before.RestoreSelection(a); After.RestoreSelection(b); intervalFrom = from; intervalTo = to; UpdateInterval(); await ReloadComparisonCore(true); await SelectCell(Before, Before.FocusedRow, Before.FocusedColumn); SetLanguage(language); SetLayout(layout); sourceView.SelectedIndex = previousText ? 1 : 0; await Settle();
+        }
+    }
     internal async Task<object> CheckSource28RawModeContinuationForSmoke(Func<string, object, Task> observe)
     {
         if (!IsWorkbook || Before.FocusedAddress != "D4" || !HasIndependentSourceDetail) throw new InvalidOperationException("Mode-continuation qualification requires the actual independent D4 reader.");
@@ -2812,6 +2863,7 @@ internal sealed class MainWindow : Window
             {
                 await pane.GoForSmoke("C2"); await Settle(); results.Add(new { route = "programmatic_address_C2", side = pane.PresentedSideName, header = pane.CheckFocusedHeaderForSmoke() });
                 results.Add(new { route = "actual_SelectedCellsChanged_D4", side = pane.PresentedSideName, header = await pane.SelectNativePhysicalCellForSmoke(4, 4) });
+                results.Add(new { route = "native_header_click_and_cached_focus_styles", side = pane.PresentedSideName, headers = await pane.CheckHeaderActivationForSmoke((name, value) => observe("source34-header-activation-" + (ReferenceEquals(pane, Before) ? "before" : "after") + "-" + name, value)) });
             }
             await SelectCell(Before, 4, 4); await Settle(); ScopeUnchanged();
             var focusedA = Before.CaptureSelection(); var focusedB = After.CaptureSelection(); var rawDetail = detailPayload.GetRawText(); var rawMetadata = detailMetadata.Text; var gridA = Before.Cells.ItemsSource; var gridB = After.Cells.ItemsSource;

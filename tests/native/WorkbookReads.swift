@@ -32,7 +32,7 @@ import AppKit
         }
         try control();await model.start()
         model.projectID="project";model.reportID="report"
-        model.report=JSON(["report_id":"report","revisions":[["revision_occurrence_id":"old"],["revision_occurrence_id":"new"]]])
+        model.report=JSON(["report_id":"report","revisions":[["revision_occurrence_id":"old","sheets":[["sheet_id":"sheet-old"]]],["revision_occurrence_id":"new","sheets":[["sheet_id":"sheet-new"]]]]])
         model.beforeID="old";model.afterID="new";model.beforeSheetID="sheet-old";model.afterSheetID="sheet-new"
         try require(model.ready,"ModelNotReady")
         model.beforeAddress="B2";model.afterAddress="";model.rowStart=2;model.columnStart=2
@@ -106,8 +106,10 @@ import AppKit
         model.addressInput="A2";await model.goToAddress()
         try require(model.addressFailure.isEmpty && model.cellFailure.isEmpty,"ValidAddressDidNotClearValidation")
         model.changes=[JSON(["change_id":"bad","from_revision_occurrence_id":"foreign","to_revision_occurrence_id":"new"])]
+        let beforeRejected=try JSON(["before":model.beforeID,"after":model.afterID,"left_sheet":model.beforeSheetID,"right_sheet":model.afterSheetID,"left_address":model.beforeAddress,"right_address":model.afterAddress,"row":model.selectedRow,"column":model.selectedColumn,"left_raw":model.beforeCell.raw,"right_raw":model.afterCell.raw,"range":model.rangeScope,"query":model.comparisonScope,"reveal":model.revealGeneration]).data(),beforeHistory=model.cellHistoryAnchor,beforeRejectedRequests=try Data(contentsOf:root.appendingPathComponent("read-events.jsonl"))
         await model.chooseChange("bad")
-        try require(!model.cellFailure.isEmpty && model.cellHistoryAnchor==nil && model.selectedRow==0 && model.selectedChangeID.isEmpty && !model.loadingCell,"InvalidChangeRetriedPreviousCell")
+        let afterRejected=try JSON(["before":model.beforeID,"after":model.afterID,"left_sheet":model.beforeSheetID,"right_sheet":model.afterSheetID,"left_address":model.beforeAddress,"right_address":model.afterAddress,"row":model.selectedRow,"column":model.selectedColumn,"left_raw":model.beforeCell.raw,"right_raw":model.afterCell.raw,"range":model.rangeScope,"query":model.comparisonScope,"reveal":model.revealGeneration]).data()
+        try require(beforeRejected==afterRejected && model.cellHistoryAnchor==beforeHistory && model.cellFailure.isEmpty && model.selectedChangeID.isEmpty && model.selectedChange.isNull && !model.canReturnToChange && !model.loadingCell && (try Data(contentsOf:root.appendingPathComponent("read-events.jsonl")))==beforeRejectedRequests,"InvalidChangeMovedPhysicalSourceOrRetainedEventAuthority")
         await model.selectCell(2,1)
 
         try control("late","stale",delay:500)
@@ -181,6 +183,7 @@ import AppKit
         try await checkPagedFirstSelection(resources:resources,root:root)
         try await checkMethodIntervalPreservation(resources:resources,root:root)
         try await checkInitialPhysicalOwnership(resources:resources,root:root)
+        try await checkEventAuthority(resources:resources,root:root)
         model.closeReads()
         try require(model.blankFormattingWarning.isEmpty,"ClosedWindowKeptFormattingWarning")
         await model.loadSelectedCells()
@@ -253,6 +256,53 @@ import AppKit
         try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("paged-selection-proof.json"))
         print("PASS native workbook paged selection: first eligible event, retained off-page selection/raw/window, manual browse Return, method-preserving retry and immutable source guards")
         model.closeReads()
+    }
+    @MainActor private static func checkEventAuthority(resources:URL,root:URL)async throws {
+        func require(_ value:Bool,_ name:String)throws{if !value{throw NSError(domain:name,code:1)}}
+        let raw="AUTHORITY RAW\r\né / e\u{301}",revisions=["old","mid","new"].map{["revision_occurrence_id":$0,"sheets":[["sheet_id":"sheet-"+$0]]] as [String:Any]}
+        func event(_ id:String,from:String="old",to:String="new",kind:String="stored_value",left:String="D4",right:String="D4",leftSheet:String?=nil,rightSheet:String?=nil)->JSON {JSON(["change_id":id,"kind":kind,"from_revision_occurrence_id":from,"to_revision_occurrence_id":to,"from_sheet_id":leftSheet ?? "sheet-"+from,"to_sheet_id":rightSheet ?? "sheet-"+to,"before_address":left,"after_address":right])}
+        func control(_ pages:[[JSON]])throws {try JSON(["mode":"changes-supported","value":raw,"scoped_cells":true,"pages":pages.map{$0.map(\.raw)}]).data().write(to:root.appendingPathComponent("control.json"),options:.atomic)}
+        func records()throws->Data{try Data(contentsOf:root.appendingPathComponent("read-events.jsonl"))}
+        let good=event("qualified");try control([[good],[]])
+        let model=WorkbookModel(bridge:Bridge(resources:resources,library:root));await model.start();defer{model.closeReads()}
+        model.projectID="project";model.reportID="authority-report";model.report=JSON(["report_id":"authority-report","revisions":revisions]);model.beforeID="old";model.afterID="new";model.beforeSheetID="sheet-old";model.afterSheetID="sheet-new"
+        await model.changeVersions(before:"old",after:"new")
+        func source()throws->Data{try JSON(["before":model.beforeID,"after":model.afterID,"left_sheet":model.beforeSheetID,"right_sheet":model.afterSheetID,"left_address":model.beforeAddress,"right_address":model.afterAddress,"left_raw":model.beforeCell.raw,"right_raw":model.afterCell.raw,"left_grid":model.beforeCells.map(\.raw),"right_grid":model.afterCells.map(\.raw),"row":model.selectedRow,"column":model.selectedColumn,"window":[model.rowStart,model.columnStart,model.beforeRowStart,model.beforeColumnStart,model.afterRowStart,model.afterColumnStart],"reveal_generation":model.revealGeneration,"text_offset":model.cellTextOffset]).data()}
+        var rejected:[String]=[]
+        let invalid:[(String,JSON,String,String,String)]=[
+            ("outside_interval",event("outside",from:"old",to:"new"),"mid","new","history"),
+            ("reversed",event("reversed",from:"new",to:"old"),"old","new","history"),
+            ("net_intermediate",event("intermediate",to:"mid"),"old","new","range_net"),
+            ("foreign_sheet",event("foreign",leftSheet:"sheet-new"),"old","new","history"),
+            ("invalid_address",event("invalid",left:"D0"),"old","new","history"),
+            ("address_without_sheet",event("unowned",rightSheet:""),"old","new","history")]
+        for (name,bad,from,to,mode) in invalid {
+            model.changesFromID=from;model.changesToID=to;model.changesMode=mode;model.changes=[bad];model.selectedChangeID=bad["change_id"].string
+            try require(model.selectedChange.isNull,"InvalidVisibleEventAuthorized_"+name)
+            let fixedSource=try source(),fixedReport=try model.report.data(),fixedScope=model.comparisonScope,requests=try records()
+            await model.chooseChange(bad["change_id"].string)
+            try require(model.selectedChangeID.isEmpty && model.selectedChange.isNull && !model.canReturnToChange && (try source())==fixedSource && (try model.report.data())==fixedReport && model.comparisonScope==fixedScope && (try records())==requests,"RejectedEventMovedSourceQueriedOrKeptAuthority_"+name)
+            rejected.append(name)
+        }
+        model.changesFromID="old";model.changesToID="new";model.changesMode="history";model.mode="history"
+        let metadata=[event("date",kind:"date_system",left:"",right:"",leftSheet:"",rightSheet:""),event("calculation",kind:"calculation_settings",left:"",right:"",leftSheet:"",rightSheet:""),event("one-sided-sheet",kind:"sheet_observation",left:"",right:"",rightSheet:""),event("merges",kind:"merges",left:"",right:"")]
+        for item in metadata {model.changes=[item];await model.chooseChange(item["change_id"].string);try require(model.selectedChange["change_id"].string==item["change_id"].string && model.showingSheetMetadata,"LegitimateMetadataEventRejected_"+item["kind"].string)}
+        let one=event("one-sided",right:"",rightSheet:"");model.changes=[one];await model.chooseChange("one-sided")
+        try require(model.selectedChangeID=="one-sided" && model.beforeCell["value"].string.utf16.elementsEqual((raw+":old:sheet-old:D4").utf16) && model.afterCell.isNull,"LegitimateOneSidedPhysicalEventRejected")
+        try control([[good],[]]);await model.loadChanges(preserveEndpoints:true);await model.chooseChange("qualified");await model.loadChanges(next:true)
+        try require(model.changes.isEmpty && model.selectedChange["change_id"].string=="qualified","ControlledOffPageAuthorityNotEstablished")
+        model.report=JSON(["report_id":"authority-report","revisions":revisions.map{item in var value=item;if value["revision_occurrence_id"] as? String=="old"{value["sheets"]=[]};return value}])
+        try require(model.selectedChange.isNull,"OffPageRetainedEventIgnoredPhysicalMembership")
+        let retainedSource=try source(),retainedReport=try model.report.data(),retainedScope=model.comparisonScope,requests=try records()
+        await model.returnToChange()
+        try require(model.selectedChangeID.isEmpty && !model.canReturnToChange && (try source())==retainedSource && (try model.report.data())==retainedReport && model.comparisonScope==retainedScope && (try records())==requests,"InvalidPagedAnchorMovedSourceOrRetainedReturnAuthority")
+        model.report=JSON(["report_id":"authority-report","revisions":revisions]);await model.chooseChange("qualified")
+        try require(model.selectedChangeID.isEmpty && !model.canReturnToChange && (try source())==retainedSource && (try records())==requests,"InvalidPagedAuthorityRevivedAfterMembershipRestored")
+        let proofURL=root.appendingPathComponent("initial-ownership-proof.json");var proof=try JSONSerialization.jsonObject(with:Data(contentsOf:proofURL)) as! [String:Any]
+        proof["source34_event_authority"]=["scope":"actual WorkbookModel/Bridge with controlled malformed visible and paged events; no claim of a normal backend misroute","rejected_visible_cases":rejected,"invalid_selection_clears_anchor_without_source_query_or_mutation":true,"metadata_kinds_accepted":metadata.map{$0["kind"].string},"one_sided_physical_raw_preserved":true,"invalid_off_page_membership_rejected_and_return_cleared":true]
+        let data=try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]);try data.write(to:proofURL)
+        if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_WORKBOOK_INITIAL_OWNERSHIP_EVIDENCE_OUT"],!path.isEmpty{try data.write(to:URL(fileURLWithPath:path))}
+        print("PASS native workbook event authority: interval/order/method/physical-sheet guards, metadata and one-sided positives, rejected paged authority without source mutation or queries")
     }
     @MainActor private static func checkMethodIntervalPreservation(resources:URL,root:URL) async throws {
         let model=WorkbookModel(bridge:Bridge(resources:resources,library:root))

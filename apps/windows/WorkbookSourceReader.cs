@@ -27,7 +27,7 @@ internal sealed record WorkbookSingleSource(string Project, string Report, strin
         if (availability != "available" || items.Count > read.Limit || total < items.Count) return false;
         if (!style)
         {
-            if (read.Cursor.Length != 0 || total != 1 || items.Count != 1 || response.Get("next_cursor").ValueKind != JsonValueKind.Null || !Cell.CellMatches(items[0])) return false;
+            if (read.Cursor.Length != 0 || !WorkbookCellRead.IsOneCellEnvelope(response) || !Cell.CellMatches(items[0])) return false;
             cell = items[0]; return true;
         }
         // An available cell may have no style observations. A terminal style
@@ -39,6 +39,7 @@ internal sealed record WorkbookSingleSource(string Project, string Report, strin
 internal sealed record WorkbookCellRead(WorkbookSingleSource Source, string Component, int Offset, string Cursor, int Limit = 1)
 {
     internal static bool IsCellComponent(JsonElement component) => component.ValueKind == JsonValueKind.Undefined || component.ValueKind == JsonValueKind.String && component.Text() == "cell";
+    internal static bool IsOneCellEnvelope(JsonElement response) => response.Get("schema_version").Text() == "workbook.1" && response.Get("items").ValueKind == JsonValueKind.Array && response.Get("items").GetArrayLength() == 1 && response.Get("total").ValueKind == JsonValueKind.Number && response.Get("total").TryGetInt32(out var total) && total == 1 && response.Get("next_cursor").ValueKind == JsonValueKind.Null;
     internal Dictionary<string, object?> Arguments()
     {
         var cell = Source.Cell;
@@ -63,7 +64,7 @@ internal sealed record WorkbookPairSource(string Project, string Report, Workboo
     internal bool ReadCellResponse(string side, JsonElement response, out JsonElement cell)
     {
         cell = default; var source = Side(side); var items = response.Get("items").Items();
-        if (!source.HasCell || response.Get("project_id").Text() != Project || response.Get("report_id").Text() != Report || response.Get("revision_occurrence_id").Text() != source.Occurrence || response.Get("sheet_id").Text() != source.Sheet || response.Get("availability").Text() != "available" || !WorkbookCellRead.IsCellComponent(response.Get("component")) || items.Count != 1 || !source.CellMatches(items[0])) return false;
+        if (!source.HasCell || !WorkbookCellRead.IsOneCellEnvelope(response) || response.Get("project_id").Text() != Project || response.Get("report_id").Text() != Report || response.Get("revision_occurrence_id").Text() != source.Occurrence || response.Get("sheet_id").Text() != source.Sheet || response.Get("availability").Text() != "available" || !WorkbookCellRead.IsCellComponent(response.Get("component")) || !source.CellMatches(items[0])) return false;
         cell = items[0]; return true;
     }
     internal int? NextOffset(JsonElement payload, int current)

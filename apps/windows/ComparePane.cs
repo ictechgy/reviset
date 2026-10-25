@@ -41,7 +41,7 @@ internal sealed class ComparePane
     private readonly TextBlock pageCaption = new() { Margin = new Thickness(7, 2, 4, 0) };
     private readonly TextBlock sheetCaption = new() { Margin = new Thickness(7, 2, 4, 0) };
     private readonly TextBox fallback = MainWindow.SourceText();
-    internal readonly DataGrid Cells = new() { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, CanUserDeleteRows = false, CanUserReorderColumns = false, HeadersVisibility = DataGridHeadersVisibility.Column, EnableRowVirtualization = true, EnableColumnVirtualization = true, SelectionMode = DataGridSelectionMode.Single, SelectionUnit = DataGridSelectionUnit.Cell, GridLinesVisibility = DataGridGridLinesVisibility.All, RowHeight = 26, FontFamily = new FontFamily("Consolas, Segoe UI"), BorderThickness = new Thickness(0) };
+    internal readonly DataGrid Cells = new() { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, CanUserDeleteRows = false, CanUserReorderColumns = false, CanUserSortColumns = false, HeadersVisibility = DataGridHeadersVisibility.Column, EnableRowVirtualization = true, EnableColumnVirtualization = true, SelectionMode = DataGridSelectionMode.Single, SelectionUnit = DataGridSelectionUnit.Cell, GridLinesVisibility = DataGridGridLinesVisibility.All, RowHeight = 26, FontFamily = new FontFamily("Consolas, Segoe UI"), BorderThickness = new Thickness(0) };
     internal readonly Image PageImage = new() { Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
     internal readonly ScrollViewer PageScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     private readonly Slider zoom = new() { Minimum = .1, Maximum = 2, Value = 1, Width = 95, Margin = new Thickness(5), VerticalAlignment = VerticalAlignment.Center };
@@ -311,20 +311,26 @@ internal sealed class ComparePane
         if (!owner.EvidencePresented || cellDetails.IsExpanded || cellValue.Text.Length != 0 || cellFormula.Text.Length != 0 || cellValue.Visibility != Visibility.Collapsed || cellFormula.Visibility != Visibility.Collapsed || !openCellSource.IsVisible || !openCellSource.IsEnabled || Cells.ActualWidth < 300 || scroll.ViewportHeight < 3) throw new InvalidOperationException("Evidence did not collapse duplicate raw previews or retain a readable grid and visible source route.");
         return new { physical_address = FocusedAddress, inline_details_collapsed = true, duplicate_raw_previews_cleared = true, cell_source_action_visible = true, source_width = Cells.ActualWidth, visible_source_rows = scroll.ViewportHeight, scope = "Production retained native WPF controls; no OS input assertion" };
     }
+    private readonly Style normalHeaderStyle = CreateColumnHeaderStyle(false);
+    private readonly Style focusedHeaderStyle = CreateColumnHeaderStyle(true);
+    private static Style CreateColumnHeaderStyle(bool focused)
+    {
+        var templateRoot = new FrameworkElementFactory(typeof(Grid)); var border = new FrameworkElementFactory(typeof(Border)); border.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(207, 215, 225))); border.SetValue(Border.BorderThicknessProperty, new Thickness(0, 0, 1, 1)); border.SetBinding(Border.BackgroundProperty, new Binding(nameof(Control.Background)) { RelativeSource = RelativeSource.TemplatedParent });
+        var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetBinding(ContentPresenter.ContentProperty, new Binding(nameof(ContentControl.Content)) { RelativeSource = RelativeSource.TemplatedParent }); content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); border.AppendChild(content); templateRoot.AppendChild(border);
+        // Preserve native user column resizing through the WPF header's
+        // documented template parts while removing only hover colour.
+        foreach (var part in new[] { (Name: "PART_LeftHeaderGripper", Alignment: HorizontalAlignment.Left), (Name: "PART_RightHeaderGripper", Alignment: HorizontalAlignment.Right) }) { var thumb = new FrameworkElementFactory(typeof(Thumb), part.Name); thumb.SetValue(FrameworkElement.WidthProperty, 5d); thumb.SetValue(FrameworkElement.HorizontalAlignmentProperty, part.Alignment); thumb.SetValue(Control.BackgroundProperty, Brushes.Transparent); thumb.SetValue(FrameworkElement.CursorProperty, Cursors.SizeWE); templateRoot.AppendChild(thumb); }
+        var style = new Style(typeof(DataGridColumnHeader)); style.Setters.Add(new Setter(Control.TemplateProperty, new ControlTemplate(typeof(DataGridColumnHeader)) { VisualTree = templateRoot })); style.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(focused ? Color.FromRgb(220, 235, 253) : Color.FromRgb(244, 246, 249)))); style.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.Black)); style.Setters.Add(new Setter(Control.FontFamilyProperty, new FontFamily("Segoe UI"))); style.Setters.Add(new Setter(Control.FontWeightProperty, focused ? FontWeights.SemiBold : FontWeights.Normal)); style.Setters.Add(new Setter(FrameworkElement.HeightProperty, 26d));
+        // No IsMouseOver trigger: pointer hover cannot impersonate selection.
+        style.Seal(); return style;
+    }
     private void RefreshColumnHeaders()
     {
         for (var index = 0; index < Cells.Columns.Count; index++)
         {
             // Index zero is the frozen physical row-number column.
             var focused = index > 0 && focusedColumn > 0 && column + index - 1 == focusedColumn;
-            var templateRoot = new FrameworkElementFactory(typeof(Grid)); var border = new FrameworkElementFactory(typeof(Border)); border.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(207, 215, 225))); border.SetValue(Border.BorderThicknessProperty, new Thickness(0, 0, 1, 1)); border.SetBinding(Border.BackgroundProperty, new Binding(nameof(Control.Background)) { RelativeSource = RelativeSource.TemplatedParent });
-            var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetBinding(ContentPresenter.ContentProperty, new Binding(nameof(ContentControl.Content)) { RelativeSource = RelativeSource.TemplatedParent }); content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); border.AppendChild(content); templateRoot.AppendChild(border);
-            // Preserve native user column resizing through the WPF header's
-            // documented template parts while removing only hover colour.
-            foreach (var part in new[] { (Name: "PART_LeftHeaderGripper", Alignment: HorizontalAlignment.Left), (Name: "PART_RightHeaderGripper", Alignment: HorizontalAlignment.Right) }) { var thumb = new FrameworkElementFactory(typeof(Thumb), part.Name); thumb.SetValue(FrameworkElement.WidthProperty, 5d); thumb.SetValue(FrameworkElement.HorizontalAlignmentProperty, part.Alignment); thumb.SetValue(Control.BackgroundProperty, Brushes.Transparent); thumb.SetValue(FrameworkElement.CursorProperty, Cursors.SizeWE); templateRoot.AppendChild(thumb); }
-            var style = new Style(typeof(DataGridColumnHeader)); style.Setters.Add(new Setter(Control.TemplateProperty, new ControlTemplate(typeof(DataGridColumnHeader)) { VisualTree = templateRoot })); style.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(focused ? Color.FromRgb(220, 235, 253) : Color.FromRgb(244, 246, 249)))); style.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.Black)); style.Setters.Add(new Setter(Control.FontFamilyProperty, new FontFamily("Segoe UI"))); style.Setters.Add(new Setter(Control.FontWeightProperty, focused ? FontWeights.SemiBold : FontWeights.Normal)); style.Setters.Add(new Setter(FrameworkElement.HeightProperty, 26d));
-            // No IsMouseOver trigger: pointer hover cannot impersonate selection.
-            Cells.Columns[index].HeaderStyle = style;
+            Cells.Columns[index].HeaderStyle = focused ? focusedHeaderStyle : normalHeaderStyle;
         }
     }
     internal async Task<object> SelectNativePhysicalCellForSmoke(int physicalRow, int physicalColumn)
@@ -334,6 +340,35 @@ internal sealed class ComparePane
         Cells.SelectedCells.Clear(); Cells.SelectedCells.Add(new DataGridCellInfo(item, Cells.Columns[index])); await selectionRequest; Host.UpdateLayout(); await owner.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         if (focusedRow != physicalRow || focusedColumn != physicalColumn) throw new InvalidOperationException("The actual SelectedCellsChanged handler did not install the requested physical cell.");
         return CheckFocusedHeaderForSmoke();
+    }
+    internal async Task<object> CheckHeaderActivationForSmoke(Func<string, object, Task> observe)
+    {
+        var originalRow = focusedRow; var originalColumn = focusedColumn; var styleObservations = new List<object>();
+        foreach (var target in new[] { (Row: row, Column: column), (Row: originalRow, Column: originalColumn), (Row: row, Column: column), (Row: originalRow, Column: originalColumn) })
+        {
+            await SelectNativePhysicalCellForSmoke(target.Row, target.Column);
+            var styles = Cells.Columns.Select((item, index) => new { physical_header = item.Header, style_identity = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(item.HeaderStyle), is_cached = ReferenceEquals(item.HeaderStyle, index > 0 && column + index - 1 == focusedColumn ? focusedHeaderStyle : normalHeaderStyle) }).ToArray();
+            var focusObservation = new { address = FocusedAddress, styles }; styleObservations.Add(focusObservation); await observe("style-focus-" + styleObservations.Count, focusObservation);
+            if (styles.Any(item => !item.is_cached)) throw new InvalidOperationException("Physical focus rebuilt a header style instead of reusing the two native styles.");
+        }
+        var expectedOrder = Enumerable.Range(row, Cells.Items.Count).ToArray(); var sourceRows = Cells.ItemsSource; var queryIdentity = owner.QueryIdentityForSmoke; var physical = CaptureSelection(); var results = new List<object>();
+        foreach (var targetColumn in new[] { Cells.Columns[0], Cells.Columns[focusedColumn - column + 1] })
+        {
+            Cells.UpdateLayout(); var header = Descendants(Cells).OfType<DataGridColumnHeader>().Single(item => item.IsVisible && ReferenceEquals(item.Column, targetColumn)); var clicked = 0;
+            RoutedEventHandler clickedHandler = (_, _) => clicked++; header.Click += clickedHandler;
+            try
+            {
+                // RaiseEvent(Click) alone skips the native OnClick -> PerformSort
+                // branch. Invoke that actual control method without OS input.
+                var onClick = typeof(DataGridColumnHeader).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic) ?? throw new InvalidOperationException("The native header activation method is unavailable.");
+                onClick.Invoke(header, null); Cells.UpdateLayout(); await owner.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                var observedOrder = Cells.Items.OfType<GridRow>().Select(item => item.Row).ToArray();
+                var fields = new Dictionary<string, bool> { ["native_click_path_executed"] = clicked == 1, ["sorting_disabled"] = !Cells.CanUserSortColumns && !targetColumn.CanUserSort, ["physical_view_order"] = observedOrder.SequenceEqual(expectedOrder), ["no_sort_state"] = Cells.Items.SortDescriptions.Count == 0 && Cells.Columns.All(item => item.SortDirection is null), ["source_rows_retained"] = ReferenceEquals(sourceRows, Cells.ItemsSource), ["physical_and_query_raw_unchanged"] = CaptureSelection() == physical && owner.QueryIdentityForSmoke == queryIdentity, ["native_resize_parts_retained"] = header.Template.FindName("PART_LeftHeaderGripper", header) is Thumb && header.Template.FindName("PART_RightHeaderGripper", header) is Thumb };
+                var observation = new { physical_header = targetColumn.Header, native_type = header.GetType().FullName, activation = "Actual native DataGridColumnHeader.OnClick; programmatic control activation, no OS mouse input", expected_physical_rows = expectedOrder, actual_physical_rows = observedOrder, sort_descriptions = Cells.Items.SortDescriptions.Select(item => new { item.PropertyName, direction = item.Direction.ToString() }).ToArray(), sort_direction = targetColumn.SortDirection?.ToString(), focused_address = FocusedAddress, checks = fields }; await observe(targetColumn.DisplayIndex == 0 ? "row-number" : "physical-" + targetColumn.Header, observation); foreach (var field in fields) if (!field.Value) throw new InvalidOperationException("Native header activation failed: " + field.Key); results.Add(observation);
+            }
+            finally { header.Click -= clickedHandler; }
+        }
+        return new { cached_style_count = 2, focus_style_observations = styleObservations, native_header_activations = results };
     }
     internal object CheckFocusedHeaderForSmoke()
     {
