@@ -35,6 +35,10 @@
     "en": "The endpoint comparison reached its limit. Showing the full interval history, which differs from net changes between the two versions.",
     "ko": "양끝 차이 계산 한도에 도달하여 구간 전체 이력으로 표시합니다. 두 버전 사이의 순변경과는 다릅니다."
   },
+  "workbook.warning.unverifiedSelection": {
+    "en": "Could not verify the selected change event. The displayed source is unchanged.",
+    "ko": "선택한 변경 이벤트를 확인하지 못했습니다. 표시 중인 원본은 그대로 유지됩니다."
+  },
   "workbook.error.address": {
     "en": "Enter a physical cell address from A1 to XFD1048576.",
     "ko": "A1–XFD1048576 형식의 물리 셀 주소를 입력하세요."

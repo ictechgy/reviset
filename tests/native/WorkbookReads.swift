@@ -44,6 +44,9 @@ import AppKit
 
         try control("cell-fail");await model.selectCell(2,1)
         try require(!model.cellFailure.isEmpty && !model.loadingCell && model.beforeCell.isNull && model.afterCell.isNull,"FirstReadFailureKeptSourceOrSpinner")
+        let firstCellFailure=model.cellFailure
+        await model.chooseChange("missing-after-cell-failure")
+        try require(model.cellFailure==firstCellFailure && !model.selectionNotice.isEmpty && model.rangeFailure.isEmpty,"RejectedSelectionOverwroteCellReadFailure")
         try control();await model.loadSelectedCells()
         try require(model.cellFailure.isEmpty && model.beforeCell["value"].string=="fresh" && model.afterCell["address"].string=="A2","FirstReadRetryFailed")
         try requireCellRequestScope()
@@ -62,6 +65,9 @@ import AppKit
         try require(model.cellFailure.isEmpty && model.beforeCell.isNull && model.afterCell.isNull,"MissingCellIsReadFailure")
         try control("grid-fail");await model.loadRange()
         try require(!model.rangeFailure.isEmpty && !model.loadingRange && model.beforeCells.isEmpty && model.afterCells.isEmpty,"RangeFailureKeptStaleGrid")
+        let firstRangeFailure=model.rangeFailure
+        await model.chooseChange("missing-after-range-failure")
+        try require(model.rangeFailure==firstRangeFailure && !model.selectionNotice.isEmpty && model.cellFailure.isEmpty,"RejectedSelectionOverwroteRangeReadFailure")
         try control();await model.loadRange()
         try require(model.rangeFailure.isEmpty && model.beforeCells.first?["address"].string=="A2" && model.afterCells.first?["value"].string=="fresh","RangeRetryFailed")
         model.addressInput="ZZZZ1";await model.goToAddress()
@@ -109,8 +115,9 @@ import AppKit
         let beforeRejected=try JSON(["before":model.beforeID,"after":model.afterID,"left_sheet":model.beforeSheetID,"right_sheet":model.afterSheetID,"left_address":model.beforeAddress,"right_address":model.afterAddress,"row":model.selectedRow,"column":model.selectedColumn,"left_raw":model.beforeCell.raw,"right_raw":model.afterCell.raw,"range":model.rangeScope,"query":model.comparisonScope,"reveal":model.revealGeneration]).data(),beforeHistory=model.cellHistoryAnchor,beforeRejectedRequests=try Data(contentsOf:root.appendingPathComponent("read-events.jsonl"))
         await model.chooseChange("bad")
         let afterRejected=try JSON(["before":model.beforeID,"after":model.afterID,"left_sheet":model.beforeSheetID,"right_sheet":model.afterSheetID,"left_address":model.beforeAddress,"right_address":model.afterAddress,"row":model.selectedRow,"column":model.selectedColumn,"left_raw":model.beforeCell.raw,"right_raw":model.afterCell.raw,"range":model.rangeScope,"query":model.comparisonScope,"reveal":model.revealGeneration]).data()
-        try require(beforeRejected==afterRejected && model.cellHistoryAnchor==beforeHistory && model.cellFailure.isEmpty && model.selectedChangeID.isEmpty && model.selectedChange.isNull && !model.canReturnToChange && !model.loadingCell && (try Data(contentsOf:root.appendingPathComponent("read-events.jsonl")))==beforeRejectedRequests,"InvalidChangeMovedPhysicalSourceOrRetainedEventAuthority")
+        try require(beforeRejected==afterRejected && model.cellHistoryAnchor==beforeHistory && model.cellFailure.isEmpty && model.selectedChangeID.isEmpty && model.selectedChange.isNull && !model.canReturnToChange && !model.loadingCell && model.selectionNotice=="선택한 변경 이벤트를 확인하지 못했습니다. 표시 중인 원본은 그대로 유지됩니다." && (try Data(contentsOf:root.appendingPathComponent("read-events.jsonl")))==beforeRejectedRequests,"InvalidChangeMovedPhysicalSourceOrRetainedEventAuthority")
         await model.selectCell(2,1)
+        try require(model.selectionNotice.isEmpty,"ManualGridSelectionKeptRejectedEventNotice")
 
         try control("late","stale",delay:500)
         let late=Task { await model.loadSelectedCells() }
@@ -259,37 +266,64 @@ import AppKit
     }
     @MainActor private static func checkEventAuthority(resources:URL,root:URL)async throws {
         func require(_ value:Bool,_ name:String)throws{if !value{throw NSError(domain:name,code:1)}}
-        let raw="AUTHORITY RAW\r\né / e\u{301}",revisions=["old","mid","new"].map{["revision_occurrence_id":$0,"sheets":[["sheet_id":"sheet-"+$0]]] as [String:Any]}
+        let raw="AUTHORITY RAW\r\né / e\u{301} 🧪 👨‍👩‍👧‍👦 {0} %",revisions=["old","mid","new"].map{["revision_occurrence_id":$0,"sheets":[["sheet_id":"sheet-"+$0]]] as [String:Any]}
         func event(_ id:String,from:String="old",to:String="new",kind:String="stored_value",left:String="D4",right:String="D4",leftSheet:String?=nil,rightSheet:String?=nil)->JSON {JSON(["change_id":id,"kind":kind,"from_revision_occurrence_id":from,"to_revision_occurrence_id":to,"from_sheet_id":leftSheet ?? "sheet-"+from,"to_sheet_id":rightSheet ?? "sheet-"+to,"before_address":left,"after_address":right])}
         func control(_ pages:[[JSON]])throws {try JSON(["mode":"changes-supported","value":raw,"scoped_cells":true,"pages":pages.map{$0.map(\.raw)}]).data().write(to:root.appendingPathComponent("control.json"),options:.atomic)}
         func records()throws->Data{try Data(contentsOf:root.appendingPathComponent("read-events.jsonl"))}
         let good=event("qualified");try control([[good],[]])
-        let model=WorkbookModel(bridge:Bridge(resources:resources,library:root));await model.start();defer{model.closeReads()}
+        let model=WorkbookModel(bridge:Bridge(resources:resources,library:root));await model.start()
+        let originalLanguage=LanguagePreferences.shared.selection
+        defer{LanguagePreferences.shared.selection=originalLanguage;model.closeReads()}
         model.projectID="project";model.reportID="authority-report";model.report=JSON(["report_id":"authority-report","revisions":revisions]);model.beforeID="old";model.afterID="new";model.beforeSheetID="sheet-old";model.afterSheetID="sheet-new"
         await model.changeVersions(before:"old",after:"new")
-        func source()throws->Data{try JSON(["before":model.beforeID,"after":model.afterID,"left_sheet":model.beforeSheetID,"right_sheet":model.afterSheetID,"left_address":model.beforeAddress,"right_address":model.afterAddress,"left_raw":model.beforeCell.raw,"right_raw":model.afterCell.raw,"left_grid":model.beforeCells.map(\.raw),"right_grid":model.afterCells.map(\.raw),"row":model.selectedRow,"column":model.selectedColumn,"window":[model.rowStart,model.columnStart,model.beforeRowStart,model.beforeColumnStart,model.afterRowStart,model.afterColumnStart],"reveal_generation":model.revealGeneration,"text_offset":model.cellTextOffset]).data()}
+        func source()throws->Data{try JSON(["before":model.beforeID,"after":model.afterID,"left_sheet":model.beforeSheetID,"right_sheet":model.afterSheetID,"left_address":model.beforeAddress,"right_address":model.afterAddress,"left_raw":model.beforeCell.raw,"right_raw":model.afterCell.raw,"left_grid":model.beforeCells.map(\.raw),"right_grid":model.afterCells.map(\.raw),"row":model.selectedRow,"column":model.selectedColumn,"address_input":model.addressInput,"window":[model.rowStart,model.columnStart,model.beforeRowStart,model.beforeColumnStart,model.afterRowStart,model.afterColumnStart],"reveal_generation":model.revealGeneration,"text_offset":model.cellTextOffset,"text_next":model.cellTextNext as Any? ?? NSNull()]).data()}
+        func list()throws->Data{try JSON(["scope":model.comparisonScope,"rows":model.changes.map(\.raw),"cursor":model.changeCursor,"previous":model.changePreviousCursors,"page":model.changePageNumber,"total":model.changeTotal]).data()}
+        func history()throws->Data{try JSON(["rows":model.cellHistory.map(\.raw),"message":model.cellHistoryMessage,"failure":model.cellHistoryFailure,"cursor":model.cellHistoryCursor,"previous":model.cellHistoryPreviousCursors,"page":model.cellHistoryPageNumber,"total":model.cellHistoryTotal,"loading":model.loadingHistory]).data()}
+        func reject(_ id:String,_ name:String)async throws {
+            let fixedSource=try source(),fixedReport=try model.report.data(),fixedList=try list(),fixedHistory=try history(),anchor=model.cellHistoryAnchor,requests=try records(),failures=[model.rangeFailure,model.cellFailure,model.addressFailure,model.changesFailure,model.comparisonNotice]
+            await model.chooseChange(id)
+            try require(model.selectedChangeID.isEmpty && model.selectedChange.isNull && !model.canReturnToChange && (try source())==fixedSource && (try model.report.data())==fixedReport && (try list())==fixedList && (try history())==fixedHistory && model.cellHistoryAnchor==anchor && [model.rangeFailure,model.cellFailure,model.addressFailure,model.changesFailure,model.comparisonNotice]==failures && (try records())==requests,"RejectedEventMovedSourceQueriedOrKeptAuthority_"+name)
+            try require(model.selectionNotice=="선택한 변경 이벤트를 확인하지 못했습니다. 표시 중인 원본은 그대로 유지됩니다.","RejectedEventMissingLocalizedNotice_"+name)
+        }
+        // Retain nonzero reader/history paging state as well as actual distinct
+        // Bridge observations; rejecting an event must leave all of it intact.
+        model.cellTextOffset=1024;model.cellTextNext=2048
+        model.cellHistory=[JSON(["change_id":"retained-history","description":raw])];model.cellHistoryCursor="history-next";model.cellHistoryPreviousCursors=[""];model.cellHistoryPageNumber=2;model.cellHistoryTotal=3;model.cellHistoryMessage="retained history";model.cellHistoryFailure="retained history failure"
         var rejected:[String]=[]
+        model.changes=[]
+        try await reject("qualified","stale_removed_event");rejected.append("stale_removed_event")
+        let localizedSource=try source(),localizedHistory=try history(),localizedRequests=try records()
+        LanguagePreferences.shared.selection = .en
+        try require(model.selectionNotice=="Could not verify the selected change event. The displayed source is unchanged.","RejectedNoticeDidNotFollowEnglishLocale")
+        LanguagePreferences.shared.selection = .ko
+        try require(model.selectionNotice=="선택한 변경 이벤트를 확인하지 못했습니다. 표시 중인 원본은 그대로 유지됩니다." && (try source())==localizedSource && (try history())==localizedHistory && (try records())==localizedRequests,"RejectedNoticeLocaleSwitchChangedSourceOrLostKorean")
         let invalid:[(String,JSON,String,String,String)]=[
+            ("missing_id",event(""),"old","new","history"),
+            ("missing_version",event("missing-version",from:"foreign"),"old","new","history"),
             ("outside_interval",event("outside",from:"old",to:"new"),"mid","new","history"),
             ("reversed",event("reversed",from:"new",to:"old"),"old","new","history"),
             ("net_intermediate",event("intermediate",to:"mid"),"old","new","range_net"),
             ("foreign_sheet",event("foreign",leftSheet:"sheet-new"),"old","new","history"),
             ("invalid_address",event("invalid",left:"D0"),"old","new","history"),
-            ("address_without_sheet",event("unowned",rightSheet:""),"old","new","history")]
+            ("address_without_sheet",event("unowned",rightSheet:""),"old","new","history"),
+            ("coordinate_less_formatting_range",event("unlocated-range",kind:"formatting_range",left:"",right:""),"old","new","history")]
         for (name,bad,from,to,mode) in invalid {
             model.changesFromID=from;model.changesToID=to;model.changesMode=mode;model.changes=[bad];model.selectedChangeID=bad["change_id"].string
             try require(model.selectedChange.isNull,"InvalidVisibleEventAuthorized_"+name)
-            let fixedSource=try source(),fixedReport=try model.report.data(),fixedScope=model.comparisonScope,requests=try records()
-            await model.chooseChange(bad["change_id"].string)
-            try require(model.selectedChangeID.isEmpty && model.selectedChange.isNull && !model.canReturnToChange && (try source())==fixedSource && (try model.report.data())==fixedReport && model.comparisonScope==fixedScope && (try records())==requests,"RejectedEventMovedSourceQueriedOrKeptAuthority_"+name)
+            try await reject(bad["change_id"].string,name)
             rejected.append(name)
         }
         model.changesFromID="old";model.changesToID="new";model.changesMode="history";model.mode="history"
         let metadata=[event("date",kind:"date_system",left:"",right:"",leftSheet:"",rightSheet:""),event("calculation",kind:"calculation_settings",left:"",right:"",leftSheet:"",rightSheet:""),event("one-sided-sheet",kind:"sheet_observation",left:"",right:"",rightSheet:""),event("merges",kind:"merges",left:"",right:"")]
-        for item in metadata {model.changes=[item];await model.chooseChange(item["change_id"].string);try require(model.selectedChange["change_id"].string==item["change_id"].string && model.showingSheetMetadata,"LegitimateMetadataEventRejected_"+item["kind"].string)}
-        let one=event("one-sided",right:"",rightSheet:"");model.changes=[one];await model.chooseChange("one-sided")
-        try require(model.selectedChangeID=="one-sided" && model.beforeCell["value"].string.utf16.elementsEqual((raw+":old:sheet-old:D4").utf16) && model.afterCell.isNull,"LegitimateOneSidedPhysicalEventRejected")
-        try control([[good],[]]);await model.loadChanges(preserveEndpoints:true);await model.chooseChange("qualified");await model.loadChanges(next:true)
+        for item in metadata {model.changes=[item];await model.chooseChange(item["change_id"].string);try require(model.selectedChange["change_id"].string==item["change_id"].string && model.showingSheetMetadata && model.selectionNotice.isEmpty,"LegitimateMetadataEventRejected_"+item["kind"].string)}
+        // diffWorkbooks emits a top-left coordinate for each observed formatting
+        // range side; a legitimate one-sided range must remain selectable.
+        let one=event("one-sided",kind:"formatting_range",right:"",rightSheet:"");model.changes=[one];await model.chooseChange("one-sided")
+        try require(model.selectedChangeID=="one-sided" && model.beforeCell["value"].string.utf16.elementsEqual((raw+":old:sheet-old:D4").utf16) && model.afterCell.isNull && model.selectionNotice.isEmpty,"LegitimateOneSidedFormattingRangeRejected")
+        try await reject("removed-range","missing_visible_event")
+        try control([[good],[]]);await model.loadChanges(preserveEndpoints:true)
+        try require(model.selectionNotice.isEmpty,"ChangeQueryResetKeptRejectedEventNotice")
+        await model.chooseChange("qualified");await model.loadChanges(next:true)
         try require(model.changes.isEmpty && model.selectedChange["change_id"].string=="qualified","ControlledOffPageAuthorityNotEstablished")
         model.report=JSON(["report_id":"authority-report","revisions":revisions.map{item in var value=item;if value["revision_occurrence_id"] as? String=="old"{value["sheets"]=[]};return value}])
         try require(model.selectedChange.isNull,"OffPageRetainedEventIgnoredPhysicalMembership")
@@ -300,9 +334,25 @@ import AppKit
         try require(model.selectedChangeID.isEmpty && !model.canReturnToChange && (try source())==retainedSource && (try records())==requests,"InvalidPagedAuthorityRevivedAfterMembershipRestored")
         let proofURL=root.appendingPathComponent("initial-ownership-proof.json");var proof=try JSONSerialization.jsonObject(with:Data(contentsOf:proofURL)) as! [String:Any]
         proof["source34_event_authority"]=["scope":"actual WorkbookModel/Bridge with controlled malformed visible and paged events; no claim of a normal backend misroute","rejected_visible_cases":rejected,"invalid_selection_clears_anchor_without_source_query_or_mutation":true,"metadata_kinds_accepted":metadata.map{$0["kind"].string},"one_sided_physical_raw_preserved":true,"invalid_off_page_membership_rejected_and_return_cleared":true]
+        for field in ["project","report","from","to","mode","cells","invalidate","selection"] {
+            await model.chooseChange("missing-reset-event")
+            try require(!model.selectionNotice.isEmpty,"ResetNoticeNotEstablished_"+field)
+            switch field {
+            case "project":model.projectID="other";model.projectID="project"
+            case "report":model.reportID="other";model.reportID="authority-report"
+            case "from":model.changesFromID="mid";model.changesFromID="old"
+            case "to":model.changesToID="mid";model.changesToID="new"
+            case "mode":model.changesMode="range_net";model.changesMode="history"
+            case "cells":model.clearCells()
+            case "invalidate":model.invalidateReads()
+            default:model.clearSelection()
+            }
+            try require(model.selectionNotice.isEmpty,"ScopeOrSourceResetKeptRejectedNotice_"+field)
+        }
+        proof["source35_selection_notice"]=["rejected_cases":rejected,"live_locales":["en","ko"],"physical_raw_utf16_offsets_history_query_viewport_and_requests_unchanged":true,"valid_metadata_and_formatting_range_clear_notice":true,"query_reset_and_scope_lifecycle_clear_notice":true,"separate_from_source_read_errors_and_history_fallback":true]
         let data=try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]);try data.write(to:proofURL)
         if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_WORKBOOK_INITIAL_OWNERSHIP_EVIDENCE_OUT"],!path.isEmpty{try data.write(to:URL(fileURLWithPath:path))}
-        print("PASS native workbook event authority: interval/order/method/physical-sheet guards, metadata and one-sided positives, rejected paged authority without source mutation or queries")
+        print("PASS native workbook event authority: interval/order/method/physical-sheet guards, metadata and formatting-range positives, localized rejection notice with exact source/history/query retention and lifecycle clearing")
     }
     @MainActor private static func checkMethodIntervalPreservation(resources:URL,root:URL) async throws {
         let model=WorkbookModel(bridge:Bridge(resources:resources,library:root))
@@ -351,11 +401,14 @@ import AppKit
         try require(model.mode=="history" && model.changesFailure.isEmpty && !model.comparisonNotice.isEmpty && model.selectedChangeID.isEmpty && (try physical())==manualPhysical && (try sourceReadCount())==manualReads && (try lists().count)==beforeFallback+2 && model.changes.first?["change_id"].string=="history-old-mid","AutomaticHistoryFallbackAutoSelectedOrChangedPhysicalSources")
         let fallbackRequests=Array(try lists().suffix(2)).map{$0["query"]}
         try require(fallbackRequests.map{$0["mode"].string}==["range_net","history"] && fallbackRequests.allSatisfy{$0["from_revision_occurrence_id"].string=="old" && $0["to_revision_occurrence_id"].string=="new"},"FallbackDidNotUseTheSameWideInterval")
+        let fallbackNotice=model.comparisonNotice,fallbackReadCount=try events().count
+        await model.chooseChange("missing-fallback-event")
+        try require(!model.selectionNotice.isEmpty && model.comparisonNotice==fallbackNotice && model.cellFailure.isEmpty && model.rangeFailure.isEmpty && (try physical())==manualPhysical && (try events().count)==fallbackReadCount,"RejectedSelectionOverwroteHistoryFallbackOrPhysicalSource")
         try require((try model.report.data())==fixedReport,"MethodOnlyActionsReplacedFixedReport")
         // A later explicit version pick owns a fresh automatic link again.
         let newVersion=event("history-mid-new","mid","new","A2")
         try control(history:newVersion);await model.changeVersions(before:"mid",after:"new")
-        try require(model.changesFailure.isEmpty && model.cellFailure.isEmpty && model.selectedChangeID=="history-mid-new" && model.beforeID=="mid" && model.afterID=="new" && model.changesFromID=="mid" && model.changesToID=="new" && model.beforeAddress=="A2" && model.afterAddress=="A2" && model.beforeCell["value"].string.utf16.elementsEqual((raw+":mid:sheet-mid:A2").utf16) && model.afterCell["value"].string.utf16.elementsEqual((raw+":new:sheet-new:A2").utf16),"ExplicitNewVersionQueryFailedToRestoreInitialAutomaticLink")
+        try require(model.changesFailure.isEmpty && model.cellFailure.isEmpty && model.selectionNotice.isEmpty && model.selectedChangeID=="history-mid-new" && model.beforeID=="mid" && model.afterID=="new" && model.changesFromID=="mid" && model.changesToID=="new" && model.beforeAddress=="A2" && model.afterAddress=="A2" && model.beforeCell["value"].string.utf16.elementsEqual((raw+":mid:sheet-mid:A2").utf16) && model.afterCell["value"].string.utf16.elementsEqual((raw+":new:sheet-new:A2").utf16),"ExplicitNewVersionQueryFailedToRestoreInitialAutomaticLink")
         let proof:[String:Any]=["scope":"Actual Bridge/model loadChanges using three controlled revisions and distinct literal UTF16 per physical revision/sheet/address; no packaged-native or viewport pixel claim","observations":observations,"wide_query_from":"old","wide_query_to":"new","inspected_source_from":"old","inspected_source_to":"mid","inspected_event_address":"D4","manual_address":"F7","selected_intermediate_source_preserved_across_method_toggles":true,"manual_browse_preserved_across_method_toggles":true,"failed_method_then_default_retry_does_not_reselect":true,"range_net_limit_fallback_keeps_sources_and_wide_interval":true,"method_actions_issue_only_list_requests":true,"distinct_before_after_exact_utf16_verified":true,"obsolete_query_selection_anchor_cleared":true,"explicit_new_version_query_still_auto_selects":true,"fixed_report_unchanged":true]
         try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("method-interval-proof.json"))
         if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_WORKBOOK_MODE_INTERVAL_EVIDENCE_OUT"],!path.isEmpty {try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:path))}

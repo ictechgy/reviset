@@ -17,8 +17,8 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     @Published var projects: [JSON] = []
     @Published var reports: [JSON] = []
     @Published var report = JSON()
-    @Published var projectID = "" {didSet {if oldValue != projectID {eventAnchor=nil;pagedEvent=nil;cancelInitialSelection()}}}
-    @Published var reportID = "" {didSet {if oldValue != reportID {eventAnchor=nil;pagedEvent=nil;cancelInitialSelection()}}}
+    @Published var projectID = "" {didSet {if oldValue != projectID {eventAnchor=nil;pagedEvent=nil;selectionNotice="";cancelInitialSelection()}}}
+    @Published var reportID = "" {didSet {if oldValue != reportID {eventAnchor=nil;pagedEvent=nil;selectionNotice="";cancelInitialSelection()}}}
     @Published var beforeID = ""
     @Published var afterID = ""
     @Published var beforeSheetID = ""
@@ -53,9 +53,9 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     @Published var changePageNumber = 1
     private var changePageCursor = ""
     @Published var changeTotal = 0
-    @Published var changesFromID = "" {didSet {if oldValue != changesFromID {eventAnchor=nil;pagedEvent=nil}}}
-    @Published var changesToID = "" {didSet {if oldValue != changesToID {eventAnchor=nil;pagedEvent=nil}}}
-    @Published var changesMode = "range_net" {didSet {if oldValue != changesMode {eventAnchor=nil;pagedEvent=nil}}}
+    @Published var changesFromID = "" {didSet {if oldValue != changesFromID {eventAnchor=nil;pagedEvent=nil;selectionNotice=""}}}
+    @Published var changesToID = "" {didSet {if oldValue != changesToID {eventAnchor=nil;pagedEvent=nil;selectionNotice=""}}}
+    @Published var changesMode = "range_net" {didSet {if oldValue != changesMode {eventAnchor=nil;pagedEvent=nil;selectionNotice=""}}}
     @Published private var cellHistoryMessageContent = UIMessage.raw("")
     var cellHistoryMessage: String { get { cellHistoryMessageContent.text } set { cellHistoryMessageContent = .raw(newValue) } }
     @Published var cellHistoryCursor = ""
@@ -91,6 +91,8 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     var changesFailure: String { get { changesFailureContent.text } set { changesFailureContent = .raw(newValue) } }
     @Published private var comparisonNoticeContent = UIMessage.raw("")
     var comparisonNotice: String { get { comparisonNoticeContent.text } set { comparisonNoticeContent = .raw(newValue) } }
+    @Published private var selectionNoticeContent = UIMessage.raw("")
+    var selectionNotice: String { get { selectionNoticeContent.text } set { selectionNoticeContent = .raw(newValue) } }
     @Published private var blankFormattingWarningScope = ""
     @Published private var cellFailureContent = UIMessage.raw("")
     var cellFailure: String { get { cellFailureContent.text } set { cellFailureContent = .raw(newValue) } }
@@ -288,7 +290,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         generations[channel] = (generations[channel] ?? 0) + 1
     }
     func invalidateReads() {
-        eventAnchor=nil;pagedEvent=nil;cancelInitialSelection()
+        eventAnchor=nil;pagedEvent=nil;selectionNotice="";cancelInitialSelection()
         for channel in Array(owners.keys) { invalidate(channel) }
         loadingReport = false; loadingRange = false; loadingChanges = false; loadingCell = false; loadingHistory = false; loadingMCP = false
         mcp = ""; mcpScope = ""; mcpFailure = ""; blankFormattingWarningScope = ""
@@ -301,7 +303,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         invalidate("range"); invalidate("cell"); invalidate("history")
         beforeCells = []; afterCells = []; beforeCell = JSON(); afterCell = JSON(); resetCellHistory()
         selectedRow = 0; selectedColumn = 0; selectedChangeID = ""; beforeAddress = ""; afterAddress = ""; cellTextOffset = 0; cellTextNext = nil
-        rangeFailure = ""; addressFailure = ""; cellFailure = ""; loadingRange = false; loadingCell = false
+        rangeFailure = ""; addressFailure = ""; cellFailure = ""; selectionNotice = ""; loadingRange = false; loadingCell = false
     }
     func clearSelection() {
         eventAnchor=nil;pagedEvent=nil;cancelInitialSelection()
@@ -445,6 +447,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         let previousScope=comparisonScope,previousAnchor=eventAnchor,retained=anchoredChange
         guard ready, !beforeID.isEmpty, !afterID.isEmpty else { return }
         guard !(next && previous),!next || !changeCursor.isEmpty,!previous || !changePreviousCursors.isEmpty else { return }
+        selectionNotice = ""
         if !autoSelectInitial || next || previous {cancelInitialSelection()}
         if beforeID==afterID, !preserveEndpoints {
             enforceSingleSourcePresentation()
@@ -527,7 +530,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     func selectCell(_ row: Int, _ column: Int) async {
         guard ready else { return }
         cancelInitialSelection()
-        addressFailure = ""
+        addressFailure = ""; selectionNotice = ""
         revealGeneration += 1
         let previousRange = rangeScope
         if beforeRowStart != afterRowStart || row < beforeRowStart || row >= beforeRowStart+rowLimit {
@@ -587,8 +590,10 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         guard ready else{return}
         let visible=changes.first(where:{$0["change_id"].string==id}),change=visible ?? retainedEvent(id)
         guard !change.isNull,eventBelongsToQuery(change) else {
-            selectedChangeID="";eventAnchor=nil;pagedEvent=nil;cancelInitialSelection();return
+            selectedChangeID="";eventAnchor=nil;pagedEvent=nil;cancelInitialSelection()
+            selectionNoticeContent = UIMessage("workbook.warning.unverifiedSelection");return
         }
+        selectionNotice = ""
         cancelInitialSelection()
         if visible != nil {pagedEvent=nil}
         let oldBefore=(beforeID,beforeSheetID,beforeRowStart,beforeColumnStart),oldAfter=(afterID,afterSheetID,afterRowStart,afterColumnStart)
@@ -1050,6 +1055,7 @@ struct WorkbookWorkspace: View {
             if !model.changeCursor.isEmpty { Text(L("workbook.paging.more")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             else if !model.changePreviousCursors.isEmpty { Text(L("workbook.paging.last")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
             if !model.comparisonNotice.isEmpty { Text(verbatim:model.comparisonNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
+            if !model.selectionNotice.isEmpty { Text(verbatim:model.selectionNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
             if !model.blankFormattingWarning.isEmpty {
                 Label(model.blankFormattingWarning,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,12).padding(.vertical,3).accessibilityIdentifier("Docver.workbook.blankFormattingWarning")
             }
