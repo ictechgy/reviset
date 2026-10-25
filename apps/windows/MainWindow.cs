@@ -86,6 +86,8 @@ internal sealed class MainWindow : Window
     private readonly ComboBox reports = new() { Width = 245, Height = 30, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 2, 3, 2) };
     private readonly TextBox detail = SourceText();
     private readonly TextBlock detailRange = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8) };
+    private readonly TextBlock detailSourceContext = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(10, 4, 10, 4), FontSize = 12, Visibility = Visibility.Collapsed };
+    private readonly TextBlock rawTextPageSummary = new() { TextWrapping = TextWrapping.Wrap, MaxWidth = 430, Margin = new Thickness(8, 3, 4, 3), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
     private readonly StackPanel detailPaging = new();
     private readonly TextBox detailMetadata = SourceText();
     private readonly TextBlock inspectorHeading = new() { FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 6, 10, 4) };
@@ -300,7 +302,7 @@ internal sealed class MainWindow : Window
         technicalDetails.Content = detailMetadata; relocalize.Add(() => technicalDetails.Header = Copy["technicalDetails"]); ArrangeInspector(false);
         var sourceTools = new DockPanel { Margin = new Thickness(4, 1, 4, 1), LastChildFill = true };
         var sourceActions = new StackPanel { Orientation = Orientation.Horizontal }; previousChange = Command("previousChange", () => MoveChange(-1)); nextChange = Command("nextChange", () => MoveChange(1)); returnChange = Command("returnChange", ReturnToChange); sourceActions.Children.Add(previousChange); sourceActions.Children.Add(nextChange); sourceActions.Children.Add(returnChange); sourceActions.Children.Add(sourceView); DockPanel.SetDock(sourceActions, Dock.Right); sourceTools.Children.Add(sourceActions); sourceTools.Children.Add(sourcePair); DockPanel.SetDock(sourceTools, Dock.Top); sourceStage.Children.Add(sourceTools);
-        firstTextStage = Command("firstText", FirstDetail); nextTextStage = Command("nextText", NextDetail); rawTextPaging.Children.Add(firstTextStage); rawTextPaging.Children.Add(nextTextStage); BindText(sourceDiagnostics, "sourceDetails"); sourceDiagnostics.Click += (_, _) => RenderSourceDiff(); rawTextPaging.Children.Add(sourceDiagnostics); DockPanel.SetDock(rawTextPaging, Dock.Top); sourceStage.Children.Add(rawTextPaging);
+        firstTextStage = Command("firstText", FirstDetail); nextTextStage = Command("nextText", NextDetail); rawTextPaging.Children.Add(firstTextStage); rawTextPaging.Children.Add(nextTextStage); BindText(sourceDiagnostics, "sourceDetails"); sourceDiagnostics.Click += (_, _) => RenderSourceDiff(); rawTextPaging.Children.Add(sourceDiagnostics); rawTextPaging.Children.Add(rawTextPageSummary); DockPanel.SetDock(rawTextPaging, Dock.Top); sourceStage.Children.Add(rawTextPaging);
         var sourceFooter = new DockPanel(); newComparisonStage = Command("newComparison", NewComparison); DockPanel.SetDock(newComparisonStage, Dock.Right); sourceFooter.Children.Add(newComparisonStage); storedHistoryButton = Command("openStoredHistory", () => storedHistoryRequest = OpenStoredHistory()); DockPanel.SetDock(storedHistoryButton, Dock.Right); sourceFooter.Children.Add(storedHistoryButton); selectedLimitsButton = Command("selectedLimits", () => { CreateSelectedLimitsDialog().ShowDialog(); return Task.CompletedTask; }); DockPanel.SetDock(selectedLimitsButton, Dock.Right); sourceFooter.Children.Add(selectedLimitsButton); sourceFooter.Children.Add(sourceNotice); DockPanel.SetDock(sourceFooter, Dock.Bottom); sourceStage.Children.Add(sourceFooter); var sourceBody = new Grid(); sourceBody.Children.Add(comparison); sourceBody.Children.Add(unified); libraryPrompt.Children.Add(libraryPromptText); startupRetry = Command("retryStartup", () => startupRequest = InitializeCore()); firstImport = Command("import", Import); libraryPrompt.Children.Add(startupRetry); libraryPrompt.Children.Add(firstImport); sourceBody.Children.Add(libraryPrompt); sourceStage.Children.Add(sourceBody);
         sourceView.SelectionChanged += (_, _) => { if (!binding) { textView = sourceView.SelectedIndex == 1; RenderSourceDiff(); } };
         root.Children.Add(workspace); ClearDetail(); SetBusy(false);
@@ -311,16 +313,16 @@ internal sealed class MainWindow : Window
         firstDetail.ToolTip = Copy["firstText"]; nextDetail.ToolTip = Copy["nextText"];
         if (inspectorArrangementBottom == bottom && InspectorPane.Child is not null) return;
         inspectorArrangementBottom = bottom;
-        foreach (var element in new FrameworkElement[] { inspectorHeading, detailPaging, technicalDetails, detail }) if (VisualTreeHelper.GetParent(element) is Panel parent) parent.Children.Remove(element);
+        foreach (var element in new FrameworkElement[] { inspectorHeading, detailPaging, technicalDetails, detailSourceContext, detail }) if (VisualTreeHelper.GetParent(element) is Panel parent) parent.Children.Remove(element);
         InspectorPane.Child = null;
         if (bottom)
         {
             var grid = new Grid(); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(225) }); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            var tools = new StackPanel(); tools.Children.Add(inspectorHeading); tools.Children.Add(detailPaging); tools.Children.Add(technicalDetails); var scroll = new ScrollViewer { Content = tools, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; grid.Children.Add(scroll); Grid.SetColumn(detail, 1); grid.Children.Add(detail); InspectorPane.Child = grid;
+            var tools = new StackPanel(); tools.Children.Add(inspectorHeading); tools.Children.Add(detailPaging); tools.Children.Add(technicalDetails); var scroll = new ScrollViewer { Content = tools, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; grid.Children.Add(scroll); var body = new DockPanel(); DockPanel.SetDock(detailSourceContext, Dock.Top); body.Children.Add(detailSourceContext); body.Children.Add(detail); Grid.SetColumn(body, 1); grid.Children.Add(body); InspectorPane.Child = grid;
         }
         else
         {
-            Grid.SetColumn(detail, 0); var dock = new DockPanel(); DockPanel.SetDock(inspectorHeading, Dock.Top); dock.Children.Add(inspectorHeading); DockPanel.SetDock(detailPaging, Dock.Top); dock.Children.Add(detailPaging); DockPanel.SetDock(technicalDetails, Dock.Bottom); dock.Children.Add(technicalDetails); dock.Children.Add(detail); InspectorPane.Child = dock;
+            Grid.SetColumn(detail, 0); var dock = new DockPanel(); DockPanel.SetDock(inspectorHeading, Dock.Top); dock.Children.Add(inspectorHeading); DockPanel.SetDock(detailPaging, Dock.Top); dock.Children.Add(detailPaging); DockPanel.SetDock(technicalDetails, Dock.Bottom); dock.Children.Add(technicalDetails); DockPanel.SetDock(detailSourceContext, Dock.Top); dock.Children.Add(detailSourceContext); dock.Children.Add(detail); InspectorPane.Child = dock;
         }
     }
     private static Border Pane() => new() { BorderBrush = new SolidColorBrush(Color.FromRgb(222, 226, 232)), BorderThickness = new Thickness(1), Background = Brushes.White, ClipToBounds = true };
@@ -914,6 +916,7 @@ internal sealed class MainWindow : Window
         selectedLimitsButton.Visibility = selectedGaps.Length > 0 || workbookWarnings.Count > 0 ? Visibility.Visible : Visibility.Collapsed; selectedLimitsButton.IsEnabled = !busy;
         if (currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count) > 0) notice.Add((Copy["reportCoverage"] + ": " + currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count)).Replace(' ', '\u00a0'));
         sourceNotice.Text = string.Join(" · ", notice); sourceNotice.ToolTip = string.Join("\n", workbookWarnings.Concat(selectedNotices.Select(SelectedNoticeText))); AutomationProperties.SetHelpText(sourceNotice, sourceNotice.ToolTip.ToString()); sourceNotice.Visibility = notice.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        RefreshRawSourceContext();
         rawTextPaging.Visibility = textView ? Visibility.Visible : Visibility.Collapsed; firstTextStage.Visibility = nextTextStage.Visibility = IsWorkbook && detailLoader is not null ? Visibility.Visible : Visibility.Collapsed; firstTextStage.IsEnabled = !busy && firstDetail.IsEnabled; nextTextStage.IsEnabled = !busy && nextDetail.IsEnabled;
         if (!textView) return;
         var identity = JsonSerializer.Serialize(new { projectId, reportId, intervalFrom, intervalTo, net = pairedSource is not null && PairedSourceCurrent ? null : AtSelectedChange ? (bool?)NetMode : null, IsWorkbook, eventId = pairedSource is not null && PairedSourceCurrent ? "" : AtSelectedChange ? selectedChange.Get("change_id").Text() : "", a = new { Before.RevisionId, Before.PageId, Before.SheetId, Before.FocusedAddress }, b = new { After.RevisionId, After.PageId, After.SheetId, After.FocusedAddress }, detailOffset });
@@ -1735,7 +1738,7 @@ internal sealed class MainWindow : Window
         ChangeVisibility(inspector: true); await SelectCell(pane, pane.FocusedRow, pane.FocusedColumn);
     }
     private Task<JsonElement> QueryFixed(string name, Dictionary<string, object?> args, string project, string report, CancellationToken token) { if (name is "get_workbook_cell" or "get_workbook_change") sourceDetailReadsForSmoke++; args["project_id"] = project; args["report_id"] = report; args["max_output_tokens"] = 8000; return Bridge.Call("workbookQuery", new { name, args }, token); }
-    private void ClearDetail() { pairedSource = null; singleCellSource = null; detailCellRead = null; ++detailGeneration; cellReads.Cancel(); detailLoader = null; detailPayload = default; documentDetail = default; inspectorMode = "prompt"; detailNext = null; detailOffset = 0; detailCursor = ""; detailItemNext = ""; detailStyle.IsChecked = false; detailStyle.IsEnabled = false; detailRange.Text = ""; detailMetadata.Text = ""; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; }
+    private void ClearDetail() { pairedSource = null; singleCellSource = null; detailCellRead = null; ++detailGeneration; cellReads.Cancel(); detailLoader = null; detailPayload = default; documentDetail = default; inspectorMode = "prompt"; detailNext = null; detailOffset = 0; detailCursor = ""; detailItemNext = ""; detailStyle.IsChecked = false; detailStyle.IsEnabled = false; detailRange.Text = ""; detailMetadata.Text = ""; detailSourceContext.Text = ""; detailSourceContext.Visibility = Visibility.Collapsed; rawTextPageSummary.Text = ""; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; }
     private Task FirstDetail() { detailCursor = ""; return LoadDetail(0); }
     private Task NextDetail() { if (detailNext is { } offset) return LoadDetail(offset); if (detailItemNext.Length > 0) { detailCursor = detailItemNext; return LoadDetail(0); } return Task.CompletedTask; }
     private async Task LoadDetail(int offset, JsonElement? initialPayload = null)
@@ -1759,8 +1762,40 @@ internal sealed class MainWindow : Window
         }
         catch { if (IsCurrent(ticket) && sequence == detailGeneration && !token.IsCancellationRequested) { inspectorMode = "failed"; detail.Text = Copy["failed"]; firstDetail.IsEnabled = true; RenderSourceDiff(); } throw; }
     }
+    private string RawOwnerCaption(string side, WorkbookCellSource cell)
+    {
+        var revision = currentReport.Get("revisions").Items().Find(value => value.Get("revision_occurrence_id").Text() == cell.Occurrence);
+        var sheet = revision.Get("sheets").Items().Find(value => value.Get("sheet_id").Text() == cell.Sheet).Get("name").Text();
+        return Copy[side] + " · " + (VersionLabel(cell.Occurrence) is { Length: > 0 } version ? version : cell.Occurrence) + " · " + Copy["sheet"] + ": " + (sheet.Length > 0 ? sheet : cell.Sheet) + (cell.HasCell ? "!" + cell.Address : " · " + Copy["cellNotMaterialized"]);
+    }
+    private string RawPagerSummary()
+    {
+        var contributors = new List<string>();
+        void Fields(JsonElement cell, string side)
+        {
+            foreach (var field in new[] { "value", "formula", "number_format" })
+                if (detailNext is { } next && SourceTextObservation.ReadSegment(cell.Get(field), cell.Get("text_continuations").Get(field)).Range is { Valid: true, Next: { } fieldNext } && fieldNext == next)
+                    contributors.Add((side.Length > 0 ? Copy[side] + " · " : "") + Copy[field == "value" ? "cached" : field]);
+        }
+        if (pairedSource is not null) { Fields(PairCell(detailPayload, "before"), "before"); Fields(PairCell(detailPayload, "after"), "after"); }
+        else if (detailPayload.Get("component").Text() == "style")
+        {
+            foreach (var item in detailPayload.Get("items").Items()) if (detailNext is { } next && SourceTextObservation.ReadSegment(item.Get("value"), item.Get("text_continuations").Get("value")).Range is { Valid: true, Next: { } fieldNext } && fieldNext == next) contributors.Add(item.Get("key").Text());
+        }
+        else Fields(detailPayload.Get("items").Items().FirstOrDefault(), singleCellSource?.Side ?? "");
+        return Copy["requestedOffset"] + ": " + detailOffset.ToString(CultureInfo.InvariantCulture) + " · " + Copy["nextOffset"] + ": " + (detailNext?.ToString(CultureInfo.InvariantCulture) ?? "∅") + (contributors.Count > 0 ? " (" + string.Join(", ", contributors) + ")" : "") + (detailItemNext.Length > 0 ? " · " + Copy["nextText"] + ": " + Copy["styleDetail"] : "");
+    }
+    private void RefreshRawSourceContext()
+    {
+        var owner = HasIndependentSourceDetail ? singleCellSource is { } single ? RawOwnerCaption(single.Side, single.Cell) : RawOwnerCaption("before", pairedSource!.Before) + "\n" + RawOwnerCaption("after", pairedSource.After) : "";
+        detailSourceContext.Text = owner.Length > 0 ? owner + "\n" + RawPagerSummary() : "";
+        detailSourceContext.Visibility = owner.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        AutomationProperties.SetName(detailSourceContext, detailSourceContext.Text);
+        rawTextPageSummary.Text = owner.Length > 0 ? RawPagerSummary() : "";
+    }
     private void RerenderInspector()
     {
+        RefreshRawSourceContext();
         if (inspectorMode == "raw" && singleCellSource is { } source && (!SingleSourceCurrent || detailCellRead is not { } read || !source.ReadResponse(read, detailPayload, out _))) { ClearDetail(); detail.Text = Copy["selectCell"]; return; }
         if (inspectorMode == "raw" && detailPayload.ValueKind == JsonValueKind.Object) { detail.Text = FormatDetail(detailPayload); detailRange.Text = FormatRanges(detailPayload); return; }
         if (inspectorMode == "event" && documentDetail.ValueKind == JsonValueKind.Object) { detail.Text = Copy["event"] + ": " + VersionLabel(Before.RevisionId) + " → " + VersionLabel(After.RevisionId) + "\n\n" + Copy["before"] + "\n" + documentDetail.Get("before").Text() + "\n\n" + Copy["after"] + "\n" + documentDetail.Get("after").Text(); return; }
@@ -1787,9 +1822,10 @@ internal sealed class MainWindow : Window
             if (source.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return Copy["missing"];
             return source.Get("address").Text() + "\n\n" + Copy["cached"] + ":\n" + Observation(source, "value") + "\n\n" + Copy["formula"] + ":\n" + Observation(source, "formula") + "\n\n" + Copy["number_format"] + ":\n" + Observation(source, "number_format") + "\n\n" + Copy["cacheFreshness"] + ": " + Copy.CacheFreshness(source.Get("cache_freshness").Text()) + "\n" + Copy["cacheState"] + ": " + Copy.CachedResult(source.Get("cached_result").Text());
         }
-        if (value.Get("before").ValueKind == JsonValueKind.Object) return Copy["before"] + "\n" + Cell(PairCell(value, "before")) + "\n\n" + Copy["after"] + "\n" + Cell(PairCell(value, "after"));
-        if (value.Get("component").Text() == "style") return string.Join("\n\n", value.Get("items").Items().Select(item => item.Get("key").Text() + "\n" + Observation(item, "value")));
-        return Cell(value.Get("items").Items().FirstOrDefault());
+        if (value.Get("before").ValueKind == JsonValueKind.Object) return (pairedSource is { } pair ? RawOwnerCaption("before", pair.Before) : Copy["before"]) + "\n" + Cell(PairCell(value, "before")) + "\n\n" + (pairedSource is { } pairAfter ? RawOwnerCaption("after", pairAfter.After) : Copy["after"]) + "\n" + Cell(PairCell(value, "after"));
+        var owner = singleCellSource is { } single ? RawOwnerCaption(single.Side, single.Cell) + "\n" : "";
+        if (value.Get("component").Text() == "style") return owner + string.Join("\n\n", value.Get("items").Items().Select(item => item.Get("key").Text() + "\n" + Observation(item, "value")));
+        return owner + Cell(value.Get("items").Items().FirstOrDefault());
     }
     private string FormatRanges(JsonElement value)
     {
@@ -1806,9 +1842,9 @@ internal sealed class MainWindow : Window
                 lines.Add(side + (side.Length > 0 ? " · " : "") + Copy[field == "value" ? "cached" : field] + ": [" + start + ", " + end + ") / " + total + " · " + Copy.Code(range.State) + " · " + Copy[range.Valid ? "validSourceRange" : "invalidSourceRange"] + (!range.Valid ? " · " + Copy["invalidSourceSegment"] : ""));
             }
         }
-        if (value.Get("before").ValueKind == JsonValueKind.Object) { Cell(PairCell(value, "before"), Copy["before"]); Cell(PairCell(value, "after"), Copy["after"]); }
+        if (value.Get("before").ValueKind == JsonValueKind.Object) { Cell(PairCell(value, "before"), pairedSource is { } pair ? RawOwnerCaption("before", pair.Before) : Copy["before"]); Cell(PairCell(value, "after"), pairedSource is { } pairAfter ? RawOwnerCaption("after", pairAfter.After) : Copy["after"]); }
         else if (value.Get("component").Text() == "style") foreach (var item in value.Get("items").Items()) { var observation = SourceTextObservation.ReadSegment(item.Get("value"), item.Get("text_continuations").Get("value")); var range = observation.Range!; lines.Add(item.Get("key").Text() + ": [" + (range.Offset?.ToString(CultureInfo.InvariantCulture) ?? "?") + ", " + (range.Offset is { } offset ? ((long)offset + range.Length).ToString(CultureInfo.InvariantCulture) : "?") + ") / " + (range.Total?.ToString(CultureInfo.InvariantCulture) ?? "?") + " · " + Copy[range.Valid ? "validSourceRange" : "invalidSourceRange"] + (!range.Valid ? " · " + Copy["invalidSourceSegment"] : "")); }
-        else Cell(value.Get("items").Items().FirstOrDefault(), "");
+        else Cell(value.Get("items").Items().FirstOrDefault(), singleCellSource is { } single ? RawOwnerCaption(single.Side, single.Cell) : "");
         return string.Join("\n", lines);
     }
     internal IEnumerable<GridSplitter> NativeSplitters()
@@ -2787,9 +2823,11 @@ internal sealed class MainWindow : Window
                     ["absent_formula_annotated"] = body.Contains(Copy["formula"] + ":\n" + Copy["formulaAbsent"], StringComparison.Ordinal),
                     ["both_null_formats_annotated"] = body.Split(Copy["number_format"] + ":\n" + Copy["observationNull"], StringSplitOptions.None).Length - 1 == 2,
                     ["partial_formula_literal_exact"] = formulaB.State == SourceTextState.Partial && body.Contains(Copy["formula"] + ":\n" + Copy["partialSourceSegment"] + "\n" + formulaB.Text, StringComparison.Ordinal),
-                    ["global_next_follows_remaining_formula"] = offset == 256 && next == 512 && formulaB.Range is { Valid: true, Next: 512, Total: 7210 } && nextDetail.IsEnabled
+                    ["global_next_follows_remaining_formula"] = offset == 256 && next == 512 && formulaB.Range is { Valid: true, Next: 512, Total: 7210 } && nextDetail.IsEnabled,
+                    ["sticky_pair_owners"] = detailSourceContext.Text.StartsWith(RawOwnerCaption("before", owner.Before) + "\n" + RawOwnerCaption("after", owner.After) + "\n", StringComparison.Ordinal),
+                    ["global_next_names_after_formula"] = rawTextPageSummary.Text == RawPagerSummary() && rawTextPageSummary.Text.Contains(Copy["requestedOffset"] + ": 256", StringComparison.Ordinal) && rawTextPageSummary.Text.Contains(Copy["nextOffset"] + ": 512 (" + Copy["after"] + " · " + Copy["formula"] + ")", StringComparison.Ordinal)
                 };
-                await observe("source37-paired-raw-field-states-" + locale, new { physical_before = a, physical_after = b, before_value = valueA, after_value = valueB, after_formula = formulaB, raw_body = body, offset, next, next_enabled = nextDetail.IsEnabled, checks = rawFieldChecks });
+                await observe("source37-paired-raw-field-states-" + locale, new { physical_before = a, physical_after = b, before_value = valueA, after_value = valueB, after_formula = formulaB, raw_body = body, sticky_context = detailSourceContext.Text, global_pager_summary = rawTextPageSummary.Text, offset, next, next_enabled = nextDetail.IsEnabled, checks = rawFieldChecks });
                 foreach (var field in rawFieldChecks) if (!field.Value) throw new InvalidOperationException("Real paired raw field presentation failed: " + field.Key);
                 var hostA = Before.Host; var hostB = After.Host; var rowsA = Before.Cells.ItemsSource; var rowsB = After.Cells.ItemsSource;
                 Before.GridScroll?.ScrollToHorizontalOffset(40); Before.GridScroll?.ScrollToVerticalOffset(3); After.GridScroll?.ScrollToHorizontalOffset(30); After.GridScroll?.ScrollToVerticalOffset(2); detail.ScrollToVerticalOffset(24); unified.ScrollToVerticalOffset(24); await Settle();
@@ -2872,7 +2910,7 @@ internal sealed class MainWindow : Window
                     // reply. This tests consumer rejection, not a producer fault.
                     detailLoader = async (offset, cancel, read) => { captured = read; actual = await loader(offset, cancel, read); var data = actual.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value); data["project_id"] = "SYNTHETIC_foreign_single_project"; foreign = JsonSerializer.SerializeToElement(data); return foreign; };
                     var rejected = false; try { await FirstDetail(); } catch (BridgeException error) when (error.Code == "EVIDENCE_SCOPE") { rejected = true; }
-                    var fields = new Dictionary<string, bool> { ["owned_scope_error"] = rejected, ["request_owner_same"] = captured is { Component: "cell", Offset: 0, Cursor: "" } && ReferenceEquals(captured.Source, source), ["no_invalid_raw_payload"] = detailPayload.ValueKind == JsonValueKind.Undefined && detailCellRead is null, ["no_stale_raw_or_metadata"] = detail.Text == Copy["failed"] && detailMetadata.Text.Length == 0 && detailRange.Text.Length == 0, ["restart_available_next_disabled"] = firstDetail.IsEnabled && !nextDetail.IsEnabled && detailNext is null && detailItemNext.Length == 0, ["physical_owner_retained"] = ReferenceEquals(singleCellSource, source) && SingleSourceCurrent, ["not_valid_retained_raw_authority"] = !HasIndependentSourceDetail && !EvidenceContainsCell(Before) };
+                    var fields = new Dictionary<string, bool> { ["owned_scope_error"] = rejected, ["request_owner_same"] = captured is { Component: "cell", Offset: 0, Cursor: "" } && ReferenceEquals(captured.Source, source), ["no_invalid_raw_payload"] = detailPayload.ValueKind == JsonValueKind.Undefined && detailCellRead is null, ["no_stale_raw_or_metadata"] = detail.Text == Copy["failed"] && detailMetadata.Text.Length == 0 && detailRange.Text.Length == 0 && detailSourceContext.Visibility == Visibility.Collapsed && detailSourceContext.Text.Length == 0 && rawTextPageSummary.Text.Length == 0, ["restart_available_next_disabled"] = firstDetail.IsEnabled && !nextDetail.IsEnabled && detailNext is null && detailItemNext.Length == 0, ["physical_owner_retained"] = ReferenceEquals(singleCellSource, source) && SingleSourceCurrent, ["not_valid_retained_raw_authority"] = !HasIndependentSourceDetail && !EvidenceContainsCell(Before) };
                     await observe("source32-single-foreign-rejected-" + locale, new { language = locale, captured_request = captured, real_response = actual, injected_response = foreign, checks = fields }); foreach (var field in fields) if (!field.Value) throw new InvalidOperationException("Single response rejection failed: " + field.Key); CheckSources();
                     detailLoader = loader; await FirstDetail();
                     if (detailPayload.GetRawText() != good || inspectorMode != "raw" || !HasIndependentSourceDetail || !ReferenceEquals(singleCellSource, source) || detailCellRead is not { Component: "cell", Offset: 0, Cursor: "" }) throw new InvalidOperationException("Exact owned First retry did not recover the real cell without changing source identity."); CheckSources();
@@ -2880,7 +2918,7 @@ internal sealed class MainWindow : Window
                     // not change the component of a request already in flight.
                     var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                     detailLoader = async (offset, cancel, read) => { captured = read; var value = await loader(offset, cancel, read); started.SetResult(); await release.Task; return value; };
-                    var pending = FirstDetail(); await Task.WhenAny(pending, started.Task); if (pending.IsCompleted) await pending; await started.Task; detailStyle.IsChecked = true; release.SetResult(); await pending;
+                    var pending = FirstDetail(); await Task.WhenAny(pending, started.Task); if (pending.IsCompleted) await pending; await started.Task; var loadingContextCleared = detailSourceContext.Visibility == Visibility.Collapsed && detailSourceContext.Text.Length == 0 && rawTextPageSummary.Text.Length == 0; detailStyle.IsChecked = true; release.SetResult(); await pending; if (!loadingContextCleared) throw new InvalidOperationException("Loading retained a stale raw owner caption.");
                     if (captured is not { Component: "cell" } || detailCellRead is not { Component: "cell" } || detailPayload.GetRawText() != good) throw new InvalidOperationException("A later checkbox value relabeled an immutable pending cell request.");
                     detailLoader = loader; await FirstDetail();
                     if (detailCellRead is not { Component: "style" } styleRead || !source.ReadResponse(styleRead, detailPayload, out _) || detailPayload.Get("component").Text() != "style") throw new InvalidOperationException("The next explicit style read did not validate its actual style envelope.");
@@ -2998,6 +3036,12 @@ internal sealed class MainWindow : Window
                 ViewportsUnchanged(); var headerA = Before.CheckFocusedHeaderForSmoke(); var headerB = After.CheckFocusedHeaderForSmoke();
                 var homeA = Before.CheckEvidenceHomeForSmoke(); var homeB = After.CheckEvidenceHomeForSmoke();
                 results.Add(new { language = locale, cell_route_before = Before.CheckEvidenceCellRouteForSmoke(true), cell_route_after = After.CheckEvidenceCellRouteForSmoke(false) });
+                var sourceOwner = singleCellSource ?? throw new InvalidOperationException("The narrow reader lost its captured cell owner.");
+                var ownerCaption = RawOwnerCaption(sourceOwner.Side, sourceOwner.Cell); var readerQuery = QueryIdentityForSmoke;
+                detail.ScrollToVerticalOffset(24); await Settle();
+                var ownerChecks = new Dictionary<string, bool> { ["same_address_both_panes"] = Before.FocusedAddress == "D4" && After.FocusedAddress == "D4", ["captured_before_owner"] = sourceOwner.Side == "before" && sourceOwner.Cell.Occurrence == focusedA.Revision && sourceOwner.Cell.Sheet == focusedA.Sheet && sourceOwner.Cell.Address == "D4", ["visible_non_scrolling_owner"] = detailSourceContext.IsVisible && detailSourceContext.Text.StartsWith(ownerCaption + "\n", StringComparison.Ordinal) && VisualTreeHelper.GetParent(detailSourceContext) is DockPanel && !ReferenceEquals(VisualTreeHelper.GetParent(detailSourceContext), VisualTreeHelper.GetParent(detailPaging)), ["body_and_ranges_owned"] = detail.Text.StartsWith(ownerCaption + "\n", StringComparison.Ordinal) && detailRange.Text.Contains(ownerCaption, StringComparison.Ordinal), ["global_pager_summary"] = detailSourceContext.Text.Contains(RawPagerSummary(), StringComparison.Ordinal), ["query_unchanged"] = QueryIdentityForSmoke == readerQuery };
+                await observe("source38-single-owner-context-" + locale, new { captured_owner = sourceOwner, physical_before = Before.CaptureSelection(), physical_after = After.CaptureSelection(), sticky_context = detailSourceContext.Text, raw_body = detail.Text, ranges = detailRange.Text, offset = detailOffset, next = detailNext, checks = ownerChecks });
+                foreach (var check in ownerChecks) if (!check.Value) throw new InvalidOperationException("Single raw owner context failed: " + check.Key);
                 if (detail.ActualHeight < 140 || detail.ActualWidth < 300 || detailPayload.GetRawText() != rawDetail || detailMetadata.Text != rawMetadata || technicalDetails.Header as string != Copy["technicalDetails"] || !detail.Text.Contains(Copy["number_format"], StringComparison.Ordinal) || detail.Text.Contains("cache_freshness:", StringComparison.Ordinal) || detail.Text.Contains("cached_result:", StringComparison.Ordinal) || detailRange.Text.Contains(" · complete", StringComparison.Ordinal) || detailRange.Text.Contains(" · truncated", StringComparison.Ordinal)) throw new InvalidOperationException("Ordinary source detail retained raw enum keys or unlabeled technical metadata.");
                 await capture("source27-narrow-evidence-" + locale); results.Add(new { language = locale, before = homeA, after = homeB, header_before = headerA, header_after = headerB, bottom_evidence_width = InspectorPane.ActualWidth, bottom_evidence_height = InspectorPane.ActualHeight, source_detail_localized = true, raw_reader_width = detail.ActualWidth, raw_reader_height = detail.ActualHeight, raw_source_identity_retained = true });
                 Width = 1440; Height = 940; await Settle(); await observe("source29-window-geometry-widen-attempt-" + locale, Geometry());
@@ -3093,7 +3137,7 @@ internal sealed class MainWindow : Window
             await Before.SelectAvailableSheetForSmoke(); await Before.GoForSmoke("H40");
             foreach (var locale in new[] { "en", "ko" })
             {
-                SetLanguage(locale); if (detailRange.Text != Copy["textRange"] + "\n" + Copy["cellNotMaterialized"] || detailRange.Text.Contains(Copy["invalidSourceRange"], StringComparison.Ordinal) || detailPayload.Get("items").Items().Count != 0) throw new InvalidOperationException("A real unmaterialized sparse cell was labelled as three invalid ranges.");
+                SetLanguage(locale); if (singleCellSource is not { } sparseOwner || detailRange.Text != Copy["textRange"] + "\n" + RawOwnerCaption(sparseOwner.Side, sparseOwner.Cell) + " · " + Copy["cellNotMaterialized"] || detailRange.Text.Contains(Copy["invalidSourceRange"], StringComparison.Ordinal) || detailPayload.Get("items").Items().Count != 0) throw new InvalidOperationException("A real unmaterialized sparse cell was labelled as three invalid ranges.");
             }
             return new { report_id = reportId, cases = results, real_sparse_cell_range_is_single_unmaterialized_observation = true, query_reads_unchanged_during_metadata_cell_return = true, data_scope = "Real generated XLSX bytes, canonical production metadata events and source/cell queries, native WPF presentation" };
         }
