@@ -32,7 +32,7 @@ internal sealed class ComparePane
     private readonly MainWindow owner;
     private readonly bool after;
     private readonly ComboBox revision = new() { Margin = new Thickness(5), MinWidth = 100, HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly ComboBox page = new() { Margin = new Thickness(5, 3, 5, 1), MinWidth = 100, MinHeight = 30, FontSize = 14, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox page = new() { Margin = new Thickness(5, 3, 5, 1), MinWidth = 100, Height = 28, FontSize = 14, HorizontalContentAlignment = HorizontalAlignment.Stretch };
     private readonly ComboBox sheet = new() { Margin = new Thickness(5), MinWidth = 100 };
     private readonly TextBlock heading = new() { FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 8, 10, 2) };
     private readonly TextBlock versionCaption = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 3, 6, 3), TextTrimming = TextTrimming.CharacterEllipsis };
