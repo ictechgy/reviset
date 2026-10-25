@@ -118,6 +118,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     // outlive the visible list. Manual list edits never mint this authority.
     @Published private var pagedEvent:EventAnchor?
     private var lastSuccessfulChangeScope = ""
+    private var initialSelectionSuppressedScope = ""
 
     struct Ticket {
         let channel: String
@@ -266,7 +267,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         generations[channel] = (generations[channel] ?? 0) + 1
     }
     func invalidateReads() {
-        eventAnchor=nil;pagedEvent=nil;lastSuccessfulChangeScope=""
+        eventAnchor=nil;pagedEvent=nil;lastSuccessfulChangeScope="";initialSelectionSuppressedScope=""
         for channel in Array(owners.keys) { invalidate(channel) }
         loadingReport = false; loadingRange = false; loadingChanges = false; loadingCell = false; loadingHistory = false; loadingMCP = false
         mcp = ""; mcpScope = ""; mcpFailure = ""; blankFormattingWarningScope = ""
@@ -282,7 +283,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         rangeFailure = ""; addressFailure = ""; cellFailure = ""; loadingRange = false; loadingCell = false
     }
     func clearSelection() {
-        eventAnchor=nil;pagedEvent=nil;lastSuccessfulChangeScope=""
+        eventAnchor=nil;pagedEvent=nil;lastSuccessfulChangeScope="";initialSelectionSuppressedScope=""
         clearCells(); changes = []; coverage = []; releases = []; resetChangePaging(); changeTotal = 0
         changesFailure = ""; comparisonNotice = ""; blankFormattingWarningScope = ""; changesFromID = ""; changesToID = ""; loadingChanges = false; report = JSON(); reportID = ""
         beforeID = ""; afterID = ""; beforeSheetID = ""; afterSheetID = ""
@@ -371,7 +372,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         var left = before ?? (changesFromID.isEmpty ? beforeID:changesFromID),right = after ?? (changesToID.isEmpty ? afterID:changesToID)
         guard let leftIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == left}),let rightIndex = revisions.firstIndex(where:{$0["revision_occurrence_id"].string == right}) else { return }
         if leftIndex > rightIndex { swap(&left,&right); statusContent = UIMessage("workbook.status.sortedVersions") }
-        eventAnchor=nil;clearCells(); invalidate("changes")
+        eventAnchor=nil;initialSelectionSuppressedScope="";clearCells(); invalidate("changes")
         beforeID = left; afterID = right;enforceSingleSourcePresentation(); comparisonNotice = ""; blankFormattingWarningScope = ""
         changes = []; resetChangePaging(); changeTotal = 0
         rowStart = 1; columnStart = 1; addressInput = "A1"; selectInitialSheets()
@@ -419,7 +420,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
             beforeCells = []; afterCells = []; loadingRange = false; rangeFailureContent = bridgeErrorMessage(error)
         }
     }
-    func loadChanges(next: Bool = false,previous: Bool = false,preserveEndpoints: Bool = false) async {
+    func loadChanges(next: Bool = false,previous: Bool = false,preserveEndpoints: Bool = false,autoSelectInitial:Bool=true) async {
         let previousScope=comparisonScope,previousAnchor=eventAnchor,retained=anchoredChange
         guard ready, !beforeID.isEmpty, !afterID.isEmpty else { return }
         guard !(next && previous),!next || !changeCursor.isEmpty,!previous || !changePreviousCursors.isEmpty else { return }
@@ -439,7 +440,10 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         if next { back.append(changePageCursor); if back.count > cursorHistoryLimit { back.removeFirst(back.count-cursorHistoryLimit) } }
         if previous { back.removeLast() }
         let ticket = begin("changes"), identity = comparisonScope
-        let initialScope=lastSuccessfulChangeScope != identity
+        // Method-only changes never acquire a new physical selection, including
+        // a retry after their first response fails. A new version pick resets it.
+        if !autoSelectInitial {initialSelectionSuppressedScope=identity}
+        let initialScope=lastSuccessfulChangeScope != identity && initialSelectionSuppressedScope != identity
         if identity==previousScope,!retained.isNull,let anchor=previousAnchor {
             pagedEvent=anchor
         } else {
@@ -469,7 +473,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
             if changesMode == "range_net",(error as? BridgeError)?.code == "WORKBOOK_DIFF_LIMIT" {
                 loadingChanges = false; mode = "history"
                 comparisonNoticeContent = UIMessage("workbook.warning.historyFallback")
-                await loadChanges(preserveEndpoints:true); return
+                await loadChanges(preserveEndpoints:true,autoSelectInitial:false); return
             }
             loadingChanges = false; changesFailureContent = bridgeErrorMessage(error)
         }
@@ -479,7 +483,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         // Evidence navigation may show an adjacent pair inside a wider interval.
         // Changing the comparison method does not constitute a new version pick.
         let preserve = revisions.contains(where:{$0["revision_occurrence_id"].string == changesFromID}) && revisions.contains(where:{$0["revision_occurrence_id"].string == changesToID})
-        mode = value; comparisonNotice = ""; await loadChanges(preserveEndpoints:preserve)
+        mode = value; comparisonNotice = ""; await loadChanges(preserveEndpoints:preserve,autoSelectInitial:false)
     }
     func moveWindow(rows: Int = 0, columns: Int = 0) async {
         guard ready else { return }

@@ -10,9 +10,14 @@ process.stdin.on('end',()=>{
   const control=JSON.parse(readFileSync(join(root,'control.json'),'utf8'));
   const query=args.args??args;
   let value,error;
+  function observedCell(scope,row,column) {
+    let label='',n=column;
+    while(n>0){n--;label=String.fromCharCode(65+n%26)+label;n=Math.floor(n/26);}
+    return {address:label+row,row,column,value:`${control.value??'fresh'}:${scope.revision_occurrence_id}:${scope.sheet_id}:${label+row}`,formula:null,number_format:'General'};
+  }
   if(action==='workbookProjects') value=[];
   else if(action==='workbookGrid') {
-    value={...args,items:[{address:'A2',row:2,column:1,value:control.value??'fresh'}]};
+    value={...args,items:[control.scoped_cells===true?observedCell(args,args.row_start,args.column_start):{address:'A2',row:2,column:1,value:control.value??'fresh'}]};
     if(control.mode==='grid-fail') error={code:'CONTROLLED_GRID_FAILURE',message:'controlled range read failure'};
   } else if(action==='workbookQuery'&&args.name==='list_workbook_changes') {
     value={...query,items:control.value==='nonempty'?[{change_id:'change'}]:[],total:control.value==='nonempty'?1:0,next_cursor:null};
@@ -25,11 +30,17 @@ process.stdin.on('end',()=>{
       if(index<0)throw new Error('Unexpected fixture change cursor');
       value.items=pages[index];value.total=pages.reduce((sum,page)=>sum+page.length,0);value.next_cursor=index+1<pages.length?`fixture-page-${index+2}`:null;
     }
+    if(control.changes_by_mode!==undefined) {
+      const map=control.changes_by_mode;
+      if(!map||typeof map!=='object'||Array.isArray(map)||Object.keys(map).some(key=>!['history','range_net'].includes(key))||Object.values(map).some(rows=>!Array.isArray(rows)||rows.length>100))throw new Error('Invalid bounded method changes');
+      value.items=map[query.mode]??[];value.total=value.items.length;value.next_cursor=null;
+    }
+    if(control.mode==='changes-limit'&&query.mode==='range_net')error={code:'WORKBOOK_DIFF_LIMIT',message:'controlled net diff limit'};
     if(control.mode!=='changes-supported')value.blank_formatting_comparison='unsupported_across_formats';
     if(control.mode==='changes-fail')error={code:'CONTROLLED_CHANGES_FAILURE',message:'controlled changes read failure'};
     for(const [mode,key] of [['project','project_id'],['report','report_id'],['from','from_revision_occurrence_id'],['to','to_revision_occurrence_id'],['mode','mode']])if(control.mode==='changes-wrong-'+mode)value[key]='foreign';
   } else if(action==='workbookQuery'&&args.name==='get_workbook_cell') {
-    const cell={address:'A2',row:2,column:1,value:control.value??'fresh',formula:null,number_format:'General'};
+    const cell=control.scoped_cells===true?observedCell(query,query.row,query.column):{address:'A2',row:2,column:1,value:control.value??'fresh',formula:null,number_format:'General'};
     value={project_id:query.project_id,report_id:query.report_id,revision_occurrence_id:query.revision_occurrence_id,sheet_id:query.sheet_id,availability:'available',items:[cell]};
     if(control.mode==='cell-fail') error={code:'CONTROLLED_CELL_FAILURE',message:'controlled cell read failure'};
     if(control.mode==='missing') {value.availability='not_materialized';value.items=[];}

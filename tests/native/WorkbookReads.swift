@@ -179,6 +179,7 @@ import AppKit
             try require(mode=="wrong-report" ? !model.cellFailure.isEmpty && model.beforeCell.isNull : model.cellFailure.isEmpty,"EqualSourceBypassedResponseScopeValidation")
         }
         try await checkPagedFirstSelection(resources:resources,root:root)
+        try await checkMethodIntervalPreservation(resources:resources,root:root)
         model.closeReads()
         try require(model.blankFormattingWarning.isEmpty,"ClosedWindowKeptFormattingWarning")
         await model.loadSelectedCells()
@@ -228,12 +229,14 @@ import AppKit
         await model.returnToChange()
         try require(model.selectedChangeID=="paged-second" && (try model.selectedChange.data())==(try JSON(second).data()) && (try source())==selectedSource && (try paging())==listBeforeReturn && (try listCount())==returnQueries,"OffPageReturnRequeriedListChangedPagingOrLostExactPhysicalEvent")
         try require(model.comparisonScope==fixedScope && (try model.report.data())==fixedReport,"PagedSelectionChangedFixedReportOrLogicalQuery")
-        // A new logical mode chooses once, on its first successful response.
+        // A method change is a new list scope, not a new physical version pick.
+        let beforeMethodSource=try source(),beforeMethodGeneration=model.revealGeneration,beforeMethodReads=try sourceCount()
         try control(mode:"changes-fail");await model.changeMode("history")
         try require(!model.changesFailure.isEmpty,"NewLogicalQueryFailureWasNotExercised")
         let historyFirst=event("history-first"),historyPages:[[Any]]=[[historyFirst],[event("history-second")]]
         try control(pages:historyPages);await model.loadChanges(preserveEndpoints:true)
-        try require(model.changesMode=="history" && model.selectedChangeID=="history-first" && model.changesFailure.isEmpty && model.cellFailure.isEmpty,"FirstSuccessfulNewModeDidNotAutomaticallySelect")
+        try require(model.changesMode=="history" && model.selectedChangeID.isEmpty && model.changesFailure.isEmpty && model.cellFailure.isEmpty && (try source())==beforeMethodSource && model.revealGeneration==beforeMethodGeneration && (try sourceCount())==beforeMethodReads,"MethodFailureRetryAutomaticallySelectedOrChangedPhysicalSources")
+        await model.chooseChange("history-first")
         await model.selectCell(2,1);await model.loadChanges(next:true)
         try require(model.selectedChangeID.isEmpty && model.canReturnToChange,"SameModePageAutomaticallyReselectedAfterManualBrowse")
         await model.returnToChange();await model.loadChanges(previous:true);await model.selectCell(2,1)
@@ -241,12 +244,71 @@ import AppKit
         try require(!model.canReturnToChange,"ImmutablePagedAnchorBypassedVisibleEventMutationGuard")
         await model.returnToChange();try require(model.selectedChangeID.isEmpty,"MutatedVisibleEventRestoredFromRetainedSnapshot")
         // A manually replaced list is not a qualified pagination response.
-        try control();await model.changeMode("range_net");await model.selectCell(2,1);model.changes=[]
+        try control();await model.changeMode("range_net");await model.chooseChange("paged-first");await model.selectCell(2,1);model.changes=[]
         try require(!model.canReturnToChange,"UnqualifiedManualListReplacementBorrowedPagedAnchorAuthority")
-        let proof:[String:Any]=["first_success_selects_first_eligible_valid_revision_and_address":true,"first_selection_keeps_existing_row_one_A_to_L_window":true,"linked_before_after_raw_utf16_preserved":true,"same_scope_next_previous_refresh_keep_selected_off_page_event_and_source":true,"pagination_issues_only_list_reads":true,"manual_browse_retains_return_anchor_across_pages":true,"off_page_return_retains_list_cursor_and_query":true,"new_logical_mode_selects_once_after_first_success":true,"visible_mutated_event_and_unqualified_list_replacement_rejected":true,"original_stale_foreign_and_mutated_guards_preserved":true,"fixture_page_count":3,"scope":"Actual Bridge/loadChanges model regression. Manual viewport authority is physical range starts and reveal generation; actual native scrollview checks belong to mounted workspace suite." ]
+        let proof:[String:Any]=["first_success_selects_first_eligible_valid_revision_and_address":true,"first_selection_keeps_existing_row_one_A_to_L_window":true,"linked_before_after_raw_utf16_preserved":true,"same_scope_next_previous_refresh_keep_selected_off_page_event_and_source":true,"pagination_issues_only_list_reads":true,"manual_browse_retains_return_anchor_across_pages":true,"off_page_return_retains_list_cursor_and_query":true,"comparison_method_failure_retry_preserves_physical_sources_without_autoselection":true,"visible_mutated_event_and_unqualified_list_replacement_rejected":true,"original_stale_foreign_and_mutated_guards_preserved":true,"fixture_page_count":3,"scope":"Actual Bridge/loadChanges model regression. Manual viewport authority is physical range starts and reveal generation; actual native scrollview checks belong to mounted workspace suite." ]
         if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_WORKBOOK_PAGED_SELECTION_EVIDENCE_OUT"],!path.isEmpty {try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:path))}
         try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("paged-selection-proof.json"))
-        print("PASS native workbook paged selection: first eligible event, retained off-page selection/raw/window, manual browse Return, first-success mode switch and immutable source guards")
+        print("PASS native workbook paged selection: first eligible event, retained off-page selection/raw/window, manual browse Return, method-preserving retry and immutable source guards")
         model.closeReads()
     }
+    @MainActor private static func checkMethodIntervalPreservation(resources:URL,root:URL) async throws {
+        let model=WorkbookModel(bridge:Bridge(resources:resources,library:root))
+        func require(_ value:Bool,_ name:String)throws {if !value{throw NSError(domain:name,code:1)}}
+        func event(_ id:String,_ from:String,_ to:String,_ address:String)->JSON {JSON(["change_id":id,"kind":"stored_value","from_revision_occurrence_id":from,"to_revision_occurrence_id":to,"from_sheet_id":"sheet-"+from,"to_sheet_id":"sheet-"+to,"before_address":address,"after_address":address])}
+        let intermediate=event("history-old-mid","old","mid","D4"),net=event("net-old-new","old","new","B3"),raw="MODE RAW\r\n한글 🧪 e\u{301}"
+        func control(_ mode:String="changes-supported",history:JSON?=nil)throws {
+            try JSON(["mode":mode,"value":raw,"scoped_cells":true,"changes_by_mode":["history":[(history ?? intermediate).raw],"range_net":[net.raw]]]).data().write(to:root.appendingPathComponent("control.json"),options:.atomic)
+        }
+        func events()throws->[JSON] {try String(contentsOf:root.appendingPathComponent("read-events.jsonl"),encoding:.utf8).split(separator:"\n").map{JSON(try JSONSerialization.jsonObject(with:Data($0.utf8)))}}
+        func lists()throws->[JSON] {try events().filter{$0["name"].string=="list_workbook_changes"}}
+        func sourceReadCount()throws->Int {try events().filter{$0["action"].string=="workbookGrid" || $0["name"].string=="get_workbook_cell"}.count}
+        func physical()throws->Data {try JSON(["before":model.beforeID,"after":model.afterID,"before_sheet":model.beforeSheetID,"after_sheet":model.afterSheetID,"before_address":model.beforeAddress,"after_address":model.afterAddress,"selected_row":model.selectedRow,"selected_column":model.selectedColumn,"address_input":model.addressInput,"row_start":model.rowStart,"column_start":model.columnStart,"before_row_start":model.beforeRowStart,"before_column_start":model.beforeColumnStart,"after_row_start":model.afterRowStart,"after_column_start":model.afterColumnStart,"reveal_generation":model.revealGeneration,"before_raw":model.beforeCell.raw,"after_raw":model.afterCell.raw,"before_grid":model.beforeCells.map(\.raw),"after_grid":model.afterCells.map(\.raw),"text_offset":model.cellTextOffset,"text_next":model.cellTextNext as Any? ?? NSNull()]).data()}
+        func requireCurrentQuery(_ method:String)throws {
+            let requests=try lists()
+            guard let query=requests.last?["query"] else{throw NSError(domain:"MethodScopedListQueryMissing",code:1)}
+            try require(model.changesFromID=="old" && model.changesToID=="new" && model.changesMode==method && query["project_id"].string=="project" && query["report_id"].string=="method-report" && query["from_revision_occurrence_id"].string=="old" && query["to_revision_occurrence_id"].string=="new" && query["mode"].string==method,"MethodChangeNarrowedFixedListQueryInterval")
+        }
+        try control();await model.start()
+        model.projectID="project";model.reportID="method-report";model.report=JSON(["report_id":"method-report","revisions":["old","mid","new"].map{["revision_occurrence_id":$0,"sheets":[["sheet_id":"sheet-"+$0,"name":"Sheet"]]]}]);model.beforeID="old";model.afterID="new";model.beforeSheetID="sheet-old";model.afterSheetID="sheet-new";model.mode="history"
+        await model.loadChanges()
+        try require(model.selectedChangeID=="history-old-mid" && model.beforeID=="old" && model.afterID=="mid" && model.beforeAddress=="D4" && model.afterAddress=="D4" && model.rangeFailure.isEmpty && model.cellFailure.isEmpty,"InitialWideHistoryQueryDidNotSelectIntermediatePhysicalEvent")
+        try require(model.beforeCell["value"].string.utf16.elementsEqual((raw+":old:sheet-old:D4").utf16) && model.afterCell["value"].string.utf16.elementsEqual((raw+":mid:sheet-mid:D4").utf16),"ThreeVersionFixtureDidNotLoadDistinctExactPhysicalRaw")
+        let selectedPhysical=try physical(),selectedReads=try sourceReadCount(),fixedReport=try model.report.data()
+        var observations:[[String:Any]]=[]
+        for method in ["range_net","history"] {
+            let count=try lists().count;await model.changeMode(method);try requireCurrentQuery(method)
+            let expected=method=="history" ? intermediate:net
+            try require(model.changesFailure.isEmpty && model.selectedChangeID.isEmpty && !model.canReturnToChange && model.selectedChange.isNull && (try physical())==selectedPhysical && (try sourceReadCount())==selectedReads && (try lists().count)==count+1 && (try model.changes.first?.data())==(try expected.data()),"MethodSwitchReplacedIntermediateRawSourceOrFailedToReplaceOnlyScopedList_"+method)
+            observations.append(["route":"selected_intermediate_event","method":method,"source_from":model.beforeID,"source_to":model.afterID,"address":model.afterAddress,"query_from":model.changesFromID,"query_to":model.changesToID,"physical_utf16_unchanged":true,"list_request_count":1,"source_request_count":0,"obsolete_selection_anchor_cleared":true])
+        }
+        await model.selectCell(7,6)
+        try require(model.beforeCell["value"].string.utf16.elementsEqual((raw+":old:sheet-old:F7").utf16) && model.afterCell["value"].string.utf16.elementsEqual((raw+":mid:sheet-mid:F7").utf16),"ManualModeFixtureDidNotLoadDistinctF7Source")
+        let manualPhysical=try physical(),manualReads=try sourceReadCount()
+        for method in ["range_net","history"] {
+            await model.changeMode(method);try requireCurrentQuery(method)
+            try require(model.changesFailure.isEmpty && model.selectedChangeID.isEmpty && (try physical())==manualPhysical && (try sourceReadCount())==manualReads,"MethodSwitchResetManualPhysicalBrowse_"+method)
+            observations.append(["route":"manual_physical_browse","method":method,"source_from":model.beforeID,"source_to":model.afterID,"address":model.afterAddress,"physical_utf16_unchanged":true,"source_request_count":0])
+        }
+        try control("changes-fail");await model.changeMode("range_net")
+        try require(!model.changesFailure.isEmpty && (try physical())==manualPhysical && (try sourceReadCount())==manualReads,"FailedMethodResponseChangedPhysicalSourcesOrHidFailure")
+        try control();await model.loadChanges(preserveEndpoints:true);try requireCurrentQuery("range_net")
+        try require(model.changesFailure.isEmpty && model.selectedChangeID.isEmpty && (try physical())==manualPhysical && (try sourceReadCount())==manualReads && model.changes.first?["change_id"].string=="net-old-new","MethodResponseRetryAutoSelectedNewFirstOrKeptWrongList")
+        try control("changes-limit")
+        let beforeFallback=try lists().count;await model.changeMode("range_net");try requireCurrentQuery("history")
+        try require(model.mode=="history" && model.changesFailure.isEmpty && !model.comparisonNotice.isEmpty && model.selectedChangeID.isEmpty && (try physical())==manualPhysical && (try sourceReadCount())==manualReads && (try lists().count)==beforeFallback+2 && model.changes.first?["change_id"].string=="history-old-mid","AutomaticHistoryFallbackAutoSelectedOrChangedPhysicalSources")
+        let fallbackRequests=Array(try lists().suffix(2)).map{$0["query"]}
+        try require(fallbackRequests.map{$0["mode"].string}==["range_net","history"] && fallbackRequests.allSatisfy{$0["from_revision_occurrence_id"].string=="old" && $0["to_revision_occurrence_id"].string=="new"},"FallbackDidNotUseTheSameWideInterval")
+        try require((try model.report.data())==fixedReport,"MethodOnlyActionsReplacedFixedReport")
+        // A later explicit version pick owns a fresh automatic link again.
+        let newVersion=event("history-mid-new","mid","new","A2")
+        try control(history:newVersion);await model.changeVersions(before:"mid",after:"new")
+        try require(model.changesFailure.isEmpty && model.cellFailure.isEmpty && model.selectedChangeID=="history-mid-new" && model.beforeID=="mid" && model.afterID=="new" && model.changesFromID=="mid" && model.changesToID=="new" && model.beforeAddress=="A2" && model.afterAddress=="A2" && model.beforeCell["value"].string.utf16.elementsEqual((raw+":mid:sheet-mid:A2").utf16) && model.afterCell["value"].string.utf16.elementsEqual((raw+":new:sheet-new:A2").utf16),"ExplicitNewVersionQueryFailedToRestoreInitialAutomaticLink")
+        let proof:[String:Any]=["scope":"Actual Bridge/model loadChanges using three controlled revisions and distinct literal UTF16 per physical revision/sheet/address; no packaged-native or viewport pixel claim","observations":observations,"wide_query_from":"old","wide_query_to":"new","inspected_source_from":"old","inspected_source_to":"mid","inspected_event_address":"D4","manual_address":"F7","selected_intermediate_source_preserved_across_method_toggles":true,"manual_browse_preserved_across_method_toggles":true,"failed_method_then_default_retry_does_not_reselect":true,"range_net_limit_fallback_keeps_sources_and_wide_interval":true,"method_actions_issue_only_list_requests":true,"distinct_before_after_exact_utf16_verified":true,"obsolete_query_selection_anchor_cleared":true,"explicit_new_version_query_still_auto_selects":true,"fixed_report_unchanged":true]
+        try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("method-interval-proof.json"))
+        if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_WORKBOOK_MODE_INTERVAL_EVIDENCE_OUT"],!path.isEmpty {try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:path))}
+        print("PASS native workbook method interval: three-version intermediate source, manual browse, failure retry, automatic history fallback and fresh-version initial selection")
+        model.closeReads()
+    }
+
 }

@@ -17,7 +17,7 @@ test('native workbook retries preserve scope and withhold mismatched cell eviden
     await copyFile(resolve('tests/native/workbook-read-fixture.mjs'),join(contents,'Resources/backend/bridge.mjs'));
     const userData=join(contents,'userdata');
     execFileSync('swiftc',['-warnings-as-errors','-swift-version','5','-parse-as-library','-target','arm64-apple-macos14.0',...nativeLocalizationTestSources,'apps/macos/Bridge.swift','apps/macos/Model.swift','apps/macos/WorkbookView.swift','tests/native/WorkbookReads.swift','-o',exe,'-framework','SwiftUI','-framework','AppKit'],{timeout:45000,stdio:'pipe'});
-    const stdout=execFileSync(exe,[],{encoding:'utf8',timeout:12000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:userData,...(process.env.DOCVER_TEST_WORKBOOK_PAGED_SELECTION_EVIDENCE_OUT?{DOCVER_TEST_WORKBOOK_PAGED_SELECTION_EVIDENCE_OUT:process.env.DOCVER_TEST_WORKBOOK_PAGED_SELECTION_EVIDENCE_OUT}:{})}});
+    const stdout=execFileSync(exe,[],{encoding:'utf8',timeout:18000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:userData,...(process.env.DOCVER_TEST_WORKBOOK_PAGED_SELECTION_EVIDENCE_OUT?{DOCVER_TEST_WORKBOOK_PAGED_SELECTION_EVIDENCE_OUT:process.env.DOCVER_TEST_WORKBOOK_PAGED_SELECTION_EVIDENCE_OUT}:{}),...(process.env.DOCVER_TEST_WORKBOOK_MODE_INTERVAL_EVIDENCE_OUT?{DOCVER_TEST_WORKBOOK_MODE_INTERVAL_EVIDENCE_OUT:process.env.DOCVER_TEST_WORKBOOK_MODE_INTERVAL_EVIDENCE_OUT}:{})}});
     assert.match(stdout,/PASS native workbook reads:/);
     assert.match(stdout,/PASS native workbook paged selection:/);
     const proof=JSON.parse(await readFile(join(userData,'paged-selection-proof.json'),'utf8')) as Record<string,unknown>;
@@ -25,5 +25,9 @@ test('native workbook retries preserve scope and withhold mismatched cell eviden
     assert.equal(proof.same_scope_next_previous_refresh_keep_selected_off_page_event_and_source,true);
     assert.equal(proof.off_page_return_retains_list_cursor_and_query,true);
     assert.equal(proof.visible_mutated_event_and_unqualified_list_replacement_rejected,true);
+    assert.equal(proof.comparison_method_failure_retry_preserves_physical_sources_without_autoselection,true);
+    assert.match(stdout,/PASS native workbook method interval:/);
+    const method=JSON.parse(await readFile(join(userData,'method-interval-proof.json'),'utf8')) as Record<string,unknown>;
+    for(const key of ['selected_intermediate_source_preserved_across_method_toggles','manual_browse_preserved_across_method_toggles','failed_method_then_default_retry_does_not_reselect','range_net_limit_fallback_keeps_sources_and_wide_interval','method_actions_issue_only_list_requests','distinct_before_after_exact_utf16_verified','explicit_new_version_query_still_auto_selects']) assert.equal(method[key],true,key);
   } finally { await rm(root,{recursive:true,force:true}); }
 });

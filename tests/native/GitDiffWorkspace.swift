@@ -362,7 +362,7 @@ private struct SoleDocumentImportProbeHarness:View {
         func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
         func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
         let cells=(1...5).flatMap {column in [JSON(["address":WorkbookGrid.address(1,column),"row":1,"column":column,"value":["Category","Details","Price","Qty","Amount"][column-1],"value_type":"string","formula":NSNull()]),JSON(["address":WorkbookGrid.address(2,column),"row":2,"column":column,"value":["Category","Description","125","6","750"][column-1],"value_type":column<3 ? "string":"number","formula":NSNull()])]}
-        func source(_ language:String="en",_ identity:String="project|report|occurrence|sheet")->WorkbookGrid {WorkbookGrid(sourceIdentity:identity,language:language,pane:"compact",revealIntent:"fixed",cells:cells,rowStart:1,columnStart:1,rowCount:10,columnCount:5,selectedRow:2,selectedColumn:3,onSelect:{_,_ in})}
+        func source(_ language:String="en",_ identity:String="project|report|occurrence|sheet")->WorkbookGrid {WorkbookGrid(sourceIdentity:identity,language:language,pane:"compact",revealIntent:"fixed",cells:cells,rowStart:1,columnStart:1,rowCount:100,columnCount:5,selectedRow:2,selectedColumn:3,onSelect:{_,_ in})}
         let host=NSHostingView(rootView:source()),window=NSWindow(contentRect:NSRect(x:0,y:0,width:580,height:300),styleMask:[.titled],backing:.buffered,defer:false);window.isReleasedWhenClosed=false;window.contentView=host;window.orderFront(nil);defer{window.close()}
         func settle()async throws {try await Task.sleep(nanoseconds:100_000_000);host.layoutSubtreeIfNeeded()}
         try await settle()
@@ -370,17 +370,26 @@ private struct SoleDocumentImportProbeHarness:View {
         let widths=table.tableColumns.dropFirst().map(\.width),available=scroll.contentView.bounds.width,last=table.rect(ofColumn:5)
         try require(widths.count==5 && widths[0]>=96 && widths[1]>=96 && widths[2]<widths[0] && widths[2]>=64 && last.maxX<=available+0.5,"CompactDefaultsDidNotShowRepresentativeFiveColumns_widths_\(widths)_last_\(last)_available_\(available)")
         table.tableColumns[1].width=241;try await settle()
+        // Match the production 100-row viewport. A 10-row document shorter than
+        // this window makes AppKit clamp negative origins as the window grows;
+        // that geometry cannot represent a retained manual scroll position.
+        let manual=NSPoint(x:40,y:56)
+        scroll.contentView.scroll(to:manual);scroll.reflectScrolledClipView(scroll.contentView)
+        try require(scroll.contentView.bounds.origin==manual && table.bounds.height>scroll.contentView.bounds.height+manual.y && table.bounds.width>scroll.contentView.bounds.width+manual.x,"CompactManualViewportFixtureOutsideNativeScrollableBounds")
         let columns=table.tableColumns,origin=scroll.contentView.bounds.origin,selected=table.selectedRow
+        func geometry()->[String:String] {["clip_bounds":NSStringFromRect(scroll.contentView.bounds),"clip_frame":NSStringFromRect(scroll.contentView.frame),"document_bounds":NSStringFromRect(table.bounds),"document_frame":NSStringFromRect(table.frame)]}
+        let manualBeforeGeometry=geometry()
         host.rootView=source("ko");try await settle()
         window.setContentSize(NSSize(width:460,height:320));try await settle()
-        try require(table.tableColumns[1].width==241 && zip(columns,table.tableColumns).allSatisfy{$0 === $1} && table.dataSource as? WorkbookGrid.Coordinator === owner && table.selectedRow==selected && scroll.contentView.bounds.origin==origin,"ExplicitNativeColumnResizeLostOnSameSourceRefreshOrPassiveResize")
+        let manualAfterGeometry=geometry(),manualAfterOrigin=scroll.contentView.bounds.origin
+        try require(table.tableColumns[1].width==241 && zip(columns,table.tableColumns).allSatisfy{$0 === $1} && table.dataSource as? WorkbookGrid.Coordinator === owner && table.selectedRow==selected && scroll.contentView.bounds.origin==origin,"ExplicitNativeColumnResizeLostOnSameSourceRefreshOrPassiveResize_widths_\(table.tableColumns.map(\.width))_columnsRetained_\(zip(columns,table.tableColumns).map{$0 === $1})_coordinatorRetained_\(table.dataSource as? WorkbookGrid.Coordinator === owner)_selection_\(selected)_actual_\(table.selectedRow)_origin_\(origin)_actual_\(scroll.contentView.bounds.origin)_clip_\(scroll.contentView.frame)_table_\(table.frame)")
         host.rootView=source("ko","project|report|other-occurrence|sheet");try await settle()
         try require(table.tableColumns[1].width==widths[0],"UserWidthLeakedIntoDifferentPhysicalSource")
         host.rootView=source();try await settle()
         try require(table.tableColumns[1].width==241,"UserWidthLostWhenReturningToSamePhysicalSource")
         guard let field=(table.view(atColumn:3,row:1,makeIfNecessary:true) as? NSTableCellView)?.textField else{throw NSError(domain:"CompactGridNativeSourceMissing",code:1)}
         try require(field.stringValue.utf16.elementsEqual("125".utf16),"CompactWidthReformattedRawValue")
-        return ["scope":"controlled production native WorkbookGrid at 580pt, five observed source columns; public AppKit resize notification, retained table and coordinator; no whole-corpus auto-fit claim","default_widths":widths.map(Double.init),"available_content_width":Double(available),"last_column_max_x":Double(last.maxX),"all_five_representative_columns_visible":true,"explicit_resized_width":241,"same_source_locale_refresh_and_passive_window_resize_preserve_width_and_origin":true,"different_source_default_and_returned_source_preference_verified":true,"raw_source_utf16_exact":true]
+        return ["scope":"controlled production native WorkbookGrid at 580pt, five observed source columns; public AppKit resize notification, retained table and coordinator; no whole-corpus auto-fit claim","default_widths":widths.map(Double.init),"available_content_width":Double(available),"last_column_max_x":Double(last.maxX),"all_five_representative_columns_visible":true,"explicit_resized_width":241,"row_count_matches_production":100,"retained_manual_origin":[Double(origin.x),Double(origin.y)],"actual_after_passive_origin":[Double(manualAfterOrigin.x),Double(manualAfterOrigin.y)],"native_geometry_before_passive":manualBeforeGeometry,"native_geometry_after_passive":manualAfterGeometry,"document_height":Double(table.bounds.height),"resized_viewport_height":Double(scroll.contentView.bounds.height),"same_source_locale_refresh_and_passive_window_resize_preserve_width_and_origin":true,"different_source_default_and_returned_source_preference_verified":true,"raw_source_utf16_exact":true]
     }
 
     @MainActor static func checkWorkbookReadingGuidance(_ model:WorkbookModel)async throws {
