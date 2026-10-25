@@ -264,19 +264,21 @@ private struct SmokeStructureView: View {
     static func exerciseReadability(_ model:AppModel,layout:WorkspaceLayoutStore,output:URL)async throws->[String:Any] {
         guard let profile=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"],!profile.isEmpty else{throw BridgeError(code:"READABILITY_TEST_LIBRARY",message:"Readability qualification requires an isolated DOCVER_TEST_USER_DATA library.")}
         guard let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView.map{workspaceLayoutMarkers(in:$0).contains{$0.identifier?.rawValue=="Reviset.document.readingGuide"}} == true}),let content=window.contentView else{throw BridgeError(code:"READABILITY_WINDOW",message:"The actual document window and reading guide are unavailable.")}
-        let language=LanguagePreferences.shared,text=ReadabilityPreferences.shared,defaults=UserDefaults.standard
-        let domain=Bundle.main.bundleIdentifier ?? "org.docver.native",raw=defaults.persistentDomain(forName:domain) ?? [:]
+        let language=LanguagePreferences.shared,text=ReadabilityPreferences.shared
+        let defaults=UserDefaults.standard,domain=Bundle.main.bundleIdentifier ?? "org.docver.native"
+        func standardPreferences()->NSDictionary {
+            let raw=defaults.persistentDomain(forName:domain) ?? [:]
+            return NSDictionary(dictionary:raw.filter{[LanguagePreferences.preferenceKey,ReadabilityPreferences.preferenceKey].contains($0.key)})
+        }
+        let originalStandardPreferences=standardPreferences()
+        func standardPreferencesUnchanged()->Bool {originalStandardPreferences.isEqual(standardPreferences())}
         let originalLanguage=language.selection,originalText=text.selection,originalFrame=window.frame,originalDiff=model.diffMode,originalPageMode=model.pageMode,originalGuide=layout.readingGuideExpanded
-        let languageKey=LanguagePreferences.preferenceKey,textKey=ReadabilityPreferences.preferenceKey
         var restored=false,restorationPassed=false,stage="setup",observations:[[String:Any]]=[],captures:[String]=[]
-        func sameRaw(_ left:Any?,_ right:Any?)->Bool {switch(left,right){case(nil,nil):return true;case(let a?,let b?):return (a as? NSObject)?.isEqual(b) == true;default:return false}}
         @discardableResult func restore()->Bool {
             if restored {return restorationPassed};restored=true
             language.selection=originalLanguage;text.selection=originalText;model.diffMode=originalDiff;model.pageMode=originalPageMode;layout.readingGuideExpanded=originalGuide
             window.setFrame(originalFrame,display:true)
-            for key in [languageKey,textKey] {if let value=raw[key] {defaults.set(value,forKey:key)} else {defaults.removeObject(forKey:key)}}
-            let current=defaults.persistentDomain(forName:domain) ?? [:]
-            restorationPassed=language.selection==originalLanguage && text.selection==originalText && layout.readingGuideExpanded==originalGuide && window.frame==originalFrame && sameRaw(current[languageKey],raw[languageKey]) && sameRaw(current[textKey],raw[textKey])
+            restorationPassed=language.selection==originalLanguage && text.selection==originalText && layout.readingGuideExpanded==originalGuide && window.frame==originalFrame
             return restorationPassed
         }
         defer {restore()}
@@ -322,23 +324,26 @@ private struct SmokeStructureView: View {
                 let currentReport=try model.report.data(),currentRows=try JSON(model.changes.map(\.raw)).data()
                 let unchanged=project==model.projectID && currentReport==report && from==model.from && to==model.to && tab==model.tab && selected==model.selectedChangeID && left==model.leftPageID && right==model.rightPageID && model.zoom==zoom && currentRows==queryRows && !rangeReadObserved
                 facts["fixed_report_query_event_pages_and_model_zoom_unchanged"]=unchanged
+                facts["standard_language_and_text_preferences_unchanged"]=standardPreferencesUnchanged()
                 observations.append(facts)
                 let file="native-readability-"+stage+".png"
                 try captureView(window,output.appendingPathComponent(file));captures.append(file)
+                guard standardPreferencesUnchanged() else{throw BridgeError(code:"READABILITY_PREFERENCE_ISOLATION",message:"Standard language or text-size preferences changed during isolated readability qualification; no persistent values were restored.")}
                 guard unchanged,!model.loadingChanges,layout.configuration==layoutState,layout.isFocused==focused else{throw BridgeError(code:"READABILITY_MODEL",message:"A readability/window change altered the fixed report, query, selected event, source pages, zoom or layout.")}
                 guard let version,let guide,reachable(version),reachable(guide),version.bounds.height>=36,guide.bounds.height >= (expanded ? 80:28) else{throw BridgeError(code:"READABILITY_CHROME",message:"The version controls or \(expanded ? "expanded":"compact") reading guide are clipped/unreachable at \(stage).")}
                 guard !visiblePDFs.isEmpty,visiblePDFs.allSatisfy({reachable($0) && $0.bounds.height>=minimumPDFHeight && $0.bounds.width>=180}) else{throw BridgeError(code:"READABILITY_SOURCE_AREA",message:"The actual source PDF area is smaller than180pt high/wide or clipped at \(stage); see readability-failure.json and the capture.")}
                 guard Set(currentPDFs.map(ObjectIdentifier.init))==identities else{throw BridgeError(code:"READABILITY_SOURCE_HOST",message:"Readability changes replaced a live production PDFView.")}
                 for (pdf,document,page,scale) in sourceState {guard pdf.document === document,pdf.currentPage === page,abs(pdf.scaleFactor-scale)<0.001 else{throw BridgeError(code:"READABILITY_SOURCE_STATE",message:"Readability changes replaced a PDF document or reset its page/scale.")}}
             }
-            guard restore() else{throw BridgeError(code:"READABILITY_RESTORE",message:"Original language/raw preferences, interface text size or window frame did not restore.")}
-            let result:[String:Any]=["passed":true,"checks":observations.count,"matrix":"8 compact-guide cases: EN/KO × comfortable/extra large ×1440×960/1100×740 client points; 2 expanded-guide cases: EN/KO ×extra large ×1440×960","captures":captures,"observations":observations,"mounted_source_readiness":mounted,"production_pdf_views_retained":originalPDFs.count,"fixed_report_query_rows_selected_event_pages_and_model_zoom_retained":true,"range_read_observed":rangeReadObserved,"language_raw_preferences_text_size_guide_and_window_frame_restored":restorationPassed,"minimum_actual_pdf_height":minimumPDFHeight,"interaction_scope":"actual native client-view captures and public in-process AppKit geometry; no OS input, accessibility automation, full Dock or viewport-position preservation claim"]
+            guard restore() else{throw BridgeError(code:"READABILITY_RESTORE",message:"Original in-memory language, interface text size or window frame did not restore.")}
+            guard standardPreferencesUnchanged() else{throw BridgeError(code:"READABILITY_PREFERENCE_ISOLATION",message:"Standard language or text-size preferences changed during isolated readability qualification; no persistent values were restored.")}
+            let result:[String:Any]=["passed":true,"checks":observations.count,"matrix":"8 compact-guide cases: EN/KO × comfortable/extra large ×1440×960/1100×740 client points; 2 expanded-guide cases: EN/KO ×extra large ×1440×960","captures":captures,"observations":observations,"mounted_source_readiness":mounted,"production_pdf_views_retained":originalPDFs.count,"fixed_report_query_rows_selected_event_pages_and_model_zoom_retained":true,"range_read_observed":rangeReadObserved,"in_memory_language_text_size_guide_and_window_frame_restored":restorationPassed,"standard_language_and_text_preferences_unchanged":standardPreferencesUnchanged(),"minimum_actual_pdf_height":minimumPDFHeight,"interaction_scope":"actual native client-view captures and public in-process AppKit geometry; no OS input, accessibility automation, full Dock or viewport-position preservation claim"]
             try JSON(result).data().write(to:output.appendingPathComponent("readability-observations.json"));return result
         } catch {
             let file="native-readability-failure-"+stage+".png"
             if (try? captureView(window,output.appendingPathComponent(file))) != nil {captures.append(file)}
             let didRestore=restore()
-            try? JSON(["passed":false,"stage":stage,"error":error.localizedDescription,"captures":captures,"observations":observations,"language_raw_preferences_text_size_guide_and_window_frame_restored":didRestore,"interaction_scope":"actual native client-view capture and in-process geometry; no OS input or accessibility automation claim"]).data().write(to:output.appendingPathComponent("readability-failure.json"))
+            try? JSON(["passed":false,"stage":stage,"error":error.localizedDescription,"captures":captures,"observations":observations,"in_memory_language_text_size_guide_and_window_frame_restored":didRestore,"standard_language_and_text_preferences_unchanged":standardPreferencesUnchanged(),"interaction_scope":"actual native client-view capture and in-process geometry; no OS input or accessibility automation claim"]).data().write(to:output.appendingPathComponent("readability-failure.json"))
             throw error
         }
     }

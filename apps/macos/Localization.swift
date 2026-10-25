@@ -176,28 +176,36 @@ private final class DisplayFormatters: @unchecked Sendable {
 }
 
 @MainActor @Observable final class LanguagePreferences: @MainActor ObservableObject {
-    static let shared = LanguagePreferences()
+    static let shared: LanguagePreferences = {
+        guard ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] != nil else { return LanguagePreferences() }
+        // Synthetic libraries must not read or write the user's display choice.
+        // Preserve the explicit launch override used by native qualifications.
+        let arguments = ProcessInfo.processInfo.arguments
+        let argument = arguments.firstIndex(of: "-" + preferenceKey)
+        let choice = argument.flatMap { arguments.indices.contains($0 + 1) ? UILanguage(rawValue: arguments[$0 + 1]) : nil } ?? .system
+        return LanguagePreferences(defaults: nil, initialSelection: choice)
+    }()
     static let preferenceKey = "RevisetUILanguage"
     // Commands/Scene use Combine invalidation; view bodies also track Observation.
     @ObservationIgnored let objectWillChange = ObservableObjectPublisher()
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let defaults: UserDefaults?
     @ObservationIgnored private let bundle: Bundle
     var selection: UILanguage {
         willSet { objectWillChange.send() }
         didSet {
-            defaults.set(selection.rawValue, forKey: Self.preferenceKey)
+            defaults?.set(selection.rawValue, forKey: Self.preferenceKey)
             localizer = Localizer(language: selection == .system ? Localizer.preferredLanguage() : selection.rawValue, bundle: bundle)
         }
     }
     private(set) var localizer: Localizer
     var effectiveLanguage: String { localizer.language }
 
-    init(defaults: UserDefaults = .standard, bundle: Bundle = .main) {
+    init(defaults: UserDefaults? = .standard, bundle: Bundle = .main, initialSelection: UILanguage? = nil) {
         self.defaults = defaults
         self.bundle = bundle
-        let initialSelection = UILanguage(rawValue: defaults.string(forKey: Self.preferenceKey) ?? "") ?? .system
-        selection = initialSelection
-        localizer = Localizer(language: initialSelection == .system ? Localizer.preferredLanguage() : initialSelection.rawValue, bundle: bundle)
+        let choice = initialSelection ?? UILanguage(rawValue: defaults?.string(forKey: Self.preferenceKey) ?? "") ?? .system
+        selection = choice
+        localizer = Localizer(language: choice == .system ? Localizer.preferredLanguage() : choice.rawValue, bundle: bundle)
     }
 }
 

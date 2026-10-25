@@ -263,7 +263,7 @@ private struct WorkspaceReadingGuide:View {
                 Label(L("git.guide.title"),systemImage:"lightbulb").readableFont(.callout,weight:.semibold)
                 if !expanded {Text(L("git.guide.summary")).readableFont(.caption).foregroundStyle(.secondary).lineLimit(1)}
             }
-        }.readableFont(.callout).padding(.horizontal,18).padding(.vertical,12)
+        }.readableFont(.callout).padding(.horizontal,18).padding(.vertical,6)
             .background(Color.blue.opacity(0.035)).background(WorkspaceLayoutMarker(name:"Reviset.document.readingGuide"))
     }
 }
@@ -338,7 +338,7 @@ struct CompareWorkspace: View {
             ViewThatFits(in:.horizontal) {
                 HStack(spacing:14){queryVersions;queryMode;Spacer(minLength:8);queryTools}
                 VStack(alignment:.leading,spacing:12){queryVersions;HStack(spacing:14){queryMode;Spacer(minLength:8);queryTools}}
-            }.readableInterface().padding(.horizontal,16).padding(.vertical,10)
+            }.readableInterface().padding(.horizontal,16).padding(.vertical,6)
                 .background(WorkspaceLayoutMarker(name:"Reviset.document.versionBar"))
                 .onChange(of:model.from){model.changeRange()}.onChange(of:model.to){model.changeRange()}
             if model.revisions.count>1 {

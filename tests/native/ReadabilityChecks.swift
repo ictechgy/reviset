@@ -89,6 +89,33 @@ private struct ReadabilityHarness:View {
         try require(defaults.string(forKey:ReadabilityPreferences.preferenceKey)=="extraLarge","Test library wrote persistent UI size")
         preference.selection = .standard
     }
+    @MainActor static func sharedLanguageIsolation()throws {
+        guard let domain=Bundle.main.bundleIdentifier else{throw NSError(domain:"IsolationProbeRequiresUniqueBundle",code:1)}
+        let defaults=UserDefaults.standard
+        let original=NSDictionary(dictionary:defaults.persistentDomain(forName:domain) ?? [:])
+        let language=LanguagePreferences.shared,text=ReadabilityPreferences.shared
+        let expected=CommandLine.arguments.contains("expect-ko") ? UILanguage.ko:.system
+        try require(language.selection==expected,"Isolated language ignored its explicit launch argument or read a persistent choice")
+        // Check immediately after each mutation, with no cleanup/restore write.
+        // A failure or process exit cannot make a transient standard write pass.
+        for choice in [UILanguage.en,.ko,.system] {
+            language.selection=choice
+            try require(language.effectiveLanguage==(choice == .system ? Localizer.preferredLanguage():choice.rawValue),"In-memory language did not rerender")
+            try require(original.isEqual(to:defaults.persistentDomain(forName:domain) ?? [:]),"Synthetic language switch wrote standard preferences before restoration")
+        }
+        for choice in ReadableTextSize.allCases {
+            text.selection=choice
+            try require(original.isEqual(to:defaults.persistentDomain(forName:domain) ?? [:]),"Synthetic text-size switch wrote standard preferences before restoration")
+        }
+        let suite="org.reviset.language-persistence-control."+UUID().uuidString,injected=UserDefaults(suiteName:suite)!
+        defer{injected.removePersistentDomain(forName:suite)}
+        let persistent=LanguagePreferences(defaults:injected)
+        persistent.selection = .ko
+        // Launch arguments also override reads from an injected defaults suite;
+        // inspect its persisted domain rather than the argument-domain overlay.
+        try require(injected.persistentDomain(forName:suite)?[LanguagePreferences.preferenceKey] as? String == "ko","Injected language preferences lost normal persistence in test mode")
+        print("PASS isolated shared language/text size: launch override, immediate no-standard-write checks and injected persistence control")
+    }
     @MainActor static func settle()async {try? await Task.sleep(nanoseconds:150_000_000);for window in NSApp.windows {window.contentView?.layoutSubtreeIfNeeded()}}
     @MainActor static func hostIDs(_ root:NSView)->Set<ObjectIdentifier> {
         var result=Set<ObjectIdentifier>()
@@ -131,6 +158,7 @@ private struct ReadabilityHarness:View {
     }
     @MainActor static func main()throws {
         if CommandLine.arguments.contains("preferences") {try persistence();return}
+        if CommandLine.arguments.contains("language-isolation") {try sharedLanguageIsolation();return}
         try isolatedPreference()
         NSApplication.shared.setActivationPolicy(.accessory)
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1100,height:820),styleMask:[.titled,.closable],backing:.buffered,defer:false)
