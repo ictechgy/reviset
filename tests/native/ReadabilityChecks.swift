@@ -157,9 +157,13 @@ private struct ReadabilityHarness:View {
                 try require(draft.stringValue==draftText && window.firstResponder === focus,"Text size changed a draft or stole editor focus")
                 guard let currentAction=children.compactMap({$0 as? NSButton}).first(where:{$0.identifier?.rawValue=="typography.action"}),let currentTarget=currentAction.target,let font=currentAction.font else{throw NSError(domain:"ReadableActionButtonDisappeared",code:1)}
                 let titleSize=(currentAction.title as NSString).size(withAttributes:[.font:font]),fitting=currentAction.fittingSize
+                guard let buttonCell=currentAction.cell as? NSButtonCell else{throw NSError(domain:"ReadableActionButtonCellMissing",code:1)}
+                let titleRect=buttonCell.titleRect(forBounds:currentAction.bounds),drawingRect=buttonCell.drawingRect(forBounds:currentAction.bounds)
                 try require(currentAction === action && ObjectIdentifier(currentTarget)==actionTarget,"Readable action button or coordinator was replaced")
                 try require(font.pointSize==ReadabilityPreferences.shared.pointSize(.body) && currentAction.controlSize == .regular,"Actual native action font remained at the platform's small button default")
                 try require(fitting.width>=ceil(titleSize.width)+20 && fitting.height>=32 && currentAction.bounds.width+0.5>=fitting.width && currentAction.bounds.height+0.5>=fitting.height,"Native action title or rounded bezel did not fit its actual host")
+                try require(currentAction.bezelStyle == .flexiblePush && currentAction.contentTintColor==nil,"Native action must use a flexible-height bezel and system text colors")
+                try require(titleRect.width>=titleSize.width && titleRect.height>=titleSize.height && drawingRect.insetBy(dx:2,dy:2).contains(titleRect),"Actual native cell title crowds its drawn bezel or clips its glyph line: font \(font.pointSize), bounds \(currentAction.bounds), glyph \(titleSize), title \(titleRect), drawing \(drawingRect)")
                 try require(currentAction.keyEquivalent.isEmpty,"Readable action introduced an unsolicited keyboard equivalent")
                 actions.generation+=1
                 await settle()
@@ -173,7 +177,7 @@ private struct ReadabilityHarness:View {
                 actions.enabled=true;await settle()
                 try require(action.isEnabled && ObjectIdentifier(action.target!)==actionTarget,"Re-enabling replaced the button coordinator")
                 try require(pdf.document === document && pdf.currentPage === page && abs(pdf.scaleFactor-1.5)<0.001 && grid.contentView.bounds.origin==origin && draft.stringValue==draftText && window.firstResponder === focus,"Native action state changes altered source, draft, viewport or focus")
-                observed.append(["size":size.rawValue,"body_height":body.bounds.height,"inherited_body_height":inherited.bounds.height,"caption_height":caption.bounds.height,"context_height":context.bounds.height,"action_button_font":font.pointSize,"action_button_fitting_width":fitting.width,"action_button_fitting_height":fitting.height,"action_button_actual_width":currentAction.bounds.width,"action_button_actual_height":currentAction.bounds.height])
+                observed.append(["size":size.rawValue,"body_height":body.bounds.height,"inherited_body_height":inherited.bounds.height,"caption_height":caption.bounds.height,"context_height":context.bounds.height,"action_button_font":font.pointSize,"action_button_fitting_width":fitting.width,"action_button_fitting_height":fitting.height,"action_button_actual_width":currentAction.bounds.width,"action_button_actual_height":currentAction.bounds.height,"action_button_title_rect_height":titleRect.height,"action_button_drawing_rect_height":drawingRect.height,"action_button_cell_title_margin_verified":true])
             }
             try require((observed[2]["body_height"] as! CGFloat)>(observed[0]["body_height"] as! CGFloat) && (observed[2]["caption_height"] as! CGFloat)>(observed[0]["caption_height"] as! CGFloat),"Explicit SwiftUI fonts failed to observe size changes")
             try require((observed[2]["inherited_body_height"] as! CGFloat)>(observed[0]["inherited_body_height"] as! CGFloat),"Default interface font did not cross the hosting-controller boundary")

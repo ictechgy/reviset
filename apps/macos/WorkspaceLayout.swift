@@ -81,7 +81,9 @@ private final class ReadableNativeActionButton:NSButton {
     override var intrinsicContentSize:NSSize {
         let native=super.intrinsicContentSize,font=self.font ?? .systemFont(ofSize:16)
         let text=(title as NSString).size(withAttributes:[.font:font])
-        return NSSize(width:max(native.width,ceil(text.width)+28),height:max(32,native.height,ceil(font.ascender-font.descender+font.leading)+10))
+        // Flexible-push drawingRect insets 12pt horizontally and 4pt
+        // vertically. Leave at least another 2pt around the tight titleRect.
+        return NSSize(width:max(native.width,ceil(text.width)+28),height:max(32,native.height,ceil(text.height)+12))
     }
 }
 struct ReadableActionButton:NSViewRepresentable {
@@ -102,16 +104,16 @@ struct ReadableActionButton:NSViewRepresentable {
     func makeCoordinator()->Coordinator {Coordinator()}
     func makeNSView(context:Context)->NSButton {
         let button=ReadableNativeActionButton(title:title,target:context.coordinator,action:#selector(Coordinator.invokeReadableAction(_:)))
-        button.bezelStyle = .rounded;button.controlSize = .regular;button.setButtonType(.momentaryPushIn)
+        button.bezelStyle = .flexiblePush;button.controlSize = .regular;button.setButtonType(.momentaryPushIn)
         button.setContentCompressionResistancePriority(.required,for:.horizontal);button.setContentCompressionResistancePriority(.required,for:.vertical)
         button.setContentHuggingPriority(.required,for:.horizontal);button.setContentHuggingPriority(.required,for:.vertical)
         return button
     }
     func updateNSView(_ button:NSButton,context:Context) {
         context.coordinator.action=action
-        button.title=title;button.font = .systemFont(ofSize:readability.pointSize(.body));button.isEnabled=isEnabled
+        button.title=title;button.font = .systemFont(ofSize:readability.pointSize(.body),weight:prominent ? .semibold:.regular);button.isEnabled=isEnabled
         button.identifier=identifier.map{NSUserInterfaceItemIdentifier($0)};button.setAccessibilityLabel(title)
-        button.bezelColor=prominent ? .controlAccentColor:nil;button.contentTintColor=prominent ? .white:nil
+        button.bezelColor=prominent ? .controlAccentColor:nil;button.contentTintColor=nil
         button.keyEquivalent=isCancel ? "\u{1b}":"";button.keyEquivalentModifierMask=[]
         button.invalidateIntrinsicContentSize()
     }
