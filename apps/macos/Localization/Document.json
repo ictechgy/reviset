@@ -452,8 +452,8 @@
     "ko": "너비 맞춤"
   },
   "doc.common.fit": {
-    "en": "Fit to window",
-    "ko": "화면 맞춤"
+    "en": "Fit width",
+    "ko": "너비 맞춤"
   },
   "doc.changes.collapse": {
     "en": "Hide changes",

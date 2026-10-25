@@ -93,6 +93,20 @@ internal sealed class MainWindow : Window
     private readonly Expander technicalDetails = new() { IsExpanded = false, MaxHeight = 180 };
     private bool evidencePresented;
     internal bool EvidencePresented => Layout.Inspector;
+    internal bool CanOpenCellSource(ComparePane pane) => startupReady && AllowsEvidence && ComparisonState == "ready" && IsWorkbook && pane.AuthorizesCell(pane.FocusedRow, pane.FocusedColumn);
+    internal bool EvidenceContainsCell(ComparePane pane)
+    {
+        if (!EvidencePresented || !IsWorkbook || inspectorMode != "raw" || !pane.AuthorizesCell(pane.FocusedRow, pane.FocusedColumn)) return false;
+        var side = ReferenceEquals(pane, Before) ? "before" : "after";
+        bool Matches(JsonElement cell) => cell.Get("address").Text() == pane.FocusedAddress && cell.Get("row").Number() == pane.FocusedRow && cell.Get("column").Number() == pane.FocusedColumn;
+        if (detailPayload.Get("before").ValueKind == JsonValueKind.Object)
+        {
+            var prefix = side == "before" ? "from" : "to";
+            return selectedChange.Get(prefix + "_revision_occurrence_id").Text() == pane.RevisionId && selectedChange.Get(prefix + "_sheet_id").Text() == pane.SheetId && SourceDiffPolicy.WorkbookComponent(detailPayload.Get(side), selectedChange, side, projectId, reportId, out var paired) && Matches(paired);
+        }
+        return detailPayload.Get("project_id").Text() == projectId && detailPayload.Get("report_id").Text() == reportId && detailPayload.Get("revision_occurrence_id").Text() == pane.RevisionId && detailPayload.Get("sheet_id").Text() == pane.SheetId && detailPayload.Get("component").Text() != "style" && detailPayload.Get("items").Items() is { Count: 1 } cells && Matches(cells[0]);
+    }
+    internal string QueryIdentityForSmoke => JsonSerializer.Serialize(new { projectId, reportId, report = currentReport.ValueKind == JsonValueKind.Undefined ? "" : currentReport.GetRawText(), scope = CurrentChangeScope, loadedChangeScope, ComparisonState, changesReady, nextChanges, selected = selectedChange.ValueKind == JsonValueKind.Undefined ? "" : selectedChange.GetRawText(), rows = changes.Select(item => item.Value.GetRawText()).ToArray(), raw = detailPayload.ValueKind == JsonValueKind.Undefined ? "" : detailPayload.GetRawText(), detailOffset, detailNext, detailCursor, detailItemNext });
     private bool evidenceBottomDock;
     private Button firstDetail = new();
     private Button nextDetail = new();
@@ -113,7 +127,8 @@ internal sealed class MainWindow : Window
     private bool HasIndependentSourceDetail => IsWorkbook && inspectorMode == "raw" && detailPayload.ValueKind == JsonValueKind.Object && detailPayload.Get("before").ValueKind != JsonValueKind.Object && detailLoader is not null;
     private ChangeQueryScope? loadedChangeScope;
     private bool sourceOnlyFailure;
-    private sealed record EventRetry(ChangeQueryScope Scope, ChangeChoice Row);
+    private sealed record EventRetry(ChangeQueryScope Scope, ChangeChoice Row, bool Initial = false);
+    private Func<string, JsonElement, CancellationToken, Task>? initialComponentForSmoke;
     private EventRetry? eventRetry;
     private bool ChangeNavigationReady => !busy && startupReady && loadedChangeScope == CurrentChangeScope && (changesReady || eventRetry is { } pending && pending.Scope == CurrentChangeScope && changes.Contains(pending.Row));
     private ChangeQueryScope CurrentChangeScope => new(IsWorkbook, projectId, reportId, intervalFrom, intervalTo, NetMode);
@@ -606,7 +621,16 @@ internal sealed class MainWindow : Window
         // This one-use intent belongs only to the new report/endpoint query's
         // first installed page. A manual source request changes generation;
         // mode, refresh and continuation reads never create another intent.
-        if (focus is not null && IsCurrent(focus.Generation) && loadedChangeScope == focus.Scope && CurrentChangeScope == focus.Scope && changesReady && changes.FirstOrDefault(item => EligibleInitialPhysicalChange(item.Value)) is { } first) await SelectChange(first.Value, initialFocus: focus);
+        if (focus is not null && IsCurrent(focus.Generation) && loadedChangeScope == focus.Scope && CurrentChangeScope == focus.Scope && changesReady && changes.FirstOrDefault(item => EligibleInitialPhysicalChange(item.Value)) is { } first)
+        {
+            try { await SelectChange(first.Value, afterComponentForSmoke: initialComponentForSmoke, initialFocus: focus); }
+            catch when (IsCurrent(focus.Generation) && loadedChangeScope == focus.Scope && CurrentChangeScope == focus.Scope && eventRetry is { Initial: true } pending && pending.Scope == focus.Scope && ReferenceEquals(pending.Row, first))
+            {
+                // The query and committed report succeeded. Only this linked
+                // event read failed; its exact scoped retry owns the recovery.
+                status.Text = Copy["initialFocusFailed"];
+            }
+        }
         RenderSourceDiff();
     }
     internal Task RetryComparison()
@@ -626,7 +650,20 @@ internal sealed class MainWindow : Window
         eventRetry = null; sourceOnlyFailure = false; changesReady = false; ComparisonState = "loading"; changeList.IsEnabled = false; more.IsEnabled = false; retryComparison.Visibility = Visibility.Collapsed; if (!preserveSourceDetail) { ClearDetail(); detail.Text = Copy["loading"]; } RenderSourceDiff();
         if (clearChanges) { loadedChangeScope = null; binding = true; changeList.SelectedItem = null; changes.Clear(); binding = false; nextChanges = ""; }
     }
-    private void FailComparison(bool retireQuery = true, bool preserveSources = false) { sourceOnlyFailure = !retireQuery; if (retireQuery) { loadedChangeScope = null; eventRetry = null; } changesReady = false; ComparisonState = "failed"; changeList.IsEnabled = ChangeNavigationReady; more.IsEnabled = ChangeNavigationReady && nextChanges.Length > 0; if (!preserveSources || Before.ReadState is not ("ready" or "absent") || After.ReadState is not ("ready" or "absent")) { Before.Invalidate("failed"); After.Invalidate("failed"); } ClearDetail(); detail.Text = Copy["failed"]; retryComparison.Visibility = Visibility.Visible; RenderSourceDiff(); }
+    private void FailComparison(bool retireQuery = true, bool preserveSources = false)
+    {
+        sourceOnlyFailure = !retireQuery; if (retireQuery) { loadedChangeScope = null; eventRetry = null; }
+        changesReady = false; ComparisonState = "failed"; changeList.IsEnabled = ChangeNavigationReady; more.IsEnabled = ChangeNavigationReady && nextChanges.Length > 0;
+        if (preserveSources && eventRetry is { Initial: true })
+        {
+            // A component failure keeps the already verified default sources.
+            // A later target-source failure keeps any verified side, and marks
+            // an unstarted/loading peer failed rather than leaving it spinning.
+            foreach (var pane in new[] { Before, After }) if (pane.ReadState is not ("ready" or "absent" or "failed")) pane.Invalidate("failed");
+        }
+        else if (!preserveSources || Before.ReadState is not ("ready" or "absent") || After.ReadState is not ("ready" or "absent")) { Before.Invalidate("failed"); After.Invalidate("failed"); }
+        ClearDetail(); detail.Text = Copy["failed"]; retryComparison.Visibility = Visibility.Visible; RenderSourceDiff();
+    }
     private long BeginScope() { reads.Cancel(); reads.Dispose(); reads = new(); cellReads.Cancel(); cellReads.Dispose(); cellReads = new(); return ++generation; }
     internal bool IsCurrent(long ticket) => !closed && ticket == generation;
     private void ClearReport() { RetireVersionsMenu(); documentRangeUnavailable = false; ClearSelectedChange(); InvalidateAuthority(true); ComparisonState = "empty"; binding = true; intervalFrom = ""; intervalTo = ""; queryBefore.ItemsSource = null; queryAfter.ItemsSource = null; UpdateInterval(); Before.Clear(); After.Clear(); detail.Text = Copy["selectCell"]; binding = false; RenderSourceDiff(); }
@@ -753,11 +790,21 @@ internal sealed class MainWindow : Window
         var intended = DocumentEventPages(change);
         return Before.PageId == intended.Before && After.PageId == intended.After && (intended.Before.Length > 0 || Before.ReadState == "absent") && (intended.After.Length > 0 || After.ReadState == "absent");
     }
-    private string CoverageLabel(JsonElement gap) => Copy.Code(gap.Get("reason").Text());
+    private string CoverageLabel(JsonElement gap) => Copy.Coverage(gap.Get("feature").Text(), gap.Get("reason").Text());
+    private IReadOnlyList<(string Key, string Value)> SelectedNotices()
+    {
+        var notes = SourceDiffPolicy.SelectedNotices(selectedChange);
+        return selectedChange.Get("kind").Text() == "coverage_gap" && selectedChange.Get("coverage_gaps").Items().Count == 0 ? notes.Concat(new[] { ("selectedCoverage", "") }).ToArray() : notes;
+    }
     private string SelectedNoticeText((string Key, string Value) notice)
     {
         if (notice.Key == "rowAssociation") return Copy[notice.Key] + ": " + string.Join(" · ", notice.Value.Split(" · ", StringSplitOptions.None).Where(part => part.Length > 0).Select(Copy.Code));
-        if (notice.Key == "selectedCoverage") { var reason = notice.Value.IndexOf(": ", StringComparison.Ordinal); return Copy[notice.Key] + ": " + Copy.Code(reason >= 0 ? notice.Value[(reason + 2)..] : notice.Value); }
+        if (notice.Key == "selectedCoverage")
+        {
+            if (notice.Value.Length == 0) return Copy[notice.Key] + ": " + Copy["coverageUnlisted"];
+            var gap = selectedChange.Get("coverage_gaps").Items().FirstOrDefault(item => item.Get("feature").Text() + ": " + item.Get("reason").Text() == notice.Value);
+            return Copy[notice.Key] + ": " + CoverageLabel(gap);
+        }
         return Copy[notice.Key] + ": " + ((notice.Key is "text_assessment" or "region_pairing_assessment" or "appearance_assessment" or "lineageAssessment") && (notice.Value is "inferred" or "observed" or "human_confirmed" or "needs_review") ? Copy["assessment_" + notice.Value] : notice.Value);
     }
     private IReadOnlyList<string> WorkbookVisibleWarnings()
@@ -786,7 +833,7 @@ internal sealed class MainWindow : Window
     }
     private Window CreateSelectedLimitsDialog()
     {
-        var notes = SourceDiffPolicy.SelectedNotices(selectedChange); var text = SourceText(); text.Text = string.Join("\n\n", WorkbookVisibleWarnings().Concat(notes.Select(SelectedNoticeText))) + (notes.Any(item => item.Key is "selectedCoverage" or "rowAssociation") ? "\n\n" + Copy["technicalDetails"] + "\n" + selectedChange.Pretty() : "");
+        var notes = SelectedNotices(); var text = SourceText(); text.Text = string.Join("\n\n", WorkbookVisibleWarnings().Concat(notes.Select(SelectedNoticeText))) + (notes.Any(item => item.Key is "selectedCoverage" or "rowAssociation") ? "\n\n" + Copy["technicalDetails"] + "\n" + selectedChange.Pretty() : "");
         var content = new DockPanel { Margin = new Thickness(12) }; var scope = new TextBlock { Text = Copy["report"] + ": " + reportId + "\n" + sourcePair.Text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4, 0, 4, 12) }; DockPanel.SetDock(scope, Dock.Top); content.Children.Add(scope); content.Children.Add(text);
         return new Window { Owner = this, Title = Copy["selectedLimits"], Width = 720, Height = 430, MinWidth = 400, MinHeight = 250, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = content };
     }
@@ -815,10 +862,11 @@ internal sealed class MainWindow : Window
         var canRecoverHistory = !IsWorkbook && NetMode && documentRangeUnavailable && documentRecoveryScope is { } recovery && recovery == (projectId, reportId, intervalFrom, intervalTo);
         storedHistoryButton.Visibility = canRecoverHistory ? Visibility.Visible : Visibility.Collapsed; storedHistoryButton.IsEnabled = canRecoverHistory && !busy;
         if (canRecoverHistory) notice.Add(Copy["documentNetUnavailable"]);
+        if (eventRetry is { Initial: true } initialFailure && initialFailure.Scope == CurrentChangeScope) notice.Insert(0, Copy["initialFocusFailed"]);
         if (selectedChange.ValueKind == JsonValueKind.Object && !AtSelectedChange) notice.Add(Copy["outsideChange"]);
         var kind = selectedChange.Get("kind").Text(); if (kind == "cache_availability") notice.Insert(0, Copy["cacheNotDeletion"]); if (kind == "row_correspondence") notice.Add(Copy["inferredRows"]);
         if (kind is "text_occluded" or "text_revealed" or "text_struck_through" or "coverage_gap") notice.Add(Copy["appearanceOnly"]);
-        var selectedNotices = SourceDiffPolicy.SelectedNotices(selectedChange); var selectedGaps = selectedNotices.Where(item => item.Key is "selectedCoverage" or "lineageReason").ToArray();
+        var selectedNotices = SelectedNotices(); var selectedGaps = selectedNotices.Where(item => item.Key is "selectedCoverage" or "lineageReason").ToArray();
         foreach (var selectedNotice in selectedNotices.Where(item => item.Key is not ("selectedCoverage" or "lineageReason"))) notice.Add(SelectedNoticeText((selectedNotice.Key, SourceDiff.NoticeSummary(selectedNotice.Value, 160))));
         var authoredReason = selectedChange.Get("lineage").Get("status").Text() == "human_confirmed" && selectedChange.Get("topology").Get("semantics").Text() != "directed_reachability";
         if (selectedGaps.Length > 0) { var first = selectedGaps[0].Key == "selectedCoverage" ? SelectedNoticeText(selectedGaps[0])[(Copy["selectedCoverage"].Length + 2)..] : selectedGaps[0].Value; if (selectedGaps[0].Key == "lineageReason" && !authoredReason) { var key = "reason_" + first; if (Copy[key] != key) first = Copy[key]; } first = SourceDiff.NoticeSummary(first, 160); notice.Add(Copy[selectedGaps[0].Key] + ": " + first + (selectedGaps.Length > 1 ? " [1/" + selectedGaps.Length + "]" : "")); }
@@ -875,7 +923,7 @@ internal sealed class MainWindow : Window
             Add(Copy["textSegmentOnly"], Brushes.DimGray);
             var a = detailPayload.Get("before").Get("items").Items().FirstOrDefault().Get("before"); var b = detailPayload.Get("after").Get("items").Items().FirstOrDefault().Get("after");
             Add(Copy["before"] + " " + a.Get("address").Text() + " → " + Copy["after"] + " " + b.Get("address").Text(), Brushes.DimGray);
-            if (sourceDiagnostics.IsChecked == true) foreach (var side in new[] { (Label: Copy["before"], Cell: a), (Label: Copy["after"], Cell: b) }) Add(side.Label + " · " + Copy["cacheState"] + ": " + Copy.Code(side.Cell.Get("cached_result").Text()) + " · " + Copy["cacheFreshness"] + ": " + Copy.Code(side.Cell.Get("cache_freshness").Text()) + " · " + Copy["formulaInterpretation"] + ": " + Copy.Code(side.Cell.Get("formula_interpretation").Text()), Brushes.DimGray);
+            if (sourceDiagnostics.IsChecked == true) foreach (var side in new[] { (Label: Copy["before"], Cell: a), (Label: Copy["after"], Cell: b) }) Add(side.Label + " · " + Copy["cacheState"] + ": " + Copy.CachedResult(side.Cell.Get("cached_result").Text()) + " · " + Copy["cacheFreshness"] + ": " + Copy.CacheFreshness(side.Cell.Get("cache_freshness").Text()) + " · " + Copy["formulaInterpretation"] + ": " + Copy.FormulaInterpretation(side.Cell.Get("formula_interpretation").Text()), Brushes.DimGray);
             var displayed = new WorkbookSourceScope(Before.RevisionId, After.RevisionId, Before.SheetId, After.SheetId, Before.FocusedAddress, After.FocusedAddress);
             foreach (var field in SourceDiffPolicy.Workbook(AtSelectedChange ? selectedChange : default, a, b, displayed, detailOffset)) Field(field, a, b);
         }
@@ -979,7 +1027,7 @@ internal sealed class MainWindow : Window
         status.Text = Copy["committing"];
         var saved = await AnalysisCommit.Save(project, workbook, stage, token, (action, args, cancel) => Bridge.Call(action, args, cancel));
         if (afterCommitForSmoke is not null) await afterCommitForSmoke();
-        await OpenProjectCore(currentProject, saved.Get("report_id").Text()); status.Text = Copy["ready"];
+        await OpenProjectCore(currentProject, saved.Get("report_id").Text()); status.Text = Copy[eventRetry is { Initial: true } ? "initialFocusFailed" : "ready"];
     }
     private async Task RecoverBeforeMutation(CancellationToken token)
     {
@@ -1070,7 +1118,7 @@ internal sealed class MainWindow : Window
         var summaryKey = IsWorkbook ? SourceDiffPolicy.WorkbookSummaryKey(change) : "";
         var summary = summaryKey.Length == 0 ? change.Get("description").Text() : summaryKey == "summaryRowPosition" ? string.Format(CultureInfo.CurrentCulture, Copy[summaryKey], SourceDiffPolicy.WorkbookRow(change, false), SourceDiffPolicy.WorkbookRow(change, true)) : Copy[summaryKey];
         string Excerpt(JsonElement value) => value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? Copy["missing"] : value.Text().Length == 0 ? Copy["observationEmpty"] : value.Text().Split('\r', '\n').FirstOrDefault(line => !string.IsNullOrWhiteSpace(line)) ?? Copy["whitespaceText"];
-        var preview = IsWorkbook ? summary : kind == "coverage_gap" ? string.Join(" · ", change.Get("coverage_gaps").Items().Select(CoverageLabel).Distinct()) : Excerpt(change.Get("before")) + " → " + Excerpt(change.Get("after"));
+        var preview = IsWorkbook ? summary : kind == "coverage_gap" ? change.Get("coverage_gaps").Items().Count == 0 ? Copy["coverageUnlisted"] : string.Join(" · ", change.Get("coverage_gaps").Items().Select(CoverageLabel).Distinct()) : Excerpt(change.Get("before")) + " → " + Excerpt(change.Get("after"));
         if (preview.Length > 180) preview = preview[..(char.IsHighSurrogate(preview[179]) ? 179 : 180)] + "…";
         var location = IsWorkbook && SourceDiffPolicy.WorkbookScoped(kind) ? Copy["compactWorkbookMetadata"] + " · " + VersionOrdinal(Occurrence(false)) + " → " + VersionOrdinal(Occurrence(true)) : Side(false) + " → " + Side(true);
         return Copy["kind_" + kind] + "\n" + location + "\n" + preview;
@@ -1128,7 +1176,7 @@ internal sealed class MainWindow : Window
         if (!changes.Any(c => c.Id == change.Get("change_id").Text())) return;
         var selectedRow = changes.First(c => c.Id == change.Get("change_id").Text()); change = selectedRow.Value; binding = true; changeList.SelectedItem = selectedRow; changeList.ScrollIntoView(selectedRow); binding = false;
         var scope = CurrentChangeScope; var ticket = initialFocus?.Generation ?? BeginScope(); var token = reads.Token; PaneSelection? eventBefore = null; PaneSelection? eventAfter = null;
-        ClearSelectedChange(); InvalidateAuthority(false); Before.Invalidate(); After.Invalidate();
+        ClearSelectedChange(); InvalidateAuthority(false); if (initialFocus is null) { Before.Invalidate(); After.Invalidate(); }
         try {
         if (IsWorkbook)
         {
@@ -1159,7 +1207,7 @@ internal sealed class MainWindow : Window
         if (!IsCurrent(ticket) || token.IsCancellationRequested || loadedChangeScope != scope || CurrentChangeScope != scope) return;
         if (eventBefore is null || eventAfter is null || Before.ReadState is not ("ready" or "absent") || After.ReadState is not ("ready" or "absent")) throw new BridgeException("SOURCE_UNSETTLED", "The selected event source has not finished installing its verified observation.");
         selectedChange = change; selectedBefore = eventBefore; selectedAfter = eventAfter; RerenderInspector(); if (singleSource) { singleSource = false; ApplyLayout(false); } changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = ChangeNavigationReady; more.IsEnabled = ChangeNavigationReady && nextChanges.Length > 0; RenderSourceDiff(); EvidenceReadSettled();
-        } catch { if (IsCurrent(ticket) && !token.IsCancellationRequested && loadedChangeScope == scope && CurrentChangeScope == scope && changes.Contains(selectedRow)) { ClearSelectedChange(); eventRetry = new(scope, selectedRow); FailComparison(false); } throw; }
+        } catch { if (IsCurrent(ticket) && !token.IsCancellationRequested && loadedChangeScope == scope && CurrentChangeScope == scope && changes.Contains(selectedRow)) { ClearSelectedChange(); eventRetry = new(scope, selectedRow, initialFocus is not null); FailComparison(false, preserveSources: initialFocus is not null); } throw; }
     }
     internal async Task CheckIntermediateEventForSmoke()
     {
@@ -1342,7 +1390,7 @@ internal sealed class MainWindow : Window
                 {
                     SetLanguage(language);
                     var limitsDialog = CreateSelectedLimitsDialog(); var fullLimits = ((DockPanel)limitsDialog.Content).Children.OfType<TextBox>().Single().Text; limitsDialog.Close();
-                    if (!sourceNotice.IsVisible || InspectorPane.IsVisible || !sourceNotice.Text.Contains(Copy["text_assessment"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy["region_pairing_assessment"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy["assessment_inferred"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy["technicalCode"], StringComparison.Ordinal) || sourceNotice.Text.Contains("SYNTHETIC_ocr_requires_source_review", StringComparison.Ordinal) || !fullLimits.Contains(Copy["technicalDetails"], StringComparison.Ordinal) || !fullLimits.Contains("SYNTHETIC_ocr_requires_source_review", StringComparison.Ordinal) || !sourceNotice.Text.Contains("[1/2]", StringComparison.Ordinal) || !selectedLimitsButton.IsVisible || !fullLimits.Contains("SYNTHETIC_other_regions_unresolved", StringComparison.Ordinal)) throw new InvalidOperationException("Selected inference/limit reasons disappeared outside the inspector in " + name + "/" + language);
+                    if (!sourceNotice.IsVisible || InspectorPane.IsVisible || !sourceNotice.Text.Contains(Copy["text_assessment"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy["region_pairing_assessment"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy["assessment_inferred"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy["technicalReason"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy.Code("ocr"), StringComparison.Ordinal) || !sourceNotice.Text.Contains("SYNTHETIC_ocr_requires_source_review", StringComparison.Ordinal) || !fullLimits.Contains(Copy["technicalDetails"], StringComparison.Ordinal) || !fullLimits.Contains("SYNTHETIC_ocr_requires_source_review", StringComparison.Ordinal) || !sourceNotice.Text.Contains("[1/2]", StringComparison.Ordinal) || !selectedLimitsButton.IsVisible || !fullLimits.Contains("SYNTHETIC_other_regions_unresolved", StringComparison.Ordinal)) throw new InvalidOperationException("Selected inference/limit reasons disappeared outside the inspector in " + name + "/" + language);
                 }
             }
             foreach (var knownLanguage in new[] { "ko", "en" })
@@ -1355,6 +1403,18 @@ internal sealed class MainWindow : Window
                     if (label == Copy["technicalCode"] || !sourceNotice.IsVisible || InspectorPane.IsVisible || !sourceNotice.Text.Contains(label, StringComparison.Ordinal) || sourceNotice.Text.Contains(reason, StringComparison.Ordinal) || !selectedLimitsButton.IsVisible || !exact.Contains(Copy["technicalDetails"], StringComparison.Ordinal) || !exact.Contains(reason, StringComparison.Ordinal)) throw new InvalidOperationException("A known actual coverage reason lost its localized visible caption or exact labeled technical disclosure.");
                 }
                 if (knownReasonLabels.Distinct().Count() != 2) throw new InvalidOperationException("Distinct actual coverage reasons collapsed to the same generic native footer label.");
+            }
+            foreach (var locale in new[] { "en", "ko" })
+            {
+                SetLanguage(locale); var labels = new List<string>();
+                foreach (var unknown in new[] { (Feature: "ocr", Reason: "SYNTHETIC_ocr_requires_source_review"), (Feature: "comparison", Reason: "SYNTHETIC_other_regions_unresolved") })
+                {
+                    Install(J(new { kind = "coverage_gap", coverage_gaps = new[] { new { feature = unknown.Feature, reason = unknown.Reason } } })); var caption = ChangeCaption(selectedChange); labels.Add(caption);
+                    if (!caption.Contains(Copy.Code(unknown.Feature), StringComparison.Ordinal) || !caption.Contains(Copy["technicalReason"], StringComparison.Ordinal) || !caption.Contains(unknown.Reason, StringComparison.Ordinal) || !sourceNotice.Text.Contains(unknown.Reason, StringComparison.Ordinal)) throw new InvalidOperationException("Distinct unknown coverage limits lost their feature or explicitly technical bounded reason.");
+                }
+                if (labels.Distinct().Count() != 2) throw new InvalidOperationException("Two unknown coverage reasons collapsed to one generic native item.");
+                Install(J(new { kind = "coverage_gap", coverage_gaps = Array.Empty<object>() }));
+                if (!ChangeCaption(selectedChange).Contains(Copy["coverageUnlisted"], StringComparison.Ordinal) || !sourceNotice.Text.Contains(Copy["coverageUnlisted"], StringComparison.Ordinal) || !selectedLimitsButton.IsVisible) throw new InvalidOperationException("An empty coverage array left a blank or invented native reason.");
             }
             await capture("synthetic-inference-focus");
             Install(J(new { kind = "coverage_gap", before = "SYNTHETIC neutral 100", after = "SYNTHETIC neutral 120" })); await capture("synthetic-neutral-coverage");
@@ -1372,6 +1432,14 @@ internal sealed class MainWindow : Window
             {
                 Install(J(new { kind, association = "inferred", alignment_method = "synthetic_control" }), Payload(a, b));
                 if (Colored() || !Text().Contains("=SUM(A1:A3)", StringComparison.Ordinal) || !Text().Contains(Copy["resultMissingShort"], StringComparison.Ordinal) || !Text().Contains("C2", StringComparison.Ordinal) || !Text().Contains("C3", StringComparison.Ordinal)) throw new InvalidOperationException("Unavailable/structural workbook observations became colored deletion or lost exact source fields.");
+            }
+            foreach (var locale in new[] { "en", "ko" })
+            {
+                SetLanguage(locale); Install(J(new { kind = "cache_availability" }), Payload(a, b)); RerenderInspector();
+                if (!detail.Text.Contains(Copy["cacheState"] + ": " + Copy["resultMissingShort"], StringComparison.Ordinal) || detail.Text.Contains(Copy["cacheState"] + ": " + Copy["code_missing"], StringComparison.Ordinal) || detailPayload.Get("after").Get("items").Items().Single().Get("after").GetRawText() != b.GetRawText()) throw new InvalidOperationException("Native raw reader conflated an absent cached result with an unrecorded observation or changed its exact raw cell.");
+                var absentFields = J(new { address = "C2", value = (string?)null, formula = (string?)null, number_format = "", cached_result = "", formula_interpretation = "" });
+                var missingDetail = FormatDetail(J(new { items = new[] { absentFields } }));
+                if (!missingDetail.Contains(Copy["cacheState"] + ": " + Copy["observationMissing"], StringComparison.Ordinal) || !missingDetail.Contains(Copy["cacheFreshness"] + ": " + Copy["observationMissing"], StringComparison.Ordinal)) throw new InvalidOperationException("Unrecorded field metadata acquired a saved-result claim.");
             }
             await capture("synthetic-missing-cache-neutral");
             Install(J(new { kind = "formula" }), Payload(a, b)); if (!Colored() || !Text().Contains(Copy["resultMissingShort"], StringComparison.Ordinal) || !Text().Contains("=SUM(B1:B3)", StringComparison.Ordinal)) throw new InvalidOperationException("Exact eligible formulas were conflated with missing saved values."); await capture("synthetic-formula-independent-cache");
@@ -1559,7 +1627,7 @@ internal sealed class MainWindow : Window
     }
     internal async Task OpenCellSource(ComparePane pane)
     {
-        if (!startupReady || !AllowsEvidence || ComparisonState != "ready" || !IsWorkbook || !pane.AuthorizesCell(pane.FocusedRow, pane.FocusedColumn)) return;
+        if (!CanOpenCellSource(pane)) return;
         ChangeVisibility(inspector: true); await SelectCell(pane, pane.FocusedRow, pane.FocusedColumn);
     }
     private Task<JsonElement> QueryFixed(string name, Dictionary<string, object?> args, string project, string report, CancellationToken token) { args["project_id"] = project; args["report_id"] = report; args["max_output_tokens"] = 8000; return Bridge.Call("workbookQuery", new { name, args }, token); }
@@ -1590,7 +1658,7 @@ internal sealed class MainWindow : Window
         string Cell(JsonElement source)
         {
             if (source.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return Copy["missing"];
-            return source.Get("address").Text() + "\n\n" + Copy["cached"] + ":\n" + source.Get("value").Text() + "\n\n" + Copy["formula"] + ":\n" + source.Get("formula").Text() + "\n\n" + Copy["number_format"] + ":\n" + source.Get("number_format").Text() + "\n\n" + Copy["cacheFreshness"] + ": " + Copy.Code(source.Get("cache_freshness").Text()) + "\n" + Copy["cacheState"] + ": " + Copy.Code(source.Get("cached_result").Text());
+            return source.Get("address").Text() + "\n\n" + Copy["cached"] + ":\n" + source.Get("value").Text() + "\n\n" + Copy["formula"] + ":\n" + source.Get("formula").Text() + "\n\n" + Copy["number_format"] + ":\n" + source.Get("number_format").Text() + "\n\n" + Copy["cacheFreshness"] + ": " + Copy.CacheFreshness(source.Get("cache_freshness").Text()) + "\n" + Copy["cacheState"] + ": " + Copy.CachedResult(source.Get("cached_result").Text());
         }
         if (value.Get("before").ValueKind == JsonValueKind.Object) return Copy["before"] + "\n" + Cell(value.Get("before").Get("items").Items().FirstOrDefault().Get("before")) + "\n\n" + Copy["after"] + "\n" + Cell(value.Get("after").Get("items").Items().FirstOrDefault().Get("after"));
         if (value.Get("component").Text() == "style") return string.Join("\n\n", value.Get("items").Items().Select(item => item.Get("key").Text() + "\n" + item.Get("value").Text()));
@@ -2078,15 +2146,27 @@ internal sealed class MainWindow : Window
         async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
         try
         {
+            if (!workbook) After.Zoom = 1.37; // A choice in the prior report must not become the new report's intent.
             await ImportAndAnalyze("Sole imported " + (workbook ? "workbook" : "document") + " control", new[] { source });
             var soleProject = projectId; var soleReport = reportId; var soleBytes = currentReport.GetRawText(); var versions = currentReport.Get("revisions").Items(); if (versions.Count != 1) throw new InvalidOperationException("Sole-import control did not create an actual one-occurrence fixed report.");
             var occurrence = versions[0].Get("revision_occurrence_id").Text();
-            if (!workbook) { await Settle(); var initialPreview = JsonSerializer.SerializeToElement(After.CheckPreviewReadabilityForSmoke()); if (!initialPreview.Get("fit_width").Flag() || initialPreview.Get("page_boundary").Number() != 1) throw new InvalidOperationException("A fresh untouched sole-source presentation did not fit its outlined source to the native viewport."); observations.Add(new { initial_fresh_sole_source_fit_width = initialPreview }); }
+            PaneSelection? manualPresentation = null;
+            if (!workbook)
+            {
+                await Settle(); var initialPreview = JsonSerializer.SerializeToElement(After.CheckPreviewReadabilityForSmoke()); var fresh = After.CaptureSelection();
+                if (!initialPreview.Get("fit_width").Flag() || initialPreview.Get("page_boundary").Number() != 1 || fresh.PresentationChosen || fresh.PresentationReport != soleReport) throw new InvalidOperationException("A prior report's manual zoom overrode the new sole-source fit default.");
+                After.RestoreSelection(fresh); if (After.CaptureSelection() != fresh || After.CaptureSelection().PresentationChosen) throw new InvalidOperationException("Programmatic restoration minted a user presentation choice or changed its retained fit intent.");
+                await After.Load(generation, reads.Token); await Settle(); if (After.CaptureSelection().PresentationChosen || !After.CaptureSelection().FitWidth || After.PageImage.Source is null) throw new InvalidOperationException("A programmatically restored fresh presentation lost its fit intent during real source reinstallation.");
+                After.Zoom = 1.25; manualPresentation = After.CaptureSelection();
+                if (!manualPresentation.PresentationChosen || manualPresentation.FitWidth) throw new InvalidOperationException("The manual native zoom did not establish a report-scoped user choice.");
+                observations.Add(new { initial_fresh_sole_source_fit_width = initialPreview, prior_report_manual_zoom = 1.37, programmatic_restore_does_not_mint_choice = true, same_report_manual_zoom = manualPresentation.Zoom });
+            }
             foreach (var preset in new[] { "sourceFirst", "focus" }) foreach (var locale in new[] { "en", "ko" })
             {
                 SetLayout(WorkspaceLayout.Preset(preset)); SetLanguage(locale); sourceView.SelectedIndex = 1; await Settle();
                 if (!singleSource || textView || unified.Visibility != Visibility.Collapsed || !comparison.IsVisible || comparison.Children.Contains(Before.Host) || !comparison.Children.Contains(After.Host) || After.ReadState != "ready" || sourceView.IsEnabled || sourceView.SelectedIndex != 0 || comparisonMode.IsEnabled || (comparisonMode.SelectedItem as Choice)?.Id != "reading" || queryBefore.Items.Count != 1 || queryAfter.Items.Count != 1 || intervalFrom != occurrence || intervalTo != occurrence || changes.Count != 0 || !sourceNotice.IsVisible || !sourceNotice.Text.Contains(Copy["singleImportedSourceNotice"], StringComparison.Ordinal) || sourceView.ToolTip as string != Copy["singleImportedSourceView"] || !detail.Text.Contains(Copy["singleImportedSourceView"], StringComparison.Ordinal) || detail.Text.Contains(Copy["singleSourceView"], StringComparison.Ordinal) || !actionItems["import"].IsEnabled || actionItems["import"].Header as string != Copy["import"] || reportId != soleReport || projectId != soleProject || currentReport.GetRawText() != soleBytes) throw new InvalidOperationException("Actual sole-import reading gave impossible endpoint guidance, lost its native source or hid the Import route in " + preset + "/" + locale);
                 After.CheckReadingChromeForSmoke();
+                if (manualPresentation is not null && After.CaptureSelection() != manualPresentation) throw new InvalidOperationException("Same-report locale, layout or text-view chrome replaced retained manual zoom intent.");
                 if (newComparisonStage.IsVisible != !Layout.ChangesVisible || !newComparisonStage.IsEnabled || newComparisonStage.Content as string != Copy["newComparison"] || queryControls.IsVisible || more.IsVisible || previousChange.IsVisible || nextChange.IsVisible || preset == "sourceFirst" && (!soleChanges.IsVisible || !newComparison.IsVisible || !newComparison.IsEnabled || soleExplanation.Text != Copy["soleListExplanation"])) throw new InvalidOperationException("Sole-import source reading hid its persistent empty-list explanation, mounted reading chrome or new-comparison action, or retained irrelevant comparison paging.");
                 if (workbook ? !After.Cells.IsVisible || After.Cells.Items.Count != 50 || After.GridScroll is not { ViewportHeight: >= 5 } : !After.PageImage.IsVisible || After.PageImage.Source is null) throw new InvalidOperationException("Actual sole-import reading does not expose its useful native source.");
                 await capture("sole-import-" + preset + "-" + locale); observations.Add(new { preset, language = locale, imported_occurrences = 1, source_occurrence = occurrence, guidance = SingleSourceGuidance, persistent_guidance = Copy["singleImportedSourceNotice"], import_action_enabled = actionItems["import"].IsEnabled, comparison_modes_disabled = !comparisonMode.IsEnabled });
@@ -2138,6 +2218,73 @@ internal sealed class MainWindow : Window
             return new { project_id = projectId, report_id = reportId, actual_generated_primary_emu_width = emu, actual_pdf_point_width = pdf.Get("width"), explicit_bundle_decision = decision, linked_reference_native = linked, standalone_native = standalone, primary_nonreference_points = nonReference, legacy_mapping_control_uses_actual_revision_data = true, malformed_reference_control_falls_back_to_native_raster_width = true, source_scope = "Real generated PPTX and PDF imported/linked/analyzed through production contracts; legacy/malformed presentation controls explicitly synthetic; no PowerPoint fidelity claim" };
         }
         finally { var original = (await Bridge.Call("projects")).Items().Single(value => value.Get("project_id").Text() == project); await OpenProject(original); await OpenReport(report); SetLayout(layout); SetLanguage(language); sourceView.SelectedIndex = previousText ? 1 : 0; if (currentReport.GetRawText() != reportBytes) throw new InvalidOperationException("Preview geometry QA changed the normal fixed report."); }
+    }
+    internal async Task<object> CheckCommittedInitialFocusRecoveryForSmoke(IReadOnlyList<ImportRow> fixtures, Func<string, Task> capture, Func<string, object, Task> observe)
+    {
+        if (!IsWorkbook) throw new InvalidOperationException("Committed initial-focus recovery requires workbook sources.");
+        var originalProject = projectId; var originalReport = reportId; var originalBytes = currentReport.GetRawText(); var layout = Layout; var language = Copy.Language; var net = workbookNet; var oldLimit = workbookPageLimitForSmoke;
+        var observations = new List<object>();
+        try
+        {
+            workbookPageLimitForSmoke = 1; workbookNet = false; SetLayout(WorkspaceLayout.Preset("sourceFirst"));
+            foreach (var route in new[] { "ImportAndAnalyze", "AnalyzeWithStarted" })
+            {
+                var priorReport = reportId; var actualComponents = 0; ChangeChoice? intended = null; ChangeChoice[] installedRows = Array.Empty<ChangeChoice>(); string installedCursor = ""; string fixedBytes = ""; ChangeQueryScope? fixedScope = null; long queryReads = 0;
+                PaneSelection? sourceA = null; PaneSelection? sourceB = null; string rawA = ""; string rawB = ""; object? nativeRowsA = null; object? nativeRowsB = null; var hostA = Before.Host; var hostB = After.Host;
+                initialComponentForSmoke = (side, payload, cancel) =>
+                {
+                    actualComponents++; intended = changeList.SelectedItem as ChangeChoice ?? throw new InvalidOperationException("Initial focus did not own its native selected row.");
+                    if (side != "before" || !SourceDiffPolicy.WorkbookComponent(payload, intended.Value, side, projectId, reportId, out _)) throw new InvalidOperationException("Postcommit fault was not placed after an actual verified fixed-event component response.");
+                    installedRows = changes.ToArray(); installedCursor = nextChanges; fixedScope = loadedChangeScope; fixedBytes = currentReport.GetRawText(); queryReads = changeQueryReadsForSmoke;
+                    sourceA = Before.CaptureSelection(); sourceB = After.CaptureSelection(); rawA = Before.RawIdentityForSmoke; rawB = After.RawIdentityForSmoke; nativeRowsA = Before.Cells.ItemsSource; nativeRowsB = After.Cells.ItemsSource;
+                    throw new IOException("SYNTHETIC native initial-event component failure after actual committed report/query response");
+                };
+                if (route == "ImportAndAnalyze") await ImportAndAnalyze("Committed report initial-event recovery control", fixtures); else await AnalyzeWithStarted(null);
+                initialComponentForSmoke = null;
+                var committedReport = reportId; var committedProject = projectId; var committedList = await Bridge.Call("workbookReports", new { project_id = committedProject });
+                var fields = new Dictionary<string, bool>
+                {
+                    ["actual_verified_component_fault_once"] = actualComponents == 1,
+                    ["committed_fixed_report_remains_current"] = (route == "ImportAndAnalyze" ? committedReport != priorReport : committedReport == priorReport) && fixedScope?.Report == committedReport && currentReport.GetRawText() == fixedBytes && committedList.Items().Any(item => item.Get("report_id").Text() == committedReport),
+                    ["mutation_finished_without_previous_report_restore"] = !busy && operation is null && projectId == fixedScope?.Project,
+                    ["successful_fixed_query_preserved"] = loadedChangeScope == fixedScope && CurrentChangeScope == fixedScope && installedRows.SequenceEqual(changes) && nextChanges == installedCursor && changeQueryReadsForSmoke == queryReads,
+                    ["failed_initial_event_has_exact_retry"] = intended is not null && eventRetry is { Initial: true } pending && pending.Scope == fixedScope && ReferenceEquals(pending.Row, intended) && ReferenceEquals(changeList.SelectedItem, intended),
+                    ["failed_event_did_not_label_prior_evidence_selected"] = selectedChange.ValueKind == JsonValueKind.Undefined && selectedBefore is null && selectedAfter is null && detailPayload.ValueKind == JsonValueKind.Undefined && detailLoader is null,
+                    ["visible_scoped_failure_and_native_retry"] = ComparisonState == "failed" && !changesReady && ChangeNavigationReady && changeList.IsEnabled && retryComparison.IsVisible && retryComparison.IsEnabled && retryComparison.Content as string == Copy["retryEvent"] && sourceNotice.IsVisible && sourceNotice.Text.Contains(Copy["initialFocusFailed"], StringComparison.Ordinal) && status.Text == Copy["initialFocusFailed"],
+                    ["available_before_source_kept_exact"] = sourceA == Before.CaptureSelection() && rawA == Before.RawIdentityForSmoke && Before.ReadState == "ready" && ReferenceEquals(nativeRowsA, Before.Cells.ItemsSource),
+                    ["available_after_source_kept_exact"] = sourceB == After.CaptureSelection() && rawB == After.RawIdentityForSmoke && After.ReadState == "ready" && ReferenceEquals(nativeRowsB, After.Cells.ItemsSource),
+                    ["native_hosts_retained"] = ReferenceEquals(hostA, Before.Host) && ReferenceEquals(hostB, After.Host)
+                };
+                await observe("source30-committed-initial-event-failure-" + route, new { route, prior_report = priorReport, committed_project = committedProject, committed_report = committedReport, fixed_scope = fixedScope, identity_expectation = route == "ImportAndAnalyze" ? "new project and fixed report" : "new real analysis/commit of identical input retains its content-addressed fixed report", intended_event = intended?.Value, observed = fields });
+                foreach (var field in fields) if (!field.Value) throw new InvalidOperationException("Committed initial-event recovery failed " + route + ": " + field.Key);
+                await capture("source30-committed-initial-event-failure-" + route);
+                var actionAvailability = new List<object>();
+                foreach (var locale in new[] { "en", "ko" })
+                {
+                    SetLanguage(locale);
+                    actionAvailability.Add(new { phase = "failed_initial_event", language = locale, before = Before.CheckCellSourceAvailabilityForSmoke(false), after = After.CheckCellSourceAvailabilityForSmoke(false) });
+                    if (!sourceNotice.Text.Contains(Copy["initialFocusFailed"], StringComparison.Ordinal) || !retryComparison.IsVisible || !retryComparison.IsEnabled) throw new InvalidOperationException("The localized initial-event failure lost its visible scoped recovery routes.");
+                }
+                await RetryComparison();
+                var retried = intended ?? throw new InvalidOperationException("Missing exact failed initial row.");
+                if (reportId != committedReport || projectId != committedProject || currentReport.GetRawText() != fixedBytes || loadedChangeScope != fixedScope || CurrentChangeScope != fixedScope || !installedRows.SequenceEqual(changes) || installedCursor != nextChanges || queryReads != changeQueryReadsForSmoke || !ReferenceEquals(changeList.SelectedItem, retried) || selectedChange.GetRawText() != retried.Value.GetRawText() || !AtSelectedChange || !changesReady || ComparisonState != "ready" || eventRetry is not null || !SourceDiffPolicy.WorkbookComponent(detailPayload.Get("before"), retried.Value, "before", projectId, reportId, out _) || !SourceDiffPolicy.WorkbookComponent(detailPayload.Get("after"), retried.Value, "after", projectId, reportId, out _)) throw new InvalidOperationException("Retry did not read the exact failed initial event and preserve its successful committed query/report.");
+                foreach (var locale in new[] { "en", "ko" })
+                {
+                    SetLanguage(locale); actionAvailability.Add(new { phase = "exact_event_retry_ready", language = locale, before = Before.CheckCellSourceAvailabilityForSmoke(true), after = After.CheckCellSourceAvailabilityForSmoke(true) });
+                }
+                await observe("source30-cell-details-recovery-availability-" + route, new { route, native_control_cases = actionAvailability, implicit_cell_click_recovery_added = false });
+                SetLayout(Layout with { Inspector = true }); UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                var pairedBefore = Before.CheckEvidenceCellRouteForSmoke(true); var pairedAfter = After.CheckEvidenceCellRouteForSmoke(true); SetLayout(WorkspaceLayout.Preset("sourceFirst"));
+                observations.Add(new { route, committed_report = committedReport, actual_component_faults = actualComponents, checks = fields, retry_reads_exact_event_without_change_query = true, scoped_paired_evidence_before = pairedBefore, scoped_paired_evidence_after = pairedAfter, native_cell_details_action_availability = actionAvailability });
+            }
+            return new { cases = observations, scope = "Real production ImportAndAnalyze and AnalyzeWithStarted commits; synthetic local fault only after a verified raw component response" };
+        }
+        finally
+        {
+            initialComponentForSmoke = null; workbookPageLimitForSmoke = oldLimit; workbookNet = net;
+            var original = (await Bridge.Call("workbookProjects")).Items().Single(item => item.Get("project_id").Text() == originalProject); await OpenProject(original); await OpenReport(originalReport); SetLanguage(language); SetLayout(layout);
+            if (currentReport.GetRawText() != originalBytes) throw new InvalidOperationException("Committed-event recovery QA changed the original fixed report.");
+        }
     }
     internal async Task<object> CheckPagedSourceNavigationForSmoke(IReadOnlyList<ImportRow> fixtures, Func<Task> corrupt, Func<Task> restore, Func<string, Task> capture, Func<string, object, Task> observe)
     {
@@ -2412,6 +2559,7 @@ internal sealed class MainWindow : Window
                 if (!evidenceBottomDock || Layout != intent || InspectorPane.ActualWidth < 600 || Before.Host.ActualWidth < 400 || After.Host.ActualWidth < 400 || !InspectorPane.IsVisible || !ChangesPane.IsVisible || Before.CaptureSelection() != focusedA || After.CaptureSelection() != focusedB || !ReferenceEquals(gridA, Before.Cells.ItemsSource) || !ReferenceEquals(gridB, After.Cells.ItemsSource) || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath))) throw new InvalidOperationException("Narrow Evidence did not retain large two-source geometry, raw-grid hosts and exact saved layout intent.");
                 ViewportsUnchanged(); var headerA = Before.CheckFocusedHeaderForSmoke(); var headerB = After.CheckFocusedHeaderForSmoke();
                 var homeA = Before.CheckEvidenceHomeForSmoke(); var homeB = After.CheckEvidenceHomeForSmoke();
+                results.Add(new { language = locale, cell_route_before = Before.CheckEvidenceCellRouteForSmoke(true), cell_route_after = After.CheckEvidenceCellRouteForSmoke(false) });
                 if (detail.ActualHeight < 140 || detail.ActualWidth < 300 || detailPayload.GetRawText() != rawDetail || detailMetadata.Text != rawMetadata || technicalDetails.Header as string != Copy["technicalDetails"] || !detail.Text.Contains(Copy["number_format"], StringComparison.Ordinal) || detail.Text.Contains("cache_freshness:", StringComparison.Ordinal) || detail.Text.Contains("cached_result:", StringComparison.Ordinal) || detailRange.Text.Contains(" · complete", StringComparison.Ordinal) || detailRange.Text.Contains(" · truncated", StringComparison.Ordinal)) throw new InvalidOperationException("Ordinary source detail retained raw enum keys or unlabeled technical metadata.");
                 await capture("source27-narrow-evidence-" + locale); results.Add(new { language = locale, before = homeA, after = homeB, header_before = headerA, header_after = headerB, bottom_evidence_width = InspectorPane.ActualWidth, bottom_evidence_height = InspectorPane.ActualHeight, source_detail_localized = true, raw_reader_width = detail.ActualWidth, raw_reader_height = detail.ActualHeight, raw_source_identity_retained = true });
                 Width = 1440; Height = 940; await Settle(); await observe("source29-window-geometry-widen-attempt-" + locale, Geometry());

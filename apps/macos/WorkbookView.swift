@@ -112,7 +112,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     private var started = false
     private var active = false
     private var mcpScope = ""
-    private struct EventAnchor {let scope:String;let id:String;let event:Data}
+    private struct EventAnchor {let scope:String;let id:String;let event:Data;let decoded:JSON}
     @Published private var eventAnchor:EventAnchor?
     // Only the exact event retained across an actual same-query page request may
     // outlive the visible list. Manual list edits never mint this authority.
@@ -210,9 +210,8 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     var ready: Bool { active && !reportID.isEmpty && report["report_id"].string == reportID && !loadingReport && !busy && !loadingDemo }
     var project: JSON { projects.first { $0["project_id"].string == projectID } ?? JSON() }
     private func retainedEvent(_ id:String)->JSON {
-        guard let retained=pagedEvent,retained.scope==comparisonScope,retained.id==id,
-              let raw=try? JSONSerialization.jsonObject(with:retained.event) else{return JSON()}
-        return JSON(raw)
+        guard let retained=pagedEvent,retained.scope==comparisonScope,retained.id==id else{return JSON()}
+        return retained.decoded
     }
     var selectedChange: JSON {
         guard !selectedChangeID.isEmpty else{return JSON()}
@@ -596,15 +595,21 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
             rowStart = min(row,1_048_576-rowLimit+1); columnStart = min(column,16_384-columnLimit+1)
             selectedRow = row; selectedColumn = column; addressInput = address
         } else { selectedRow = 0; selectedColumn = 0 }
-        eventAnchor=(try? change.data()).map{EventAnchor(scope:comparisonScope,id:id,event:$0)}
+        if let bytes=try? change.data(),let decoded=try? JSONSerialization.jsonObject(with:bytes) {
+            eventAnchor=EventAnchor(scope:comparisonScope,id:id,event:bytes,decoded:JSON(decoded))
+        } else {eventAnchor=nil}
         selectedChangeID = id; beforeAddress = change["before_address"].string; afterAddress = change["after_address"].string
         func window(_ coordinate:(row:Int,column:Int),_ old:(String,String,Int,Int),_ occurrence:String,_ sheet:String)->(Int,Int) {
             let retain=preservingVisibleWindow && old.0==occurrence && old.1==sheet && coordinate.row>=old.2 && coordinate.row<old.2+rowLimit && coordinate.column>=old.3 && coordinate.column<old.3+columnLimit
             return retain ? (old.2,old.3):(min(coordinate.row,1_048_576-rowLimit+1),min(coordinate.column,16_384-columnLimit+1))
         }
-        let aWindow=paneCoordinate(before:true).map{window($0,oldBefore,beforeID,beforeSheetID)} ?? (beforeRowStart,beforeColumnStart)
-        let bWindow=paneCoordinate(before:false).map{window($0,oldAfter,afterID,afterSheetID)} ?? (afterRowStart,afterColumnStart)
-        if preservingVisibleWindow {rowStart=bWindow.0;columnStart=bWindow.1}
+        let aCoordinate=paneCoordinate(before:true),bCoordinate=paneCoordinate(before:false)
+        let aWindow=aCoordinate.map{window($0,oldBefore,beforeID,beforeSheetID)} ?? (preservingVisibleWindow ? (oldBefore.2,oldBefore.3):(beforeRowStart,beforeColumnStart))
+        let bWindow=bCoordinate.map{window($0,oldAfter,afterID,afterSheetID)} ?? (preservingVisibleWindow ? (oldAfter.2,oldAfter.3):(afterRowStart,afterColumnStart))
+        if preservingVisibleWindow {
+            let shared=bCoordinate != nil ? bWindow:aCoordinate != nil ? aWindow:bWindow
+            rowStart=shared.0;columnStart=shared.1
+        }
         (beforeRowStart,beforeColumnStart)=aWindow;(afterRowStart,afterColumnStart)=bWindow
         beforeCell = JSON(); afterCell = JSON(); cellTextOffset = 0; cellTextNext = nil
         await loadRange()
@@ -1968,6 +1973,24 @@ final class WorkbookSourceTableView:NSTableView {
     override var canBecomeKeyView:Bool {sourceKeyboardEnabled && super.canBecomeKeyView}
     override func becomeFirstResponder()->Bool {sourceKeyboardEnabled && super.becomeFirstResponder()}
 }
+@MainActor private enum WorkbookGridAnnotation {
+    private static let measurementCell:NSCell = {
+        let label=NSTextField(labelWithString:"");label.font = .systemFont(ofSize:10)
+        return label.cell!
+    }()
+    static func flags(_ cell:JSON)->String {
+        let raw=cell["value"].isNull ? "":cell["value"].string
+        var result=cell["formula_interpretation"].string=="unresolved" ? "?ƒ":cell["formula"].isNull ? "":"ƒ"
+        if cell["cached_result"].string=="missing" {result += (result.isEmpty ? "":" · ")+"∅"}
+        if cell["text_truncated"].bool || cell["source_lengths"]["value"].int>raw.utf16.count {result += (result.isEmpty ? "":" · ")+"…"}
+        return result
+    }
+    static func reservedWidth(for flags:String)->CGFloat {
+        guard !flags.isEmpty else{return 0}
+        measurementCell.stringValue=flags
+        return min(48,measurementCell.cellSize.width+5)
+    }
+}
 private final class WorkbookValueCellView:NSTableCellView {
     let annotation=NSTextField(labelWithString:"")
     override init(frame:NSRect) {
@@ -1980,7 +2003,7 @@ private final class WorkbookValueCellView:NSTableCellView {
     func setAnnotation(_ value:String) {annotation.stringValue=value;annotation.isHidden=value.isEmpty;needsLayout=true}
     override func layout() {
         super.layout()
-        let width=annotation.isHidden ? 0:min(48,(annotation.cell?.cellSize.width ?? 0)+5)
+        let width=WorkbookGridAnnotation.reservedWidth(for:annotation.stringValue)
         annotation.frame=NSRect(x:6,y:max(0,(bounds.height-14)/2),width:max(0,width-5),height:14)
         textField?.frame=NSRect(x:6+width,y:max(0,(bounds.height-17)/2),width:max(0,bounds.width-11-width),height:17)
     }
@@ -2088,8 +2111,8 @@ struct WorkbookGrid: NSViewRepresentable {
                 guard !raw.isEmpty else{continue}
                 let sample=String(decoding:raw.utf16.prefix(64),as:UTF16.self)
                 let numeric=["number","boolean"].contains(cell["value_type"].string)
-                let annotation = !cell["formula"].isNull || cell["text_truncated"].bool || cell["source_lengths"]["value"].int>raw.utf16.count
-                let measured=(sample as NSString).size(withAttributes:[.font:NSFont.systemFont(ofSize:12)]).width+16+(annotation ? 36:0)
+                let annotationWidth=WorkbookGridAnnotation.reservedWidth(for:WorkbookGridAnnotation.flags(cell))
+                let measured=(sample as NSString).size(withAttributes:[.font:NSFont.systemFont(ofSize:12)]).width+16+annotationWidth
                 result=max(result,min(numeric ? 112:180,max(numeric || numericColumn ? 64:96,ceil(measured))))
             }
             return result
@@ -2123,11 +2146,8 @@ struct WorkbookGrid: NSViewRepresentable {
                 let value = sparse[String(physicalRow)+":"+String(column)] ?? JSON()
                 if physicalRow == parent.selectedRow,column == parent.selectedColumn { cell.layer?.borderWidth = 1; cell.layer?.borderColor = NSColor.controlAccentColor.cgColor; cell.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor }
                 let raw = value["value"].isNull ? "" : value["value"].string
-                let unresolved = value["formula_interpretation"].string == "unresolved"
-                var flags = unresolved ? "?ƒ" : value["formula"].isNull ? "" : "ƒ"
-                if value["cached_result"].string == "missing" { flags += (flags.isEmpty ? "":" · ")+"∅" }
+                let flags=WorkbookGridAnnotation.flags(value)
                 let valueTruncated = value["source_lengths"]["value"].int > raw.utf16.count
-                if value["text_truncated"].bool || valueTruncated { flags += (flags.isEmpty ? "":" · ")+"…" }
                 (cell as? WorkbookValueCellView)?.setAnnotation(flags)
                 text.stringValue = raw; text.font = .systemFont(ofSize:12); text.textColor = value["hidden_row"].bool || value["hidden_column"].bool ? .secondaryLabelColor : .labelColor
                 let formula = value["formula"].isNull ? "" : L("workbook.grid.formulaPrefix") + String(value["formula"].string.prefix(600))

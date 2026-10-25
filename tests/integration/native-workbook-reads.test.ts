@@ -32,6 +32,6 @@ test('native workbook retries preserve scope and withhold mismatched cell eviden
     assert.match(stdout,/PASS native workbook initial ownership:/);
     const initial=JSON.parse(await readFile(join(userData,'initial-ownership-proof.json'),'utf8')) as Record<string,unknown>;
     for(const key of ['metadata_before_physical_skipped','typed_metadata_with_address_excluded','foreign_sheet_membership_excluded','metadata_only_stays_unlinked_and_consumes_intent','failed_initial_then_manual_default_retry_keeps_sources','explicit_new_version_pair_restores_initial_link','explicit_new_report_restores_initial_link','untouched_retry_uses_original_intent_without_reacquisition']) assert.equal(initial[key],true,key);
-    assert.equal((initial.one_sided_observations as unknown[]).length,2);assert.equal((initial.delayed_manual_navigation as unknown[]).length,4);
+    assert.equal((initial.one_sided_observations as unknown[]).length,4);assert.equal((initial.delayed_manual_navigation as unknown[]).length,4);assert.equal((initial.one_sided_captured_missing_windows as unknown[]).length,2);
   } finally { await rm(root,{recursive:true,force:true}); }
 });

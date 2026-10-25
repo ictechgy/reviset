@@ -249,7 +249,8 @@ struct NativeWorkspaceIdentity:NSViewRepresentable {
     }
     func updateNSView(_ field:NSTextField,context:Context) {
         field.stringValue=title;field.setAccessibilityLabel(title)
-        field.toolTip=title+"\n"+L("git.reportChip",.verbatim(reportID));field.setAccessibilityHelp(L("git.reportChip",.verbatim(reportID)))
+        let reportHelp=reportID.isEmpty ? nil:L("git.reportChip",.verbatim(reportID))
+        field.toolTip=title+(reportHelp.map{"\n"+$0} ?? "");field.setAccessibilityHelp(reportHelp)
     }
 }
 @MainActor protocol WorkspacePaneSizing:AnyObject {

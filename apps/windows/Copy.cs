@@ -1,3 +1,6 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
+
 namespace Reviset.Windows;
 
 internal sealed class Copy
@@ -5,9 +8,28 @@ internal sealed class Copy
     public string Language { get; set; } = "en";
     public string this[string key] => Words.TryGetValue(key, out var pair) ? Language == "ko" ? pair.Ko : pair.En : key;
     public string Code(string code) => Words.TryGetValue("code_" + code, out var pair) ? Language == "ko" ? pair.Ko : pair.En : this["technicalCode"];
+    public string CachedResult(string code) => code.Length == 0 ? this["observationMissing"] : code == "missing" ? this["resultMissingShort"] : Code(code);
+    public string CacheFreshness(string code) => code.Length == 0 ? this["observationMissing"] : Code(code);
+    public string FormulaInterpretation(string code) => code.Length == 0 ? this["observationMissing"] : Code(code);
+    public string Coverage(string feature, string reason)
+    {
+        string Part(string value, string technicalKey) => value.Length == 0 ? this["observationMissing"] : Words.ContainsKey("code_" + value) ? Code(value) : this[technicalKey] + " " + BoundedTechnical(value);
+        return Part(feature, "technicalFeature") + " · " + Part(reason, "technicalReason");
+    }
+    private static string BoundedTechnical(string value)
+    {
+        var length = Math.Min(value.Length, 96); if (length < value.Length && length > 0 && char.IsHighSurrogate(value[length - 1])) length--;
+        return JsonSerializer.Serialize(value[..length], new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) + (length < value.Length ? "…" : "");
+    }
     private static readonly Dictionary<string, (string En, string Ko)> Words = new()
     {
         ["cellSourceAction"] = ("Cell details…", "셀 상세…"),
+        ["cellDetailsEvidenceRoute"] = ("Open this cell’s stored fields in Evidence. Physical row and column navigation stays here.", "이 셀의 저장된 필드를 근거 패널에서 엽니다. 실제 행·열 이동은 여기서 사용할 수 있습니다."),
+        ["initialFocusFailed"] = ("The report and change list are available. The first linked event could not be read; retry that event or choose another change.", "보고서와 변경 목록을 읽을 수 있습니다. 첫 연결 이벤트를 읽지 못했습니다. 해당 이벤트를 다시 시도하거나 다른 변경을 선택하세요."),
+        ["technicalFeature"] = ("Technical feature:", "기술 기능:"),
+        ["technicalReason"] = ("Technical reason:", "기술 사유:"),
+        ["coverageUnlisted"] = ("Coverage limit · no feature or reason recorded", "검토 범위 제한 · 기능과 사유 미기록"),
+        ["code_not_formula"] = ("Not a formula cell", "수식 셀이 아님"),
         ["cellDetailsInEvidence"] = ("Stored fields are open in Evidence. Physical row and column navigation stays here.", "저장된 필드는 근거 패널에서 읽습니다. 실제 행·열 이동은 여기서 사용할 수 있습니다."),
         ["firstTextCompact"] = ("First segment", "첫 구간"),
         ["nextTextCompact"] = ("Next segment", "다음 구간"),

@@ -147,7 +147,7 @@ final class OriginalPDFPaneView:NSView {
     func requestInitialFit() {pendingInitialFit=true;needsLayout=true}
     func cancelInitialFit() {pendingInitialFit=false}
     @objc private func scaleChanged(_ notification:Notification) {updateControlAvailability()}
-    private func updateControlAvailability() {
+    func updateControlAvailability() {
         let enabled=controlsEnabled && pdfView.currentPage != nil
         zoomOutButton.isEnabled=enabled && pdfView.scaleFactor>pdfView.minScaleFactor+0.0001
         zoomInButton.isEnabled=enabled && pdfView.scaleFactor<pdfView.maxScaleFactor-0.0001
@@ -284,6 +284,7 @@ struct OriginalPDFView: NSViewRepresentable {
     func updateNSView(_ pane: OriginalPDFPaneView, context: Context) {
         let view=pane.pdfView
         pane.configureControls(enabled:keyboardEnabled)
+        defer {pane.updateControlAvailability()}
         view.sourceKeyboardEnabled=keyboardEnabled;view.setAccessibilityHidden(!keyboardEnabled)
         if !keyboardEnabled {resignHiddenSourceFirstResponder(in:pane)}
         let sourceChanged=context.coordinator.path != path
@@ -303,7 +304,6 @@ struct OriginalPDFView: NSViewRepresentable {
             }
             context.coordinator.pageNumber=pageNumber;context.coordinator.zoom=zoom
         }
-        pane.configureControls(enabled:keyboardEnabled)
         context.coordinator.observeViewport(view)
         let b = evidence["bbox"].array.map(\.number), t = page["source_transform"].array.map(\.number)
         view.representedPageID=page["page_id"].string;view.representedEvidencePageID=evidence["page_id"].string

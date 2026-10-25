@@ -190,7 +190,7 @@ import AppKit
     @MainActor private static func checkPagedFirstSelection(resources:URL,root:URL) async throws {
         let model=WorkbookModel(bridge:Bridge(resources:resources,library:root))
         func require(_ condition:Bool,_ message:String) throws {if !condition{throw NSError(domain:message,code:1)}}
-        func event(_ id:String,from:String="old",address:String="A2")->[String:Any] {["change_id":id,"kind":"value_changed","from_revision_occurrence_id":from,"to_revision_occurrence_id":"new","from_sheet_id":"sheet-old","to_sheet_id":"sheet-new","before_address":address,"after_address":address]}
+        func event(_ id:String,from:String="old",address:String="A2")->[String:Any] {["change_id":id,"kind":"value_changed","from_revision_occurrence_id":from,"to_revision_occurrence_id":"new","from_sheet_id":"sheet-old","to_sheet_id":"sheet-new","before_address":address,"after_address":address,"description":"literal é e\u{301} 👨‍👩‍👧‍👦\r\n{0} %" ]}
         let first=event("paged-first"),second=event("paged-second"),third=event("paged-third")
         let pages:[[Any]]=[[event("foreign-first",from:"foreign"),event("invalid-address-first",address:"not-a-cell"),first],[second],[third]]
         let raw="PAGED RAW\r\n한글 🧪 e\u{301}"
@@ -211,6 +211,7 @@ import AppKit
         try require(try listCount()==queriesBefore+1,"AutomaticFirstSelectionRequeriedChangeList")
         let fixedScope=model.comparisonScope,fixedReport=try model.report.data(),initialSource=try source(),initialGeneration=model.revealGeneration,initialSourceRequests=try sourceCount()
         await model.loadChanges(next:true)
+        try require(model.selectedChange["description"].string.utf16.elementsEqual(JSON(first)["description"].string.utf16),"RetainedEventCacheChangedLiteralUTF16")
         try require(model.changePageNumber==2 && model.changes.map{$0["change_id"].string}==["paged-second"] && model.selectedChangeID=="paged-first" && (try model.selectedChange.data())==(try JSON(first).data()) && (try source())==initialSource && model.revealGeneration==initialGeneration && (try sourceCount())==initialSourceRequests,"NextPageLostOffPageFirstEventOrRequeriedManualSource")
         await model.chooseChange("paged-second")
         let selectedSource=try source(),selectedGeneration=model.revealGeneration,selectedSourceRequests=try sourceCount()
@@ -345,12 +346,26 @@ import AppKit
         try require(only.changes.first?["change_id"].string=="physical-D4" && only.selectedChangeID.isEmpty && (try source(only))==metadataSource && (try sourceReads())==metadataReads,"SuccessfulMetadataOnlyQueryLeftAnAutomaticSelectionLease")
         only.closeReads()
         var oneSided:[[String:Any]]=[]
-        for before in [true,false] {
-            let observed=event(before ? "before-only":"after-only","cell_observation",before:before ? "D4":"",after:before ? "":"D4",beforeSheet:before ? "sheet-old":"",afterSheet:before ? "":"sheet-new")
+        for before in [true,false] {for address in ["D4","T150"] {
+            let observed=event((before ? "before-only-":"after-only-")+address,"cell_observation",before:before ? address:"",after:before ? "":address)
             try control(metadata+[observed]);let value=await model();await value.changeVersions(before:"old",after:"new")
-            try require(value.selectedChangeID==observed["change_id"].string && value.selectedRow==4 && value.cellFailure.isEmpty && value.rangeFailure.isEmpty && (before ? value.afterCell:value.beforeCell).isNull,"OneSidedPhysicalObservationRejectedOrMissingSideInvented")
+            let outside=address=="T150",row=outside ? 150:1,column=outside ? 20:1
+            try require(value.selectedChangeID==observed["change_id"].string && value.selectedRow==(outside ? 150:4) && value.cellFailure.isEmpty && value.rangeFailure.isEmpty && (before ? value.afterCell:value.beforeCell).isNull,"OneSidedPhysicalObservationRejectedOrMissingSideInvented")
+            try rawCell(value,before:before,address:address)
+            try require(value.rowStart==row && value.columnStart==column && value.beforeRowStart==(before ? row:1) && value.beforeColumnStart==(before ? column:1) && value.afterRowStart==(before ? 1:row) && value.afterColumnStart==(before ? 1:column),"OneSidedInitialWindowOverwroteMissingSideOrSharedEvidenceWindow_"+address)
+            let prefix = !before && outside ? L("workbook.nav.afterPrefix"):""
+            try require(value.navigationRangePrefix==prefix,"OneSidedSharedRangeCaptionNamesWrongEvidenceSide_"+address)
+            oneSided.append(["observed_side":before ? "before":"after","physical_address":address,"missing_side_remains_null":true,"exact_observed_utf16":true,"before_window":[value.beforeRowStart,value.beforeColumnStart],"after_window":[value.afterRowStart,value.afterColumnStart],"shared_window":[value.rowStart,value.columnStart],"shared_range_prefix":value.navigationRangePrefix,"outside_initial_window":outside]);value.closeReads()
+        }}
+        var missingSideOldWindows:[[String:Any]]=[]
+        for before in [true,false] {
+            let observed=event(before ? "before-old-window":"after-old-window","cell_observation",before:before ? "D4":"",after:before ? "":"D4",beforeSheet:before ? "sheet-old":"",afterSheet:before ? "":"sheet-new")
+            try control([observed]);let value=await model();value.changes=[observed];value.changesFromID="old";value.changesToID="new"
+            if before {value.afterRowStart=31;value.afterColumnStart=7}else{value.beforeRowStart=31;value.beforeColumnStart=7}
+            await value.chooseChange(observed["change_id"].string,preservingVisibleWindow:true)
             try rawCell(value,before:before,address:"D4")
-            oneSided.append(["observed_side":before ? "before":"after","physical_address":"D4","missing_side_remains_null":true,"exact_observed_utf16":true]);value.closeReads()
+            try require(value.rowStart==1 && value.columnStart==1 && value.beforeRowStart==(before ? 1:31) && value.beforeColumnStart==(before ? 1:7) && value.afterRowStart==(before ? 31:1) && value.afterColumnStart==(before ? 7:1) && value.navigationRangePrefix==(before ? "":L("workbook.nav.afterPrefix")),"MissingSideFallbackLostCapturedOldWindowOrMislabeledSharedRange")
+            missingSideOldWindows.append(["observed_side":before ? "before":"after","captured_missing_side_window":[31,7],"before_window":[value.beforeRowStart,value.beforeColumnStart],"after_window":[value.afterRowStart,value.afterColumnStart],"shared_window":[value.rowStart,value.columnStart],"shared_range_prefix":value.navigationRangePrefix,"scope":"explicit preservingVisibleWindow model regression with distinct captured missing-side coordinates"]);value.closeReads()
         }
         var manualObservations:[[String:Any]]=[]
         for route in ["cell","address","sheet","window"] {
@@ -398,7 +413,7 @@ import AppKit
         try control([physical]);await untouched.loadChanges()
         try require(untouched.selectedChangeID=="physical-D4" && untouched.changesFailure.isEmpty && untouched.cellFailure.isEmpty,"UntouchedRetryLostOriginalInitialIntent")
         try rawCell(untouched,before:true,address:"D4");try rawCell(untouched,before:false,address:"D4");untouched.closeReads()
-        let proof:[String:Any]=["scope":"Actual Bridge with explicit production report/version ownership routes, bounded delayed list responses and controlled distinct UTF16 per revision/sheet/address; no UI disabling or packaged-runtime claim","metadata_before_physical_skipped":true,"typed_metadata_with_address_excluded":true,"foreign_sheet_membership_excluded":true,"metadata_only_stays_unlinked_and_consumes_intent":true,"one_sided_observations":oneSided,"delayed_manual_navigation":manualObservations,"failed_initial_then_manual_default_retry_keeps_sources":true,"explicit_new_version_pair_restores_initial_link":true,"explicit_new_report_restores_initial_link":true,"untouched_retry_uses_original_intent_without_reacquisition":true,"same_query_paged_return_and_mode_suppression_covered_by_existing_regressions":true]
+        let proof:[String:Any]=["scope":"Actual Bridge with explicit production report/version ownership routes, bounded delayed list responses and controlled distinct UTF16 per revision/sheet/address; no UI disabling or packaged-runtime claim","metadata_before_physical_skipped":true,"typed_metadata_with_address_excluded":true,"foreign_sheet_membership_excluded":true,"metadata_only_stays_unlinked_and_consumes_intent":true,"one_sided_observations":oneSided,"one_sided_captured_missing_windows":missingSideOldWindows,"delayed_manual_navigation":manualObservations,"failed_initial_then_manual_default_retry_keeps_sources":true,"explicit_new_version_pair_restores_initial_link":true,"explicit_new_report_restores_initial_link":true,"untouched_retry_uses_original_intent_without_reacquisition":true,"same_query_paged_return_and_mode_suppression_covered_by_existing_regressions":true]
         try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("initial-ownership-proof.json"))
         if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_WORKBOOK_INITIAL_OWNERSHIP_EVIDENCE_OUT"],!path.isEmpty {try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:path))}
         print("PASS native workbook initial ownership: metadata and sheet membership, one-sided physical observations, delayed manual navigation, failure retry and explicit version/report restoration")

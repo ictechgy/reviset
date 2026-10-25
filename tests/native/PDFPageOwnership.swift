@@ -154,6 +154,11 @@ import Combine
         withExtendedLifetime(window) {}
     }
     @MainActor private static func checkPerPaneControls(path:String,folder:URL) throws {
+        func requirePDFCaption(_ value:Bool)throws {if !value{throw NSError(domain:"GlobalFitCaptionMustNameWidthInBothLocales",code:1)}}
+        for (code,title) in [("en","Fit width"),("ko","너비 맞춤")] {
+            let localizer=Localizer(language:code)
+            try requirePDFCaption(localizer.string("doc.common.fit")==title && localizer.string("doc.common.fit")==localizer.string("doc.pdf.fitWidth"))
+        }
         let model=AppModel()
         model.projectID="pdf-control-project";model.report=JSON(["report_id":"fixed-pdf-report","revisions":[["revision_occurrence_id":"before"],["revision_occurrence_id":"after"]]])
         model.leftPageID="before-page";model.rightPageID="after-page";model.selectedChangeID="evidence-change"
@@ -223,7 +228,21 @@ import Combine
         try require(!before.zoomInButton.isEnabled && !before.zoomOutButton.isEnabled && !before.fitWidthButton.isEnabled && left.scaleFactor==hiddenScale,"Hidden source controls remained active")
         host.rootView=root(3);settle()
         try require(before.zoomInButton.isEnabled && left.scaleFactor==hiddenScale,"Restoring source controls reset manual zoom")
-        let proof:[String:Any]=["native_per_pane_controls_visible_localized_and_performed":true,"control_ids":["Docver.pdf.zoomOut","Docver.pdf.zoomIn","Docver.pdf.fitWidth"],"ancestor_id":"Docver.pdf.pane","initial_fit_width_scale":initialScale,"fit_width_scale":fitScale,"manual_zoom_out_before":otherScale,"manual_zoom_out_after":otherScale/1.2,"pdf_hosts_documents_pages_retained":true,"control_actions_retain_exact_evidence_annotations":true,"other_pane_manual_zoom_and_viewport_retained":true,"passive_redraw_and_resize_retain_manual_zoom_and_viewports":true,"passive_viewport_max_origin_error":originError,"passive_viewport_origin_tolerance":0.01,"fixed_query_source_report_and_published_model_unchanged":true,"model_events_during_controls":modelEvents,"hidden_source_controls_disabled":true,"scope":"Controlled native button actions; no OS pointer, keyboard traversal or VoiceOver claim. Controls have no model or bridge reference."]
+        let unavailableHost=NSHostingView(rootView:OriginalPDFView(path:path,pageNumber:1,zoom:1,evidence:JSON(),page:JSON()))
+        let unavailableWindow=NSWindow(contentRect:NSRect(x:-10000,y:-10000,width:520,height:400),styleMask:[.titled],backing:.buffered,defer:false);unavailableWindow.isReleasedWhenClosed=false;unavailableWindow.contentView=unavailableHost
+        func settleUnavailable() {unavailableHost.layoutSubtreeIfNeeded();RunLoop.current.run(until:Date().addingTimeInterval(0.06));unavailableHost.layoutSubtreeIfNeeded()}
+        settleUnavailable()
+        guard let unavailable=panes(unavailableHost).first else{throw NSError(domain:"UnavailablePDFControlHostMissing",code:1)}
+        try require(unavailable.zoomInButton.isEnabled,"Early-return fixture did not start with available native controls")
+        unavailableHost.rootView=OriginalPDFView(keyboardEnabled:false,path:folder.appendingPathComponent("absent.pdf").path,pageNumber:1,zoom:1,evidence:JSON(),page:JSON());settleUnavailable()
+        try require(panes(unavailableHost).first===unavailable && unavailable.pdfView.currentPage==nil && unavailable.pdfView.isAccessibilityHidden() && !unavailable.zoomInButton.isEnabled && !unavailable.zoomOutButton.isEnabled && !unavailable.fitWidthButton.isEnabled,"No-current-page return bypassed hidden source controls gate or availability refresh")
+        unavailableHost.rootView=OriginalPDFView(path:folder.appendingPathComponent("absent.pdf").path,pageNumber:1,zoom:1,evidence:JSON(),page:JSON());settleUnavailable()
+        try require(!unavailable.zoomInButton.isEnabled && !unavailable.zoomOutButton.isEnabled && !unavailable.fitWidthButton.isEnabled,"Visible unavailable PDF retained stale controls")
+        unavailableWindow.close()
+        // Passive root redraws above legitimately rebuild annotation instances.
+        // Check the current physical evidence rather than the pre-redraw object.
+        try require(left.document===leftDocument && right.document===rightDocument && left.currentPage===leftPage && right.currentPage===rightPage && left.scaleFactor==2 && right.scaleFactor==2.6 && left.qualifiedEvidence && right.qualifiedEvidence && left.ownedEvidenceAnnotation.map{leftPage.annotations.contains($0)}==true && right.ownedEvidenceAnnotation.map{rightPage.annotations.contains($0)}==true && (try snapshot())==fixed && modelEvents==0,"Unavailable pane test changed the retained physical sources, current evidence or model")
+        let proof:[String:Any]=["native_per_pane_controls_visible_localized_and_performed":true,"control_ids":["Docver.pdf.zoomOut","Docver.pdf.zoomIn","Docver.pdf.fitWidth"],"ancestor_id":"Docver.pdf.pane","initial_fit_width_scale":initialScale,"fit_width_scale":fitScale,"manual_zoom_out_before":otherScale,"manual_zoom_out_after":otherScale/1.2,"pdf_hosts_documents_pages_retained":true,"control_actions_retain_exact_evidence_annotations":true,"other_pane_manual_zoom_and_viewport_retained":true,"passive_redraw_and_resize_retain_manual_zoom_and_viewports":true,"passive_viewport_max_origin_error":originError,"passive_viewport_origin_tolerance":0.01,"fixed_query_source_report_and_published_model_unchanged":true,"model_events_during_controls":modelEvents,"hidden_source_controls_disabled":true,"global_fit_caption_names_width_in_both_locales":true,"no_current_page_keeps_hidden_gate_and_updates_availability":true,"scope":"Controlled native button actions; no OS pointer, keyboard traversal or VoiceOver claim. Controls have no model or bridge reference."]
         if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_PDF_CONTROLS_EVIDENCE_OUT"],!path.isEmpty {try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:path))}
         try JSONSerialization.data(withJSONObject:proof,options:[.prettyPrinted,.sortedKeys]).write(to:folder.appendingPathComponent("pdf-controls-proof.json"))
         print("PASS native PDF per-pane zoom controls: retained PDFKit hosts/documents/pages/evidence, independent manual zoom, passive viewport preservation, fixed model scope")
