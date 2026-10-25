@@ -40,23 +40,23 @@ internal sealed class MainWindow : Window
     private readonly Grid workspace = new() { Background = Brushes.White };
     private readonly Grid comparison = new();
     private readonly DockPanel sourceStage = new();
-    private readonly RichTextBox unified = new() { IsReadOnly = true, BorderThickness = new Thickness(0), FontFamily = new FontFamily("Consolas, Segoe UI"), FontSize = 13, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, Visibility = Visibility.Collapsed };
-    private readonly TextBlock sourceNotice = new() { TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = 16, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, MaxHeight = 48, ClipToBounds = true, Margin = new Thickness(10, 3, 10, 4), Foreground = Brushes.DimGray, FontSize = 12 };
+    private readonly RichTextBox unified = new() { IsReadOnly = true, BorderThickness = new Thickness(0), FontFamily = new FontFamily("Consolas, Segoe UI"), FontSize = 15, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, Visibility = Visibility.Collapsed };
+    private readonly TextBlock sourceNotice = new() { TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, LineHeight = 16, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, MaxHeight = 48, ClipToBounds = true, Margin = new Thickness(10, 3, 10, 4), Foreground = Brushes.DimGray, FontSize = 13 };
     private Button selectedLimitsButton = new();
     private Button storedHistoryButton = new();
     private Task storedHistoryRequest = Task.CompletedTask;
     private (string Project, string Report, string From, string To)? documentRecoveryScope;
-    private readonly ComboBox sourceView = new() { Width = 155, Margin = new Thickness(4, 2, 4, 2) };
+    private readonly ComboBox sourceView = new() { Width = 155, FontSize = 14, Margin = new Thickness(4, 2, 4, 2) };
     private readonly StackPanel rawTextPaging = new() { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed };
     private readonly CheckBox sourceDiagnostics = new() { Margin = new Thickness(10, 5, 4, 5), VerticalAlignment = VerticalAlignment.Center };
     private Button reportDetailsButton = new();
     private Button firstTextStage = new();
     private Button nextTextStage = new();
-    private readonly ComboBox queryBefore = new() { Width = 145, Margin = new Thickness(4, 2, 0, 2) };
-    private readonly ComboBox queryAfter = new() { Width = 145, Margin = new Thickness(0, 2, 4, 2) };
+    private readonly ComboBox queryBefore = new() { Width = 145, FontSize = 14, Margin = new Thickness(4, 2, 0, 2) };
+    private readonly ComboBox queryAfter = new() { Width = 145, FontSize = 14, Margin = new Thickness(0, 2, 4, 2) };
     private readonly TextBlock projectCaption = new() { VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold, MaxWidth = 190, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 8, 0) };
-    private readonly TextBlock sourcePair = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 4, 0), FontSize = 12 };
-    private readonly TextBlock queryProvenance = new() { MaxWidth = 185, LineHeight = 15, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(6, 2, 4, 2), FontSize = 12, Foreground = Brushes.DimGray };
+    private readonly TextBlock sourcePair = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 4, 0), FontSize = 13 };
+    private readonly TextBlock queryProvenance = new() { MaxWidth = 185, LineHeight = 17, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(6, 2, 4, 2), FontSize = 13, Foreground = Brushes.DimGray };
     private readonly StackPanel queryControls = new() { Orientation = Orientation.Horizontal };
     private readonly StackPanel soleChanges = new() { Margin = new Thickness(12) };
     private readonly TextBlock soleExplanation = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) };
@@ -83,12 +83,12 @@ internal sealed class MainWindow : Window
     internal readonly ComparePane After;
     private readonly ListBox projectList = new() { BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch };
     private readonly ListBox changeList = new() { BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch };
-    private readonly ComboBox reports = new() { Width = 245, Height = 30, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 2, 3, 2) };
+    private readonly ComboBox reports = new() { Width = 245, MinHeight = 32, FontSize = 14, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 2, 3, 2) };
     private readonly TextBox detail = SourceText();
     private readonly TextBlock detailRange = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8) };
-    private readonly TextBlock detailSourceContext = new() { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 4, 8, 4), FontSize = 11, LineHeight = 13, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, MaxHeight = 60, Visibility = Visibility.Collapsed };
+    private readonly TextBlock detailSourceContext = new() { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 4, 8, 4), FontSize = 13, LineHeight = 15, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, MaxHeight = 60, Visibility = Visibility.Collapsed };
     private ScrollViewer? detailToolsScroll;
-    private readonly TextBlock rawTextPageSummary = new() { TextWrapping = TextWrapping.Wrap, MaxWidth = 430, Margin = new Thickness(8, 3, 4, 3), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock rawTextPageSummary = new() { TextWrapping = TextWrapping.Wrap, MaxWidth = 430, Margin = new Thickness(8, 3, 4, 3), FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
     private readonly StackPanel detailPaging = new();
     private readonly TextBox detailMetadata = SourceText();
     private readonly TextBlock inspectorHeading = new() { FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 6, 10, 4) };
@@ -163,14 +163,14 @@ internal sealed class MainWindow : Window
     private Func<JsonElement, CancellationToken, Task>? workbookChangesReplyForSmoke;
     internal string ComparisonState { get; private set; } = "empty";
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 5, 12, 5), MaxHeight = 70 };
-    private readonly TextBlock context = new() { FontSize = 12, Foreground = Brushes.DimGray, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(12, 2, 12, 5) };
+    private readonly TextBlock context = new() { FontSize = 13, Foreground = Brushes.DimGray, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(12, 2, 12, 5) };
     private readonly TextBlock intervalCaption = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(10, 2, 10, 6), Foreground = Brushes.DimGray };
     private readonly ProgressBar progress = new() { Height = 3, IsIndeterminate = true, Visibility = Visibility.Collapsed };
     private readonly Menu menus = new();
     private readonly MenuItem evidenceMenu = new() { IsCheckable = true };
     private readonly Dictionary<string, MenuItem> languageItems = [];
     private readonly Dictionary<string, MenuItem> actionItems = [];
-    private readonly ComboBox comparisonMode = new() { Width = 160, Margin = new Thickness(4, 2, 8, 2) };
+    private readonly ComboBox comparisonMode = new() { Width = 160, FontSize = 14, Margin = new Thickness(4, 2, 8, 2) };
     private bool documentNet = true;
     private bool documentRangeUnavailable;
     private bool workbookNet = true;
@@ -193,8 +193,11 @@ internal sealed class MainWindow : Window
     private bool initializing = true;
     private bool startupReady;
     private bool startupFailed;
-    private readonly StackPanel libraryPrompt = new() { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 440, Margin = new Thickness(20) };
-    private readonly TextBlock libraryPromptText = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8) };
+    private readonly StackPanel libraryPrompt = new() { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 520, Margin = new Thickness(20) };
+    private readonly ScrollViewer libraryPromptScroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalContentAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+    private readonly TextBlock libraryPromptTitle = new() { FontSize = 24, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 0, 8, 8) };
+    private readonly TextBlock libraryPromptText = new() { FontSize = 16, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 0, 8, 14) };
+    private readonly StackPanel librarySteps = new() { Margin = new Thickness(8, 0, 8, 12) };
     private Button startupRetry = new();
     private Button firstImport = new();
     private Task startupRequest = Task.CompletedTask;
@@ -239,7 +242,7 @@ internal sealed class MainWindow : Window
     {
         Bridge = bridge; PreferencesPath = preferencesPath; Preferences = AppPreferences.Load(preferencesPath); Copy.Language = Preferences.Language;
         Title = "Reviset"; Width = 1440; Height = 940; MinWidth = 1000; MinHeight = 640; Background = Brushes.WhiteSmoke;
-        FontFamily = new FontFamily("Segoe UI"); FontSize = 13; Content = root;
+        FontFamily = new FontFamily("Segoe UI"); FontSize = 15; Content = root;
         Before = new ComparePane(this, false); After = new ComparePane(this, true);
         BuildShell(); ApplyLayout(false); Localize();
         workspace.SizeChanged += (_, eventArgs) =>
@@ -259,6 +262,7 @@ internal sealed class MainWindow : Window
         var actions = new MenuItem(); BindText(actions, "projectMenu"); menus.Items.Insert(0, actions);
         foreach (var command in new (string Key, Func<Task> Action)[] { ("import", Import), ("refresh", RefreshProjects), ("analyze", Analyze), ("reorder", Reorder), ("export", Export), ("mcp", CopyMcp) }) { var menuItem = new MenuItem(); BindText(menuItem, command.Key); var action = command.Action; var writer = command.Key is "import" or "analyze" or "reorder" or "export"; menuItem.Click += async (_, _) => await Guard(action, writer); actions.Items.Add(menuItem); actionItems[command.Key] = menuItem; }
         var layoutMenu = new MenuItem(); BindText(layoutMenu, "layout"); menus.Items.Add(layoutMenu); layoutMenu.SubmenuOpened += (_, _) => BuildLayoutMenu(layoutMenu);
+        var readingHelp = new MenuItem(); BindText(readingHelp, "howToRead"); readingHelp.Click += (_, _) => CreateReadingHelpDialog().ShowDialog(); menus.Items.Add(readingHelp);
         var modes = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(12, 4, 6, 4) };
         documents = new RadioButton { GroupName = "workspace", IsChecked = true, Margin = new Thickness(0, 0, 16, 0) }; BindText(documents, "documents");
         workbooks = new RadioButton { GroupName = "workspace" }; BindText(workbooks, "workbooks");
@@ -280,7 +284,12 @@ internal sealed class MainWindow : Window
         BindText(evidenceMenu, "evidence"); evidenceMenu.Click += (_, _) => ChangeVisibility(inspector: !Layout.Inspector); menus.Items.Add(evidenceMenu);
         DockPanel.SetDock(toolbar, Dock.Top); root.Children.Add(toolbar);
         versionsButton = Command("versions", ShowVersions); reportBar.Children.Add(versionsButton);
-        var intervalLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center }; BindText(intervalLabel, "interval"); queryControls.Children.Add(intervalLabel); queryControls.Children.Add(queryBefore); queryControls.Children.Add(new TextBlock { Text = "→", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5) }); queryControls.Children.Add(queryAfter); queryControls.Children.Add(comparisonMode); reportBar.Children.Add(queryControls); reportBar.Children.Add(queryProvenance);
+        var intervalLabel = new TextBlock { FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) }; BindText(intervalLabel, "interval"); queryControls.Children.Add(intervalLabel);
+        StackPanel Endpoint(ComboBox picker, string key)
+        {
+            var column = new StackPanel(); var caption = new TextBlock { FontSize = 13, Margin = new Thickness(4, 0, 4, 2) }; BindText(caption, key); column.Children.Add(caption); column.Children.Add(picker); return column;
+        }
+        queryControls.Children.Add(Endpoint(queryBefore, "before")); queryControls.Children.Add(new TextBlock { Text = "→", VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(5, 0, 5, 7) }); queryControls.Children.Add(Endpoint(queryAfter, "after")); comparisonMode.VerticalAlignment = VerticalAlignment.Bottom; queryControls.Children.Add(comparisonMode); reportBar.Children.Add(queryControls); reportBar.Children.Add(queryProvenance);
         reportBar.Children.Add(Command("changes", () => { ChangeVisibility(changes: !Layout.ChangesVisible); return Task.CompletedTask; }));
         queryBefore.SelectionChanged += async (_, _) => { if (!binding && queryBefore.SelectedItem is Choice choice) { endpointRequest = ChooseEndpoint(false, choice.Id); await Guard(() => endpointRequest); } };
         queryAfter.SelectionChanged += async (_, _) => { if (!binding && queryAfter.SelectedItem is Choice choice) { endpointRequest = ChooseEndpoint(true, choice.Id); await Guard(() => endpointRequest); } };
@@ -304,7 +313,10 @@ internal sealed class MainWindow : Window
         var sourceTools = new DockPanel { Margin = new Thickness(4, 1, 4, 1), LastChildFill = true };
         var sourceActions = new StackPanel { Orientation = Orientation.Horizontal }; previousChange = Command("previousChange", () => MoveChange(-1)); nextChange = Command("nextChange", () => MoveChange(1)); returnChange = Command("returnChange", ReturnToChange); sourceActions.Children.Add(previousChange); sourceActions.Children.Add(nextChange); sourceActions.Children.Add(returnChange); sourceActions.Children.Add(sourceView); DockPanel.SetDock(sourceActions, Dock.Right); sourceTools.Children.Add(sourceActions); sourceTools.Children.Add(sourcePair); DockPanel.SetDock(sourceTools, Dock.Top); sourceStage.Children.Add(sourceTools);
         firstTextStage = Command("firstText", FirstDetail); nextTextStage = Command("nextText", NextDetail); rawTextPaging.Children.Add(firstTextStage); rawTextPaging.Children.Add(nextTextStage); BindText(sourceDiagnostics, "sourceDetails"); sourceDiagnostics.Click += (_, _) => RenderSourceDiff(); rawTextPaging.Children.Add(sourceDiagnostics); rawTextPaging.Children.Add(rawTextPageSummary); DockPanel.SetDock(rawTextPaging, Dock.Top); sourceStage.Children.Add(rawTextPaging);
-        var sourceFooter = new DockPanel(); newComparisonStage = Command("newComparison", NewComparison); DockPanel.SetDock(newComparisonStage, Dock.Right); sourceFooter.Children.Add(newComparisonStage); storedHistoryButton = Command("openStoredHistory", () => storedHistoryRequest = OpenStoredHistory()); DockPanel.SetDock(storedHistoryButton, Dock.Right); sourceFooter.Children.Add(storedHistoryButton); selectedLimitsButton = Command("selectedLimits", () => { CreateSelectedLimitsDialog().ShowDialog(); return Task.CompletedTask; }); DockPanel.SetDock(selectedLimitsButton, Dock.Right); sourceFooter.Children.Add(selectedLimitsButton); sourceFooter.Children.Add(sourceNotice); DockPanel.SetDock(sourceFooter, Dock.Bottom); sourceStage.Children.Add(sourceFooter); var sourceBody = new Grid(); sourceBody.Children.Add(comparison); sourceBody.Children.Add(unified); libraryPrompt.Children.Add(libraryPromptText); startupRetry = Command("retryStartup", () => startupRequest = InitializeCore()); firstImport = Command("import", Import); libraryPrompt.Children.Add(startupRetry); libraryPrompt.Children.Add(firstImport); sourceBody.Children.Add(libraryPrompt); sourceStage.Children.Add(sourceBody);
+        var sourceFooter = new DockPanel(); newComparisonStage = Command("newComparison", NewComparison); DockPanel.SetDock(newComparisonStage, Dock.Right); sourceFooter.Children.Add(newComparisonStage); storedHistoryButton = Command("openStoredHistory", () => storedHistoryRequest = OpenStoredHistory()); DockPanel.SetDock(storedHistoryButton, Dock.Right); sourceFooter.Children.Add(storedHistoryButton); selectedLimitsButton = Command("selectedLimits", () => { CreateSelectedLimitsDialog().ShowDialog(); return Task.CompletedTask; }); DockPanel.SetDock(selectedLimitsButton, Dock.Right); sourceFooter.Children.Add(selectedLimitsButton); sourceFooter.Children.Add(sourceNotice); DockPanel.SetDock(sourceFooter, Dock.Bottom); sourceStage.Children.Add(sourceFooter);
+        var sourceBody = new Grid(); sourceBody.Children.Add(comparison); sourceBody.Children.Add(unified); libraryPrompt.Children.Add(libraryPromptTitle); libraryPrompt.Children.Add(libraryPromptText);
+        foreach (var key in new[] { "welcomeImport", "welcomeOrder", "welcomeInspect" }) { var step = new TextBlock { FontSize = 15, LineHeight = 21, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) }; BindText(step, key); librarySteps.Children.Add(step); }
+        libraryPrompt.Children.Add(librarySteps); startupRetry = Command("retryStartup", () => startupRequest = InitializeCore()); firstImport = Command("import", Import); libraryPrompt.Children.Add(startupRetry); libraryPrompt.Children.Add(firstImport); libraryPromptScroll.Content = libraryPrompt; sourceBody.Children.Add(libraryPromptScroll); sourceStage.Children.Add(sourceBody);
         sourceView.SelectionChanged += (_, _) => { if (!binding) { textView = sourceView.SelectedIndex == 1; RenderSourceDiff(); } };
         root.Children.Add(workspace); ClearDetail(); SetBusy(false);
     }
@@ -333,16 +345,39 @@ internal sealed class MainWindow : Window
         var stack = new FrameworkElementFactory(typeof(StackPanel)); stack.SetValue(FrameworkElement.MarginProperty, new Thickness(9, 7, 9, 7));
         void Text(string property, bool title = false, int lines = 0)
         {
-            var block = new FrameworkElementFactory(typeof(TextBlock)); block.SetBinding(TextBlock.TextProperty, new Binding(property)); block.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap); block.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); block.SetValue(TextBlock.LineHeightProperty, 16d); block.SetValue(TextBlock.FontSizeProperty, 12d); block.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 0, 0, 3)); if (title) block.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold); if (lines > 0) block.SetValue(FrameworkElement.MaxHeightProperty, lines * 16d); stack.AppendChild(block);
+            var lineHeight = title ? 21d : 20d; var block = new FrameworkElementFactory(typeof(TextBlock)); block.SetBinding(TextBlock.TextProperty, new Binding(property)); block.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap); block.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); block.SetValue(TextBlock.LineHeightProperty, lineHeight); block.SetValue(TextBlock.FontSizeProperty, title ? 15d : 14d); block.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 0, 0, 4)); if (title) block.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold); if (lines > 0) block.SetValue(FrameworkElement.MaxHeightProperty, lines * lineHeight); stack.AppendChild(block);
         }
         Text(nameof(ChangeChoice.Title), true); Text(nameof(ChangeChoice.Location)); Text(nameof(ChangeChoice.Preview), lines: 3);
         changeList.ItemTemplate = new DataTemplate { VisualTree = stack }; var style = new Style(typeof(ListBoxItem)); style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch)); style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0))); style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(2, 1, 2, 2))); style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(2, 1, 1, 1))); style.Setters.Add(new Setter(Control.BorderBrushProperty, Brushes.Transparent)); style.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(nameof(ChangeChoice.Tooltip)))); style.Setters.Add(new Setter(AutomationProperties.NameProperty, new Binding(nameof(ChangeChoice.Caption)))); var selected = new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true }; selected.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(231, 241, 255)))); selected.Setters.Add(new Setter(Control.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(59, 130, 246)))); selected.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.Black)); style.Triggers.Add(selected); changeList.ItemContainerStyle = style; ScrollViewer.SetHorizontalScrollBarVisibility(changeList, ScrollBarVisibility.Disabled); VirtualizingPanel.SetVirtualizationMode(changeList, VirtualizationMode.Recycling);
     }
-    internal static TextBox SourceText() => new() { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, BorderThickness = new Thickness(0), Padding = new Thickness(10), FontFamily = new FontFamily("Consolas, Segoe UI") };
+    internal static TextBox SourceText() => new() { IsReadOnly = true, FontSize = 15, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, BorderThickness = new Thickness(0), Padding = new Thickness(10), FontFamily = new FontFamily("Consolas, Segoe UI") };
     private TextBlock Caption(string key) { var block = new TextBlock { FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 8, 10, 8) }; BindText(block, key); return block; }
     private Button Command(string key, Func<Task> action)
     {
-        var button = new Button { Padding = new Thickness(10, 6, 10, 6), Margin = new Thickness(3), MinHeight = 30 }; BindText(button, key); button.Click += async (_, _) => await Guard(action, key is "import" or "newComparison" or "analyze" or "reorder" or "export"); return button;
+        var button = new Button { FontSize = 14, Padding = new Thickness(10, 6, 10, 6), Margin = new Thickness(3), MinHeight = 32 }; BindText(button, key); button.Click += async (_, _) => await Guard(action, key is "import" or "newComparison" or "analyze" or "reorder" or "export"); return button;
+    }
+    private Window CreateReadingHelpDialog()
+    {
+        var content = new DockPanel { Margin = new Thickness(24) };
+        var dialog = new Window { Owner = this, Title = Copy["howToRead"], Width = 640, Height = 560, MinWidth = 420, MinHeight = 330, FontFamily = FontFamily, FontSize = 15, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = content };
+        var close = new Button { Content = Copy["closeHelp"], IsCancel = true, IsDefault = true, HorizontalAlignment = HorizontalAlignment.Right, MinWidth = 90, Padding = new Thickness(16, 7, 16, 7), Margin = new Thickness(0, 16, 0, 0) }; close.Click += (_, _) => dialog.Close(); DockPanel.SetDock(close, Dock.Bottom); content.Children.Add(close);
+        var body = new StackPanel(); body.Children.Add(new TextBlock { Text = Copy[reportId.Length == 0 ? "welcomeTitle" : singleSource ? "readingHelpSingleTitle" : "readingHelpTitle"], FontSize = 24, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 18) });
+        void Paragraph(string key) => body.Children.Add(new TextBlock { Text = Copy[key], FontSize = 15, LineHeight = 22, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 18) });
+        if (startupFailed) Paragraph("startupFailed");
+        else if (reportId.Length == 0 && projectId.Length > 0) Paragraph("readingHelpDraft");
+        else if (reportId.Length == 0) { Paragraph("welcomeImport"); Paragraph("welcomeOrder"); Paragraph("welcomeInspect"); }
+        else if (singleSource)
+        {
+            body.Children.Add(new TextBlock { Text = SingleSourceGuidance, FontSize = 15, LineHeight = 22, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 18) });
+            Paragraph(IsWorkbook ? "readingHelpSingleWorkbook" : "readingHelpSingleDocument");
+        }
+        else
+        {
+            Paragraph("readingHelpQuery"); Paragraph("readingHelpSelect"); Paragraph(IsWorkbook ? "readingHelpWorkbook" : "readingHelpDocument");
+            body.Children.Add(new TextBlock { Text = Copy["readingHelpMeaning"], FontSize = 13, LineHeight = 19, Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap });
+        }
+        content.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        return dialog;
     }
     internal void BindText(FrameworkElement control, string key)
     {
@@ -808,7 +843,7 @@ internal sealed class MainWindow : Window
     private string MetadataBoundedNotice() => Copy["metadataBounded"];
     private void AppendMetadataProjection(FlowDocument target, string side, MetadataProjection projection)
     {
-        void System(string text, string tag) => target.Blocks.Add(new Paragraph(new Run(text)) { Margin = new Thickness(0, 2, 0, 5), FontFamily = new FontFamily("Segoe UI"), FontSize = 12, Foreground = Brushes.DimGray, Tag = tag });
+        void System(string text, string tag) => target.Blocks.Add(new Paragraph(new Run(text)) { Margin = new Thickness(0, 2, 0, 5), FontFamily = new FontFamily("Segoe UI"), FontSize = 13, Foreground = Brushes.DimGray, Tag = tag });
         System(side, "metadataSide");
         if (!projection.Available) { System(Copy["observationMissing"], "metadataMissing"); return; }
         System(Copy["metadataProjection"], "metadataProjectionCaption");
@@ -900,8 +935,9 @@ internal sealed class MainWindow : Window
         previousChange.IsEnabled = nextChange.IsEnabled = ChangeNavigationReady && changes.Count > 0; returnChange.Visibility = selectedChange.ValueKind == JsonValueKind.Object ? Visibility.Visible : Visibility.Collapsed; returnChange.IsEnabled = !busy && changesReady;
         var sole = reportId.Length > 0 && currentReport.Get("revisions").Items().Count == 1;
         soleChanges.Visibility = sole ? Visibility.Visible : Visibility.Collapsed; changeList.Visibility = sole ? Visibility.Collapsed : Visibility.Visible; soleExplanation.Text = Copy["soleListExplanation"]; newComparison.IsEnabled = newComparisonStage.IsEnabled = startupReady && !busy && !initializing; newComparisonStage.Visibility = sole && !Layout.ChangesVisible ? Visibility.Visible : Visibility.Collapsed; previousChange.Visibility = nextChange.Visibility = more.Visibility = sole ? Visibility.Collapsed : Visibility.Visible;
-        libraryPrompt.Visibility = startupFailed || startupReady && projectChoicesReady && projectList.Items.Count == 0 && projectId.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        libraryPromptText.Text = Copy[startupFailed ? "startupFailed" : "chooseProject"]; startupRetry.Visibility = startupFailed ? Visibility.Visible : Visibility.Collapsed; startupRetry.IsEnabled = !busy && !initializing; firstImport.Visibility = startupFailed ? Visibility.Collapsed : Visibility.Visible; firstImport.IsEnabled = startupReady && !busy && !initializing;
+        libraryPromptScroll.Visibility = libraryPrompt.Visibility = startupFailed || startupReady && projectChoicesReady && projectList.Items.Count == 0 && projectId.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        libraryPromptTitle.Text = Copy[startupFailed ? "recoveryTitle" : "welcomeTitle"]; librarySteps.Visibility = startupFailed ? Visibility.Collapsed : Visibility.Visible;
+        libraryPromptText.Text = Copy[startupFailed ? "startupFailed" : "welcomeBody"]; startupRetry.Visibility = startupFailed ? Visibility.Visible : Visibility.Collapsed; startupRetry.IsEnabled = !busy && !initializing; firstImport.Visibility = startupFailed ? Visibility.Collapsed : Visibility.Visible; firstImport.IsEnabled = startupReady && !busy && !initializing;
         retryComparison.Content = Copy[eventRetry is null ? "retry" : "retryEvent"];
         var workbookWarnings = WorkbookVisibleWarnings(); var notice = new List<string>(workbookWarnings); if (singleSource) notice.Add(Copy[currentReport.Get("revisions").Items().Count == 1 ? "singleImportedSourceNotice" : "singleSourceNotice"]); if (IsWorkbook && workbookWarnings.Count == 0) notice.Add(Copy["storedOnly"]);
         var canRecoverHistory = !IsWorkbook && NetMode && documentRangeUnavailable && documentRecoveryScope is { } recovery && recovery == (projectId, reportId, intervalFrom, intervalTo);
@@ -923,9 +959,9 @@ internal sealed class MainWindow : Window
         if (!textView) return;
         var identity = JsonSerializer.Serialize(new { projectId, reportId, intervalFrom, intervalTo, net = pairedSource is not null && PairedSourceCurrent ? null : AtSelectedChange ? (bool?)NetMode : null, IsWorkbook, eventId = pairedSource is not null && PairedSourceCurrent ? "" : AtSelectedChange ? selectedChange.Get("change_id").Text() : "", a = new { Before.RevisionId, Before.PageId, Before.SheetId, Before.FocusedAddress }, b = new { After.RevisionId, After.PageId, After.SheetId, After.FocusedAddress }, detailOffset });
         var keepScroll = identity == unifiedIdentity; var scrollX = keepScroll && unifiedRestorePending ? unifiedRetainedX : unified.HorizontalOffset; var scrollY = keepScroll && unifiedRestorePending ? unifiedRetainedY : unified.VerticalOffset; unifiedIdentity = identity; var rendering = ++unifiedRender; unifiedRestorePending = keepScroll; unifiedRetainedX = scrollX; unifiedRetainedY = scrollY;
-        var flow = new FlowDocument { PagePadding = new Thickness(14), FontFamily = unified.FontFamily, FontSize = 13 }; unified.Document = flow;
+        var flow = new FlowDocument { PagePadding = new Thickness(14), FontFamily = unified.FontFamily, FontSize = 15, LineHeight = 22 }; unified.Document = flow;
         if (keepScroll) Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () => { if (textView && rendering == unifiedRender && identity == unifiedIdentity) { unified.UpdateLayout(); unified.ScrollToHorizontalOffset(scrollX); unified.ScrollToVerticalOffset(scrollY); unifiedRestorePending = false; } });
-        void Add(string text, Brush? color = null, Brush? background = null) { var caption = ReferenceEquals(color, Brushes.DimGray) || ReferenceEquals(color, Brushes.DarkOrange); flow.Blocks.Add(new Paragraph(new Run(text)) { Margin = caption ? new Thickness(0, 1, 0, 4) : new Thickness(0), FontFamily = caption ? new FontFamily("Segoe UI") : unified.FontFamily, FontSize = caption ? 12 : 13, Foreground = color ?? Brushes.Black, Background = background ?? Brushes.Transparent }); }
+        void Add(string text, Brush? color = null, Brush? background = null) { var caption = ReferenceEquals(color, Brushes.DimGray) || ReferenceEquals(color, Brushes.DarkOrange); flow.Blocks.Add(new Paragraph(new Run(text)) { Margin = caption ? new Thickness(0, 1, 0, 5) : new Thickness(0), FontFamily = caption ? new FontFamily("Segoe UI") : unified.FontFamily, FontSize = caption ? 13 : 15, Foreground = color ?? Brushes.Black, Background = background ?? Brushes.Transparent }); }
         // A query's loading/failure state does not replace a separately verified
         // physical reader with a short placeholder that consumes its viewport.
         if (ComparisonState != "ready" && !HasIndependentSourceDetail) { Add(Copy[ComparisonState == "failed" ? "failed" : ComparisonState == "invalid" ? "reverse" : ComparisonState == "empty" ? "chooseProject" : "loading"]); return; }

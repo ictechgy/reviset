@@ -32,16 +32,16 @@ internal sealed class ComparePane
     private readonly MainWindow owner;
     private readonly bool after;
     private readonly ComboBox revision = new() { Margin = new Thickness(5), MinWidth = 100, HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly ComboBox page = new() { Margin = new Thickness(5, 3, 5, 1), MinWidth = 100, Height = 28, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox page = new() { Margin = new Thickness(5, 3, 5, 1), MinWidth = 100, MinHeight = 30, FontSize = 14, HorizontalContentAlignment = HorizontalAlignment.Stretch };
     private readonly ComboBox sheet = new() { Margin = new Thickness(5), MinWidth = 100 };
     private readonly TextBlock heading = new() { FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 8, 10, 2) };
     private readonly TextBlock versionCaption = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 3, 6, 3), TextTrimming = TextTrimming.CharacterEllipsis };
-    private readonly TextBlock source = new() { TextTrimming = TextTrimming.CharacterEllipsis, MaxHeight = 21, Margin = new Thickness(6, 2, 6, 2), Foreground = Brushes.DimGray };
-    private readonly TextBlock sparse = new() { TextWrapping = TextWrapping.Wrap, MaxHeight = 32, FontSize = 11, Margin = new Thickness(6, 1, 6, 3), Foreground = Brushes.DimGray };
+    private readonly TextBlock source = new() { FontSize = 13, TextTrimming = TextTrimming.CharacterEllipsis, MaxHeight = 21, Margin = new Thickness(6, 2, 6, 2), Foreground = Brushes.DimGray };
+    private readonly TextBlock sparse = new() { TextWrapping = TextWrapping.Wrap, MaxHeight = 36, FontSize = 13, LineHeight = 18, Margin = new Thickness(6, 1, 6, 3), Foreground = Brushes.DimGray };
     private readonly TextBlock pageCaption = new() { Margin = new Thickness(7, 2, 4, 0) };
     private readonly TextBlock sheetCaption = new() { Margin = new Thickness(7, 2, 4, 0) };
     private readonly TextBox fallback = MainWindow.SourceText();
-    internal readonly DataGrid Cells = new() { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, CanUserDeleteRows = false, CanUserReorderColumns = false, CanUserSortColumns = false, HeadersVisibility = DataGridHeadersVisibility.Column, EnableRowVirtualization = true, EnableColumnVirtualization = true, SelectionMode = DataGridSelectionMode.Single, SelectionUnit = DataGridSelectionUnit.Cell, GridLinesVisibility = DataGridGridLinesVisibility.All, RowHeight = 26, FontFamily = new FontFamily("Consolas, Segoe UI"), BorderThickness = new Thickness(0) };
+    internal readonly DataGrid Cells = new() { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, CanUserDeleteRows = false, CanUserReorderColumns = false, CanUserSortColumns = false, HeadersVisibility = DataGridHeadersVisibility.Column, EnableRowVirtualization = true, EnableColumnVirtualization = true, SelectionMode = DataGridSelectionMode.Single, SelectionUnit = DataGridSelectionUnit.Cell, GridLinesVisibility = DataGridGridLinesVisibility.All, RowHeight = 28, FontSize = 15, FontFamily = new FontFamily("Consolas, Segoe UI"), BorderThickness = new Thickness(0) };
     internal readonly Image PageImage = new() { Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
     internal readonly ScrollViewer PageScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     private readonly Slider zoom = new() { Minimum = .1, Maximum = 2, Value = 1, Width = 95, Margin = new Thickness(5), VerticalAlignment = VerticalAlignment.Center };
@@ -61,7 +61,7 @@ internal sealed class ComparePane
     private readonly StackPanel workbookControls = new();
     private readonly Expander cellDetails = new() { IsExpanded = false, Margin = new Thickness(6, 0, 6, 0) };
     private readonly ScrollViewer cellDetailsScroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, CanContentScroll = false, MaxHeight = 160 };
-    private readonly TextBlock cellDetailsCaption = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4), FontSize = 11 };
+    private readonly TextBlock cellDetailsCaption = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4), FontSize = 13 };
     private readonly TextBox cellValue = MainWindow.SourceText();
     private readonly TextBox cellFormula = MainWindow.SourceText();
     private readonly TextBlock cellValueLabel = new() { Margin = new Thickness(4, 2, 4, 0), TextWrapping = TextWrapping.Wrap };
@@ -134,7 +134,7 @@ internal sealed class ComparePane
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); dock.Children.Add(top);
         var versionRow = new DockPanel(); DockPanel.SetDock(heading, Dock.Left); versionRow.Children.Add(heading); versionRow.Children.Add(versionCaption); top.Children.Add(versionRow);
         var pageLabel = new FrameworkElementFactory(typeof(TextBlock)); pageLabel.SetBinding(TextBlock.TextProperty, new Binding(nameof(Choice.Label)) { Converter = new SingleLinePageLabel() }); pageLabel.SetBinding(FrameworkElement.ToolTipProperty, new Binding(nameof(Choice.Label))); pageLabel.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); pageLabel.SetValue(TextBlock.TextWrappingProperty, TextWrapping.NoWrap); page.ItemTemplate = new DataTemplate { VisualTree = pageLabel }; page.SetBinding(FrameworkElement.ToolTipProperty, new Binding("SelectedItem.Label") { Source = page });
-        docControls.Children.Add(page); var zoomRow = new StackPanel { Orientation = Orientation.Horizontal }; zoomRow.Children.Add(zoomCaption); zoomRow.Children.Add(zoom); zoomRow.Children.Add(zoomPercent); fitWidth = Button("fitWidth", () => { FitPreview(); return Task.CompletedTask; }); zoomRow.Children.Add(fitWidth); docControls.Children.Add(zoomRow); top.Children.Add(docControls);
+        docControls.Children.Add(page); var zoomRow = new WrapPanel(); zoomRow.Children.Add(zoomCaption); zoomRow.Children.Add(zoom); zoomRow.Children.Add(zoomPercent); fitWidth = Button("fitWidth", () => { FitPreview(); return Task.CompletedTask; }); zoomRow.Children.Add(fitWidth); docControls.Children.Add(zoomRow); top.Children.Add(docControls);
         workbookControls.Children.Add(sheet);
         var coordinates = new WrapPanel(); var rowLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }; owner.BindText(rowLabel, "row"); coordinates.Children.Add(rowLabel); coordinates.Children.Add(rowStart); var columnLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center }; owner.BindText(columnLabel, "column"); coordinates.Children.Add(columnLabel); coordinates.Children.Add(colStart); coordinates.Children.Add(Button("go", LoadCoordinates));
         var navigationRow = new WrapPanel(); var previous = Arrow("previous", "◀", async () => { row = Math.Max(1, row - 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); var next = Arrow("next", "▶", async () => { row = Math.Min(1_048_527, row + 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); navigationRow.Children.Add(previous); navigationRow.Children.Add(next); address.Width = 65; navigationRow.Children.Add(address); navigationRow.Children.Add(Button("go", GoAddress)); workbookControls.Children.Add(navigationRow); workbookControls.Children.Add(showFormula);
@@ -160,8 +160,8 @@ internal sealed class ComparePane
         };
         navigation.AddRange([revision, page, sheet, rowStart, colStart, address]); Localize(); Clear();
     }
-    private Button Button(string key, Func<Task> action) { var button = new Button { Margin = new Thickness(3), Padding = new Thickness(8, 3, 8, 3) }; owner.BindText(button, key); button.Click += async (_, _) => await owner.Guard(action); navigation.Add(button); return button; }
-    private Button Arrow(string key, string glyph, Func<Task> action) { var button = new Button { Content = glyph, Margin = new Thickness(3), Padding = new Thickness(7, 3, 7, 3) }; button.Click += async (_, _) => { selectionRequest = action(); await owner.Guard(() => selectionRequest); }; arrows.Add((button, key)); navigation.Add(button); return button; }
+    private Button Button(string key, Func<Task> action) { var button = new Button { FontSize = 14, MinHeight = 30, Margin = new Thickness(3), Padding = new Thickness(8, 3, 8, 3) }; owner.BindText(button, key); button.Click += async (_, _) => await owner.Guard(action); navigation.Add(button); return button; }
+    private Button Arrow(string key, string glyph, Func<Task> action) { var button = new Button { Content = glyph, FontSize = 14, MinHeight = 30, Margin = new Thickness(3), Padding = new Thickness(7, 3, 7, 3) }; button.Click += async (_, _) => { selectionRequest = action(); await owner.Guard(() => selectionRequest); }; arrows.Add((button, key)); navigation.Add(button); return button; }
     internal void Localize()
     {
         pageCaption.Text = owner.Copy["pages"]; sheetCaption.Text = owner.Copy["sheet"]; showFormula.Content = owner.Copy["showFormula"]; sparse.Text = owner.Copy["sparseShort"]; sparse.ToolTip = owner.Copy["sparse"]; address.ToolTip = owner.Copy["address"];

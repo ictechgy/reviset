@@ -24,8 +24,8 @@ internal sealed class ImportWindow : Window
 {
     public ObservableCollection<ImportRow> Rows { get; } = [];
     public string ProjectTitle => title.Text.Trim();
-    private readonly TextBox title = new() { MaxLength = 200, Margin = new Thickness(0, 4, 0, 12) };
-    private readonly DataGrid table = new() { AutoGenerateColumns = false, CanUserAddRows = false, CanUserDeleteRows = false, SelectionMode = DataGridSelectionMode.Single, Margin = new Thickness(0, 8, 0, 8) };
+    private readonly TextBox title = new() { MaxLength = 200, MinHeight = 30, Margin = new Thickness(0, 4, 0, 12) };
+    private readonly DataGrid table = new() { AutoGenerateColumns = false, CanUserAddRows = false, CanUserDeleteRows = false, SelectionMode = DataGridSelectionMode.Single, RowHeight = 32, Margin = new Thickness(0, 8, 0, 8) };
     private readonly Copy copy;
     private readonly bool workbook;
     private readonly bool reorder;
@@ -46,9 +46,11 @@ internal sealed class ImportWindow : Window
         Intent = reorder ? ImportIntent.Reading(workbook) : importIntent ?? ImportIntent.Reading(workbook);
         if (Intent.Workbook != workbook) throw new ArgumentException("Import intent belongs to another workspace.", nameof(importIntent));
         Title = copy[reorder ? "reorder" : "import"]; Width = 790; Height = 550; MinWidth = 620; MinHeight = 420; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        FontSize = 15;
         var root = new DockPanel { Margin = new Thickness(20) }; Content = root;
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);
         top.Children.Add(new TextBlock { Text = copy[reorder ? "reorderHint" : workbook ? "workbookHint" : "documentHint"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        top.Children.Add(new TextBlock { Text = copy["importOrderGuidance"], FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
         if (!reorder && Intent.MinimumEntries == 2) { entryGuidance.Text = copy["comparisonEntryMinimum"] + (workbook ? "" : " " + copy["comparisonDocumentBundle"]); top.Children.Add(entryGuidance); }
         top.Children.Add(disabledGuidance);
         if (!reorder) { top.Children.Add(new TextBlock { Text = copy["title"] }); top.Children.Add(title); }
@@ -69,7 +71,7 @@ internal sealed class ImportWindow : Window
             if (change.NewItems is not null) foreach (ImportRow row in change.NewItems) row.PropertyChanged += RowChanged;
             UpdateSubmitState();
         };
-        var commands = new StackPanel { Orientation = Orientation.Horizontal }; DockPanel.SetDock(commands, Dock.Top); root.Children.Add(commands);
+        var commands = new WrapPanel(); DockPanel.SetDock(commands, Dock.Top); root.Children.Add(commands);
         if (!reorder) commands.Children.Add(Button(copy["add"], Add));
         commands.Children.Add(Button(copy["up"], () => Move(-1))); commands.Children.Add(Button(copy["down"], () => Move(1)));
         if (!reorder) commands.Children.Add(Button(copy["remove"], () => { if (table.SelectedItem is ImportRow row) Rows.Remove(row); }));
