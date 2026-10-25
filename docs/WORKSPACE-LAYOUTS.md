@@ -29,7 +29,7 @@ Changing locale, busy/diagnostic state or opening report/AI detail preserves the
 
 ## Source reading and recovery
 
-Query, selected-event and physical-source failures have separate recovery routes. A failed Windows query retains independently verified sources and raw readers; its Retry repeats the failed reset or append query. Raw-reader Retry repeats its captured physical source, side, component, UTF-16 offset, cursor and limit. Successful query recovery does not automatically select another event. The [qualification record](NATIVE-GIT-DIFF-2026-10-24.md#reading-and-recovery-contract) records the exact ownership contract.
+Query, selected-event and physical-source failures have separate recovery routes. In the Windows native UI, a failed query retains independently verified sources and raw readers; its Retry repeats the failed reset or append/cursor query. If a raw read itself fails, its partial payload and available continuation are cleared while the physical owner is retained. **First source segment** restarts that fixed physical source and the currently selected component at UTF-16 offset 0, with the style-row cursor cleared; **Next source segment** then continues. Successful query recovery does not automatically select another event. The [qualification record](NATIVE-GIT-DIFF-2026-10-24.md#reading-and-recovery-contract) records the exact ownership contract.
 
 Each workbook text heading names its actual occurrence, sheet or explicitly absent sheet, and physical cell address. Sheet-scoped metadata uses metadata captions without unmaterialized-cell warnings or cell-field rows. A selected event side with no cell does not inherit an old address. Unknown value types remain neutral observations.
 

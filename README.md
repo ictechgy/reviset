@@ -19,7 +19,7 @@ The native interface supports English and Korean on Apple Silicon macOS and Wind
 
 One imported version can be read on its own. **New comparison / Import versions** starts a separate timeline with at least two entries. Imported versions are snapshots; Reviset does not create Git commits or establish an editor's identity or editing time.
 
-For workbooks, the change query, selected event and physical source have separate identities. On Windows, retrying a failed workbook query preserves independently verified physical observations and raw-reader position; changing a comparison method retains displayed physical sources. Query Retry repeats the captured request. Raw-reader Retry repeats its captured physical source, side, component, UTF-16 offset, cursor and limit. See [cell reading and recovery](docs/SPREADSHEETS.md#cell-reading-and-recovery).
+For workbooks, the change query, selected event and physical source have separate identities. In the Windows native UI, retrying a failed workbook query preserves independently verified physical observations and raw-reader position; changing a comparison method retains displayed physical sources. Query Retry repeats the captured reset or append/cursor request. If a raw read itself fails, its partial payload and available continuation are cleared while the physical owner is retained. **First source segment** restarts that fixed physical source and the currently selected component at UTF-16 offset 0, with the style-row cursor cleared; **Next source segment** then continues. See [cell reading and recovery](docs/SPREADSHEETS.md#cell-reading-and-recovery).
 
 ## Native workspaces
 
