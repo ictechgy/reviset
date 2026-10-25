@@ -1526,6 +1526,22 @@ internal sealed class MainWindow : Window
                 var absentFields = J(new { address = "C2", value = (string?)null, formula = (string?)null, number_format = "", cached_result = "", formula_interpretation = "" });
                 var missingDetail = FormatDetail(J(new { items = new[] { absentFields } }));
                 if (!missingDetail.Contains(Copy["cacheState"] + ": " + Copy["observationMissing"], StringComparison.Ordinal) || !missingDetail.Contains(Copy["cacheFreshness"] + ": " + Copy["observationMissing"], StringComparison.Ordinal)) throw new InvalidOperationException("Unrecorded field metadata acquired a saved-result claim.");
+                var emptyFields = CompleteCell(new { address = "C2", value = "", formula = (string?)null, number_format = "", cached_result = "not_applicable", formula_interpretation = "not_formula" });
+                var emptyDetail = FormatDetail(J(new { items = new[] { emptyFields } }));
+                if (!emptyDetail.Contains(Copy["cached"] + ":\n" + Copy["observationEmpty"], StringComparison.Ordinal) || !emptyDetail.Contains(Copy["formula"] + ":\n" + Copy["formulaAbsent"], StringComparison.Ordinal) || !emptyDetail.Contains(Copy["number_format"] + ":\n" + Copy["observationEmpty"], StringComparison.Ordinal)) throw new InvalidOperationException("The raw cell reader hid an explicit empty string or absent formula behind a blank field label.");
+                var nullFields = CompleteCell(new { address = "C2", value = (string?)null, formula = (string?)null, number_format = (string?)null, cached_result = "not_applicable", formula_interpretation = "not_formula" });
+                var nullDetail = FormatDetail(J(new { items = new[] { nullFields } }));
+                if (!nullDetail.Contains(Copy["cached"] + ":\n" + Copy["observationNull"], StringComparison.Ordinal) || !nullDetail.Contains(Copy["number_format"] + ":\n" + Copy["observationNull"], StringComparison.Ordinal) || !missingDetail.Contains(Copy["invalidSourceSegment"], StringComparison.Ordinal)) throw new InvalidOperationException("The raw cell reader conflated null observations or unrecorded continuation metadata with empty strings.");
+                var omittedDetail = FormatDetail(J(new { items = new[] { new { address = "C2" } } }));
+                if (!omittedDetail.Contains(Copy["invalidSourceSegment"] + "\n" + Copy["observationMissing"], StringComparison.Ordinal)) throw new InvalidOperationException("An omitted raw field appeared to be an empty stored value.");
+                var exhaustedFields = WithRange(emptyFields, "value", new { offset = 3, total_length = 3, next_offset = (int?)null, state = "truncated" });
+                var exhaustedDetail = FormatDetail(J(new { items = new[] { exhaustedFields } }));
+                if (!exhaustedDetail.Contains(Copy["cached"] + ":\n" + Copy["alreadyReadSegment"], StringComparison.Ordinal)) throw new InvalidOperationException("An exhausted raw field appeared to be an empty stored value.");
+                var stylePartial = J(new { component = "style", items = new[] { new { key = "SYNTHETIC style", value = "SYNTHETIC exact style", text_continuations = new { value = new { offset = 2, total_length = 100, next_offset = 23, state = "truncated" } } } } });
+                var styleExhausted = J(new { component = "style", items = new[] { new { key = "SYNTHETIC style", value = "", text_continuations = new { value = new { offset = 3, total_length = 3, next_offset = (int?)null, state = "truncated" } } } } });
+                var stylePartialDetail = FormatDetail(stylePartial); var styleExhaustedDetail = FormatDetail(styleExhausted);
+                if (!stylePartialDetail.Contains(Copy["partialSourceSegment"] + "\nSYNTHETIC exact style", StringComparison.Ordinal) || !styleExhaustedDetail.Contains(Copy["alreadyReadSegment"], StringComparison.Ordinal)) throw new InvalidOperationException("The raw style reader lost exact partial text or presented an exhausted field as empty.");
+                if (observe is not null) await observe("source37-raw-field-states-" + locale, new { provenance = "Synthetic typed field controls through the production raw formatter; no engine inference", emptyDetail, nullDetail, omittedDetail, exhaustedDetail, stylePartialDetail, styleExhaustedDetail });
             }
             await capture("synthetic-missing-cache-neutral");
             Install(J(new { kind = "formula" }), Payload(a, b)); if (!Colored() || !Text().Contains(Copy["resultMissingShort"], StringComparison.Ordinal) || !Text().Contains("=SUM(B1:B3)", StringComparison.Ordinal)) throw new InvalidOperationException("Exact eligible formulas were conflated with missing saved values."); await capture("synthetic-formula-independent-cache");
@@ -1546,7 +1562,7 @@ internal sealed class MainWindow : Window
             foreach (var locale in new[] { "en", "ko" })
             {
                 SetLanguage(locale); Install(J(new { kind = "stored_value" }), Payload(invalidRangeCell, complete)); RerenderInspector();
-                if (!detailRange.Text.Contains(Copy["invalidSourceRange"], StringComparison.Ordinal) || !detailRange.Text.Contains(Copy["invalidSourceSegment"], StringComparison.Ordinal) || !detail.Text.Contains("SYNTHETIC stored 100", StringComparison.Ordinal) || Colored()) throw new InvalidOperationException("The native inspector echoed contradictory raw continuation metadata as a verified complete source range.");
+                if (!detailRange.Text.Contains(Copy["invalidSourceRange"], StringComparison.Ordinal) || !detailRange.Text.Contains(Copy["invalidSourceSegment"], StringComparison.Ordinal) || !detail.Text.Contains(Copy["invalidSourceSegment"], StringComparison.Ordinal) || !detail.Text.Contains("SYNTHETIC stored 100", StringComparison.Ordinal) || Colored()) throw new InvalidOperationException("The native inspector echoed contradictory raw continuation metadata as a verified complete source range.");
                 await capture("synthetic-invalid-inspector-range-" + locale);
             }
             JsonElement ScopedPayload(JsonElement left, JsonElement right)
@@ -1759,13 +1775,20 @@ internal sealed class MainWindow : Window
     private string FormatDetail(JsonElement value)
     {
         if (WorkbookMetadataPayload(value)) return FormatMetadataDetail(MetadataSideProjection(false), MetadataSideProjection(true));
+        string Observation(JsonElement source, string field)
+        {
+            var observation = SourceTextObservation.ReadSegment(source.Get(field), source.Get("text_continuations").Get(field));
+            var caption = Copy[SourceDiffPolicy.WorkbookObservationCaption(field, source, observation)];
+            if (observation.State == SourceTextState.Invalid) caption += "\n" + Copy[observation.RawState switch { SourceTextState.Null => "observationNull", SourceTextState.Empty => "fragmentEmpty", SourceTextState.Missing => "observationMissing", _ => "observationPresent" }];
+            return caption + (observation.Text.Length > 0 ? "\n" + observation.Text : "");
+        }
         string Cell(JsonElement source)
         {
             if (source.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return Copy["missing"];
-            return source.Get("address").Text() + "\n\n" + Copy["cached"] + ":\n" + source.Get("value").Text() + "\n\n" + Copy["formula"] + ":\n" + source.Get("formula").Text() + "\n\n" + Copy["number_format"] + ":\n" + source.Get("number_format").Text() + "\n\n" + Copy["cacheFreshness"] + ": " + Copy.CacheFreshness(source.Get("cache_freshness").Text()) + "\n" + Copy["cacheState"] + ": " + Copy.CachedResult(source.Get("cached_result").Text());
+            return source.Get("address").Text() + "\n\n" + Copy["cached"] + ":\n" + Observation(source, "value") + "\n\n" + Copy["formula"] + ":\n" + Observation(source, "formula") + "\n\n" + Copy["number_format"] + ":\n" + Observation(source, "number_format") + "\n\n" + Copy["cacheFreshness"] + ": " + Copy.CacheFreshness(source.Get("cache_freshness").Text()) + "\n" + Copy["cacheState"] + ": " + Copy.CachedResult(source.Get("cached_result").Text());
         }
         if (value.Get("before").ValueKind == JsonValueKind.Object) return Copy["before"] + "\n" + Cell(PairCell(value, "before")) + "\n\n" + Copy["after"] + "\n" + Cell(PairCell(value, "after"));
-        if (value.Get("component").Text() == "style") return string.Join("\n\n", value.Get("items").Items().Select(item => item.Get("key").Text() + "\n" + item.Get("value").Text()));
+        if (value.Get("component").Text() == "style") return string.Join("\n\n", value.Get("items").Items().Select(item => item.Get("key").Text() + "\n" + Observation(item, "value")));
         return Cell(value.Get("items").Items().FirstOrDefault());
     }
     private string FormatRanges(JsonElement value)
@@ -2755,6 +2778,19 @@ internal sealed class MainWindow : Window
                 await NextDetail(); await Settle();
                 var owner = pairedSource; var a = Before.CaptureSelection(); var b = After.CaptureSelection(); var payload = detailPayload.GetRawText(); var technical = detailMetadata.Text; var body = detail.Text; var ranges = detailRange.Text; var offset = detailOffset; var next = detailNext; var loader = detailLoader; var reads = changeQueryReadsForSmoke;
                 if (offset != firstNext || owner is null || !owner.ReadCellResponse("after", detailPayload.Get("after"), out _) || !Text().Contains(Copy["partialSourceSegment"], StringComparison.Ordinal) && !Text().Contains(Copy["alreadyReadSegment"], StringComparison.Ordinal)) throw new InvalidOperationException("The real event reader did not continue through fixed physical cells with typed partial/already-read source ranges.");
+                var currentA = PairCell(detailPayload, "before"); var currentB = PairCell(detailPayload, "after");
+                var valueA = SourceTextObservation.ReadSegment(currentA.Get("value"), currentA.Get("text_continuations").Get("value")); var valueB = SourceTextObservation.ReadSegment(currentB.Get("value"), currentB.Get("text_continuations").Get("value")); var formulaB = SourceTextObservation.ReadSegment(currentB.Get("formula"), currentB.Get("text_continuations").Get("formula"));
+                var rawFieldChecks = new Dictionary<string, bool>
+                {
+                    ["typed_exhausted_values"] = valueA.State == SourceTextState.AlreadyRead && valueB.State == SourceTextState.AlreadyRead,
+                    ["both_raw_values_annotated"] = body.Split(Copy["cached"] + ":\n" + Copy["alreadyReadSegment"], StringSplitOptions.None).Length - 1 == 2,
+                    ["absent_formula_annotated"] = body.Contains(Copy["formula"] + ":\n" + Copy["formulaAbsent"], StringComparison.Ordinal),
+                    ["both_null_formats_annotated"] = body.Split(Copy["number_format"] + ":\n" + Copy["observationNull"], StringSplitOptions.None).Length - 1 == 2,
+                    ["partial_formula_literal_exact"] = formulaB.State == SourceTextState.Partial && body.Contains(Copy["formula"] + ":\n" + Copy["partialSourceSegment"] + "\n" + formulaB.Text, StringComparison.Ordinal),
+                    ["global_next_follows_remaining_formula"] = offset == 256 && next == 512 && formulaB.Range is { Valid: true, Next: 512, Total: 7210 } && nextDetail.IsEnabled
+                };
+                await observe("source37-paired-raw-field-states-" + locale, new { physical_before = a, physical_after = b, before_value = valueA, after_value = valueB, after_formula = formulaB, raw_body = body, offset, next, next_enabled = nextDetail.IsEnabled, checks = rawFieldChecks });
+                foreach (var field in rawFieldChecks) if (!field.Value) throw new InvalidOperationException("Real paired raw field presentation failed: " + field.Key);
                 var hostA = Before.Host; var hostB = After.Host; var rowsA = Before.Cells.ItemsSource; var rowsB = After.Cells.ItemsSource;
                 Before.GridScroll?.ScrollToHorizontalOffset(40); Before.GridScroll?.ScrollToVerticalOffset(3); After.GridScroll?.ScrollToHorizontalOffset(30); After.GridScroll?.ScrollToVerticalOffset(2); detail.ScrollToVerticalOffset(24); unified.ScrollToVerticalOffset(24); await Settle();
                 var viewportA = Before.CaptureGridViewport(); var viewportB = After.CaptureGridViewport(); var rawY = detail.VerticalOffset; var textY = unified.VerticalOffset; var firstEnabled = firstDetail.IsEnabled; var nextEnabled = nextDetail.IsEnabled;
