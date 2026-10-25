@@ -210,10 +210,11 @@ struct ReportBar: View {
     @State private var details=false
     var body: some View {
         HStack(spacing:10){
+            NativeWorkspaceIdentity(name:"Reviset.document.projectTitle",title:workspaceIdentityTitle(projectTitle:model.project["title"].string,reportTitle:model.report["title"].string,fallback:L("doc.project.heading")),reportID:model.report["report_id"].string).frame(minWidth:140,maxWidth:.infinity,alignment:.leading)
             Menu {
                 ForEach(model.reports){r in Button(localizedISODate(r["created_at"].string)+" · "+String(r["report_id"].string.suffix(12))){Task{await model.selectProject(model.projectID,snapshot:r["report_id"].string)}}}
                 Divider();Button(L("git.reportDetails")){details=true}
-            } label:{Label(L("git.reportChip",.verbatim(String(model.report["report_id"].string.suffix(12)))),systemImage:"lock.doc")}.help(L("doc.report.saved")).disabled(model.busy || model.loading)
+            } label:{Image(systemName:"lock.doc")}.accessibilityLabel(L("git.reportChip",.verbatim(String(model.report["report_id"].string.suffix(12))))).help(L("doc.report.saved")+"\n"+model.report["report_id"].string).disabled(model.busy || model.loading)
             Text(LC("doc.project.revisionCount",model.revisions.count)).font(.caption).foregroundStyle(.secondary)
             Spacer()
             if model.project["dirty"].bool {Label(L("doc.report.pending"),systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)}

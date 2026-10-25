@@ -9,6 +9,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Input;
 
 namespace Reviset.Windows;
 
@@ -49,6 +50,9 @@ internal sealed class ComparePane
     private readonly Button fitWidth;
     private bool fittingWidth;
     private bool applyingFit;
+    private bool presentationChosen;
+    private string presentationReport = "";
+    private readonly Border pageFrame = new() { BorderBrush = new SolidColorBrush(Color.FromRgb(174, 184, 198)), BorderThickness = new Thickness(1), Background = Brushes.White, Margin = new Thickness(12), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
     private readonly TextBox address = new() { Text = "A1", Width = 80, Margin = new Thickness(4), MaxLength = 12 };
     private readonly TextBox rowStart = new() { Text = "1", Width = 65, Margin = new Thickness(4), MaxLength = 7 };
     private readonly TextBox colStart = new() { Text = "1", Width = 55, Margin = new Thickness(4), MaxLength = 5 };
@@ -120,7 +124,7 @@ internal sealed class ComparePane
             return name + (FocusedAddress.Length > 0 ? "!" + FocusedAddress : "");
         }
     }
-    internal double Zoom { get => zoom.Value; set { fittingWidth = false; zoom.Value = value; } }
+    internal double Zoom { get => zoom.Value; set { presentationChosen = true; fittingWidth = false; zoom.Value = value; } }
 
     public ComparePane(MainWindow owner, bool after)
     {
@@ -133,17 +137,17 @@ internal sealed class ComparePane
         docControls.Children.Add(page); var zoomRow = new StackPanel { Orientation = Orientation.Horizontal }; zoomRow.Children.Add(zoomCaption); zoomRow.Children.Add(zoom); zoomRow.Children.Add(zoomPercent); fitWidth = Button("fitWidth", () => { FitPreview(); return Task.CompletedTask; }); zoomRow.Children.Add(fitWidth); docControls.Children.Add(zoomRow); top.Children.Add(docControls);
         workbookControls.Children.Add(sheet);
         var coordinates = new WrapPanel(); var rowLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }; owner.BindText(rowLabel, "row"); coordinates.Children.Add(rowLabel); coordinates.Children.Add(rowStart); var columnLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center }; owner.BindText(columnLabel, "column"); coordinates.Children.Add(columnLabel); coordinates.Children.Add(colStart); coordinates.Children.Add(Button("go", LoadCoordinates));
-        var navigationRow = new StackPanel { Orientation = Orientation.Horizontal }; var previous = Arrow("previous", "◀", async () => { row = Math.Max(1, row - 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); var next = Arrow("next", "▶", async () => { row = Math.Min(1_048_527, row + 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); navigationRow.Children.Add(previous); navigationRow.Children.Add(next); address.Width = 65; navigationRow.Children.Add(address); navigationRow.Children.Add(Button("go", GoAddress)); workbookControls.Children.Add(navigationRow); workbookControls.Children.Add(showFormula);
+        var navigationRow = new WrapPanel(); var previous = Arrow("previous", "◀", async () => { row = Math.Max(1, row - 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); var next = Arrow("next", "▶", async () => { row = Math.Min(1_048_527, row + 50); SetFocusCoordinates(row, column); await ReloadGrid(); }); navigationRow.Children.Add(previous); navigationRow.Children.Add(next); address.Width = 65; navigationRow.Children.Add(address); navigationRow.Children.Add(Button("go", GoAddress)); workbookControls.Children.Add(navigationRow); workbookControls.Children.Add(showFormula);
         var details = new StackPanel(); details.Children.Add(cellDetailsCaption); details.Children.Add(cellValueLabel); cellValue.MaxHeight = 66; cellValue.MinHeight = 26; details.Children.Add(cellValue); details.Children.Add(cellFormulaLabel); cellFormula.MaxHeight = 66; cellFormula.MinHeight = 26; details.Children.Add(cellFormula);
-        openCellSource = Button("openCellSource", () => cellDetailsRequest = owner.OpenCellSource(this)); details.Children.Add(openCellSource); details.Children.Add(coordinates); cellDetailsScroll.Content = details; cellDetails.Content = cellDetailsScroll; workbookControls.Children.Add(cellDetails); top.Children.Add(workbookControls);
+        openCellSource = Button("cellSourceAction", () => cellDetailsRequest = owner.OpenCellSource(this)); navigationRow.Children.Add(openCellSource); details.Children.Add(coordinates); cellDetailsScroll.Content = details; cellDetails.Content = cellDetailsScroll; workbookControls.Children.Add(cellDetails); top.Children.Add(workbookControls);
         cellDetails.Expanded += (_, _) => UpdateCellDetailsHeight(); visual.SizeChanged += (_, _) => UpdateCellDetailsHeight();
         var bottom = new StackPanel(); bottom.Children.Add(source); bottom.Children.Add(sparse); bottom.Children.Add(retry); DockPanel.SetDock(bottom, Dock.Bottom); dock.Children.Add(bottom);
-        PageScroll.Content = PageImage; visual.Children.Add(PageScroll); visual.Children.Add(fallback); visual.Children.Add(Cells); dock.Children.Add(visual);
+        pageFrame.Child = PageImage; PageScroll.Content = pageFrame; PageScroll.Background = new SolidColorBrush(Color.FromRgb(238, 241, 245)); visual.Children.Add(PageScroll); visual.Children.Add(fallback); visual.Children.Add(Cells); dock.Children.Add(visual);
         VirtualizingPanel.SetVirtualizationMode(Cells, VirtualizationMode.Recycling); ScrollViewer.SetCanContentScroll(Cells, true);
         revision.SelectionChanged += async (_, _) => { if (binding) return; SetRevisionContents(true); selectionRequest = owner.ReloadComparison(); await owner.Guard(() => selectionRequest); };
         page.SelectionChanged += async (_, _) => { if (!binding && !owner.IsWorkbook) { owner.ClearEventPageCaptions(); var request = Load(owner.Generation, owner.ReadToken); owner.SourcePresentationChanged(); await owner.Guard(() => request); owner.SourcePresentationChanged(); } };
         sheet.SelectionChanged += async (_, _) => { if (!binding && owner.IsWorkbook) { evidenceAbsence = ""; metadataKind = ""; requestedSheetName = (sheet.SelectedItem as Choice)?.Label ?? ""; Invalidate(); row = 1; column = 1; SetFocusCoordinates(row, column); selectionRequest = owner.ReloadSourceWindow(); await owner.Guard(() => selectionRequest); } };
-        zoom.ValueChanged += (_, _) => { if (!applyingFit) fittingWidth = false; PageImage.LayoutTransform = new ScaleTransform(zoom.Value, zoom.Value); UpdateZoomCaption(); };
+        zoom.ValueChanged += (_, _) => { if (!applyingFit) { presentationChosen = true; fittingWidth = false; } PageImage.LayoutTransform = new ScaleTransform(zoom.Value, zoom.Value); UpdateZoomCaption(); };
         Host.SizeChanged += (_, _) => ResizePreview();
         PageScroll.SizeChanged += (_, _) => { if (fittingWidth) ResizePreview(); };
         showFormula.Checked += (_, _) => RenderGrid(); showFormula.Unchecked += (_, _) => RenderGrid();
@@ -206,19 +210,19 @@ internal sealed class ComparePane
     private void SetFocusCoordinates(int requestedRow, int requestedColumn)
     {
         focusedRow = requestedRow is >= 1 and <= 1_048_576 && requestedColumn is >= 1 and <= 16_384 ? requestedRow : 0;
-        focusedColumn = focusedRow > 0 ? requestedColumn : 0; address.Text = FocusedAddress; RefreshCellDetails();
+        focusedColumn = focusedRow > 0 ? requestedColumn : 0; address.Text = FocusedAddress; RefreshColumnHeaders(); RefreshCellDetails();
     }
     private bool MetadataWithoutPhysicalCell => owner.IsWorkbook && RevisionId.Length > 0 && owner.ReportId.Length > 0 && focusedRow == 0 && focusedColumn == 0 && SourceDiffPolicy.SheetScoped(metadataKind);
     private void RefreshCellDetails()
     {
         var metadata = MetadataWithoutPhysicalCell;
-        foreach (var field in new FrameworkElement[] { cellValueLabel, cellValue, cellFormulaLabel, cellFormula }) field.Visibility = metadata ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var field in new FrameworkElement[] { cellValueLabel, cellValue, cellFormulaLabel, cellFormula }) field.Visibility = metadata || owner.EvidencePresented ? Visibility.Collapsed : Visibility.Visible;
         showFormula.Visibility = metadata ? Visibility.Collapsed : Visibility.Visible;
         foreach (var arrow in arrows) arrow.Button.IsEnabled = lastNavigationEnabled && !metadata;
-        cellDetailsCaption.Text = metadata ? owner.Copy[ReadState == "failed" ? "failed" : evidenceAbsence.Length > 0 ? evidenceAbsence : "metadataObservation"] : (FocusedAddress.Length > 0 ? FocusedAddress + " · " : "") + owner.Copy["cellPreviewNotice"];
+        cellDetailsCaption.Text = owner.EvidencePresented && !metadata ? owner.Copy["cellDetailsInEvidence"] : metadata ? owner.Copy[ReadState == "failed" ? "failed" : evidenceAbsence.Length > 0 ? evidenceAbsence : "metadataObservation"] : (FocusedAddress.Length > 0 ? FocusedAddress + " · " : "") + owner.Copy["cellPreviewNotice"];
         var materialized = TryGetFocusedMaterializedCell(out var cell);
-        cellValue.Text = materialized && cell.Get("value").ValueKind == JsonValueKind.String ? cell.Get("value").Text() : "";
-        cellFormula.Text = materialized && cell.Get("formula").ValueKind == JsonValueKind.String ? cell.Get("formula").Text() : "";
+        cellValue.Text = !owner.EvidencePresented && materialized && cell.Get("value").ValueKind == JsonValueKind.String ? cell.Get("value").Text() : "";
+        cellFormula.Text = !owner.EvidencePresented && materialized && cell.Get("formula").ValueKind == JsonValueKind.String ? cell.Get("formula").Text() : "";
         var unavailable = ReadState == "ready" && AuthorizesCell(focusedRow, focusedColumn) ? owner.Copy["cellNotMaterialized"] : owner.Copy[ReadState switch { "failed" => "failed", "invalid" => "reverse", "empty" => "selectCell", "absent" => evidenceAbsence.Length > 0 ? evidenceAbsence : "cellNotMaterialized", _ => "loading" }];
         string Qualifier(string field) => " · " + string.Join(" · ", SourceDiffPolicy.WorkbookPreviewKeys(cell, field).Select(key => owner.Copy[key]));
         cellValueLabel.Text = owner.Copy["cached"] + (materialized ? SourceDiffPolicy.WorkbookPreviewKeys(cell, "value").Count > 0 ? Qualifier("value") : "" : " · " + unavailable);
@@ -236,29 +240,13 @@ internal sealed class ComparePane
         var height = Math.Clamp(visual.ActualHeight + cellDetailsScroll.ActualHeight - minimumGrid, 32, 160);
         if (Math.Abs(cellDetailsScroll.MaxHeight - height) > 1) cellDetailsScroll.MaxHeight = height;
     }
-    internal async Task<object> CheckExpandedCellDetailsViewportForSmoke()
-    {
-        if (!owner.IsWorkbook || !cellDetails.IsExpanded || !TryGetFocusedMaterializedCell(out var raw)) throw new InvalidOperationException("Expanded details geometry requires a real scoped physical cell.");
-        var selection = CaptureSelection(); var rows = Cells.ItemsSource; var source = raw.GetRawText(); var value = cellValue.Text; var formula = cellFormula.Text;
-        async Task Settle() { Host.UpdateLayout(); await owner.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
-        await Settle();
-        var grid = GridScroll ?? throw new InvalidOperationException("The expanded details source has no native grid viewport.");
-        if (!Cells.IsVisible || grid.ViewportHeight < 3 || Cells.ActualHeight < 100 || !cellDetailsScroll.IsVisible || cellDetailsScroll.ActualHeight > 161 || cellDetailsScroll.ScrollableHeight <= 0 || cellDetailsScroll.VerticalScrollBarVisibility != ScrollBarVisibility.Auto || cellDetailsScroll.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled) throw new InvalidOperationException("Inline Cell details and the evidence inspector left fewer than three source rows or an unbounded/non-scrollable details body.");
-        cellDetailsScroll.ScrollToBottom(); await Settle(); var lastOffset = cellDetailsScroll.VerticalOffset;
-        if (lastOffset <= 0 || Math.Abs(lastOffset - cellDetailsScroll.ScrollableHeight) > 1) throw new InvalidOperationException("The bounded inline details body cannot reach its full source/coordinate controls by native scrolling.");
-        cellFormulaLabel.BringIntoView(); await Settle();
-        var text = new FormattedText(cellFormulaLabel.Text, System.Globalization.CultureInfo.CurrentUICulture, cellFormulaLabel.FlowDirection, new Typeface(cellFormulaLabel.FontFamily, cellFormulaLabel.FontStyle, cellFormulaLabel.FontWeight, cellFormulaLabel.FontStretch), cellFormulaLabel.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(cellFormulaLabel).PixelsPerDip) { MaxTextWidth = Math.Max(1, cellFormulaLabel.ActualWidth) };
-        if (cellFormulaLabel.TextWrapping != TextWrapping.Wrap || cellValueLabel.TextWrapping != TextWrapping.Wrap || cellFormulaLabel.TextTrimming != TextTrimming.None || cellFormulaLabel.ActualWidth <= 0 || cellFormulaLabel.ActualHeight + 1 < text.Height || !cellFormulaLabel.Text.Contains(owner.Copy["partialSourceSegment"], StringComparison.Ordinal)) throw new InvalidOperationException("The actual partial-formula qualifier is clipped instead of fully measured as wrapped text within the scrollable inline details.");
-        if (CaptureSelection() != selection || !ReferenceEquals(rows, Cells.ItemsSource) || !TryGetFocusedMaterializedCell(out var restored) || restored.GetRawText() != source || cellValue.Text != value || cellFormula.Text != formula || !cellDetails.IsExpanded) throw new InvalidOperationException("Inspecting bounded details geometry changed its physical cell, raw preview, mounted grid or expansion preference.");
-        return new { scope = "Actual native expanded Cell details and evidence-inspector source grid geometry, not OS scrolling/accessibility certification", physical_address = FocusedAddress, source_rows_visible = grid.ViewportHeight, grid_height = Cells.ActualHeight, body_height = cellDetailsScroll.ActualHeight, body_max_height = cellDetailsScroll.MaxHeight, body_extent = cellDetailsScroll.ExtentHeight, body_viewport = cellDetailsScroll.ViewportHeight, full_body_reachable_offset = lastOffset, formula_label = cellFormulaLabel.Text, formula_label_width = cellFormulaLabel.ActualWidth, formula_label_height = cellFormulaLabel.ActualHeight, formula_label_required_height = text.Height, formula_label_wrapping = cellFormulaLabel.TextWrapping.ToString(), exact_source_and_selection_unchanged = true, expanded_preference_retained = true };
-    }
     internal async Task<object> OpenCellDetailsForSmoke(string expectedValue)
     {
         cellDetails.IsExpanded = true; RefreshCellDetails(); Host.UpdateLayout(); await owner.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         if (!cellDetails.IsVisible || cellDetails.Header as string != owner.Copy["cellDetails"] || !cellValue.IsReadOnly || !cellValue.IsVisible || cellValue.Text != expectedValue || !openCellSource.IsEnabled) throw new InvalidOperationException("The focused physical cell has no visible selectable exact bounded value and named source-segment route.");
-        var selection = CaptureSelection(); openCellSource.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); await cellDetailsRequest;
-        if (CaptureSelection() != selection || cellValue.Text != expectedValue) throw new InvalidOperationException("Opening full source segments changed the focused physical cell or bounded source text.");
-        return new { address = FocusedAddress, heading = cellDetails.Header, selectable_value = cellValue.Text, formula_preview = cellFormula.Text, bounded_notice = cellDetailsCaption.Text, full_source_action = openCellSource.Content, source_selection_unchanged = true };
+        var selection = CaptureSelection(); var valuePreview = cellValue.Text; var formulaPreview = cellFormula.Text; openCellSource.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); await cellDetailsRequest;
+        if (CaptureSelection() != selection || cellDetails.IsExpanded || cellValue.Text.Length != 0 || cellFormula.Text.Length != 0) throw new InvalidOperationException("Opening full source segments changed the focused physical cell or bounded source text.");
+        return new { address = FocusedAddress, heading = cellDetails.Header, selectable_value_before_open = valuePreview, formula_preview_before_open = formulaPreview, duplicate_previews_cleared = true, bounded_notice = cellDetailsCaption.Text, full_source_action = openCellSource.Content, source_selection_unchanged = true };
     }
     internal object CheckCellDetailLabelsForSmoke()
     {
@@ -297,6 +285,50 @@ internal sealed class ComparePane
         finally { cellDetails.IsExpanded = expanded; if (CaptureSelection() != selection) throw new InvalidOperationException("Inspecting metadata Cell details moved its source selection."); }
     }
     internal void CloseCellDetailsForSmoke() => cellDetails.IsExpanded = false;
+    internal void EvidencePresentationChanged(bool opened)
+    {
+        if (opened) cellDetails.IsExpanded = false;
+        RefreshCellDetails();
+    }
+    internal object CheckEvidenceHomeForSmoke()
+    {
+        Host.UpdateLayout();
+        var scroll = GridScroll ?? throw new InvalidOperationException("The retained source grid has no viewport.");
+        if (!owner.EvidencePresented || cellDetails.IsExpanded || cellValue.Text.Length != 0 || cellFormula.Text.Length != 0 || cellValue.Visibility != Visibility.Collapsed || cellFormula.Visibility != Visibility.Collapsed || !openCellSource.IsVisible || !openCellSource.IsEnabled || Cells.ActualWidth < 300 || scroll.ViewportHeight < 3) throw new InvalidOperationException("Evidence did not collapse duplicate raw previews or retain a readable grid and visible source route.");
+        return new { physical_address = FocusedAddress, inline_details_collapsed = true, duplicate_raw_previews_cleared = true, cell_source_action_visible = true, source_width = Cells.ActualWidth, visible_source_rows = scroll.ViewportHeight, scope = "Production retained native WPF controls; no OS input assertion" };
+    }
+    private void RefreshColumnHeaders()
+    {
+        for (var index = 0; index < Cells.Columns.Count; index++)
+        {
+            // Index zero is the frozen physical row-number column.
+            var focused = index > 0 && focusedColumn > 0 && column + index - 1 == focusedColumn;
+            var templateRoot = new FrameworkElementFactory(typeof(Grid)); var border = new FrameworkElementFactory(typeof(Border)); border.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(207, 215, 225))); border.SetValue(Border.BorderThicknessProperty, new Thickness(0, 0, 1, 1)); border.SetBinding(Border.BackgroundProperty, new Binding(nameof(Control.Background)) { RelativeSource = RelativeSource.TemplatedParent });
+            var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetBinding(ContentPresenter.ContentProperty, new Binding(nameof(ContentControl.Content)) { RelativeSource = RelativeSource.TemplatedParent }); content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); border.AppendChild(content); templateRoot.AppendChild(border);
+            // Preserve native user column resizing through the WPF header's
+            // documented template parts while removing only hover colour.
+            foreach (var part in new[] { (Name: "PART_LeftHeaderGripper", Alignment: HorizontalAlignment.Left), (Name: "PART_RightHeaderGripper", Alignment: HorizontalAlignment.Right) }) { var thumb = new FrameworkElementFactory(typeof(Thumb), part.Name); thumb.SetValue(FrameworkElement.WidthProperty, 5d); thumb.SetValue(FrameworkElement.HorizontalAlignmentProperty, part.Alignment); thumb.SetValue(Control.BackgroundProperty, Brushes.Transparent); thumb.SetValue(FrameworkElement.CursorProperty, Cursors.SizeWE); templateRoot.AppendChild(thumb); }
+            var style = new Style(typeof(DataGridColumnHeader)); style.Setters.Add(new Setter(Control.TemplateProperty, new ControlTemplate(typeof(DataGridColumnHeader)) { VisualTree = templateRoot })); style.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(focused ? Color.FromRgb(220, 235, 253) : Color.FromRgb(244, 246, 249)))); style.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.Black)); style.Setters.Add(new Setter(Control.FontFamilyProperty, new FontFamily("Segoe UI"))); style.Setters.Add(new Setter(Control.FontWeightProperty, focused ? FontWeights.SemiBold : FontWeights.Normal)); style.Setters.Add(new Setter(FrameworkElement.HeightProperty, 26d));
+            // No IsMouseOver trigger: pointer hover cannot impersonate selection.
+            Cells.Columns[index].HeaderStyle = style;
+        }
+    }
+    internal async Task<object> SelectNativePhysicalCellForSmoke(int physicalRow, int physicalColumn)
+    {
+        if (!AuthorizesCell(physicalRow, physicalColumn)) throw new InvalidOperationException("The native selection control must remain in its loaded physical window.");
+        var item = Cells.Items.OfType<GridRow>().Single(item => item.Row == physicalRow); var index = physicalColumn - column + 1;
+        Cells.SelectedCells.Clear(); Cells.SelectedCells.Add(new DataGridCellInfo(item, Cells.Columns[index])); await selectionRequest; Host.UpdateLayout(); await owner.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        if (focusedRow != physicalRow || focusedColumn != physicalColumn) throw new InvalidOperationException("The actual SelectedCellsChanged handler did not install the requested physical cell.");
+        return CheckFocusedHeaderForSmoke();
+    }
+    internal object CheckFocusedHeaderForSmoke()
+    {
+        Cells.UpdateLayout(); var expected = ColumnName(focusedColumn); var selected = Cells.SelectedCells.SingleOrDefault();
+        var physical = Cells.Columns.Select((item, index) => new { Column = item, Index = index }).Where(item => item.Index > 0 && item.Column.HeaderStyle?.Setters.OfType<Setter>().Any(setter => setter.Property == Control.FontWeightProperty && setter.Value.Equals(FontWeights.SemiBold)) == true).ToArray();
+        var native = Descendants(Cells).OfType<DataGridColumnHeader>().Where(header => header.Column is not null && physical.Any(item => ReferenceEquals(item.Column, header.Column))).ToArray();
+        if (physical.Length != 1 || physical[0].Column.Header as string != expected || physical[0].Index != focusedColumn - column + 1 || selected.Column?.Header as string != expected || address.Text != FocusedAddress || native.Length != 1 || native[0].Content as string != expected || native[0].Background is not SolidColorBrush fill || fill.Color != Color.FromRgb(220, 235, 253) || native[0].Template.Triggers.Count != 0) throw new InvalidOperationException("Native focused column header, selected cell and physical address disagree.");
+        return new { address = FocusedAddress, selected_header = selected.Column.Header, focused_header = native[0].Content, frozen_row_number_offset = 1, native_background = fill.Color.ToString(), mouse_over_template_triggers = native[0].Template.Triggers.Count, scope = "Actual WPF generated header/selected-cell properties after application events; no OS mouse movement claimed" };
+    }
     internal void FocusCell(int requestedRow, int requestedColumn)
     {
         if (!AuthorizesCell(requestedRow, requestedColumn)) return;
@@ -429,6 +461,7 @@ internal sealed class ComparePane
         {
             if (encoded.Length > 24 * 1024 * 1024) throw new BridgeException("PREVIEW_LIMIT", "The page image exceeds the desktop preview limit.");
             var bitmap = new BitmapImage(); using var bytes = new MemoryStream(Convert.FromBase64String(encoded)); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.DecodePixelWidth = 1600; bitmap.StreamSource = bytes; bitmap.EndInit(); bitmap.Freeze();
+            if (presentationReport != report) { presentationReport = report; if (!presentationChosen) { fittingWidth = owner.SingleSourceReading; if (!fittingWidth) { applyingFit = true; zoom.Value = 1; applyingFit = false; } } }
             PageImage.Source = bitmap; ResizePreview(); fallback.Visibility = Visibility.Collapsed; PageScroll.Visibility = Visibility.Visible;
         }
         else
@@ -497,7 +530,7 @@ internal sealed class ComparePane
                 }
                 values.Add(new(r, cells));
             }
-            Cells.ItemsSource = values; SelectFocusedNativeCell(); RefreshCellDetails();
+            Cells.ItemsSource = values; RefreshColumnHeaders(); SelectFocusedNativeCell(); RefreshCellDetails();
         }
         finally { binding = wasBinding; }
     }
@@ -621,12 +654,12 @@ internal sealed class ComparePane
         // 100% uses source page points where available. Shrinking every page
         // to a narrow comparison column made ordinary body text unreadable.
         // A manual scale therefore survives layout and presentation changes;
-        // fitting to the viewport is an explicit user action.
+        // automatic fit is only for an untouched, fresh single-source presentation.
         PageImage.Width = PreviewPointWidth(bitmap);
         if (!fittingWidth) return;
         var viewport = PageScroll.ViewportWidth > 0 ? PageScroll.ViewportWidth : Math.Max(1, PageScroll.ActualWidth - SystemParameters.VerticalScrollBarWidth);
         if (viewport <= 1) return;
-        applyingFit = true; zoom.Value = Math.Clamp(viewport / PageImage.Width, zoom.Minimum, zoom.Maximum); applyingFit = false;
+        applyingFit = true; zoom.Value = Math.Clamp(Math.Max(1, viewport - pageFrame.Margin.Left - pageFrame.Margin.Right - 2) / PageImage.Width, zoom.Minimum, zoom.Maximum); applyingFit = false;
     }
     private double PreviewPointWidth(BitmapSource bitmap)
     {
@@ -634,13 +667,13 @@ internal sealed class ComparePane
         var revision = revisions.Find(value => value.Get("revision_occurrence_id").Text() == RevisionId);
         return SourcePreviewGeometry.PointWidth(revision, selected.Value, previewSource, bitmap.Width);
     }
-    private void FitPreview() { fittingWidth = true; ResizePreview(); }
+    private void FitPreview() { presentationChosen = true; fittingWidth = true; ResizePreview(); }
     private void UpdateZoomCaption() => zoomPercent.Text = Math.Round(zoom.Value * 100).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
     internal void FitPreviewForSmoke() => FitPreview();
     internal object CheckPreviewReadabilityForSmoke()
     {
-        if (PageImage.Source is not BitmapSource bitmap || PageImage.Width != PreviewPointWidth(bitmap) || zoomPercent.Text != Math.Round(Zoom * 100).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%" || page.Height != 28 || string.IsNullOrWhiteSpace(zoomCaption.Text) || string.IsNullOrWhiteSpace(fitWidth.Content as string)) throw new InvalidOperationException("The native raster scale, labeled zoom or single-line page chooser is unavailable.");
-        return new { source_point_width = PageImage.Width, native_raster_width = bitmap.Width, displayed_raster_width = PageImage.Width * Zoom, viewport_width = PageScroll.ViewportWidth, zoom_percent = zoomPercent.Text, fit_width = fittingWidth, page_picker_height = page.Height };
+        if (PageImage.Source is not BitmapSource bitmap || PageImage.Width != PreviewPointWidth(bitmap) || zoomPercent.Text != Math.Round(Zoom * 100).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%" || page.Height != 28 || string.IsNullOrWhiteSpace(zoomCaption.Text) || string.IsNullOrWhiteSpace(fitWidth.Content as string) || pageFrame.Child != PageImage || pageFrame.BorderThickness.Left != 1 || PageScroll.Background is not SolidColorBrush backdrop || backdrop.Color == Colors.White) throw new InvalidOperationException("The native raster scale, labeled zoom or single-line page chooser is unavailable.");
+        return new { source_point_width = PageImage.Width, native_raster_width = bitmap.Width, displayed_raster_width = PageImage.Width * Zoom, viewport_width = PageScroll.ViewportWidth, zoom_percent = zoomPercent.Text, fit_width = fittingWidth, page_boundary = pageFrame.BorderThickness.Left, contrasting_backdrop = PageScroll.Background.ToString(), page_picker_height = page.Height };
     }
     private sealed class SingleLinePageLabel : IValueConverter
     {
@@ -666,7 +699,7 @@ internal sealed class ComparePane
         if (!owner.IsWorkbook && ReadState == "ready")
         {
             if (!PreviewMatchesSelection) { source.Text = ""; fallback.Text = owner.Copy["loading"]; PageImage.Source = null; PageScroll.Visibility = Visibility.Collapsed; fallback.Visibility = Visibility.Visible; return; }
-            source.Text = PageImage.Source is not null ? owner.Copy["source"] + ": " + previewSource : owner.Copy["structural"] + " · " + previewSource + "\n" + previewReason;
+            source.Text = PageImage.Source is not null ? owner.Copy["source"] + ": " + owner.Copy.Code(previewSource) : owner.Copy["structural"] + " · " + owner.Copy.Code(previewSource); source.ToolTip = owner.Copy["technicalDetails"] + "\n" + previewSource + (previewReason.Length > 0 ? "\n" + previewReason : "");
             fallback.Text = FormatPreviewFallback(previewObservation, owner.Copy);
         }
     }

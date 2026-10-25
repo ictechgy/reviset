@@ -234,6 +234,24 @@ struct WorkspaceLayoutMarker:NSViewRepresentable {
     func makeNSView(context:Context)->WorkspaceLayoutMarkerView {let view=WorkspaceLayoutMarkerView();view.identifier=NSUserInterfaceItemIdentifier(name);return view}
     func updateNSView(_ view:WorkspaceLayoutMarkerView,context:Context) {view.contentEnabled=isEnabled;view.contentLocale=locale}
 }
+func workspaceIdentityTitle(projectTitle:String,reportTitle:String,fallback:String)->String {
+    !projectTitle.isEmpty ? projectTitle:!reportTitle.isEmpty ? reportTitle:fallback
+}
+struct NativeWorkspaceIdentity:NSViewRepresentable {
+    let name:String
+    let title:String
+    let reportID:String
+    func makeNSView(context:Context)->NSTextField {
+        let field=NSTextField(labelWithString:"");field.identifier=NSUserInterfaceItemIdentifier(name)
+        field.font = .systemFont(ofSize:14,weight:.semibold);field.lineBreakMode = .byTruncatingTail;field.maximumNumberOfLines=1
+        field.setContentCompressionResistancePriority(.defaultLow,for:.horizontal)
+        return field
+    }
+    func updateNSView(_ field:NSTextField,context:Context) {
+        field.stringValue=title;field.setAccessibilityLabel(title)
+        field.toolTip=title+"\n"+L("git.reportChip",.verbatim(reportID));field.setAccessibilityHelp(L("git.reportChip",.verbatim(reportID)))
+    }
+}
 @MainActor protocol WorkspacePaneSizing:AnyObject {
     var splitView:NSSplitView {get}
     var geometryPending:Bool {get}

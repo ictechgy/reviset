@@ -100,6 +100,93 @@ final class OriginalPDFHostView:PDFView {
     weak var ownedEvidenceAnnotation:PDFAnnotation?
 }
 
+// Each pane owns its controls and scale. A toolbar action never travels through
+// the source/query model or changes which evidence page the model selected.
+final class OriginalPDFPaneView:NSView {
+    let pdfView=OriginalPDFHostView()
+    let zoomOutButton=NSButton(),zoomInButton=NSButton(),fitWidthButton=NSButton()
+    private let toolbar=NSView()
+    private var pendingInitialFit=false
+    private var controlsEnabled=true
+    override init(frame:NSRect) {
+        super.init(frame:frame)
+        identifier=NSUserInterfaceItemIdentifier("Docver.pdf.pane")
+        let buttons=[zoomOutButton,zoomInButton,fitWidthButton]
+        for button in buttons {button.controlSize = .small;button.bezelStyle = .rounded;button.target=self;button.translatesAutoresizingMaskIntoConstraints=false}
+        zoomOutButton.image=NSImage(systemSymbolName:"minus.magnifyingglass",accessibilityDescription:nil)
+        zoomInButton.image=NSImage(systemSymbolName:"plus.magnifyingglass",accessibilityDescription:nil)
+        zoomOutButton.identifier=NSUserInterfaceItemIdentifier("Docver.pdf.zoomOut")
+        zoomInButton.identifier=NSUserInterfaceItemIdentifier("Docver.pdf.zoomIn")
+        fitWidthButton.identifier=NSUserInterfaceItemIdentifier("Docver.pdf.fitWidth")
+        zoomOutButton.action=#selector(zoomOut(_:));zoomInButton.action=#selector(zoomIn(_:));fitWidthButton.action=#selector(fitWidth(_:))
+        let stack=NSStackView(views:buttons);stack.orientation = .horizontal;stack.spacing=4;stack.translatesAutoresizingMaskIntoConstraints=false
+        toolbar.addSubview(stack);toolbar.translatesAutoresizingMaskIntoConstraints=false;addSubview(toolbar)
+        pdfView.translatesAutoresizingMaskIntoConstraints=false;addSubview(pdfView)
+        NSLayoutConstraint.activate([
+            toolbar.leadingAnchor.constraint(equalTo:leadingAnchor),toolbar.trailingAnchor.constraint(equalTo:trailingAnchor),toolbar.topAnchor.constraint(equalTo:topAnchor),toolbar.heightAnchor.constraint(equalToConstant:30),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo:toolbar.leadingAnchor,constant:8),stack.trailingAnchor.constraint(equalTo:toolbar.trailingAnchor,constant:-8),stack.centerYAnchor.constraint(equalTo:toolbar.centerYAnchor),
+            zoomOutButton.widthAnchor.constraint(equalToConstant:28),zoomInButton.widthAnchor.constraint(equalToConstant:28),
+            pdfView.leadingAnchor.constraint(equalTo:leadingAnchor),pdfView.trailingAnchor.constraint(equalTo:trailingAnchor),pdfView.topAnchor.constraint(equalTo:toolbar.bottomAnchor),pdfView.bottomAnchor.constraint(equalTo:bottomAnchor)
+        ])
+        NotificationCenter.default.addObserver(self,selector:#selector(scaleChanged(_:)),name:.PDFViewScaleChanged,object:pdfView)
+    }
+    required init?(coder:NSCoder) {fatalError("init(coder:) has not been implemented")}
+    deinit {NotificationCenter.default.removeObserver(self)}
+    override func layout() {
+        super.layout()
+        if pendingInitialFit,fitToWidth() {pendingInitialFit=false}
+    }
+    func configureControls(enabled:Bool) {
+        controlsEnabled=enabled
+        zoomOutButton.toolTip=L("doc.pdf.zoomOut");zoomOutButton.setAccessibilityLabel(L("doc.pdf.zoomOut"))
+        zoomInButton.toolTip=L("doc.pdf.zoomIn");zoomInButton.setAccessibilityLabel(L("doc.pdf.zoomIn"))
+        fitWidthButton.title=L("doc.pdf.fitWidth");fitWidthButton.toolTip=L("doc.pdf.fitWidth");fitWidthButton.setAccessibilityLabel(L("doc.pdf.fitWidth"))
+        toolbar.setAccessibilityHidden(!enabled)
+        updateControlAvailability()
+    }
+    func requestInitialFit() {pendingInitialFit=true;needsLayout=true}
+    func cancelInitialFit() {pendingInitialFit=false}
+    @objc private func scaleChanged(_ notification:Notification) {updateControlAvailability()}
+    private func updateControlAvailability() {
+        let enabled=controlsEnabled && pdfView.currentPage != nil
+        zoomOutButton.isEnabled=enabled && pdfView.scaleFactor>pdfView.minScaleFactor+0.0001
+        zoomInButton.isEnabled=enabled && pdfView.scaleFactor<pdfView.maxScaleFactor-0.0001
+        fitWidthButton.isEnabled=enabled
+    }
+    @objc private func zoomOut(_ sender:NSButton) {changeScale(by:1/1.2)}
+    @objc private func zoomIn(_ sender:NSButton) {changeScale(by:1.2)}
+    private func changeScale(by multiplier:CGFloat) {
+        guard controlsEnabled,pdfView.currentPage != nil else{return}
+        pendingInitialFit=false;pdfView.autoScales=false
+        pdfView.scaleFactor=max(pdfView.minScaleFactor,min(pdfView.maxScaleFactor,pdfView.scaleFactor*multiplier))
+        updateControlAvailability()
+    }
+    @objc private func fitWidth(_ sender:NSButton) {
+        guard controlsEnabled else{return}
+        pendingInitialFit=false
+        _ = fitToWidth()
+    }
+    @discardableResult private func fitToWidth()->Bool {
+        guard window != nil,let page=pdfView.currentPage,pdfView.bounds.width>40,pdfView.bounds.height>40 else{return false}
+        let bounds=page.bounds(for:pdfView.displayBox),rotated=abs(page.rotation)%180==90
+        let width=rotated ? bounds.height:bounds.width
+        guard width.isFinite,width>0 else{return false}
+        pdfView.autoScales=false
+        // Re-evaluate once after PDFKit lays out a possible vertical scrollbar.
+        for _ in 0..<2 {
+            pdfView.layoutDocumentView()
+            let clip=pdfView.documentView?.enclosingScrollView?.contentView
+            // PDFKit magnifies its internal clip coordinate system. Measure in
+            // PDFView points so fitting does not depend on the previous zoom.
+            let viewportWidth=clip.map{pdfView.convert($0.bounds,from:$0).width} ?? pdfView.bounds.width
+            let available=viewportWidth-pdfView.pageBreakMargins.left-pdfView.pageBreakMargins.right
+            guard available.isFinite,available>20 else{return false}
+            pdfView.scaleFactor=max(pdfView.minScaleFactor,min(pdfView.maxScaleFactor,available/width))
+        }
+        updateControlAvailability();return true
+    }
+}
+
 struct OriginalPDFView: NSViewRepresentable {
     var keyboardEnabled=true
     let path: String
@@ -183,20 +270,22 @@ struct OriginalPDFView: NSViewRepresentable {
         }
         deinit { NotificationCenter.default.removeObserver(self) }
     }
-    func makeNSView(context: Context) -> PDFView {
-        let view = OriginalPDFHostView(); view.displayMode = .singlePage; view.displayDirection = .vertical
+    func makeNSView(context: Context) -> OriginalPDFPaneView {
+        let pane=OriginalPDFPaneView(),view=pane.pdfView;view.displayMode = .singlePage; view.displayDirection = .vertical
         view.displaysPageBreaks = true; view.pageShadowsEnabled = true; view.backgroundColor = NSColor.underPageBackgroundColor
         view.minScaleFactor = 0.1; view.maxScaleFactor = 8
-        context.coordinator.observe(view); return view
+        context.coordinator.observe(view); return pane
     }
-    static func dismantleNSView(_ view: PDFView, coordinator: Coordinator) {
+    static func dismantleNSView(_ pane: OriginalPDFPaneView, coordinator: Coordinator) {
         NotificationCenter.default.removeObserver(coordinator)
         coordinator.selectedPage = nil
         coordinator.resetViewport()
     }
-    func updateNSView(_ view: PDFView, context: Context) {
-        (view as? OriginalPDFHostView)?.sourceKeyboardEnabled=keyboardEnabled;view.setAccessibilityHidden(!keyboardEnabled)
-        if !keyboardEnabled {resignHiddenSourceFirstResponder(in:view)}
+    func updateNSView(_ pane: OriginalPDFPaneView, context: Context) {
+        let view=pane.pdfView
+        pane.configureControls(enabled:keyboardEnabled)
+        view.sourceKeyboardEnabled=keyboardEnabled;view.setAccessibilityHidden(!keyboardEnabled)
+        if !keyboardEnabled {resignHiddenSourceFirstResponder(in:pane)}
         let sourceChanged=context.coordinator.path != path
         let selectionChanged = sourceChanged || context.coordinator.pageNumber != pageNumber || context.coordinator.zoom != zoom
         if selectionChanged { context.coordinator.resetViewport() }
@@ -206,15 +295,19 @@ struct OriginalPDFView: NSViewRepresentable {
         guard let current = view.document?.page(at: max(0, pageNumber - 1)) else { return }
         context.coordinator.selectedPage = current
         if sourceChanged || context.coordinator.pageNumber != pageNumber || context.coordinator.zoom != zoom || view.currentPage !== current {
-            view.autoScales = zoom == 0;view.go(to:current);if zoom>0{view.scaleFactor=zoom}
+            let zoomChanged=context.coordinator.zoom != zoom
+            view.go(to:current)
+            if sourceChanged || zoomChanged {
+                view.autoScales=false
+                if zoom>0 {pane.cancelInitialFit();view.scaleFactor=zoom}else{pane.requestInitialFit()}
+            }
             context.coordinator.pageNumber=pageNumber;context.coordinator.zoom=zoom
         }
+        pane.configureControls(enabled:keyboardEnabled)
         context.coordinator.observeViewport(view)
         let b = evidence["bbox"].array.map(\.number), t = page["source_transform"].array.map(\.number)
-        if let host=view as? OriginalPDFHostView {
-            host.representedPageID=page["page_id"].string;host.representedEvidencePageID=evidence["page_id"].string
-            host.qualifiedEvidence=canHighlightEvidence(evidence,page:page);host.sourceTransformCount=t.count;host.ownedEvidenceAnnotation=nil
-        }
+        view.representedPageID=page["page_id"].string;view.representedEvidencePageID=evidence["page_id"].string
+        view.qualifiedEvidence=canHighlightEvidence(evidence,page:page);view.sourceTransformCount=t.count;view.ownedEvidenceAnnotation=nil
         if canHighlightEvidence(evidence,page:page) && t.count == 6 {
             let det = t[0] * t[3] - t[1] * t[2]
             if abs(det) > 0.000001 {
@@ -228,7 +321,7 @@ struct OriginalPDFView: NSViewRepresentable {
                 let mark = PDFAnnotation(bounds: rect, forType: .square, withProperties: nil)
                 mark.shouldDisplay=true;current.displaysAnnotations=true
                 mark.color = NSColor.systemBlue.withAlphaComponent(0.85); let border = PDFBorder(); border.lineWidth = 1.5; mark.border = border
-                current.addAnnotation(mark); context.coordinator.marks.append((current,mark));(view as? OriginalPDFHostView)?.ownedEvidenceAnnotation=mark;view.annotationsChanged(on:current);view.needsDisplay=true
+                current.addAnnotation(mark); context.coordinator.marks.append((current,mark));view.ownedEvidenceAnnotation=mark;view.annotationsChanged(on:current);view.needsDisplay=true
             }
         }
     }

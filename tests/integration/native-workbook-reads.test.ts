@@ -1,7 +1,7 @@
 import {nativeLocalizationTestSources,prepareLegacyNativeLocalization} from '../../scripts/native-swift-sources.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,copyFile,symlink,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,copyFile,symlink,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -17,7 +17,13 @@ test('native workbook retries preserve scope and withhold mismatched cell eviden
     await copyFile(resolve('tests/native/workbook-read-fixture.mjs'),join(contents,'Resources/backend/bridge.mjs'));
     const userData=join(contents,'userdata');
     execFileSync('swiftc',['-warnings-as-errors','-swift-version','5','-parse-as-library','-target','arm64-apple-macos14.0',...nativeLocalizationTestSources,'apps/macos/Bridge.swift','apps/macos/Model.swift','apps/macos/WorkbookView.swift','tests/native/WorkbookReads.swift','-o',exe,'-framework','SwiftUI','-framework','AppKit'],{timeout:45000,stdio:'pipe'});
-    const stdout=execFileSync(exe,[],{encoding:'utf8',timeout:12000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:userData}});
+    const stdout=execFileSync(exe,[],{encoding:'utf8',timeout:12000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:userData,...(process.env.DOCVER_TEST_WORKBOOK_PAGED_SELECTION_EVIDENCE_OUT?{DOCVER_TEST_WORKBOOK_PAGED_SELECTION_EVIDENCE_OUT:process.env.DOCVER_TEST_WORKBOOK_PAGED_SELECTION_EVIDENCE_OUT}:{})}});
     assert.match(stdout,/PASS native workbook reads:/);
+    assert.match(stdout,/PASS native workbook paged selection:/);
+    const proof=JSON.parse(await readFile(join(userData,'paged-selection-proof.json'),'utf8')) as Record<string,unknown>;
+    assert.equal(proof.first_success_selects_first_eligible_valid_revision_and_address,true);
+    assert.equal(proof.same_scope_next_previous_refresh_keep_selected_off_page_event_and_source,true);
+    assert.equal(proof.off_page_return_retains_list_cursor_and_query,true);
+    assert.equal(proof.visible_mutated_event_and_unqualified_list_replacement_rejected,true);
   } finally { await rm(root,{recursive:true,force:true}); }
 });

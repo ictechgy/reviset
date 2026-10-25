@@ -439,6 +439,18 @@
     "en": "Zoom",
     "ko": "확대"
   },
+  "doc.pdf.zoomOut": {
+    "en": "Zoom out",
+    "ko": "축소"
+  },
+  "doc.pdf.zoomIn": {
+    "en": "Zoom in",
+    "ko": "확대"
+  },
+  "doc.pdf.fitWidth": {
+    "en": "Fit width",
+    "ko": "너비 맞춤"
+  },
   "doc.common.fit": {
     "en": "Fit to window",
     "ko": "화면 맞춤"
@@ -980,11 +992,11 @@
     "ko": "{0} · 근거 수준 미상 ({1})"
   },
   "doc.project.revisionCount.one": {
-    "en": "{0} revision",
+    "en": "{0} version",
     "ko": "{0}개 버전"
   },
   "doc.project.revisionCount.other": {
-    "en": "{0} revisions",
+    "en": "{0} versions",
     "ko": "{0}개 버전"
   },
   "doc.revision.pageCount.one": {

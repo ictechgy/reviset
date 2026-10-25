@@ -16,6 +16,15 @@ process.stdin.on('end',()=>{
     if(control.mode==='grid-fail') error={code:'CONTROLLED_GRID_FAILURE',message:'controlled range read failure'};
   } else if(action==='workbookQuery'&&args.name==='list_workbook_changes') {
     value={...query,items:control.value==='nonempty'?[{change_id:'change'}]:[],total:control.value==='nonempty'?1:0,next_cursor:null};
+    // Opt-in bounded pagination for source-selection regressions. Existing
+    // response/failure modes retain their original default fixture behavior.
+    if(control.pages!==undefined || control.changes!==undefined) {
+      const pages=control.pages??[control.changes];
+      if(!Array.isArray(pages)||pages.length<1||pages.length>3||pages.some(page=>!Array.isArray(page)||page.length>100))throw new Error('Invalid bounded change pages');
+      const index=query.cursor===undefined?0:pages.findIndex((_,i)=>i>0&&query.cursor===`fixture-page-${i+1}`);
+      if(index<0)throw new Error('Unexpected fixture change cursor');
+      value.items=pages[index];value.total=pages.reduce((sum,page)=>sum+page.length,0);value.next_cursor=index+1<pages.length?`fixture-page-${index+2}`:null;
+    }
     if(control.mode!=='changes-supported')value.blank_formatting_comparison='unsupported_across_formats';
     if(control.mode==='changes-fail')error={code:'CONTROLLED_CHANGES_FAILURE',message:'controlled changes read failure'};
     for(const [mode,key] of [['project','project_id'],['report','report_id'],['from','from_revision_occurrence_id'],['to','to_revision_occurrence_id'],['mode','mode']])if(control.mode==='changes-wrong-'+mode)value[key]='foreign';
@@ -39,6 +48,6 @@ process.stdin.on('end',()=>{
     if(control.mode==='nonarray-missing') {value.availability='not_materialized';value.items=null;}
     if(control.mode==='unknown-availability')value.availability='unknown';
   } else throw new Error('Unexpected fixture action '+action);
-  appendFileSync(join(root,'read-events.jsonl'),JSON.stringify({action,query,mode:control.mode})+'\n');
+  appendFileSync(join(root,'read-events.jsonl'),JSON.stringify({action,name:args.name,query,mode:control.mode})+'\n');
   setTimeout(()=>console.log(JSON.stringify({ok:!error,protocol_version:'0.1.0',schema_version:'0.4.0',value,error})),control.delay??0);
 });

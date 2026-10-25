@@ -17,8 +17,8 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     @Published var projects: [JSON] = []
     @Published var reports: [JSON] = []
     @Published var report = JSON()
-    @Published var projectID = "" {didSet {if oldValue != projectID {eventAnchor=nil}}}
-    @Published var reportID = "" {didSet {if oldValue != reportID {eventAnchor=nil}}}
+    @Published var projectID = "" {didSet {if oldValue != projectID {eventAnchor=nil;pagedEvent=nil}}}
+    @Published var reportID = "" {didSet {if oldValue != reportID {eventAnchor=nil;pagedEvent=nil}}}
     @Published var beforeID = ""
     @Published var afterID = ""
     @Published var beforeSheetID = ""
@@ -53,9 +53,9 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     @Published var changePageNumber = 1
     private var changePageCursor = ""
     @Published var changeTotal = 0
-    @Published var changesFromID = "" {didSet {if oldValue != changesFromID {eventAnchor=nil}}}
-    @Published var changesToID = "" {didSet {if oldValue != changesToID {eventAnchor=nil}}}
-    @Published var changesMode = "range_net" {didSet {if oldValue != changesMode {eventAnchor=nil}}}
+    @Published var changesFromID = "" {didSet {if oldValue != changesFromID {eventAnchor=nil;pagedEvent=nil}}}
+    @Published var changesToID = "" {didSet {if oldValue != changesToID {eventAnchor=nil;pagedEvent=nil}}}
+    @Published var changesMode = "range_net" {didSet {if oldValue != changesMode {eventAnchor=nil;pagedEvent=nil}}}
     @Published private var cellHistoryMessageContent = UIMessage.raw("")
     var cellHistoryMessage: String { get { cellHistoryMessageContent.text } set { cellHistoryMessageContent = .raw(newValue) } }
     @Published var cellHistoryCursor = ""
@@ -114,6 +114,10 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     private var mcpScope = ""
     private struct EventAnchor {let scope:String;let id:String;let event:Data}
     @Published private var eventAnchor:EventAnchor?
+    // Only the exact event retained across an actual same-query page request may
+    // outlive the visible list. Manual list edits never mint this authority.
+    @Published private var pagedEvent:EventAnchor?
+    private var lastSuccessfulChangeScope = ""
 
     struct Ticket {
         let channel: String
@@ -197,12 +201,33 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     }
     var ready: Bool { active && !reportID.isEmpty && report["report_id"].string == reportID && !loadingReport && !busy && !loadingDemo }
     var project: JSON { projects.first { $0["project_id"].string == projectID } ?? JSON() }
-    var selectedChange: JSON { changes.first { $0["change_id"].string == selectedChangeID } ?? JSON() }
+    private func retainedEvent(_ id:String)->JSON {
+        guard let retained=pagedEvent,retained.scope==comparisonScope,retained.id==id,
+              let raw=try? JSONSerialization.jsonObject(with:retained.event) else{return JSON()}
+        return JSON(raw)
+    }
+    var selectedChange: JSON {
+        guard !selectedChangeID.isEmpty else{return JSON()}
+        if let event=changes.first(where:{$0["change_id"].string==selectedChangeID}) {return event}
+        let event=retainedEvent(selectedChangeID)
+        guard event["from_revision_occurrence_id"].string==beforeID,event["to_revision_occurrence_id"].string==afterID,event["from_sheet_id"].string==beforeSheetID,event["to_sheet_id"].string==afterSheetID,event["before_address"].string==beforeAddress,event["after_address"].string==afterAddress else{return JSON()}
+        return event
+    }
     private var anchoredChange:JSON {
-        guard let anchor=eventAnchor,anchor.scope==comparisonScope,
-              let change=changes.first(where:{$0["change_id"].string==anchor.id}),
-              (try? change.data())==anchor.event else{return JSON()}
-        return change
+        guard let anchor=eventAnchor,anchor.scope==comparisonScope else{return JSON()}
+        let event=changes.first(where:{$0["change_id"].string==anchor.id}) ?? retainedEvent(anchor.id)
+        guard !event.isNull,(try? event.data())==anchor.event else{return JSON()}
+        return event
+    }
+    private func eligibleInitialChange(_ event:JSON)->Bool {
+        guard !event["change_id"].string.isEmpty,
+              let lower=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==changesFromID}),
+              let upper=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==changesToID}),
+              let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==event["from_revision_occurrence_id"].string}),
+              let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==event["to_revision_occurrence_id"].string}),
+              lower<=a,a<b,b<=upper else{return false}
+        if changesMode=="range_net",a != lower || b != upper {return false}
+        return ["before_address","after_address"].allSatisfy {key in event[key].string.isEmpty || WorkbookGrid.parseAddress(event[key].string) != nil}
     }
     var canReturnToChange:Bool {ready && selectedChangeID.isEmpty && !loadingChanges && !anchoredChange.isNull}
     func returnToChange() async {
@@ -241,7 +266,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         generations[channel] = (generations[channel] ?? 0) + 1
     }
     func invalidateReads() {
-        eventAnchor=nil
+        eventAnchor=nil;pagedEvent=nil;lastSuccessfulChangeScope=""
         for channel in Array(owners.keys) { invalidate(channel) }
         loadingReport = false; loadingRange = false; loadingChanges = false; loadingCell = false; loadingHistory = false; loadingMCP = false
         mcp = ""; mcpScope = ""; mcpFailure = ""; blankFormattingWarningScope = ""
@@ -257,7 +282,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         rangeFailure = ""; addressFailure = ""; cellFailure = ""; loadingRange = false; loadingCell = false
     }
     func clearSelection() {
-        eventAnchor=nil
+        eventAnchor=nil;pagedEvent=nil;lastSuccessfulChangeScope=""
         clearCells(); changes = []; coverage = []; releases = []; resetChangePaging(); changeTotal = 0
         changesFailure = ""; comparisonNotice = ""; blankFormattingWarningScope = ""; changesFromID = ""; changesToID = ""; loadingChanges = false; report = JSON(); reportID = ""
         beforeID = ""; afterID = ""; beforeSheetID = ""; afterSheetID = ""
@@ -395,12 +420,12 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         }
     }
     func loadChanges(next: Bool = false,previous: Bool = false,preserveEndpoints: Bool = false) async {
-        eventAnchor=nil
+        let previousScope=comparisonScope,previousAnchor=eventAnchor,retained=anchoredChange
         guard ready, !beforeID.isEmpty, !afterID.isEmpty else { return }
         guard !(next && previous),!next || !changeCursor.isEmpty,!previous || !changePreviousCursors.isEmpty else { return }
         if beforeID==afterID, !preserveEndpoints {
             enforceSingleSourcePresentation()
-            invalidate("changes");changes=[];selectedChangeID="";resetChangePaging();changeTotal=0;changesFailure="";loadingChanges=false
+            invalidate("changes");changes=[];selectedChangeID="";eventAnchor=nil;pagedEvent=nil;resetChangePaging();changeTotal=0;changesFailure="";loadingChanges=false
             changesFromID=beforeID;changesToID=afterID;changesMode=mode;return
         }
         let reset = !next && !previous
@@ -414,7 +439,13 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         if next { back.append(changePageCursor); if back.count > cursorHistoryLimit { back.removeFirst(back.count-cursorHistoryLimit) } }
         if previous { back.removeLast() }
         let ticket = begin("changes"), identity = comparisonScope
-        loadingChanges = true; changesFailure = ""; selectedChangeID = ""; blankFormattingWarningScope = ""
+        let initialScope=lastSuccessfulChangeScope != identity
+        if identity==previousScope,!retained.isNull,let anchor=previousAnchor {
+            pagedEvent=anchor
+        } else {
+            eventAnchor=nil;pagedEvent=nil;selectedChangeID=""
+        }
+        loadingChanges = true; changesFailure = ""; blankFormattingWarningScope = ""
         var args: [String:Any] = ["from_revision_occurrence_id":changesFromID,"to_revision_occurrence_id":changesToID,"mode":changesMode,"limit":100,"max_output_tokens":pagingOutputBudget,"text_length":128]
         if !targetCursor.isEmpty { args["cursor"] = targetCursor }
         do {
@@ -425,6 +456,14 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
             changes = value["items"].array; changeCursor = value["next_cursor"].string
             changePageCursor = targetCursor; changePreviousCursors = back; changePageNumber = targetPage
             changeTotal = value["total"].int; loadingChanges = false
+            if let anchor=eventAnchor,let returned=changes.first(where:{$0["change_id"].string==anchor.id}),(try? returned.data()) != anchor.event {
+                // A changed event payload cannot relabel already-mounted raw cells.
+                eventAnchor=nil;pagedEvent=nil;selectedChangeID=""
+            }
+            lastSuccessfulChangeScope=identity
+            if initialScope,selectedChangeID.isEmpty,let first=changes.first(where:eligibleInitialChange) {
+                await chooseChange(first["change_id"].string,preservingVisibleWindow:true)
+            }
         } catch {
             guard current(ticket), comparisonScope == identity else { return }
             if changesMode == "range_net",(error as? BridgeError)?.code == "WORKBOOK_DIFF_LIMIT" {
@@ -432,7 +471,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
                 comparisonNoticeContent = UIMessage("workbook.warning.historyFallback")
                 await loadChanges(preserveEndpoints:true); return
             }
-            selectedChangeID = ""; loadingChanges = false; changesFailureContent = bridgeErrorMessage(error)
+            loadingChanges = false; changesFailureContent = bridgeErrorMessage(error)
         }
     }
     func changeMode(_ value: String) async {
@@ -514,8 +553,12 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         }
         return items[0]
     }
-    func chooseChange(_ id: String) async {
-        guard ready, let change = changes.first(where:{$0["change_id"].string == id}) else { return }
+    func chooseChange(_ id: String,preservingVisibleWindow:Bool=false) async {
+        guard ready else{return}
+        let visible=changes.first(where:{$0["change_id"].string==id}),change=visible ?? retainedEvent(id)
+        guard !change.isNull else{return}
+        if visible != nil {pagedEvent=nil}
+        let oldBefore=(beforeID,beforeSheetID,beforeRowStart,beforeColumnStart),oldAfter=(afterID,afterSheetID,afterRowStart,afterColumnStart)
         addressFailure = ""
         revealGeneration += 1
         invalidate("cell"); resetCellHistory(); beforeCell = JSON(); afterCell = JSON(); cellFailure = ""; loadingCell = true
@@ -533,8 +576,14 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         } else { selectedRow = 0; selectedColumn = 0 }
         eventAnchor=(try? change.data()).map{EventAnchor(scope:comparisonScope,id:id,event:$0)}
         selectedChangeID = id; beforeAddress = change["before_address"].string; afterAddress = change["after_address"].string
-        if let coordinate = paneCoordinate(before:true) { beforeRowStart = min(coordinate.row,1_048_576-rowLimit+1); beforeColumnStart = min(coordinate.column,16_384-columnLimit+1) }
-        if let coordinate = paneCoordinate(before:false) { afterRowStart = min(coordinate.row,1_048_576-rowLimit+1); afterColumnStart = min(coordinate.column,16_384-columnLimit+1) }
+        func window(_ coordinate:(row:Int,column:Int),_ old:(String,String,Int,Int),_ occurrence:String,_ sheet:String)->(Int,Int) {
+            let retain=preservingVisibleWindow && old.0==occurrence && old.1==sheet && coordinate.row>=old.2 && coordinate.row<old.2+rowLimit && coordinate.column>=old.3 && coordinate.column<old.3+columnLimit
+            return retain ? (old.2,old.3):(min(coordinate.row,1_048_576-rowLimit+1),min(coordinate.column,16_384-columnLimit+1))
+        }
+        let aWindow=paneCoordinate(before:true).map{window($0,oldBefore,beforeID,beforeSheetID)} ?? (beforeRowStart,beforeColumnStart)
+        let bWindow=paneCoordinate(before:false).map{window($0,oldAfter,afterID,afterSheetID)} ?? (afterRowStart,afterColumnStart)
+        if preservingVisibleWindow {rowStart=bWindow.0;columnStart=bWindow.1}
+        (beforeRowStart,beforeColumnStart)=aWindow;(afterRowStart,afterColumnStart)=bWindow
         beforeCell = JSON(); afterCell = JSON(); cellTextOffset = 0; cellTextNext = nil
         await loadRange()
         if currentChangeIs(id) { await loadSelectedCells() }
@@ -833,8 +882,9 @@ struct WorkbookWorkspace: View {
     private var reportBar: some View {
         VStack(alignment:.leading,spacing:4){
             HStack {
+                NativeWorkspaceIdentity(name:"Reviset.workbook.projectTitle",title:workspaceIdentityTitle(projectTitle:model.project["title"].string,reportTitle:model.report["title"].string,fallback:L("workbook.window.title")),reportID:model.reportID).frame(minWidth:140,maxWidth:.infinity,alignment:.leading)
                 if !model.reports.isEmpty {
-                    Menu {ForEach(model.reports,id:\.id){r in Button(localizedISODate(r["created_at"].string)+" · "+String(r["report_id"].string.suffix(12))){Task{await model.selectReport(r["report_id"].string)}}};Divider();Button(L("git.reportDetails")){model.tab="ai"}} label:{Label(L("git.reportChip",.verbatim(String(model.reportID.suffix(12)))),systemImage:"lock.doc")}.disabled(model.busy || model.loadingReport || model.loadingDemo)
+                    Menu {ForEach(model.reports,id:\.id){r in Button(localizedISODate(r["created_at"].string)+" · "+String(r["report_id"].string.suffix(12))){Task{await model.selectReport(r["report_id"].string)}}};Divider();Button(L("git.reportDetails")){model.tab="ai"}} label:{Image(systemName:"lock.doc")}.accessibilityLabel(L("git.reportChip",.verbatim(String(model.reportID.suffix(12))))).help(model.reportID).disabled(model.busy || model.loadingReport || model.loadingDemo)
                 }
                 Spacer()
                 if model.busy {ProgressView().controlSize(.small);Button(L("workbook.action.cancelAnalysis")){model.cancelAnalysis()}.disabled(!model.canCancelAnalysis)}
@@ -937,7 +987,7 @@ struct WorkbookWorkspace: View {
                 if let coordinate { Text(L("workbook.pane.evidence",.verbatim(WorkbookGrid.address(coordinate.row,coordinate.column)))).font(.system(.caption,design:.monospaced)).foregroundStyle(.blue) }
             }.padding(.horizontal,8).padding(.bottom,5)
             if id.isEmpty { WorkbookStatus(title:L("workbook.sheet.unmatched"),detail:L("workbook.sheet.unmatchedDetail"),loading:false) }
-            else { WorkbookGrid(keyboardEnabled:model.effectiveDiffMode=="source",language:language.effectiveLanguage,pane:before ? "before" : "after",revealIntent:[model.scope,occurrence,id,String(model.revealGeneration)].joined(separator:"|"),cells:cells,rowStart:row,columnStart:column,rowCount:model.rowLimit,columnCount:model.columnLimit,selectedRow:coordinate?.row ?? 0,selectedColumn:coordinate?.column ?? 0,onSelect:{row,column in Task { await model.selectCell(row,column) }}).disabled(!model.ready || model.loadingRange) }
+            else { WorkbookGrid(keyboardEnabled:model.effectiveDiffMode=="source",sourceIdentity:[model.scope,occurrence,id].joined(separator:"|"),language:language.effectiveLanguage,pane:before ? "before" : "after",revealIntent:[model.scope,occurrence,id,String(model.revealGeneration)].joined(separator:"|"),cells:cells,rowStart:row,columnStart:column,rowCount:model.rowLimit,columnCount:model.columnLimit,selectedRow:coordinate?.row ?? 0,selectedColumn:coordinate?.column ?? 0,onSelect:{row,column in Task { await model.selectCell(row,column) }}).disabled(!model.ready || model.loadingRange) }
         }.frame(minWidth:280,maxWidth:.infinity,maxHeight:.infinity)
     }
     private var changesPane: some View {
@@ -1915,6 +1965,7 @@ private final class WorkbookValueCellView:NSTableCellView {
 }
 struct WorkbookGrid: NSViewRepresentable {
     var keyboardEnabled=true
+    var sourceIdentity=""
     let language: String
     let pane: String
     let revealIntent: String
@@ -1959,6 +2010,9 @@ struct WorkbookGrid: NSViewRepresentable {
         var updating = false
         var lastRequested = ""
         var lastRevealed = ""
+        private var resizedWidths:[String:[Int:CGFloat]]=[:]
+        private var widthSources:[String]=[]
+        private var widthSource:String {parent.sourceIdentity.isEmpty ? parent.pane:parent.sourceIdentity}
         init(_ parent: WorkbookGrid) { self.parent = parent }
         func update(_ value: WorkbookGrid) {
             updating = true; defer { updating = false }
@@ -1966,12 +2020,17 @@ struct WorkbookGrid: NSViewRepresentable {
             lastRequested = "\(value.selectedRow):\(value.selectedColumn)"
             sparse = Dictionary(value.cells.map { (String($0["row"].int)+":"+String($0["column"].int),$0) },uniquingKeysWith:{a,_ in a})
             guard let table else { return }
-            let key = "\(value.columnStart):\(value.columnCount)"
+            let key = "\(widthSource):\(value.columnStart):\(value.columnCount)"
             if columnsKey != key {
                 for column in table.tableColumns { table.removeTableColumn(column) }
                 let row = NSTableColumn(identifier:NSUserInterfaceItemIdentifier("row")); row.title = L("workbook.grid.rowHeader"); row.width = 58; row.minWidth = 58; table.addTableColumn(row)
-                for offset in 0..<value.columnCount { let n = value.columnStart+offset; let column = NSTableColumn(identifier:NSUserInterfaceItemIdentifier(String(n))); column.title = WorkbookGrid.columnLabel(n); column.width = 130; column.minWidth = 75; table.addTableColumn(column) }
+                for offset in 0..<value.columnCount { let n = value.columnStart+offset; let column = NSTableColumn(identifier:NSUserInterfaceItemIdentifier(String(n))); column.title = WorkbookGrid.columnLabel(n); column.minWidth = 64; column.width = 64; table.addTableColumn(column) }
                 columnsKey = key
+            }
+            for column in table.tableColumns.dropFirst() {
+                guard let physical=Int(column.identifier.rawValue) else{continue}
+                let width=resizedWidths[widthSource]?[physical] ?? compactWidth(physical)
+                if abs(column.width-width)>0.5 {column.width=width}
             }
             table.tableColumns.first?.title = L("workbook.grid.rowHeader")
             table.setAccessibilityLabel(value.pane == "before" ? L("workbook.grid.beforeAX") : L("workbook.grid.afterAX"))
@@ -1995,6 +2054,34 @@ struct WorkbookGrid: NSViewRepresentable {
                 }
             } else { table.deselectAll(nil); lastRevealed = "" }
             if let scroll=table.enclosingScrollView as? WorkbookTableScrollView {scroll.synchronizeHeader();scroll.configurePinnedRows(rowStart:value.rowStart,pane:value.pane)}
+        }
+        private func compactWidth(_ column:Int)->CGFloat {
+            // Measurement is bounded to the same 64 UTF-16 source preview. It
+            // never rewrites the native text field, formats values or executes formulas.
+            let observations=parent.cells.filter{$0["column"].int==column}
+            let numericColumn=observations.contains{["number","boolean"].contains($0["value_type"].string)}
+            var result:CGFloat=64
+            for cell in observations {
+                let raw=cell["value"].isNull ? "":cell["value"].string
+                guard !raw.isEmpty else{continue}
+                let sample=String(decoding:raw.utf16.prefix(64),as:UTF16.self)
+                let numeric=["number","boolean"].contains(cell["value_type"].string)
+                let annotation = !cell["formula"].isNull || cell["text_truncated"].bool || cell["source_lengths"]["value"].int>raw.utf16.count
+                let measured=(sample as NSString).size(withAttributes:[.font:NSFont.systemFont(ofSize:12)]).width+16+(annotation ? 36:0)
+                result=max(result,min(numeric ? 112:180,max(numeric || numericColumn ? 64:96,ceil(measured))))
+            }
+            return result
+        }
+        func tableViewColumnDidResize(_ notification:Notification) {
+            guard !updating,let table=notification.object as? NSTableView,table === self.table,
+                  let column=notification.userInfo?["NSTableColumn"] as? NSTableColumn,
+                  let physical=Int(column.identifier.rawValue) else{return}
+            let source=widthSource
+            if resizedWidths[source]==nil {
+                if widthSources.count>=16 {resizedWidths.removeValue(forKey:widthSources.removeFirst())}
+                widthSources.append(source);resizedWidths[source]=[:]
+            }
+            resizedWidths[source]?[physical]=column.width
         }
         func numberOfRows(in tableView: NSTableView) -> Int { parent.rowCount }
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -2791,8 +2878,9 @@ struct WorkbookGrid: NSViewRepresentable {
             guard model.comparisonScope == identity,model.changePageNumber == 2,!model.changePreviousCursors.isEmpty,model.selectedChangeID == model.changes.first?["change_id"].string,model.changesFailure.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_STEP_NEXT_PAGE",message:"다음 변경으로 페이지 경계를 건너지 못했습니다.") }
             await model.stepChange(-1)
             guard model.comparisonScope == identity,model.changePageNumber == 1,model.changes.map({$0["change_id"].string}) == firstIDs,model.selectedChangeID == last else { throw BridgeError(code:"WORKBOOK_SMOKE_STEP_PREVIOUS_PAGE",message:"이전 변경으로 원래 페이지의 마지막 근거에 돌아오지 못했습니다.") }
+            let selectedSource=[model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress],selectedRaw=[try model.beforeCell.data(),try model.afterCell.data()]
             await model.loadChanges(next:true)
-            guard model.changePageNumber == 2,model.selectedChangeID.isEmpty,model.changesFailure.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_PAGE_AUTHORITY",message:"페이지 교체 후 이전 변경 선택이 남았습니다.") }
+            guard model.changePageNumber == 2,model.selectedChangeID==last,model.selectedChange["change_id"].string==last,selectedSource==[model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress],selectedRaw==[try model.beforeCell.data(),try model.afterCell.data()],model.changesFailure.isEmpty else { throw BridgeError(code:"WORKBOOK_SMOKE_PAGE_AUTHORITY",message:"페이지 교체가 선택한 변경의 고정된 원본 근거를 바꿨습니다.") }
             await model.loadChanges(previous:true)
             guard model.changePageNumber == 1,model.changes.map({$0["change_id"].string}) == firstIDs else { throw BridgeError(code:"WORKBOOK_SMOKE_PAGE_BACK",message:"이전 변경 페이지의 항목이 다릅니다.") }
             checks["change_forward_backward_and_cross_page_steps"] = true

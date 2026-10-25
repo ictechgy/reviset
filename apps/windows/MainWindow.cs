@@ -88,6 +88,12 @@ internal sealed class MainWindow : Window
     private readonly TextBlock detailRange = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8) };
     private readonly StackPanel detailPaging = new();
     private readonly TextBox detailMetadata = SourceText();
+    private readonly TextBlock inspectorHeading = new() { FontWeight = FontWeights.SemiBold, Margin = new Thickness(10, 6, 10, 4) };
+    private bool? inspectorArrangementBottom;
+    private readonly Expander technicalDetails = new() { IsExpanded = false, MaxHeight = 180 };
+    private bool evidencePresented;
+    internal bool EvidencePresented => Layout.Inspector;
+    private bool evidenceBottomDock;
     private Button firstDetail = new();
     private Button nextDetail = new();
     private readonly CheckBox detailStyle = new() { Margin = new Thickness(8, 2, 8, 2) };
@@ -248,15 +254,33 @@ internal sealed class MainWindow : Window
         retryComparison = Command("retry", RetryComparison); retryComparison.Visibility = Visibility.Collapsed; DockPanel.SetDock(retryComparison, Dock.Bottom); changeDock.Children.Add(retryComparison);
         ConfigureChangeList(); changeList.ItemsSource = changes; soleChanges.Children.Add(soleExplanation); newComparison = Command("newComparison", Import); soleChanges.Children.Add(newComparison); var changeBody = new Grid(); changeBody.Children.Add(changeList); changeBody.Children.Add(soleChanges); changeDock.Children.Add(changeBody); ChangesPane.Child = changeDock;
         changeList.SelectionChanged += async (_, _) => { if (!binding && changeList.SelectedItem is ChangeChoice choice) await Guard(() => SelectChange(choice.Value)); };
-        var inspector = new DockPanel(); var caption = Caption("evidence"); DockPanel.SetDock(caption, Dock.Top); inspector.Children.Add(caption);
-        var pagingButtons = new WrapPanel(); firstDetail = Command("firstText", FirstDetail); nextDetail = Command("nextText", NextDetail); pagingButtons.Children.Add(firstDetail); pagingButtons.Children.Add(nextDetail); detailPaging.Children.Add(pagingButtons); BindText(detailStyle, "styleDetail"); detailPaging.Children.Add(detailStyle); detailStyle.Click += async (_, _) => await Guard(FirstDetail); detailPaging.Children.Add(detailRange); DockPanel.SetDock(detailPaging, Dock.Top); inspector.Children.Add(detailPaging);
-        var metadata = new Expander { Header = "Source metadata / 원본 메타데이터", IsExpanded = false, Content = detailMetadata, MaxHeight = 180 }; DockPanel.SetDock(metadata, Dock.Bottom); inspector.Children.Add(metadata); inspector.Children.Add(detail); InspectorPane.Child = inspector;
+        BindText(inspectorHeading, "evidence");
+        var pagingButtons = new WrapPanel(); firstDetail = Command("firstText", FirstDetail); nextDetail = Command("nextText", NextDetail); pagingButtons.Children.Add(firstDetail); pagingButtons.Children.Add(nextDetail); detailPaging.Children.Add(pagingButtons); BindText(detailStyle, "styleDetail"); detailPaging.Children.Add(detailStyle); detailStyle.Click += async (_, _) => await Guard(FirstDetail); var rangeDetails = new Expander { Content = detailRange, IsExpanded = false, Margin = new Thickness(8, 0, 8, 2) }; relocalize.Add(() => rangeDetails.Header = Copy["sourceRangeDetails"]); detailPaging.Children.Add(rangeDetails);
+        technicalDetails.Content = detailMetadata; relocalize.Add(() => technicalDetails.Header = Copy["technicalDetails"]); ArrangeInspector(false);
         var sourceTools = new DockPanel { Margin = new Thickness(4, 1, 4, 1), LastChildFill = true };
         var sourceActions = new StackPanel { Orientation = Orientation.Horizontal }; previousChange = Command("previousChange", () => MoveChange(-1)); nextChange = Command("nextChange", () => MoveChange(1)); returnChange = Command("returnChange", ReturnToChange); sourceActions.Children.Add(previousChange); sourceActions.Children.Add(nextChange); sourceActions.Children.Add(returnChange); sourceActions.Children.Add(sourceView); DockPanel.SetDock(sourceActions, Dock.Right); sourceTools.Children.Add(sourceActions); sourceTools.Children.Add(sourcePair); DockPanel.SetDock(sourceTools, Dock.Top); sourceStage.Children.Add(sourceTools);
         firstTextStage = Command("firstText", FirstDetail); nextTextStage = Command("nextText", NextDetail); rawTextPaging.Children.Add(firstTextStage); rawTextPaging.Children.Add(nextTextStage); BindText(sourceDiagnostics, "sourceDetails"); sourceDiagnostics.Click += (_, _) => RenderSourceDiff(); rawTextPaging.Children.Add(sourceDiagnostics); DockPanel.SetDock(rawTextPaging, Dock.Top); sourceStage.Children.Add(rawTextPaging);
         var sourceFooter = new DockPanel(); newComparisonStage = Command("newComparison", Import); DockPanel.SetDock(newComparisonStage, Dock.Right); sourceFooter.Children.Add(newComparisonStage); storedHistoryButton = Command("openStoredHistory", () => storedHistoryRequest = OpenStoredHistory()); DockPanel.SetDock(storedHistoryButton, Dock.Right); sourceFooter.Children.Add(storedHistoryButton); selectedLimitsButton = Command("selectedLimits", () => { CreateSelectedLimitsDialog().ShowDialog(); return Task.CompletedTask; }); DockPanel.SetDock(selectedLimitsButton, Dock.Right); sourceFooter.Children.Add(selectedLimitsButton); sourceFooter.Children.Add(sourceNotice); DockPanel.SetDock(sourceFooter, Dock.Bottom); sourceStage.Children.Add(sourceFooter); var sourceBody = new Grid(); sourceBody.Children.Add(comparison); sourceBody.Children.Add(unified); libraryPrompt.Children.Add(libraryPromptText); startupRetry = Command("retryStartup", () => startupRequest = InitializeCore()); firstImport = Command("import", Import); libraryPrompt.Children.Add(startupRetry); libraryPrompt.Children.Add(firstImport); sourceBody.Children.Add(libraryPrompt); sourceStage.Children.Add(sourceBody);
         sourceView.SelectionChanged += (_, _) => { if (!binding) { textView = sourceView.SelectedIndex == 1; RenderSourceDiff(); } };
         root.Children.Add(workspace); ClearDetail(); SetBusy(false);
+    }
+    private void ArrangeInspector(bool bottom)
+    {
+        firstDetail.Content = Copy[bottom ? "firstTextCompact" : "firstText"]; nextDetail.Content = Copy[bottom ? "nextTextCompact" : "nextText"];
+        firstDetail.ToolTip = Copy["firstText"]; nextDetail.ToolTip = Copy["nextText"];
+        if (inspectorArrangementBottom == bottom && InspectorPane.Child is not null) return;
+        inspectorArrangementBottom = bottom;
+        foreach (var element in new FrameworkElement[] { inspectorHeading, detailPaging, technicalDetails, detail }) if (VisualTreeHelper.GetParent(element) is Panel parent) parent.Children.Remove(element);
+        InspectorPane.Child = null;
+        if (bottom)
+        {
+            var grid = new Grid(); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(225) }); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var tools = new StackPanel(); tools.Children.Add(inspectorHeading); tools.Children.Add(detailPaging); tools.Children.Add(technicalDetails); var scroll = new ScrollViewer { Content = tools, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; grid.Children.Add(scroll); Grid.SetColumn(detail, 1); grid.Children.Add(detail); InspectorPane.Child = grid;
+        }
+        else
+        {
+            Grid.SetColumn(detail, 0); var dock = new DockPanel(); DockPanel.SetDock(inspectorHeading, Dock.Top); dock.Children.Add(inspectorHeading); DockPanel.SetDock(detailPaging, Dock.Top); dock.Children.Add(detailPaging); DockPanel.SetDock(technicalDetails, Dock.Bottom); dock.Children.Add(technicalDetails); dock.Children.Add(detail); InspectorPane.Child = dock;
+        }
     }
     private static Border Pane() => new() { BorderBrush = new SolidColorBrush(Color.FromRgb(222, 226, 232)), BorderThickness = new Thickness(1), Background = Brushes.White, ClipToBounds = true };
     private void ConfigureChangeList()
@@ -295,13 +319,13 @@ internal sealed class MainWindow : Window
     {
         foreach (var action in relocalize) action(); foreach (var pair in languageItems) pair.Value.IsChecked = pair.Key == Copy.Language;
         var wasBinding = binding; UpdateComparisonModeChoices();
-        binding = true; sourceView.ItemsSource = new[] { new Choice("visual", Copy[singleSource ? "reading" : "visualView"], default), new Choice("text", Copy["textDiff"], default) }; sourceView.SelectedIndex = textView ? 1 : 0; binding = wasBinding;
-        AutomationProperties.SetName(sourceView, Copy["sourceView"]); AutomationProperties.SetName(queryBefore, Copy["interval"] + " · " + Copy["before"]); AutomationProperties.SetName(queryAfter, Copy["interval"] + " · " + Copy["after"]); AutomationProperties.SetName(unified, Copy["textDiff"]);
+        binding = true; sourceView.ItemsSource = new[] { new Choice("visual", Copy[singleSource ? "reading" : "visualView"], default), new Choice("text", Copy[SelectedWorkbookMetadata ? "metadataReading" : "textDiff"], default) }; sourceView.SelectedIndex = textView ? 1 : 0; binding = wasBinding;
+        AutomationProperties.SetName(sourceView, Copy["sourceView"]); AutomationProperties.SetName(queryBefore, Copy["interval"] + " · " + Copy["before"]); AutomationProperties.SetName(queryAfter, Copy["interval"] + " · " + Copy["after"]); AutomationProperties.SetName(unified, Copy[SelectedWorkbookMetadata ? "metadataReading" : "textDiff"]);
         actionItems["mcp"].ToolTip = Copy["mcpReportScope"]; AutomationProperties.SetHelpText(actionItems["mcp"], Copy["mcpReportScope"]);
         previousChange.ToolTip = Copy["previous"] + " · " + Copy["changes"]; nextChange.ToolTip = Copy["next"] + " · " + Copy["changes"]; AutomationProperties.SetName(previousChange, previousChange.ToolTip.ToString()); AutomationProperties.SetName(nextChange, nextChange.ToolTip.ToString());
         AutomationProperties.SetName(comparisonMode, Copy["comparisonMode"]); foreach (var change in changes) change.Relabel(ChangeCaption(change.Value), Copy["rawChangeDescription"]); Before.Localize(); After.Localize();
         detailPaging.Visibility = IsWorkbook ? Visibility.Visible : Visibility.Collapsed;
-        RerenderInspector();
+        RerenderInspector(); ArrangeInspector(evidenceBottomDock);
         foreach (var splitter in NativeSplitters()) if (splitter.Tag is string key) { AutomationProperties.SetName(splitter, Copy[key]); splitter.ToolTip = Copy[key]; }
         if (!busy) status.Text = Copy[initializing ? "initializing" : startupFailed ? "startupFailed" : Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"]; UpdateContext(); UpdateInterval(); RenderSourceDiff();
     }
@@ -356,10 +380,13 @@ internal sealed class MainWindow : Window
         foreach (var child in new UIElement[] { SidebarPane, ChangesPane, InspectorPane, Before.Host, After.Host, sourceStage }) if (System.Windows.Media.VisualTreeHelper.GetParent(child) is Panel parent) parent.Children.Remove(child);
         workspace.Children.Clear(); workspace.ColumnDefinitions.Clear(); workspace.RowDefinitions.Clear(); comparison.Children.Clear(); comparison.ColumnDefinitions.Clear(); comparison.RowDefinitions.Clear();
         var layout = Layout.Bounded();
-        evidenceMenu.IsChecked = layout.Inspector;
+        var openedEvidence = layout.Inspector && !evidencePresented; evidencePresented = layout.Inspector; Before.EvidencePresentationChanged(openedEvidence); After.EvidencePresentationChanged(openedEvidence);
+        evidenceBottomDock = layout.Inspector && (workspace.ActualWidth > 0 ? workspace.ActualWidth : Width) < 1200;
+        ArrangeInspector(evidenceBottomDock); evidenceMenu.IsChecked = layout.Inspector;
+        newComparisonStage.Visibility = singleSource && currentReport.Get("revisions").Items().Count == 1 && !layout.ChangesVisible ? Visibility.Visible : Visibility.Collapsed;
         lastLayoutWidth = workspace.ActualWidth; lastLayoutHeight = workspace.ActualHeight;
         var center = new Grid();
-        if (layout.ChangesVisible && layout.Changes == "bottom")
+        if (layout.ChangesVisible && !evidenceBottomDock && layout.Changes == "bottom")
         {
             center.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 180 }); center.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5) }); center.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Min(layout.ChangesHeight, Math.Max(100, workspace.ActualHeight - 240))), MinHeight = 90 });
             center.Children.Add(sourceStage); Grid.SetRow(sourceStage, 0); Grid.SetColumn(sourceStage, 0); center.Children.Add(ChangesPane); Grid.SetRow(ChangesPane, 2); Grid.SetColumn(ChangesPane, 0);
@@ -368,11 +395,11 @@ internal sealed class MainWindow : Window
         else { center.Children.Add(sourceStage); Grid.SetRow(sourceStage, 0); Grid.SetColumn(sourceStage, 0); }
         var columns = new List<(UIElement Element, double Width, string Role)>();
         if (layout.Sidebar) columns.Add((SidebarPane, layout.SidebarWidth, "sidebar"));
-        if (layout.Inspector && layout.InspectorSide == "left") columns.Add((InspectorPane, layout.InspectorWidth, "inspector"));
-        if (layout.ChangesVisible && layout.Changes == "left") columns.Add((ChangesPane, layout.ChangesWidth, "changes"));
+        if (layout.Inspector && !evidenceBottomDock && layout.InspectorSide == "left") columns.Add((InspectorPane, layout.InspectorWidth, "inspector"));
+        if (layout.ChangesVisible && !evidenceBottomDock && layout.Changes == "left") columns.Add((ChangesPane, layout.ChangesWidth, "changes"));
         columns.Add((center, 0, "main"));
-        if (layout.ChangesVisible && layout.Changes == "right") columns.Add((ChangesPane, layout.ChangesWidth, "changes"));
-        if (layout.Inspector && layout.InspectorSide == "right") columns.Add((InspectorPane, layout.InspectorWidth, "inspector"));
+        if (layout.ChangesVisible && !evidenceBottomDock && layout.Changes == "right") columns.Add((ChangesPane, layout.ChangesWidth, "changes"));
+        if (layout.Inspector && !evidenceBottomDock && layout.InspectorSide == "right") columns.Add((InspectorPane, layout.InspectorWidth, "inspector"));
         var preferredSideTotal = columns.Where(entry => entry.Role != "main").Sum(entry => entry.Width);
         var availableSides = Math.Max(0, (workspace.ActualWidth > 0 ? workspace.ActualWidth : Width) - 340 - (columns.Count - 1) * 5);
         var minimumSides = columns.Where(entry => entry.Role != "main").Sum(entry => entry.Role == "sidebar" ? 150d : 160d);
@@ -386,6 +413,24 @@ internal sealed class MainWindow : Window
             if (index < columns.Count - 1) { workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) }); var leading = index; var role = entry.Role == "main" ? columns[index + 1].Role : entry.Role; var splitter = Splitter(true, role == "sidebar" ? "resizeSidebar" : role == "inspector" ? "resizeInspector" : "resizeChanges", () => { CaptureLayout(leading, leading + 1); SavePreferences(); }); Grid.SetColumn(splitter, columnIndex + 1); workspace.Children.Add(splitter); }
         }
         workspace.Tag = columns;
+        if (evidenceBottomDock)
+        {
+            // Responsive placement is presentation-only. The user's chosen
+            // side and width remain the saved layout and Focus baseline.
+            workspace.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 240 });
+            workspace.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5) });
+            workspace.RowDefinitions.Add(new RowDefinition { Height = new GridLength(150), MinHeight = 140 });
+            var bottom = new Grid();
+            if (layout.ChangesVisible)
+            {
+                bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Clamp(layout.ChangesWidth, 200, 320)) }); bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) }); bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                Grid.SetRow(ChangesPane, 0); Grid.SetColumn(ChangesPane, 0); bottom.Children.Add(ChangesPane); Grid.SetColumn(InspectorPane, 2);
+            }
+            else Grid.SetColumn(InspectorPane, 0);
+            Grid.SetRow(InspectorPane, 0); Grid.SetColumnSpan(InspectorPane, 1); bottom.Children.Add(InspectorPane); Grid.SetRow(bottom, 2); Grid.SetColumn(bottom, 0); Grid.SetColumnSpan(bottom, workspace.ColumnDefinitions.Count); workspace.Children.Add(bottom);
+            var divider = new Border { Background = new SolidColorBrush(Color.FromRgb(222, 226, 232)), Height = 5 }; Grid.SetRow(divider, 1); Grid.SetColumnSpan(divider, workspace.ColumnDefinitions.Count); workspace.Children.Add(divider);
+        }
+        else Grid.SetColumnSpan(InspectorPane, 1);
         if (singleSource)
         {
             Grid.SetRow(After.Host, 0); Grid.SetColumn(After.Host, 0);
@@ -672,11 +717,11 @@ internal sealed class MainWindow : Window
     private string MetadataBoundedNotice() => Copy["metadataBounded"];
     private void AppendMetadataProjection(FlowDocument target, string side, MetadataProjection projection)
     {
-        void System(string text, string tag) => target.Blocks.Add(new Paragraph(new Run(text)) { Margin = new Thickness(0), Foreground = Brushes.DimGray, Tag = tag });
+        void System(string text, string tag) => target.Blocks.Add(new Paragraph(new Run(text)) { Margin = new Thickness(0, 2, 0, 5), FontFamily = new FontFamily("Segoe UI"), FontSize = 12, Foreground = Brushes.DimGray, Tag = tag });
         System(side, "metadataSide");
         if (!projection.Available) { System(Copy["observationMissing"], "metadataMissing"); return; }
         System(Copy["metadataProjection"], "metadataProjectionCaption");
-        target.Blocks.Add(new Paragraph(new Run(projection.Json)) { Margin = new Thickness(0), Foreground = Brushes.Black, Tag = "metadataJsonProjection" });
+        target.Blocks.Add(new Paragraph(new Run(projection.Json)) { Margin = new Thickness(0), Foreground = Brushes.Black, Padding = new Thickness(8), Background = new SolidColorBrush(Color.FromRgb(247, 249, 252)), Tag = "metadataJsonProjection" });
         if (projection.Bounded) System(MetadataBoundedNotice(), "metadataBoundedNotice");
     }
     private string FormatMetadataDetail(MetadataProjection before, MetadataProjection after)
@@ -698,7 +743,13 @@ internal sealed class MainWindow : Window
         var intended = DocumentEventPages(change);
         return Before.PageId == intended.Before && After.PageId == intended.After && (intended.Before.Length > 0 || Before.ReadState == "absent") && (intended.After.Length > 0 || After.ReadState == "absent");
     }
-    private string SelectedNoticeText((string Key, string Value) notice) => Copy[notice.Key] + ": " + ((notice.Key is "text_assessment" or "region_pairing_assessment" or "appearance_assessment" or "lineageAssessment") && (notice.Value is "inferred" or "observed" or "human_confirmed" or "needs_review") ? Copy["assessment_" + notice.Value] : notice.Value);
+    private string CoverageLabel(JsonElement gap) => Copy.Code(gap.Get("reason").Text());
+    private string SelectedNoticeText((string Key, string Value) notice)
+    {
+        if (notice.Key == "rowAssociation") return Copy[notice.Key] + ": " + string.Join(" · ", notice.Value.Split(" · ", StringSplitOptions.None).Where(part => part.Length > 0).Select(Copy.Code));
+        if (notice.Key == "selectedCoverage") { var reason = notice.Value.IndexOf(": ", StringComparison.Ordinal); return Copy[notice.Key] + ": " + Copy.Code(reason >= 0 ? notice.Value[(reason + 2)..] : notice.Value); }
+        return Copy[notice.Key] + ": " + ((notice.Key is "text_assessment" or "region_pairing_assessment" or "appearance_assessment" or "lineageAssessment") && (notice.Value is "inferred" or "observed" or "human_confirmed" or "needs_review") ? Copy["assessment_" + notice.Value] : notice.Value);
+    }
     private IReadOnlyList<string> WorkbookVisibleWarnings()
     {
         var warnings = new List<string>();
@@ -725,7 +776,7 @@ internal sealed class MainWindow : Window
     }
     private Window CreateSelectedLimitsDialog()
     {
-        var notes = SourceDiffPolicy.SelectedNotices(selectedChange); var text = SourceText(); text.Text = string.Join("\n\n", WorkbookVisibleWarnings().Concat(notes.Select(SelectedNoticeText)));
+        var notes = SourceDiffPolicy.SelectedNotices(selectedChange); var text = SourceText(); text.Text = string.Join("\n\n", WorkbookVisibleWarnings().Concat(notes.Select(SelectedNoticeText))) + (notes.Any(item => item.Key is "selectedCoverage" or "rowAssociation") ? "\n\n" + Copy["technicalDetails"] + "\n" + selectedChange.Pretty() : "");
         var content = new DockPanel { Margin = new Thickness(12) }; var scope = new TextBlock { Text = Copy["report"] + ": " + reportId + "\n" + sourcePair.Text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4, 0, 4, 12) }; DockPanel.SetDock(scope, Dock.Top); content.Children.Add(scope); content.Children.Add(text);
         return new Window { Owner = this, Title = Copy["selectedLimits"], Width = 720, Height = 430, MinWidth = 400, MinHeight = 250, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = content };
     }
@@ -734,8 +785,8 @@ internal sealed class MainWindow : Window
         // A single occurrence is source reading, regardless of the previous
         // presentation. Keep renderer, native picker and pager in one state.
         if (singleSource) textView = false;
-        if (sourceView.ItemsSource is IEnumerable<Choice> presentationChoices && presentationChoices.FirstOrDefault()?.Label != Copy[singleSource ? "reading" : "visualView"]) { var priorBinding = binding; binding = true; sourceView.ItemsSource = new[] { new Choice("visual", Copy[singleSource ? "reading" : "visualView"], default), new Choice("text", Copy["textDiff"], default) }; binding = priorBinding; }
-        Before.RefreshReadingChrome(); After.RefreshReadingChrome();
+        if (sourceView.ItemsSource is IEnumerable<Choice> presentationChoices && (presentationChoices.FirstOrDefault()?.Label != Copy[singleSource ? "reading" : "visualView"] || presentationChoices.ElementAtOrDefault(1)?.Label != Copy[SelectedWorkbookMetadata ? "metadataReading" : "textDiff"])) { var priorBinding = binding; binding = true; sourceView.ItemsSource = new[] { new Choice("visual", Copy[singleSource ? "reading" : "visualView"], default), new Choice("text", Copy[SelectedWorkbookMetadata ? "metadataReading" : "textDiff"], default) }; binding = priorBinding; }
+        Before.RefreshReadingChrome(); After.RefreshReadingChrome(); AutomationProperties.SetName(unified, Copy[SelectedWorkbookMetadata ? "metadataReading" : "textDiff"]);
         var wasBinding = binding; binding = true; sourceView.SelectedIndex = textView ? 1 : 0; binding = wasBinding;
         sourceView.IsEnabled = !busy && !initializing && !singleSource;
         sourceView.ToolTip = singleSource ? SingleSourceGuidance : Copy["sourceView"];
@@ -746,7 +797,7 @@ internal sealed class MainWindow : Window
         sourcePair.Text = reportId.Length == 0 ? "" : (singleSource ? Copy["reading"] + " · " + VersionLabel(After.RevisionId) : Copy[eventDifferent ? "withinInterval" : "sourcePair"] + " · " + VersionLabel(Before.RevisionId) + " → " + VersionLabel(After.RevisionId));
         previousChange.IsEnabled = nextChange.IsEnabled = ChangeNavigationReady && changes.Count > 0; returnChange.Visibility = selectedChange.ValueKind == JsonValueKind.Object ? Visibility.Visible : Visibility.Collapsed; returnChange.IsEnabled = !busy && changesReady;
         var sole = reportId.Length > 0 && currentReport.Get("revisions").Items().Count == 1;
-        soleChanges.Visibility = sole ? Visibility.Visible : Visibility.Collapsed; changeList.Visibility = sole ? Visibility.Collapsed : Visibility.Visible; soleExplanation.Text = Copy["soleListExplanation"]; newComparison.IsEnabled = newComparisonStage.IsEnabled = startupReady && !busy && !initializing; newComparisonStage.Visibility = sole ? Visibility.Visible : Visibility.Collapsed; previousChange.Visibility = nextChange.Visibility = more.Visibility = sole ? Visibility.Collapsed : Visibility.Visible;
+        soleChanges.Visibility = sole ? Visibility.Visible : Visibility.Collapsed; changeList.Visibility = sole ? Visibility.Collapsed : Visibility.Visible; soleExplanation.Text = Copy["soleListExplanation"]; newComparison.IsEnabled = newComparisonStage.IsEnabled = startupReady && !busy && !initializing; newComparisonStage.Visibility = sole && !Layout.ChangesVisible ? Visibility.Visible : Visibility.Collapsed; previousChange.Visibility = nextChange.Visibility = more.Visibility = sole ? Visibility.Collapsed : Visibility.Visible;
         libraryPrompt.Visibility = startupFailed || startupReady && projectChoicesReady && projectList.Items.Count == 0 && projectId.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         libraryPromptText.Text = Copy[startupFailed ? "startupFailed" : "chooseProject"]; startupRetry.Visibility = startupFailed ? Visibility.Visible : Visibility.Collapsed; startupRetry.IsEnabled = !busy && !initializing; firstImport.Visibility = startupFailed ? Visibility.Collapsed : Visibility.Visible; firstImport.IsEnabled = startupReady && !busy && !initializing;
         retryComparison.Content = Copy[eventRetry is null ? "retry" : "retryEvent"];
@@ -760,7 +811,7 @@ internal sealed class MainWindow : Window
         var selectedNotices = SourceDiffPolicy.SelectedNotices(selectedChange); var selectedGaps = selectedNotices.Where(item => item.Key is "selectedCoverage" or "lineageReason").ToArray();
         foreach (var selectedNotice in selectedNotices.Where(item => item.Key is not ("selectedCoverage" or "lineageReason"))) notice.Add(SelectedNoticeText((selectedNotice.Key, SourceDiff.NoticeSummary(selectedNotice.Value, 160))));
         var authoredReason = selectedChange.Get("lineage").Get("status").Text() == "human_confirmed" && selectedChange.Get("topology").Get("semantics").Text() != "directed_reachability";
-        if (selectedGaps.Length > 0) { var first = selectedGaps[0].Value; if (selectedGaps[0].Key == "lineageReason" && !authoredReason) { var key = "reason_" + first; if (Copy[key] != key) first = Copy[key]; } first = SourceDiff.NoticeSummary(first, 160); notice.Add(Copy[selectedGaps[0].Key] + ": " + first + (selectedGaps.Length > 1 ? " [1/" + selectedGaps.Length + "]" : "")); }
+        if (selectedGaps.Length > 0) { var first = selectedGaps[0].Key == "selectedCoverage" ? SelectedNoticeText(selectedGaps[0])[(Copy["selectedCoverage"].Length + 2)..] : selectedGaps[0].Value; if (selectedGaps[0].Key == "lineageReason" && !authoredReason) { var key = "reason_" + first; if (Copy[key] != key) first = Copy[key]; } first = SourceDiff.NoticeSummary(first, 160); notice.Add(Copy[selectedGaps[0].Key] + ": " + first + (selectedGaps.Length > 1 ? " [1/" + selectedGaps.Length + "]" : "")); }
         selectedLimitsButton.Visibility = selectedGaps.Length > 0 || workbookWarnings.Count > 0 ? Visibility.Visible : Visibility.Collapsed; selectedLimitsButton.IsEnabled = !busy;
         if (currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count) > 0) notice.Add((Copy["reportCoverage"] + ": " + currentReport.Get("coverage_gap_count").Number(currentReport.Get("coverage_gaps").Items().Count)).Replace(' ', '\u00a0'));
         sourceNotice.Text = string.Join(" · ", notice); sourceNotice.ToolTip = string.Join("\n", workbookWarnings.Concat(selectedNotices.Select(SelectedNoticeText))); AutomationProperties.SetHelpText(sourceNotice, sourceNotice.ToolTip.ToString()); sourceNotice.Visibility = notice.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -770,7 +821,7 @@ internal sealed class MainWindow : Window
         var keepScroll = identity == unifiedIdentity; var scrollX = keepScroll && unifiedRestorePending ? unifiedRetainedX : unified.HorizontalOffset; var scrollY = keepScroll && unifiedRestorePending ? unifiedRetainedY : unified.VerticalOffset; unifiedIdentity = identity; var rendering = ++unifiedRender; unifiedRestorePending = keepScroll; unifiedRetainedX = scrollX; unifiedRetainedY = scrollY;
         var flow = new FlowDocument { PagePadding = new Thickness(14), FontFamily = unified.FontFamily, FontSize = 13 }; unified.Document = flow;
         if (keepScroll) Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () => { if (textView && rendering == unifiedRender && identity == unifiedIdentity) { unified.UpdateLayout(); unified.ScrollToHorizontalOffset(scrollX); unified.ScrollToVerticalOffset(scrollY); unifiedRestorePending = false; } });
-        void Add(string text, Brush? color = null, Brush? background = null) { flow.Blocks.Add(new Paragraph(new Run(text)) { Margin = new Thickness(0), Foreground = color ?? Brushes.Black, Background = background ?? Brushes.Transparent }); }
+        void Add(string text, Brush? color = null, Brush? background = null) { var caption = ReferenceEquals(color, Brushes.DimGray) || ReferenceEquals(color, Brushes.DarkOrange); flow.Blocks.Add(new Paragraph(new Run(text)) { Margin = caption ? new Thickness(0, 1, 0, 4) : new Thickness(0), FontFamily = caption ? new FontFamily("Segoe UI") : unified.FontFamily, FontSize = caption ? 12 : 13, Foreground = color ?? Brushes.Black, Background = background ?? Brushes.Transparent }); }
         if (ComparisonState != "ready") { Add(Copy[ComparisonState == "failed" ? "failed" : ComparisonState == "invalid" ? "reverse" : ComparisonState == "empty" ? "chooseProject" : "loading"]); return; }
         string Location(ComparePane pane) { if (IsWorkbook) return pane.LocationCaption; if (pane.PageId.Length == 0) return pane.LocationCaption; var number = currentReport.Get("revisions").Items().Find(revision => revision.Get("revision_occurrence_id").Text() == pane.RevisionId).Get("pages").Items().Find(page => page.Get("page_id").Text() == pane.PageId).Get("page").Number(); return number > 0 ? "p." + number : Copy["missing"]; }
         Add(Copy[AtSelectedChange ? "event" : "reading"] + " · " + VersionOrdinal(Before.RevisionId) + " " + Location(Before) + " → " + VersionOrdinal(After.RevisionId) + " " + Location(After), Brushes.DimGray);
@@ -786,16 +837,16 @@ internal sealed class MainWindow : Window
         {
             Add(Copy[caption ?? (value.State switch { SourceTextState.Missing => "observationMissing", SourceTextState.Null => "observationNull", SourceTextState.Empty => "observationEmpty", SourceTextState.Partial => "partialSourceSegment", SourceTextState.AlreadyRead => "alreadyReadSegment", SourceTextState.Invalid => "invalidSourceSegment", _ => "observationPresent" })], Brushes.DimGray);
             if (value.State == SourceTextState.Invalid) Add(Copy[value.RawState switch { SourceTextState.Null => "observationNull", SourceTextState.Empty => "fragmentEmpty", SourceTextState.Missing => "observationMissing", _ => "observationPresent" }], Brushes.DimGray);
-            if (sourceDiagnostics.IsChecked == true && value.Range is { Valid: true, State: "missing" } missing) Add(Copy["textRange"] + ": missing · " + Copy["requestedOffset"] + "=" + missing.Offset + " · total=0 · next=∅", Brushes.DimGray);
-            else if (value.Range is { } range && (sourceDiagnostics.IsChecked == true || value.State is SourceTextState.Partial or SourceTextState.AlreadyRead or SourceTextState.Invalid or SourceTextState.Empty)) Add(Copy["textRange"] + ": [" + (range.Offset?.ToString(CultureInfo.InvariantCulture) ?? "?") + ", " + (range.Offset is { } at ? ((long)at + range.Length).ToString(CultureInfo.InvariantCulture) : "?") + ") / " + (range.Total?.ToString(CultureInfo.InvariantCulture) ?? "?") + " · " + range.State + " · " + Copy[range.Valid ? "validSourceRange" : "invalidSourceRange"] + " · next=" + (range.Next?.ToString(CultureInfo.InvariantCulture) ?? (range.Valid ? "∅" : "?")), Brushes.DimGray);
+            if (sourceDiagnostics.IsChecked == true && value.Range is { Valid: true, State: "missing" } missing) Add(Copy["textRange"] + ": " + Copy.Code("missing") + " · " + Copy["requestedOffset"] + "=" + missing.Offset + " · " + Copy["totalUnits"] + "=0 · " + Copy["nextOffset"] + "=∅", Brushes.DimGray);
+            else if (value.Range is { } range && (sourceDiagnostics.IsChecked == true || value.State is SourceTextState.Partial or SourceTextState.AlreadyRead or SourceTextState.Invalid or SourceTextState.Empty)) Add(Copy["textRange"] + ": [" + (range.Offset?.ToString(CultureInfo.InvariantCulture) ?? "?") + ", " + (range.Offset is { } at ? ((long)at + range.Length).ToString(CultureInfo.InvariantCulture) : "?") + ") / " + (range.Total?.ToString(CultureInfo.InvariantCulture) ?? "?") + " · " + Copy.Code(range.State) + " · " + Copy[range.Valid ? "validSourceRange" : "invalidSourceRange"] + " · " + Copy["nextOffset"] + "=" + (range.Next?.ToString(CultureInfo.InvariantCulture) ?? (range.Valid ? "∅" : "?")), Brushes.DimGray);
             if (!value.HasText) return; var bounded = SourceDiff.Build(value.Text, value.Text); if (bounded.Truncated) Add(Copy["boundedDiff"], Brushes.DarkOrange); foreach (var line in bounded.Lines) Add(line.Text + (line.Terminator.Length > 0 || line.CutOff ? " " + line.TerminatorLabel : ""));
         }
         void Field(SourceDiffField field, JsonElement cellA = default, JsonElement cellB = default)
         {
             Add(Copy[field.Key == "value" ? "cached" : field.Key == "text" ? "textObservation" : field.Key], Brushes.DimGray);
             if (!field.Eligible) { Add(Copy[field.Reason], Brushes.DimGray); Add(Copy["before"], Brushes.DimGray); Observation(field.Before, IsWorkbook ? SourceDiffPolicy.WorkbookObservationCaption(field.Key, cellA, field.Before) : null); Add(Copy["after"], Brushes.DimGray); Observation(field.After, IsWorkbook ? SourceDiffPolicy.WorkbookObservationCaption(field.Key, cellB, field.After) : null); return; }
-            if (field.Before.Range is { } a && (sourceDiagnostics.IsChecked == true || field.Before.State == SourceTextState.Empty)) Add(Copy["before"] + " · " + Copy["textRange"] + ": [0, " + a.Length + ") / " + a.Total + " · " + a.State, Brushes.DimGray);
-            if (field.After.Range is { } b && (sourceDiagnostics.IsChecked == true || field.After.State == SourceTextState.Empty)) Add(Copy["after"] + " · " + Copy["textRange"] + ": [0, " + b.Length + ") / " + b.Total + " · " + b.State, Brushes.DimGray);
+            if (field.Before.Range is { } a && (sourceDiagnostics.IsChecked == true || field.Before.State == SourceTextState.Empty)) Add(Copy["before"] + " · " + Copy["textRange"] + ": [0, " + a.Length + ") / " + a.Total + " · " + Copy.Code(a.State), Brushes.DimGray);
+            if (field.After.Range is { } b && (sourceDiagnostics.IsChecked == true || field.After.State == SourceTextState.Empty)) Add(Copy["after"] + " · " + Copy["textRange"] + ": [0, " + b.Length + ") / " + b.Total + " · " + Copy.Code(b.State), Brushes.DimGray);
             if (field.Before.Text == field.After.Text) Add(Copy["identicalObservation"], Brushes.DimGray);
             var diff = SourceDiff.Build(field.Before.Text, field.After.Text);
             if (diff.Truncated) { Add(Copy["boundedDiff"], Brushes.DarkOrange); Add(Copy["before"], Brushes.DimGray); Observation(field.Before); Add(Copy["after"], Brushes.DimGray); Observation(field.After); return; }
@@ -814,7 +865,7 @@ internal sealed class MainWindow : Window
             Add(Copy["textSegmentOnly"], Brushes.DimGray);
             var a = detailPayload.Get("before").Get("items").Items().FirstOrDefault().Get("before"); var b = detailPayload.Get("after").Get("items").Items().FirstOrDefault().Get("after");
             Add(Copy["before"] + " " + a.Get("address").Text() + " → " + Copy["after"] + " " + b.Get("address").Text(), Brushes.DimGray);
-            if (sourceDiagnostics.IsChecked == true) foreach (var side in new[] { (Label: Copy["before"], Cell: a), (Label: Copy["after"], Cell: b) }) Add(side.Label + " · " + Copy["cacheState"] + ": " + side.Cell.Get("cached_result").Text() + " · " + Copy["cacheFreshness"] + ": " + side.Cell.Get("cache_freshness").Text() + " · " + Copy["formulaInterpretation"] + ": " + side.Cell.Get("formula_interpretation").Text(), Brushes.DimGray);
+            if (sourceDiagnostics.IsChecked == true) foreach (var side in new[] { (Label: Copy["before"], Cell: a), (Label: Copy["after"], Cell: b) }) Add(side.Label + " · " + Copy["cacheState"] + ": " + Copy.Code(side.Cell.Get("cached_result").Text()) + " · " + Copy["cacheFreshness"] + ": " + Copy.Code(side.Cell.Get("cache_freshness").Text()) + " · " + Copy["formulaInterpretation"] + ": " + Copy.Code(side.Cell.Get("formula_interpretation").Text()), Brushes.DimGray);
             var displayed = new WorkbookSourceScope(Before.RevisionId, After.RevisionId, Before.SheetId, After.SheetId, Before.FocusedAddress, After.FocusedAddress);
             foreach (var field in SourceDiffPolicy.Workbook(AtSelectedChange ? selectedChange : default, a, b, displayed, detailOffset)) Field(field, a, b);
         }
@@ -990,17 +1041,28 @@ internal sealed class MainWindow : Window
     }
     private string ChangeCaption(JsonElement change)
     {
+        var kind = change.Get("kind").Text();
+        string Occurrence(bool after) => change.Get(IsWorkbook ? after ? "to_revision_occurrence_id" : "from_revision_occurrence_id" : after ? "to_occurrence" : "from_occurrence").Text();
         string Side(bool after)
         {
-            var occurrence = change.Get(IsWorkbook ? after ? "to_revision_occurrence_id" : "from_revision_occurrence_id" : after ? "to_occurrence" : "from_occurrence").Text(); var version = VersionOrdinal(occurrence);
-            if (IsWorkbook) { var sheetId = change.Get(after ? "to_sheet_id" : "from_sheet_id").Text(); var sheet = currentReport.Get("revisions").Items().Find(v => v.Get("revision_occurrence_id").Text() == occurrence).Get("sheets").Items().Find(s => s.Get("sheet_id").Text() == sheetId).Get("name").Text().Replace('\r', ' ').Replace('\n', ' '); var address = change.Get(after ? "after_address" : "before_address").Text(); return version + " · " + (sheet.Length > 0 ? sheet : Copy[SourceDiffPolicy.WorkbookScoped(change.Get("kind").Text()) ? "workbookMetadata" : sheetId.Length == 0 ? "absentSheet" : "unsupportedSheet"]) + (address.Length > 0 ? "!" + address : sheet.Length > 0 ? " · " + Copy[SourceDiffPolicy.SheetScoped(change.Get("kind").Text()) ? "sheetLevelSource" : "cellNotMaterialized"] : ""); }
-            var pages = change.Get("evidence").Items().Where(item => item.Get("revision_occurrence_id").Text() == occurrence).Select(item => item.Get("page").Number()).Where(page => page > 0).Distinct().ToArray(); return version + " · " + (pages.Length > 0 ? "p." + string.Join(",", pages.Take(3)) + (pages.Length > 3 ? " " + string.Format(CultureInfo.CurrentCulture, Copy["morePages"], pages.Length - 3) : "") : Copy[SourceDiffPolicy.DocumentMissingPageCaption(change.Get("kind").Text(), after)]);
+            var occurrence = Occurrence(after); var version = VersionOrdinal(occurrence);
+            if (IsWorkbook)
+            {
+                var sheetId = change.Get(after ? "to_sheet_id" : "from_sheet_id").Text();
+                var sheet = currentReport.Get("revisions").Items().Find(v => v.Get("revision_occurrence_id").Text() == occurrence).Get("sheets").Items().Find(item => item.Get("sheet_id").Text() == sheetId).Get("name").Text().Replace('\r', ' ').Replace('\n', ' ');
+                var address = change.Get(after ? "after_address" : "before_address").Text();
+                return version + " · " + (sheet.Length > 0 ? sheet : Copy[sheetId.Length == 0 ? "compactNoSheet" : "compactUnknownSheet"]) + (address.Length > 0 ? "!" + address : sheet.Length > 0 ? " · " + Copy[SourceDiffPolicy.SheetScoped(kind) ? "compactSheetMetadata" : "compactNoCell"] : "");
+            }
+            var pages = change.Get("evidence").Items().Where(item => item.Get("revision_occurrence_id").Text() == occurrence).Select(item => item.Get("page").Number()).Where(page => page > 0).Distinct().ToArray();
+            return version + (pages.Length > 0 ? " p." + string.Join(",", pages.Take(3)) + (pages.Length > 3 ? " " + string.Format(CultureInfo.CurrentCulture, Copy["morePages"], pages.Length - 3) : "") : " (" + Copy[SourceDiffPolicy.DocumentMissingPageCaption(kind, after) == "absentPage" ? "compactNoPage" : "compactUnlistedPage"] + ")");
         }
-        var summaryKey = IsWorkbook ? SourceDiffPolicy.WorkbookSummaryKey(change) : ""; var summary = summaryKey.Length == 0 ? change.Get("description").Text() : summaryKey == "summaryRowPosition" ? string.Format(CultureInfo.CurrentCulture, Copy[summaryKey], SourceDiffPolicy.WorkbookRow(change, false), SourceDiffPolicy.WorkbookRow(change, true)) : Copy[summaryKey];
+        var summaryKey = IsWorkbook ? SourceDiffPolicy.WorkbookSummaryKey(change) : "";
+        var summary = summaryKey.Length == 0 ? change.Get("description").Text() : summaryKey == "summaryRowPosition" ? string.Format(CultureInfo.CurrentCulture, Copy[summaryKey], SourceDiffPolicy.WorkbookRow(change, false), SourceDiffPolicy.WorkbookRow(change, true)) : Copy[summaryKey];
         string Excerpt(JsonElement value) => value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? Copy["missing"] : value.Text().Length == 0 ? Copy["observationEmpty"] : value.Text().Split('\r', '\n').FirstOrDefault(line => !string.IsNullOrWhiteSpace(line)) ?? Copy["whitespaceText"];
-        var preview = IsWorkbook ? summary : Excerpt(change.Get("before")) + " → " + Excerpt(change.Get("after"));
+        var preview = IsWorkbook ? summary : kind == "coverage_gap" ? string.Join(" · ", change.Get("coverage_gaps").Items().Select(CoverageLabel).Distinct()) : Excerpt(change.Get("before")) + " → " + Excerpt(change.Get("after"));
         if (preview.Length > 180) preview = preview[..(char.IsHighSurrogate(preview[179]) ? 179 : 180)] + "…";
-        return Copy["kind_" + change.Get("kind").Text()] + "\n" + Side(false) + " → " + Side(true) + "\n" + preview;
+        var location = IsWorkbook && SourceDiffPolicy.WorkbookScoped(kind) ? Copy["compactWorkbookMetadata"] + " · " + VersionOrdinal(Occurrence(false)) + " → " + VersionOrdinal(Occurrence(true)) : Side(false) + " → " + Side(true);
+        return Copy["kind_" + kind] + "\n" + location + "\n" + preview;
     }
     private async Task LoadChanges(bool append, long ticket, CancellationToken token, Func<string, CancellationToken, Task<JsonElement>>? documentReaderForSmoke = null, Func<CancellationToken, Task>? beforeInstallForSmoke = null)
     {
@@ -1126,6 +1188,7 @@ internal sealed class MainWindow : Window
         var queryA = intervalFrom; var queryB = intervalTo; var count = changes.Count; var sourceA = Before.CaptureSelection(); var sourceB = After.CaptureSelection(); var selected = selectedChange.Get("change_id").Text();
         if (queryBefore.SelectedItem is not Choice selectedA || selectedA.Id != queryA || queryAfter.SelectedItem is not Choice selectedB || selectedB.Id != queryB || !sourcePair.Text.Contains(Copy["withinInterval"], StringComparison.Ordinal) || (changeList.SelectedItem as ChangeChoice)?.Id != selected || changeList.ItemContainerGenerator.ContainerFromItem(changeList.SelectedItem) is not ListBoxItem { IsSelected: true, IsVisible: true } || ScrollViewer.GetHorizontalScrollBarVisibility(changeList) != ScrollBarVisibility.Disabled || !changes.Any(item => item.Location.Contains("→", StringComparison.Ordinal))) throw new InvalidOperationException("Query endpoints, visible native change selection or wrapped physical change rows failed.");
         await capture("history-event");
+        if (IsWorkbook && Before.FocusedAddress.Length > 0 && After.FocusedAddress.Length > 0) { Before.CheckFocusedHeaderForSmoke(); After.CheckFocusedHeaderForSmoke(); }
         await capture("source-first-selected");
         sourceView.SelectedIndex = 1; await Settle();
         var text = new TextRange(unified.Document.ContentStart, unified.Document.ContentEnd).Text;
@@ -1487,7 +1550,7 @@ internal sealed class MainWindow : Window
         string Cell(JsonElement source)
         {
             if (source.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return Copy["missing"];
-            return source.Get("address").Text() + "\n\n" + Copy["cached"] + ":\n" + source.Get("value").Text() + "\n\n" + Copy["formula"] + ":\n" + source.Get("formula").Text() + "\n\nnumber_format:\n" + source.Get("number_format").Text() + "\n\ncache_freshness: " + source.Get("cache_freshness").Text() + "\ncached_result: " + source.Get("cached_result").Pretty();
+            return source.Get("address").Text() + "\n\n" + Copy["cached"] + ":\n" + source.Get("value").Text() + "\n\n" + Copy["formula"] + ":\n" + source.Get("formula").Text() + "\n\n" + Copy["number_format"] + ":\n" + source.Get("number_format").Text() + "\n\n" + Copy["cacheFreshness"] + ": " + Copy.Code(source.Get("cache_freshness").Text()) + "\n" + Copy["cacheState"] + ": " + Copy.Code(source.Get("cached_result").Text());
         }
         if (value.Get("before").ValueKind == JsonValueKind.Object) return Copy["before"] + "\n" + Cell(value.Get("before").Get("items").Items().FirstOrDefault().Get("before")) + "\n\n" + Copy["after"] + "\n" + Cell(value.Get("after").Get("items").Items().FirstOrDefault().Get("after"));
         if (value.Get("component").Text() == "style") return string.Join("\n\n", value.Get("items").Items().Select(item => item.Get("key").Text() + "\n" + item.Get("value").Text()));
@@ -1503,9 +1566,9 @@ internal sealed class MainWindow : Window
             foreach (var field in new[] { "value", "formula", "number_format" })
             {
                 var observation = SourceTextObservation.ReadSegment(cell.Get(field), cell.Get("text_continuations").Get(field)); var range = observation.Range!;
-                if (range is { Valid: true, State: "missing" }) { lines.Add(side + (side.Length > 0 ? " · " : "") + Copy[field == "value" ? "cached" : field] + ": missing · " + Copy["requestedOffset"] + "=" + range.Offset + " · total=0"); continue; }
+                if (range is { Valid: true, State: "missing" }) { lines.Add(side + (side.Length > 0 ? " · " : "") + Copy[field == "value" ? "cached" : field] + ": " + Copy.Code("missing") + " · " + Copy["requestedOffset"] + "=" + range.Offset + " · " + Copy["totalUnits"] + "=0"); continue; }
                 var start = range.Offset?.ToString(CultureInfo.InvariantCulture) ?? "?"; var end = range.Offset is { } offset ? ((long)offset + range.Length).ToString(CultureInfo.InvariantCulture) : "?"; var total = range.Total?.ToString(CultureInfo.InvariantCulture) ?? "?";
-                lines.Add(side + (side.Length > 0 ? " · " : "") + Copy[field == "value" ? "cached" : field] + ": [" + start + ", " + end + ") / " + total + " · " + range.State + " · " + Copy[range.Valid ? "validSourceRange" : "invalidSourceRange"] + (!range.Valid ? " · " + Copy["invalidSourceSegment"] : ""));
+                lines.Add(side + (side.Length > 0 ? " · " : "") + Copy[field == "value" ? "cached" : field] + ": [" + start + ", " + end + ") / " + total + " · " + Copy.Code(range.State) + " · " + Copy[range.Valid ? "validSourceRange" : "invalidSourceRange"] + (!range.Valid ? " · " + Copy["invalidSourceSegment"] : ""));
             }
         }
         if (value.Get("before").ValueKind == JsonValueKind.Object) { Cell(value.Get("before").Get("items").Items().FirstOrDefault().Get("before"), Copy["before"]); Cell(value.Get("after").Get("items").Items().FirstOrDefault().Get("after"), Copy["after"]); }
@@ -1976,12 +2039,13 @@ internal sealed class MainWindow : Window
             await ImportAndAnalyze("Sole imported " + (workbook ? "workbook" : "document") + " control", new[] { source });
             var soleProject = projectId; var soleReport = reportId; var soleBytes = currentReport.GetRawText(); var versions = currentReport.Get("revisions").Items(); if (versions.Count != 1) throw new InvalidOperationException("Sole-import control did not create an actual one-occurrence fixed report.");
             var occurrence = versions[0].Get("revision_occurrence_id").Text();
+            if (!workbook) { await Settle(); var initialPreview = JsonSerializer.SerializeToElement(After.CheckPreviewReadabilityForSmoke()); if (!initialPreview.Get("fit_width").Flag() || initialPreview.Get("page_boundary").Number() != 1) throw new InvalidOperationException("A fresh untouched sole-source presentation did not fit its outlined source to the native viewport."); observations.Add(new { initial_fresh_sole_source_fit_width = initialPreview }); }
             foreach (var preset in new[] { "sourceFirst", "focus" }) foreach (var locale in new[] { "en", "ko" })
             {
                 SetLayout(WorkspaceLayout.Preset(preset)); SetLanguage(locale); sourceView.SelectedIndex = 1; await Settle();
                 if (!singleSource || textView || unified.Visibility != Visibility.Collapsed || !comparison.IsVisible || comparison.Children.Contains(Before.Host) || !comparison.Children.Contains(After.Host) || After.ReadState != "ready" || sourceView.IsEnabled || sourceView.SelectedIndex != 0 || comparisonMode.IsEnabled || (comparisonMode.SelectedItem as Choice)?.Id != "reading" || queryBefore.Items.Count != 1 || queryAfter.Items.Count != 1 || intervalFrom != occurrence || intervalTo != occurrence || changes.Count != 0 || !sourceNotice.IsVisible || !sourceNotice.Text.Contains(Copy["singleImportedSourceNotice"], StringComparison.Ordinal) || sourceView.ToolTip as string != Copy["singleImportedSourceView"] || !detail.Text.Contains(Copy["singleImportedSourceView"], StringComparison.Ordinal) || detail.Text.Contains(Copy["singleSourceView"], StringComparison.Ordinal) || !actionItems["import"].IsEnabled || actionItems["import"].Header as string != Copy["import"] || reportId != soleReport || projectId != soleProject || currentReport.GetRawText() != soleBytes) throw new InvalidOperationException("Actual sole-import reading gave impossible endpoint guidance, lost its native source or hid the Import route in " + preset + "/" + locale);
                 After.CheckReadingChromeForSmoke();
-                if (!newComparisonStage.IsVisible || !newComparisonStage.IsEnabled || newComparisonStage.Content as string != Copy["newComparison"] || queryControls.IsVisible || more.IsVisible || previousChange.IsVisible || nextChange.IsVisible || preset == "sourceFirst" && (!soleChanges.IsVisible || !newComparison.IsVisible || !newComparison.IsEnabled || soleExplanation.Text != Copy["soleListExplanation"])) throw new InvalidOperationException("Sole-import source reading hid its persistent empty-list explanation, mounted reading chrome or new-comparison action, or retained irrelevant comparison paging.");
+                if (newComparisonStage.IsVisible != !Layout.ChangesVisible || !newComparisonStage.IsEnabled || newComparisonStage.Content as string != Copy["newComparison"] || queryControls.IsVisible || more.IsVisible || previousChange.IsVisible || nextChange.IsVisible || preset == "sourceFirst" && (!soleChanges.IsVisible || !newComparison.IsVisible || !newComparison.IsEnabled || soleExplanation.Text != Copy["soleListExplanation"])) throw new InvalidOperationException("Sole-import source reading hid its persistent empty-list explanation, mounted reading chrome or new-comparison action, or retained irrelevant comparison paging.");
                 if (workbook ? !After.Cells.IsVisible || After.Cells.Items.Count != 50 || After.GridScroll is not { ViewportHeight: >= 5 } : !After.PageImage.IsVisible || After.PageImage.Source is null) throw new InvalidOperationException("Actual sole-import reading does not expose its useful native source.");
                 await capture("sole-import-" + preset + "-" + locale); observations.Add(new { preset, language = locale, imported_occurrences = 1, source_occurrence = occurrence, guidance = SingleSourceGuidance, persistent_guidance = Copy["singleImportedSourceNotice"], import_action_enabled = actionItems["import"].IsEnabled, comparison_modes_disabled = !comparisonMode.IsEnabled });
             }
@@ -2018,7 +2082,7 @@ internal sealed class MainWindow : Window
             await Analyze(); revision = currentReport.Get("revisions").Items()[0]; primary = revision.Get("pages").Items().Single(page => page.Get("asset_id").Text() == pptxAsset); pdf = revision.Get("pages").Items().Single(page => page.Get("asset_id").Text() == pdfAsset);
             if (primary.Get("width").ValueKind != JsonValueKind.Number || !primary.Get("width").TryGetDouble(out var emu) || emu < 12_000_000 || Math.Abs(emu / 12_700 - 960) > .01 || pdf.Get("width").Number() != 720 || primary.Get("appearance").Get("source_page_id").Text() != pdf.Get("page_id").Text() || primary.Get("appearance").Get("asset_id").Text() != pdfAsset) throw new InvalidOperationException("The real PPTX+PDF sources did not preserve OOXML EMUs and independently sized supplied PDF identity.");
             SetLayout(WorkspaceLayout.Preset("sourceFirst")); await SelectSourcePairForSmoke(0, 1); await Before.SelectPageForSmoke(primary.Get("page_id").Text()); Before.Zoom = 1; After.Zoom = 1; sourceView.SelectedIndex = 0; UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            if (Before.PageImage.Source is not BitmapSource || After.PageImage.Source is not BitmapSource || Before.PageImage.Width != 720 || After.PageImage.Width != 720 || !Before.PresentedSourceCaption.Contains("reference_pdf", StringComparison.Ordinal) || !After.PresentedSourceCaption.Contains("original_pdf", StringComparison.Ordinal)) throw new InvalidOperationException("A supplied reference PDF used its 960-point primary slide width rather than its actual 720-point PDF width at 100%.");
+            if (Before.PageImage.Source is not BitmapSource || After.PageImage.Source is not BitmapSource || Before.PageImage.Width != 720 || After.PageImage.Width != 720 || !Before.PresentedSourceCaption.Contains(Copy.Code("reference_pdf"), StringComparison.Ordinal) || !After.PresentedSourceCaption.Contains(Copy.Code("original_pdf"), StringComparison.Ordinal)) throw new InvalidOperationException("A supplied reference PDF used its 960-point primary slide width rather than its actual 720-point PDF width at 100%.");
             var linked = Before.CheckPreviewReadabilityForSmoke(); var standalone = After.CheckPreviewReadabilityForSmoke(); await capture("actual-reference-pdf-720-point-width");
             await Before.SelectPageForSmoke(pdf.Get("page_id").Text()); if (Before.PageImage.Width != 720 || Before.PageImage.Source is not BitmapSource) throw new InvalidOperationException("Selecting the same supplied PDF directly changed its physical 720-point scale.");
             await Before.SelectPageForSmoke(primary.Get("page_id").Text()); Before.Zoom = 1.5; SetLanguage("ko"); if (Before.PageImage.Width != 720 || Before.Zoom != 1.5) throw new InvalidOperationException("Reference geometry repair reset the manual zoom during locale rendering."); await capture("actual-reference-pdf-manual-zoom-ko");
@@ -2219,7 +2283,7 @@ internal sealed class MainWindow : Window
                 await observe("synthetic-cell-details-labels-" + locale, Before.CheckCellDetailLabelsForSmoke());
                 var cellDetails = await Before.OpenCellDetailsForSmoke(literal); await Settle();
                 if (!InspectorPane.IsVisible || detailPayload.Get("items").Items().Single().Get("value").Text() != literal || Before.CaptureSelection() != sourceBefore || After.CaptureSelection() != sourceAfter || !scopedRows.SequenceEqual(changes) || nextChanges != scopedCursor || selectedBefore != scopedAnchorA || selectedAfter != scopedAnchorB || selectedChange.ValueKind != scopedEvent.ValueKind || scopedEvent.ValueKind != JsonValueKind.Undefined && selectedChange.GetRawText() != scopedEvent.GetRawText() || changeQueryReadsForSmoke != scopedQueryReads || intervalFrom != from || intervalTo != to) throw new InvalidOperationException("The labelled Cell details/source-segment route changed its physical cell, query/list/cursor or event anchors.");
-                var detailsGeometry = await Before.CheckExpandedCellDetailsViewportForSmoke(); await observe("narrow-focused-cell-details-" + locale, new { cell_details = cellDetails, expanded_geometry = detailsGeometry }); await capture("narrow-focused-cell-details-" + locale); Before.CloseCellDetailsForSmoke(); SetLayout(detailsLayout); await Settle();
+                var detailsGeometry = Before.CheckEvidenceHomeForSmoke(); await observe("narrow-focused-cell-details-" + locale, new { cell_details = cellDetails, expanded_geometry = detailsGeometry }); await capture("narrow-focused-cell-details-" + locale); Before.CloseCellDetailsForSmoke(); SetLayout(detailsLayout); await Settle();
                 clipObservations.Add(metrics);
             }
             Before.ShowFormulasForSmoke(true); await Settle(); var formulaMetrics = Before.CheckCellClippingForSmoke(raw.Get("formula").Text()); var formulaValue = JsonSerializer.SerializeToElement(formulaMetrics); await observe("narrow-partial-formula", formulaMetrics); await capture("narrow-partial-formula");
@@ -2228,6 +2292,54 @@ internal sealed class MainWindow : Window
             return new { report_id = report, edge_observations = edgeObservations, literal_source = literal, literal_raw_reader = rawValue, value_clipping = clipObservations, formula_clipping = formulaMetrics, source_bytes_and_report_unchanged = true };
         }
         finally { Before.CloseCellDetailsForSmoke(); Before.ShowFormulasForSmoke(false); Before.RestoreSelection(originalA); After.RestoreSelection(originalB); await ReloadComparisonCore(true); await Before.GoForSmoke("D4"); Width = width; Height = height; SetLanguage(language); SetLayout(layout); sourceView.SelectedIndex = originalText ? 1 : 0; await Settle(); }
+    }
+    internal async Task<object> CheckSource27PresentationForSmoke(Func<string, Task> capture)
+    {
+        if (!IsWorkbook || Before.FocusedAddress != "D4") throw new InvalidOperationException("Source27 requires the real workbook D4 source control.");
+        var layout = Layout; var width = Width; var height = Height; var language = Copy.Language; var oldText = textView; var a = Before.CaptureSelection(); var b = After.CaptureSelection();
+        var report = reportId; var reportBytes = currentReport.GetRawText(); var scope = CurrentChangeScope; var rows = changes.ToArray(); var cursor = nextChanges; var eventBytes = selectedChange.ValueKind == JsonValueKind.Undefined ? "" : selectedChange.GetRawText(); var anchorA = selectedBefore; var anchorB = selectedAfter; var queryReads = changeQueryReadsForSmoke;
+        var hostA = Before.Host; var hostB = After.Host; var inspector = InspectorPane; var list = ChangesPane; var results = new List<object>();
+        async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        void ScopeUnchanged()
+        {
+            if (reportId != report || currentReport.GetRawText() != reportBytes || CurrentChangeScope != scope || !rows.SequenceEqual(changes) || cursor != nextChanges || queryReads != changeQueryReadsForSmoke || selectedBefore != anchorA || selectedAfter != anchorB || eventBytes != (selectedChange.ValueKind == JsonValueKind.Undefined ? "" : selectedChange.GetRawText()) || !ReferenceEquals(hostA, Before.Host) || !ReferenceEquals(hostB, After.Host) || !ReferenceEquals(inspector, InspectorPane) || !ReferenceEquals(list, ChangesPane)) throw new InvalidOperationException("Source27 presentation changed fixed report/query/event/list authority or native hosts.");
+        }
+        try
+        {
+            Width = 1440; Height = 940; SetLayout(WorkspaceLayout.Preset("sourceFirst")); sourceView.SelectedIndex = 0; await Settle();
+            foreach (var pane in new[] { Before, After })
+            {
+                await pane.GoForSmoke("C2"); await Settle(); results.Add(new { route = "programmatic_address_C2", side = pane.PresentedSideName, header = pane.CheckFocusedHeaderForSmoke() });
+                results.Add(new { route = "actual_SelectedCellsChanged_D4", side = pane.PresentedSideName, header = await pane.SelectNativePhysicalCellForSmoke(4, 4) });
+            }
+            await SelectCell(Before, 4, 4); await Settle(); ScopeUnchanged();
+            var focusedA = Before.CaptureSelection(); var focusedB = After.CaptureSelection(); var rawDetail = detailPayload.GetRawText(); var rawMetadata = detailMetadata.Text; var gridA = Before.Cells.ItemsSource; var gridB = After.Cells.ItemsSource;
+            Before.GridScroll?.ScrollToVerticalOffset(2); After.GridScroll?.ScrollToVerticalOffset(2); Before.GridScroll?.ScrollToHorizontalOffset(40); After.GridScroll?.ScrollToHorizontalOffset(40); await Settle();
+            var viewA = Before.CaptureGridViewport(); var viewB = After.CaptureGridViewport();
+            void ViewportsUnchanged() { foreach (var item in new[] { (Pane: Before, Saved: viewA), (Pane: After, Saved: viewB) }) { var scroll = item.Pane.GridScroll!; if (Math.Abs(scroll.HorizontalOffset - Math.Min(item.Saved.X, scroll.ScrollableWidth)) > 1 || Math.Abs(scroll.VerticalOffset - Math.Min(item.Saved.Y, scroll.ScrollableHeight)) > 1) throw new InvalidOperationException("Responsive Evidence lost a retained manual native viewport beyond its measured clamp."); } }
+            var intent = WorkspaceLayout.Preset("sourceFirst") with { Inspector = true, InspectorSide = "left", InspectorWidth = 317, ChangesWidth = 237, ChangesHeight = 147 };
+            SetLayout(intent); await Settle(); var preferenceBytes = await File.ReadAllBytesAsync(PreferencesPath);
+            foreach (var locale in new[] { "en", "ko" })
+            {
+                SetLanguage(locale); preferenceBytes = await File.ReadAllBytesAsync(PreferencesPath); Width = 1024; Height = 768; await Settle();
+                if (!evidenceBottomDock || Layout != intent || InspectorPane.ActualWidth < 600 || Before.Host.ActualWidth < 400 || After.Host.ActualWidth < 400 || !InspectorPane.IsVisible || !ChangesPane.IsVisible || Before.CaptureSelection() != focusedA || After.CaptureSelection() != focusedB || !ReferenceEquals(gridA, Before.Cells.ItemsSource) || !ReferenceEquals(gridB, After.Cells.ItemsSource) || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath))) throw new InvalidOperationException("Narrow Evidence did not retain large two-source geometry, raw-grid hosts and exact saved layout intent.");
+                ViewportsUnchanged(); var headerA = Before.CheckFocusedHeaderForSmoke(); var headerB = After.CheckFocusedHeaderForSmoke();
+                var homeA = Before.CheckEvidenceHomeForSmoke(); var homeB = After.CheckEvidenceHomeForSmoke();
+                if (detail.ActualHeight < 140 || detail.ActualWidth < 300 || detailPayload.GetRawText() != rawDetail || detailMetadata.Text != rawMetadata || technicalDetails.Header as string != Copy["technicalDetails"] || !detail.Text.Contains(Copy["number_format"], StringComparison.Ordinal) || detail.Text.Contains("cache_freshness:", StringComparison.Ordinal) || detail.Text.Contains("cached_result:", StringComparison.Ordinal) || detailRange.Text.Contains(" · complete", StringComparison.Ordinal) || detailRange.Text.Contains(" · truncated", StringComparison.Ordinal)) throw new InvalidOperationException("Ordinary source detail retained raw enum keys or unlabeled technical metadata.");
+                await capture("source27-narrow-evidence-" + locale); results.Add(new { language = locale, before = homeA, after = homeB, header_before = headerA, header_after = headerB, bottom_evidence_width = InspectorPane.ActualWidth, bottom_evidence_height = InspectorPane.ActualHeight, source_detail_localized = true, raw_reader_width = detail.ActualWidth, raw_reader_height = detail.ActualHeight, raw_source_identity_retained = true });
+                Width = 1440; Height = 940; await Settle();
+                if (evidenceBottomDock || Layout != intent || !ReferenceEquals(VisualTreeHelper.GetParent(InspectorPane), workspace) || Math.Abs(InspectorPane.ActualWidth - intent.InspectorWidth) > 1 || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath)) || Before.CaptureSelection() != focusedA || After.CaptureSelection() != focusedB) throw new InvalidOperationException("Widening did not restore the saved Evidence side/width without a preference write.");
+                ScopeUnchanged(); ViewportsUnchanged();
+            }
+            // Exercise a saved bottom Changes arrangement through the same temporary dock.
+            var balancedIntent = intent with { Sidebar = true, Changes = "bottom" }; SetLayout(balancedIntent); await Settle(); preferenceBytes = await File.ReadAllBytesAsync(PreferencesPath); Width = 1024; Height = 768; await Settle();
+            if (!evidenceBottomDock || Layout != balancedIntent || Before.Cells.ActualHeight < 150 || After.Cells.ActualHeight < 150 || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath))) throw new InvalidOperationException("Saved bottom Changes stacked with Evidence or changed the saved height/dock.");
+            Width = 1440; Height = 940; await Settle(); if (Layout != balancedIntent || evidenceBottomDock || !Enumerable.SequenceEqual(preferenceBytes, await File.ReadAllBytesAsync(PreferencesPath))) throw new InvalidOperationException("Saved bottom Changes geometry was not restored after narrow Evidence.");
+            ChangeVisibility(inspector: false); await Settle(); if (InspectorPane.IsVisible || Layout != balancedIntent with { Inspector = false } || Before.CaptureSelection() != focusedA || After.CaptureSelection() != focusedB) throw new InvalidOperationException("Closing Evidence lost its saved layout baseline or physical selections.");
+            SetLayout(WorkspaceLayout.Preset("sourceFirst")); await Settle(); if (InspectorPane.IsVisible || Layout.Changes != "left" || !ChangesPane.IsVisible) throw new InvalidOperationException("Default closed Evidence source-first behavior changed.");
+            ScopeUnchanged(); ViewportsUnchanged(); return new { cases = results, retained_manual_viewports = new { before = new { viewA.X, viewA.Y }, after = new { viewB.X, viewB.Y } }, raw_report_and_event_exact = true, query_reads_unchanged = true, retained_native_hosts_and_grids = true, narrow_wide_preference_bytes_unchanged = true, saved_bottom_changes_not_stacked = true, scope = "Actual production WPF event handlers/control geometry and real workbook queries; not OS mouse input" };
+        }
+        finally { Before.RestoreSelection(a); After.RestoreSelection(b); await ReloadSourceOnly(); Width = width; Height = height; SetLanguage(language); SetLayout(layout); sourceView.SelectedIndex = oldText ? 1 : 0; await Settle(); }
     }
     internal async Task CheckMissingVersionSheetForSmoke()
     {
@@ -2281,9 +2393,10 @@ internal sealed class MainWindow : Window
                     var expectedBeforeBound = ExpectedBound(false); var expectedAfterBound = ExpectedBound(true); var expectedSummary = Copy["metadataObservation"] + (expectedBeforeBound ? "\n" + Copy["before"] + " · " + Copy["metadataBounded"] : "") + (expectedAfterBound ? "\n" + Copy["after"] + " · " + Copy["metadataBounded"] : "");
                     if (MetadataSideProjection(false).Bounded != expectedBeforeBound || MetadataSideProjection(true).Bounded != expectedAfterBound || detailRange.Text != expectedSummary) throw new InvalidOperationException("Actual metadata bound flags or literal summary disagreed with independent fixture array lengths/counts.");
                     if (!SelectedWorkbookMetadata || !WorkbookMetadataPayload(detailPayload) || !AtSelectedChange || Before.FocusedAddress.Length != 0 || After.FocusedAddress.Length != 0 || !body.Contains(Copy["metadataObservation"], StringComparison.Ordinal) || !body.Contains(Copy["metadataProjection"], StringComparison.Ordinal) || body.Contains(Copy["observationPresent"], StringComparison.Ordinal) || body.Contains("⟦LF⟧", StringComparison.Ordinal) || body.Contains("⟦EOF⟧", StringComparison.Ordinal) || body.Contains(Copy["cellNotMaterialized"], StringComparison.Ordinal) || body.Contains(Copy["invalidSourceSegment"], StringComparison.Ordinal) || !detail.Text.Contains(rawA, StringComparison.Ordinal) || !detail.Text.Contains(rawB, StringComparison.Ordinal) || body.Length == 0 || unified.Document.Blocks.OfType<Paragraph>().Any(item => ReferenceEquals(item.Foreground, Brushes.DarkRed) || ReferenceEquals(item.Foreground, Brushes.DarkGreen))) throw new InvalidOperationException("A real metadata event rendered missing/invalid cell fields or lost its exact neutral metadata in " + kind + "/" + locale);
+                    if ((sourceView.ItemsSource as IEnumerable<Choice>)?.ElementAtOrDefault(1)?.Label != Copy["metadataReading"] || AutomationProperties.GetName(unified) != Copy["metadataReading"] || row.Location.Contains(Copy["workbookMetadata"], StringComparison.Ordinal) || row.Location.Contains(Copy["sheetMetadata"], StringComparison.Ordinal) || unified.Document.Blocks.OfType<Paragraph>().Where(paragraph => paragraph.Tag as string is "metadataSide" or "metadataProjectionCaption" or "metadataBoundedNotice").Any(paragraph => paragraph.FontFamily.Source != "Segoe UI")) throw new InvalidOperationException("Neutral metadata retained a text-edit heading, repeated full location explanation or monospace UI captions.");
                     var jsonParagraphs = unified.Document.Blocks.OfType<Paragraph>().Where(paragraph => paragraph.Tag as string == "metadataJsonProjection").ToArray();
                     if (jsonParagraphs.Length != 2 || !string.Equals(jsonParagraphs[0].Inlines.OfType<Run>().Single().Text, rawA, StringComparison.Ordinal) || !string.Equals(jsonParagraphs[1].Inlines.OfType<Run>().Single().Text, rawB, StringComparison.Ordinal)) throw new InvalidOperationException("Generated metadata was split into source lines, annotated as raw source terminators, or rendered more than once.");
-                    if (SourceDiffPolicy.WorkbookScoped(kind) && (Before.LocationCaption.Contains(Copy["absentSheet"], StringComparison.Ordinal) || After.LocationCaption.Contains(Copy["absentSheet"], StringComparison.Ordinal) || !row.Location.Contains(Copy["workbookMetadata"], StringComparison.Ordinal))) throw new InvalidOperationException("A workbook-wide metadata event invented an absent sheet.");
+                    if (SourceDiffPolicy.WorkbookScoped(kind) && (Before.LocationCaption.Contains(Copy["absentSheet"], StringComparison.Ordinal) || After.LocationCaption.Contains(Copy["absentSheet"], StringComparison.Ordinal) || !row.Location.Contains(Copy["compactWorkbookMetadata"], StringComparison.Ordinal))) throw new InvalidOperationException("A workbook-wide metadata event invented an absent sheet.");
                     if (!Before.PresentedFallback.Contains(rawA, StringComparison.Ordinal) || !After.PresentedFallback.Contains(rawB, StringComparison.Ordinal)) throw new InvalidOperationException("Original source did not retain its actual metadata observation.");
                     await capture("actual-metadata-" + kind + "-" + locale); results.Add(new { kind, language = locale, event_id = row.Id, canonical_event = row.Value, before_metadata = valueA, after_metadata = valueB, independently_expected_before_bound = expectedBeforeBound, independently_expected_after_bound = expectedAfterBound, literal_expected_summary = expectedSummary, neutral_metadata_visible = true });
                 }
@@ -2321,7 +2434,7 @@ internal sealed class MainWindow : Window
             foreach (var locale in new[] { "en", "ko" })
             {
                 SetLanguage(locale); UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-                if (!missing.Location.Contains(Copy["cellNotMaterialized"], StringComparison.Ordinal) || missing.Location.Contains(Copy["sheetLevelSource"], StringComparison.Ordinal) || absent.ReadState != "absent" || !absent.LocationCaption.Contains(Copy["cellNotMaterialized"], StringComparison.Ordinal) || absent.PresentedFallback.Contains(Copy["sheetMetadata"], StringComparison.Ordinal) || available.ReadState != "ready" || available.Cells.Items.Count < 1 || !AtSelectedChange) throw new InvalidOperationException("A real unmaterialized cell was labelled as sheet metadata or failed its available opposite grid in " + locale);
+                if (!missing.Location.Contains(Copy["compactNoCell"], StringComparison.Ordinal) || missing.Location.Contains(Copy["sheetLevelSource"], StringComparison.Ordinal) || absent.ReadState != "absent" || !absent.LocationCaption.Contains(Copy["cellNotMaterialized"], StringComparison.Ordinal) || absent.PresentedFallback.Contains(Copy["sheetMetadata"], StringComparison.Ordinal) || available.ReadState != "ready" || available.Cells.Items.Count < 1 || !AtSelectedChange) throw new InvalidOperationException("A real unmaterialized cell was labelled as sheet metadata or failed its available opposite grid in " + locale);
                 if (detailRange.Text.Contains(Copy["invalidSourceRange"], StringComparison.Ordinal) || detailRange.Text.Split('\n').Count(line => line.EndsWith(Copy["cellNotMaterialized"], StringComparison.Ordinal)) != 1) throw new InvalidOperationException("A real one-sided cell observation was shown as invalid range metadata.");
                 await capture("actual-null-cell-side-" + locale); observations.Add(new { language = locale, event_id = missing.Id, canonical_event = missing.Value, row_caption = missing.Caption, missing_side_caption = absent.LocationCaption, opposite_state = available.ReadState });
             }
@@ -2368,9 +2481,11 @@ internal sealed class MainWindow : Window
                 foreach (var kind in new[] { "coverage_gap", "visual_region_changed", "text_modified", "page_added", "page_deleted" })
                 {
                     var sparse = ChangeCaption(JsonSerializer.SerializeToElement(new { kind, from_occurrence = before.Revision, to_occurrence = after.Revision, before = "SYNTHETIC before", after = "SYNTHETIC after", evidence = Array.Empty<object>() }));
-                    var location = sparse.Split('\n')[1]; var absentCount = location.Split(Copy["absentPage"], StringSplitOptions.None).Length - 1; var unknownCount = location.Split(Copy["noEvidencePageListed"], StringSplitOptions.None).Length - 1; var structural = kind is "page_added" or "page_deleted";
+                    var location = sparse.Split('\n')[1]; var absentCount = location.Split(Copy["compactNoPage"], StringSplitOptions.None).Length - 1; var unknownCount = location.Split(Copy["compactUnlistedPage"], StringSplitOptions.None).Length - 1; var structural = kind is "page_added" or "page_deleted";
                     if (absentCount != (structural ? 1 : 0) || unknownCount != (structural ? 1 : 2)) throw new InvalidOperationException("A native document row caption asserted absent pages from an omitted evidence list rather than structural event semantics.");
                 }
+                var coverageCaptions = new[] { "reference_appearance_unavailable_or_unverified_for_page", "revision_interval_render_appearance_not_comparable" }.Select(reason => ChangeCaption(JsonSerializer.SerializeToElement(new { kind = "coverage_gap", from_occurrence = before.Revision, to_occurrence = after.Revision, before = "same source", after = "same source", evidence, coverage_gaps = new[] { new { feature = "visual_comparison", reason } } }))).ToArray();
+                if (coverageCaptions.Distinct().Count() != 2 || coverageCaptions.Any(caption => caption.Contains("reference_appearance_", StringComparison.Ordinal) || caption.Contains("revision_interval_", StringComparison.Ordinal))) throw new InvalidOperationException("Distinct actual coverage reason codes became identical or unlocalized native caption controls.");
                 var emptyControl = ChangeCaption(JsonSerializer.SerializeToElement(new { kind = "text_modified", from_occurrence = before.Revision, to_occurrence = after.Revision, before = "", after = " \r\n\t", evidence }));
                 if (!emptyControl.Contains(Copy["observationEmpty"] + " → " + Copy["whitespaceText"], StringComparison.Ordinal) || emptyControl.Contains(Copy["missing"], StringComparison.Ordinal)) throw new InvalidOperationException("Synthetic preview caption conflated explicit empty or whitespace source with an absent observation.");
             }
@@ -2531,7 +2646,7 @@ internal sealed class MainWindow : Window
 
             var absentQueryReads = changeQueryReadsForSmoke; var absentRows = changes.ToArray(); var absentCursor = nextChanges; FailComparison(false); status.Text = "SYNTHETIC stale retry banner"; await RetryComparison();
             if (ComparisonState != "ready" || status.Text != Copy[Preferences.IsReadOnly ? "preferencesReadOnly" : "ready"] || !absentRows.SequenceEqual(changes) || absentCursor != nextChanges || absentQueryReads != changeQueryReadsForSmoke) throw new InvalidOperationException("Retry of legitimate absent-side source did not settle ready while retaining its query.");
-            if (!absent.Location.Contains(Copy["sheetLevelSource"], StringComparison.Ordinal) || !absent.Location.Contains(Copy["absentSheet"], StringComparison.Ordinal) || absent.Location.Contains(Copy["missing"], StringComparison.Ordinal)) throw new InvalidOperationException("A genuine one-sided sheet event did not distinguish present sheet metadata from its absent sheet side.");
+            if (!absent.Location.Contains(Copy["compactSheetMetadata"], StringComparison.Ordinal) || !absent.Location.Contains(Copy["compactNoSheet"], StringComparison.Ordinal) || absent.Location.Contains(Copy["missing"], StringComparison.Ordinal)) throw new InvalidOperationException("A genuine one-sided sheet event did not distinguish present sheet metadata from its absent sheet side.");
             if (absent.Value.Get("from_sheet_id").Text().Length == 0 && (Before.ReadState != "absent" || Before.SheetId.Length != 0 || Before.Cells.Items.Count != 0)) throw new InvalidOperationException("One-sided before event invented a grid.");
             if (absent.Value.Get("to_sheet_id").Text().Length == 0 && (After.ReadState != "absent" || After.SheetId.Length != 0 || After.Cells.Items.Count != 0)) throw new InvalidOperationException("One-sided after event invented a grid.");
             await SelectSourcePairForSmoke(0, versions.Count - 1);

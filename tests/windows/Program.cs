@@ -154,6 +154,15 @@ try
     }
     Require(SourceDiffPolicy.WorkbookComponent(Component(), selectedEvent, "before", "project", "fixed", out var componentCell) && componentCell.Get("address").Text() == "B1", "single raw component binds exact fixed project report event and physical row column address before native installation");
     Require(!SourceDiffPolicy.WorkbookComponent(Component(project: "foreign"), selectedEvent, "before", "project", "fixed", out _) && !SourceDiffPolicy.WorkbookComponent(Component(report: "foreign"), selectedEvent, "before", "project", "fixed", out _) && !SourceDiffPolicy.WorkbookComponent(Component(count: 2), selectedEvent, "before", "project", "fixed", out _) && !SourceDiffPolicy.WorkbookComponent(Component(count: 0), selectedEvent, "before", "project", "fixed", out _) && !SourceDiffPolicy.WorkbookComponent(Component(badCell: true), selectedEvent, "before", "project", "fixed", out _) && !SourceDiffPolicy.WorkbookComponent(Component(), selectedEvent, "after", "project", "fixed", out _), "foreign scope multi-item empty mismatched component and wrong physical coordinates cannot install selected cell evidence");
+    var copy = new Copy();
+    foreach (var language in new[] { "en", "ko" })
+    {
+        copy.Language = language;
+        foreach (var code in new[] { "complete", "truncated", "missing", "unknown", "present", "inferred", "needs_review", "unique_nonempty_first_column_key", "unique_exact_sheet_content", "unique_exact_sheet_name", "unmatched_sheet_observation", "different_date_systems" }) Require(copy.Code(code) != code && copy.Code(code) != copy["technicalCode"], "known native source/association enum has a human " + language + " caption: " + code);
+        Require(copy.Code("SYNTHETIC_opaque_unknown") == copy["technicalCode"], "unknown machine reasons are not presented as invented human facts in " + language);
+        Require(copy.Code("reference_appearance_unavailable_or_unverified_for_page") != copy.Code("revision_interval_render_appearance_not_comparable"), "actual reference-PDF coverage reasons remain distinguishable human captions in " + language);
+        Require(copy["metadataReading"] != copy["textDiff"] && !copy["metadataReading"].Contains("−/+", StringComparison.Ordinal), "neutral generated metadata has its own reading heading without text-edit signs in " + language);
+    }
     preferences.Document.Current = WorkspaceLayout.Preset("review") with { InspectorSide = "left", VerticalComparison = true, ComparisonRatio = .72 };
     preferences.Workbook.Current = WorkspaceLayout.Preset("focus"); preferences.Document.Named["review__100%_{0}_한글_العربية"] = preferences.Document.Current; preferences.Save(path);
     var loaded = AppPreferences.Load(path); Require(loaded.Document.Current == preferences.Document.Current && loaded.Workbook.Current == preferences.Workbook.Current, "independent document and workbook layouts persist"); Require(loaded.Document.Named.Keys.Single() == "review__100%_{0}_한글_العربية", "authored preset names remain opaque");
