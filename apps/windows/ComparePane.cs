@@ -188,6 +188,7 @@ internal sealed class ComparePane
     internal void NavigationEnabled(bool enabled) { lastNavigationEnabled = enabled; foreach (var control in navigation) control.IsEnabled = enabled; showFormula.IsEnabled = enabled && ReadState == "ready" && loadedGridScope is not null; RefreshCellDetails(); }
     internal PaneSelection CaptureSelection() => new(RevisionId, SheetId, PageId, row, column, Zoom, evidenceAbsence, requestedSheetName, focusedRow, focusedColumn, metadataKind, presentationChosen, fittingWidth, presentationReport);
     internal string RawIdentityForSmoke => JsonSerializer.Serialize(new { scope = loadedGridScope, grid = gridValue.ValueKind == JsonValueKind.Undefined ? "" : gridValue.GetRawText(), previewScope, previewSource, previewReason, previewText, ReadState }, new JsonSerializerOptions { IncludeFields = true });
+    internal long GridReadsForSmoke { get; private set; }
     internal void RestoreSelection(PaneSelection saved)
     {
         if (saved.Revision.Length == 0) { Clear(); return; } SetEvidenceRevision(saved.Revision); binding = true;
@@ -538,7 +539,7 @@ internal sealed class ComparePane
         if (RevisionId.Length == 0 || SheetId.Length == 0) { ReadState = "absent"; fallback.Text = owner.Copy[evidenceAbsence.Length > 0 ? evidenceAbsence : "absentSheet"]; return; }
         var project = owner.ProjectId; var report = owner.ReportId; var revisionId = RevisionId; var sheetId = SheetId; var rowAt = row; var columnAt = column;
         try {
-        var value = await owner.Bridge.Call("workbookGrid", new { project_id = project, report_id = report, revision_occurrence_id = revisionId, sheet_id = sheetId, row_start = rowAt, row_limit = 50, column_start = columnAt, column_limit = 8 }, token);
+        GridReadsForSmoke++; var value = await owner.Bridge.Call("workbookGrid", new { project_id = project, report_id = report, revision_occurrence_id = revisionId, sheet_id = sheetId, row_start = rowAt, row_limit = 50, column_start = columnAt, column_limit = 8 }, token);
         if (!owner.IsCurrent(ticket) || sequence != gridGeneration || project != owner.ProjectId || report != owner.ReportId || RevisionId != revisionId || SheetId != sheetId || row != rowAt || column != columnAt) return;
         if (value.Get("project_id").Text() != project || value.Get("revision_occurrence_id").Text() != revisionId || value.Get("sheet_id").Text() != sheetId || value.Get("report_id").Text() != report || value.Get("row_start").Number() != rowAt || value.Get("column_start").Number() != columnAt || value.Get("row_limit").Number() != 50 || value.Get("column_limit").Number() != 8) throw new BridgeException("GRID_SCOPE", "Grid response is outside the selected source scope.");
         loadedGridScope = (project, report, revisionId, sheetId, rowAt, columnAt); ReadState = "ready"; Cells.IsEnabled = owner.AllowsEvidence; showFormula.IsEnabled = owner.AllowsEvidence;

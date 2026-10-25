@@ -147,6 +147,8 @@ internal sealed class MainWindow : Window
     private bool HasIndependentSourceDetail => IsWorkbook && inspectorMode == "raw" && detailPayload.ValueKind == JsonValueKind.Object && detailLoader is not null && (singleCellSource is { } single ? SingleSourceCurrent && detailCellRead is { } read && single.ReadResponse(read, detailPayload, out _) : PairedSourceCurrent && pairedSource!.ReadPayload("before", detailPayload.Get("before"), out _) && pairedSource.ReadPayload("after", detailPayload.Get("after"), out _));
     private ChangeQueryScope? loadedChangeScope;
     private bool sourceOnlyFailure;
+    private sealed record QueryRetry(ChangeQueryScope Scope, bool Append, string Cursor);
+    private QueryRetry? queryRetry;
     private sealed record EventRetry(ChangeQueryScope Scope, ChangeChoice Row, bool Initial = false);
     private Func<string, JsonElement, CancellationToken, Task>? initialComponentForSmoke;
     private EventRetry? eventRetry;
@@ -154,6 +156,7 @@ internal sealed class MainWindow : Window
     private ChangeQueryScope CurrentChangeScope => new(IsWorkbook, projectId, reportId, intervalFrom, intervalTo, NetMode);
     private int? workbookPageLimitForSmoke;
     private long changeQueryReadsForSmoke;
+    private long sourceDetailReadsForSmoke;
     private Func<JsonElement, CancellationToken, Task>? workbookChangesReplyForSmoke;
     internal string ComparisonState { get; private set; } = "empty";
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 5, 12, 5), MaxHeight = 70 };
@@ -637,8 +640,9 @@ internal sealed class MainWindow : Window
         var revisions = currentReport.Get("revisions").Items(); var from = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalFrom); var to = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalTo);
         if (from < 0 || to < 0 || from > to) { ComparisonState = "invalid"; Before.Invalidate("invalid"); After.Invalidate("invalid"); detail.Text = Copy["reverse"]; status.Text = Copy["reverse"]; return; }
         var focus = initialFocus && IsWorkbook && from < to ? new InitialFocusIntent(CurrentChangeScope, ticket) : null;
-        try { if (!singleSource) await Before.Load(ticket, reads.Token); if (ticket != generation) return; await After.Load(ticket, reads.Token); if (ticket != generation) return; await LoadChanges(false, ticket, reads.Token, documentReaderForSmoke); }
-        catch (Exception error) { if (IsCurrent(ticket) && !reads.IsCancellationRequested) FailComparison(preserveSources: error is BridgeException { Code: "ENGINE_VERSION_UNAVAILABLE" } && documentRangeUnavailable); throw; }
+        var querying = false;
+        try { if (!singleSource) await Before.Load(ticket, reads.Token); if (ticket != generation) return; await After.Load(ticket, reads.Token); if (ticket != generation) return; querying = true; await LoadChanges(false, ticket, reads.Token, documentReaderForSmoke); }
+        catch { if (IsCurrent(ticket) && !reads.IsCancellationRequested) { if (querying) FailQuery(new(CurrentChangeScope, false, "")); else FailComparison(); } throw; }
         // This one-use intent belongs only to the new report/endpoint query's
         // first installed page. A manual source request changes generation;
         // mode, refresh and continuation reads never create another intent.
@@ -662,20 +666,35 @@ internal sealed class MainWindow : Window
             if (pending.Scope != CurrentChangeScope || loadedChangeScope != pending.Scope || !changes.Contains(pending.Row)) { eventRetry = null; return Task.CompletedTask; }
             return SelectChange(pending.Row.Value, retry: true);
         }
+        if (queryRetry is { } query)
+        {
+            if (query.Scope != CurrentChangeScope || query.Append && query.Cursor != nextChanges) { queryRetry = null; return Task.CompletedTask; }
+            return ReloadQueryKeepingSources(query);
+        }
         // Invalidating a failed read never changes retained selectors. Retry the
         // exact event/page/sheet/window, independently of the change-list interval.
-        return ComparisonState == "failed" && HasIndependentSourceDetail ? ReloadQueryKeepingSources() : sourceOnlyFailure && loadedChangeScope == CurrentChangeScope ? ReloadSourceOnly() : ReloadComparisonCore(true);
+        return sourceOnlyFailure && loadedChangeScope == CurrentChangeScope ? ReloadSourceOnly() : ReloadComparisonCore(true);
     }
     private void InvalidateAuthority(bool clearChanges, bool preserveSourceDetail = false)
     {
-        eventRetry = null; sourceOnlyFailure = false; changesReady = false; ComparisonState = "loading"; changeList.IsEnabled = false; more.IsEnabled = false; retryComparison.Visibility = Visibility.Collapsed; if (!preserveSourceDetail) { ClearDetail(); detail.Text = Copy["loading"]; } RenderSourceDiff();
+        eventRetry = null; queryRetry = null; sourceOnlyFailure = false; changesReady = false; ComparisonState = "loading"; changeList.IsEnabled = false; more.IsEnabled = false; retryComparison.Visibility = Visibility.Collapsed; if (!preserveSourceDetail) { ClearDetail(); detail.Text = Copy["loading"]; } RenderSourceDiff();
         if (clearChanges) { loadedChangeScope = null; binding = true; changeList.SelectedItem = null; changes.Clear(); binding = false; nextChanges = ""; }
     }
-    private void FailComparison(bool retireQuery = true, bool preserveSources = false, bool preserveSourceDetail = false)
+    private void FailQuery(QueryRetry retry)
     {
+        // Query authority and physical observations have separate owners. A
+        // failed continuation keeps its exact cursor and already installed rows.
+        var retainDetail = HasIndependentSourceDetail;
+        ClearSelectedChange(); binding = true; changeList.SelectedItem = null; binding = false;
+        FailComparison(preserveSources: true, preserveSourceDetail: retainDetail, retryQuery: retry);
+        status.Text = Copy["failed"];
+    }
+    private void FailComparison(bool retireQuery = true, bool preserveSources = false, bool preserveSourceDetail = false, QueryRetry? retryQuery = null)
+    {
+        queryRetry = retryQuery;
         sourceOnlyFailure = !retireQuery; if (retireQuery) { loadedChangeScope = null; eventRetry = null; }
         changesReady = false; ComparisonState = "failed"; changeList.IsEnabled = ChangeNavigationReady; more.IsEnabled = ChangeNavigationReady && nextChanges.Length > 0;
-        if (preserveSources && eventRetry is { Initial: true })
+        if (preserveSources && (retryQuery is not null || eventRetry is { Initial: true }))
         {
             // A component failure keeps the already verified default sources.
             // A later target-source failure keeps any verified side, and marks
@@ -1109,7 +1128,7 @@ internal sealed class MainWindow : Window
     }
     internal async Task<JsonElement> McpConfig() => await Bridge.Call(IsWorkbook ? "workbookMcpConfig" : "mcpConfig", new { project_id = projectId });
     internal async Task<JsonElement> Query(string name, Dictionary<string, object?> args, CancellationToken token)
-    { args["project_id"] = projectId; args["report_id"] = reportId; args["max_output_tokens"] = 8000; return await Bridge.Call("workbookQuery", new { name, args }, token); }
+    { if (name is "get_workbook_cell" or "get_workbook_change") sourceDetailReadsForSmoke++; args["project_id"] = projectId; args["report_id"] = reportId; args["max_output_tokens"] = 8000; return await Bridge.Call("workbookQuery", new { name, args }, token); }
     private string ProgressSummary(JsonElement value)
     {
         var phase = value.Get("phase").Text(); var label = value.Get("label").Text(); if (label.Length > 160) label = label[..160] + "…";
@@ -1122,12 +1141,23 @@ internal sealed class MainWindow : Window
         UpdateInterval(); if (reportId.Length == 0) return;
         await ReloadQueryKeepingSources();
     }
-    private async Task ReloadQueryKeepingSources()
+    private async Task ReloadQueryKeepingSources(QueryRetry? retry = null)
     {
         var retainSourceDetail = HasIndependentSourceDetail;
-        var ticket = BeginScope(); InvalidateAuthority(true, preserveSourceDetail: retainSourceDetail);
-        try { if (Before.ReadState is "loading" or "failed" or "empty") await Before.Load(ticket, reads.Token); if (!IsCurrent(ticket)) return; if (After.ReadState is "loading" or "failed" or "empty") await After.Load(ticket, reads.Token); if (!IsCurrent(ticket)) return; await LoadChanges(false, ticket, reads.Token); RenderSourceDiff(); }
-        catch (Exception error) { if (IsCurrent(ticket) && !reads.IsCancellationRequested) FailComparison(preserveSources: retainSourceDetail || error is BridgeException { Code: "ENGINE_VERSION_UNAVAILABLE" } && documentRangeUnavailable, preserveSourceDetail: retainSourceDetail); throw; }
+        var intent = retry ?? new QueryRetry(CurrentChangeScope, false, "");
+        var ticket = BeginScope(); InvalidateAuthority(!intent.Append, preserveSourceDetail: retainSourceDetail); var querying = retry is not null;
+        try
+        {
+            // A scoped query retry cannot silently become a physical reread.
+            // Actual source failures retain their own failed pane/reload route.
+            if (retry is null)
+            {
+                if (Before.ReadState is "loading" or "failed" or "empty") await Before.Load(ticket, reads.Token); if (!IsCurrent(ticket)) return;
+                if (After.ReadState is "loading" or "failed" or "empty") await After.Load(ticket, reads.Token); if (!IsCurrent(ticket)) return;
+            }
+            querying = true; await LoadChanges(intent.Append, ticket, reads.Token, retryQuery: retry); RenderSourceDiff(); EvidenceReadSettled();
+        }
+        catch { if (IsCurrent(ticket) && !reads.IsCancellationRequested) { if (querying) FailQuery(intent); else FailComparison(); } throw; }
     }
     private async Task OpenStoredHistory()
     {
@@ -1159,10 +1189,10 @@ internal sealed class MainWindow : Window
         var location = IsWorkbook && SourceDiffPolicy.WorkbookScoped(kind) ? Copy["compactWorkbookMetadata"] + " · " + VersionOrdinal(Occurrence(false)) + " → " + VersionOrdinal(Occurrence(true)) : Side(false) + " → " + Side(true);
         return Copy["kind_" + kind] + "\n" + location + "\n" + preview;
     }
-    private async Task LoadChanges(bool append, long ticket, CancellationToken token, Func<string, CancellationToken, Task<JsonElement>>? documentReaderForSmoke = null, Func<CancellationToken, Task>? beforeInstallForSmoke = null)
+    private async Task LoadChanges(bool append, long ticket, CancellationToken token, Func<string, CancellationToken, Task<JsonElement>>? documentReaderForSmoke = null, Func<CancellationToken, Task>? beforeInstallForSmoke = null, QueryRetry? retryQuery = null)
     {
         if (reportId.Length == 0 || intervalFrom.Length == 0 || intervalTo.Length == 0) return;
-        var scope = CurrentChangeScope; if (append && loadedChangeScope != scope) return; var retainedEventFailure = append ? eventRetry : null;
+        var scope = CurrentChangeScope; if (append && loadedChangeScope != scope && (retryQuery is not { Append: true } retry || retry.Scope != scope || retry.Cursor != nextChanges)) return; var retainedEventFailure = append ? eventRetry : null;
         var revisions = currentReport.Get("revisions").Items(); var from = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalFrom); var to = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == intervalTo);
         if (from > to || from < 0 || to < 0) { if (IsCurrent(ticket)) { ComparisonState = "invalid"; changesReady = false; detail.Text = Copy["reverse"]; } return; }
         if (from == to) { if (IsCurrent(ticket)) { loadedChangeScope = scope; changes.Clear(); nextChanges = ""; changesReady = true; ComparisonState = "ready"; changeList.IsEnabled = !busy; more.IsEnabled = false; if (!HasIndependentSourceDetail) detail.Text = SingleSourceGuidance; } return; }
@@ -1193,8 +1223,8 @@ internal sealed class MainWindow : Window
     private Task LoadMoreChanges() => LoadMoreChangesCore();
     private async Task LoadMoreChangesCore(Func<CancellationToken, Task>? beforeInstallForSmoke = null)
     {
-        if (!ChangeNavigationReady || !more.IsEnabled) return; more.IsEnabled = false; var ticket = generation;
-        try { await LoadChanges(true, ticket, reads.Token, beforeInstallForSmoke: beforeInstallForSmoke); } catch (Exception error) { if (IsCurrent(ticket) && !reads.IsCancellationRequested) FailComparison(preserveSources: error is BridgeException { Code: "ENGINE_VERSION_UNAVAILABLE" } && documentRangeUnavailable); throw; }
+        if (!ChangeNavigationReady || !more.IsEnabled) return; more.IsEnabled = false; var ticket = generation; var intent = new QueryRetry(CurrentChangeScope, true, nextChanges);
+        try { await LoadChanges(true, ticket, reads.Token, beforeInstallForSmoke: beforeInstallForSmoke); } catch { if (IsCurrent(ticket) && !reads.IsCancellationRequested) FailQuery(intent); throw; }
     }
     private bool EligibleInitialPhysicalChange(JsonElement change)
     {
@@ -1688,7 +1718,7 @@ internal sealed class MainWindow : Window
         if (!CanOpenCellSource(pane)) return;
         ChangeVisibility(inspector: true); await SelectCell(pane, pane.FocusedRow, pane.FocusedColumn);
     }
-    private Task<JsonElement> QueryFixed(string name, Dictionary<string, object?> args, string project, string report, CancellationToken token) { args["project_id"] = project; args["report_id"] = report; args["max_output_tokens"] = 8000; return Bridge.Call("workbookQuery", new { name, args }, token); }
+    private Task<JsonElement> QueryFixed(string name, Dictionary<string, object?> args, string project, string report, CancellationToken token) { if (name is "get_workbook_cell" or "get_workbook_change") sourceDetailReadsForSmoke++; args["project_id"] = project; args["report_id"] = report; args["max_output_tokens"] = 8000; return Bridge.Call("workbookQuery", new { name, args }, token); }
     private void ClearDetail() { pairedSource = null; singleCellSource = null; detailCellRead = null; ++detailGeneration; cellReads.Cancel(); detailLoader = null; detailPayload = default; documentDetail = default; inspectorMode = "prompt"; detailNext = null; detailOffset = 0; detailCursor = ""; detailItemNext = ""; detailStyle.IsChecked = false; detailStyle.IsEnabled = false; detailRange.Text = ""; detailMetadata.Text = ""; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; }
     private Task FirstDetail() { detailCursor = ""; return LoadDetail(0); }
     private Task NextDetail() { if (detailNext is { } offset) return LoadDetail(offset); if (detailItemNext.Length > 0) { detailCursor = detailItemNext; return LoadDetail(0); } return Task.CompletedTask; }
@@ -2507,10 +2537,10 @@ internal sealed class MainWindow : Window
             finally { appendRelease.TrySetResult(); try { await pendingAppend; } catch (OperationCanceledException) { } }
             await LoadMoreChanges(); queryReads++; if (changes.Count != rows.Length + 1 || !changes.Take(rows.Length).SequenceEqual(rows) || changes.Select(item => item.Id).Distinct().Count() != changes.Count || nextChanges == cursor || !ReferenceEquals(selectedRow, changeList.SelectedItem)) throw new InvalidOperationException("Resuming More did not use the retained real cursor to append exactly one canonical event without duplicate/replaced prior rows.");
             await ReturnToChange(); if (!AtSelectedChange || selectedChange.GetRawText() != eventBytes) throw new InvalidOperationException("Continued selected event became unreachable after resumed paging.");
-            var beforeQueryFailure = changeQueryReadsForSmoke;
+            var beforeQueryFailure = changeQueryReadsForSmoke; var failedPageRows = changes.ToArray(); var failedPageCursor = nextChanges; var failedPageRaw = detailPayload.GetRawText(); var sourceReadsA = Before.GridReadsForSmoke; var sourceReadsB = After.GridReadsForSmoke;
             try { await LoadMoreChangesCore(_ => throw new IOException("SYNTHETIC rejection after a real canonical continuation reply")); throw new InvalidOperationException("The query-install fault control unexpectedly succeeded."); } catch (IOException) { }
-            if (loadedChangeScope is not null || changesReady || sourceOnlyFailure || ComparisonState != "failed" || detailPayload.ValueKind != JsonValueKind.Undefined || changeQueryReadsForSmoke != beforeQueryFailure + 1) throw new InvalidOperationException("A query failure retained an owned source-only retry scope or authoritative event detail.");
-            await RetryComparison(); if (changeQueryReadsForSmoke != beforeQueryFailure + 2 || ComparisonState != "ready" || loadedChangeScope != CurrentChangeScope || changes.Count != 1 || selectedChange.ValueKind != JsonValueKind.Undefined || returnChange.IsVisible) throw new InvalidOperationException("Query-failure Retry did not issue a fresh query or retained a dead event anchor outside its refreshed first page.");
+            if (loadedChangeScope is not null || changesReady || sourceOnlyFailure || ComparisonState != "failed" || queryRetry != new QueryRetry(CurrentChangeScope, true, failedPageCursor) || !failedPageRows.SequenceEqual(changes) || detailPayload.GetRawText() != failedPageRaw || !HasIndependentSourceDetail || selectedChange.ValueKind != JsonValueKind.Undefined || changeQueryReadsForSmoke != beforeQueryFailure + 1) throw new InvalidOperationException("A query failure lost its exact continuation/physical reader or retained failed event authority.");
+            await RetryComparison(); if (changeQueryReadsForSmoke != beforeQueryFailure + 2 || ComparisonState != "ready" || loadedChangeScope != CurrentChangeScope || queryRetry is not null || changes.Count != failedPageRows.Length + 1 || !failedPageRows.SequenceEqual(changes.Take(failedPageRows.Length)) || nextChanges == failedPageCursor || detailPayload.GetRawText() != failedPageRaw || Before.GridReadsForSmoke != sourceReadsA || After.GridReadsForSmoke != sourceReadsB || selectedChange.ValueKind != JsonValueKind.Undefined || returnChange.IsVisible) throw new InvalidOperationException("Query-failure Retry did not append its exact retained continuation without physical rereads or revived event authority.");
             var beforeUnknownScope = changeQueryReadsForSmoke; FailComparison(); await ReloadSourceWindow(); if (changeQueryReadsForSmoke != beforeUnknownScope + 1 || !changesReady || loadedChangeScope != CurrentChangeScope || ComparisonState != "ready") throw new InvalidOperationException("An unknown query scope was promoted by source-only completion without an actual replacement changes query.");
             await capture("paged-query-failure-explicit-refresh");
             return new { project_id = project, report_id = report, fixture_kind = "real two-sheet synthetic source files imported and analyzed by production engine", test_only_page_limit = 1, production_default_page_limit = 100, first_event_id = firstPage[0].Id, continued_event_id = continued.Id, first_cursor = firstCursor, retained_cursor = cursor, routes = observations, actual_indexed_grid_failure_source_only_retry = true, superseded_source_and_pending_real_append_cannot_replace_list = true, resumed_real_cursor_appends_without_duplicates = true, query_failure_and_unknown_scope_require_new_query = true, report_projection_unchanged = currentReport.GetRawText() == reportBytes };
@@ -2650,6 +2680,59 @@ internal sealed class MainWindow : Window
             return new { report_id = report, edge_observations = edgeObservations, literal_source = literal, literal_raw_reader = rawValue, value_clipping = clipObservations, formula_clipping = formulaMetrics, source_bytes_and_report_unchanged = true };
         }
         finally { Before.CloseCellDetailsForSmoke(); Before.ShowFormulasForSmoke(false); Before.RestoreSelection(originalA); After.RestoreSelection(originalB); await ReloadComparisonCore(true); await Before.GoForSmoke("D4"); Width = width; Height = height; SetLanguage(language); SetLayout(layout); sourceView.SelectedIndex = originalText ? 1 : 0; await Settle(); }
+    }
+    internal async Task<object> CheckQueryFailureRetentionForSmoke(Func<string, object, Task> observe)
+    {
+        if (!IsWorkbook || singleSource || Before.FocusedAddress != "D4") throw new InvalidOperationException("Query-failure retention requires the mounted two-source D4 workbook fixture.");
+        var a = Before.CaptureSelection(); var b = After.CaptureSelection(); var from = intervalFrom; var to = intervalTo; var net = NetMode; var layout = Layout; var previousText = textView; var width = Width; var height = Height; var pageLimit = workbookPageLimitForSmoke; var report = reportId; var reportBytes = currentReport.GetRawText(); var observations = new List<object>();
+        async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        async Task ScrollSources()
+        {
+            Before.GridScroll?.ScrollToHorizontalOffset(40); Before.GridScroll?.ScrollToVerticalOffset(3); After.GridScroll?.ScrollToHorizontalOffset(30); After.GridScroll?.ScrollToVerticalOffset(2); await Settle();
+            foreach (var pane in new[] { Before, After }) if (!pane.Cells.IsVisible || pane.GridScroll is not { } scroll || scroll.ScrollableWidth <= 0 || scroll.ScrollableHeight <= 0 || scroll.HorizontalOffset <= 0 || scroll.VerticalOffset <= 0) throw new InvalidOperationException("The mounted physical source did not establish nonzero horizontal and vertical manual scroll.");
+        }
+        async Task Exercise(bool append)
+        {
+            var physicalA = Before.CaptureSelection(); var physicalB = After.CaptureSelection(); var rawA = Before.RawIdentityForSmoke; var rawB = After.RawIdentityForSmoke; var hostA = Before.Host; var hostB = After.Host; var gridA = Before.Cells.ItemsSource; var gridB = After.Cells.ItemsSource; var viewportA = Before.CaptureGridViewport(); var viewportB = After.CaptureGridViewport(); var gridReadsA = Before.GridReadsForSmoke; var gridReadsB = After.GridReadsForSmoke; var sourceReads = sourceDetailReadsForSmoke; var queryReads = changeQueryReadsForSmoke;
+            var endpointA = queryBefore.SelectedItem; var endpointB = queryAfter.SelectedItem; var rows = changes.ToArray(); var cursor = nextChanges; var expectedScope = append ? CurrentChangeScope : CurrentChangeScope with { Net = !NetMode };
+            var owner = singleCellSource; var pair = pairedSource; var read = detailCellRead; var loader = detailLoader; var raw = detailPayload.ValueKind == JsonValueKind.Undefined ? "" : detailPayload.GetRawText(); var body = detail.Text; var metadata = detailMetadata.Text; var ranges = detailRange.Text; var offset = detailOffset; var next = detailNext; var rawCursor = detailCursor; var itemNext = detailItemNext; var firstEnabled = firstDetail.IsEnabled; var nextEnabled = nextDetail.IsEnabled; var rawX = detail.HorizontalOffset; var rawY = detail.VerticalOffset;
+            object Reading() => new { comparison_state = ComparisonState, current_query = CurrentChangeScope, loaded_query = loadedChangeScope, query_retry = queryRetry, query_cursor = nextChanges, query_rows = changes.Select(row => new { row.Id, raw = row.Value }).ToArray(), query_reads = changeQueryReadsForSmoke, physical_before = Before.CaptureSelection(), physical_after = After.CaptureSelection(), before_raw_identity = Before.RawIdentityForSmoke, after_raw_identity = After.RawIdentityForSmoke, before_native = SourceViewportForSmoke(Before), after_native = SourceViewportForSmoke(After), before_grid_reads = Before.GridReadsForSmoke, after_grid_reads = After.GridReadsForSmoke, source_detail_reads = sourceDetailReadsForSmoke, raw_owner = singleCellSource, paired_owner = pairedSource, raw_request = detailCellRead, raw_payload = detailPayload.ValueKind == JsonValueKind.Undefined ? (JsonElement?)null : detailPayload, raw_text = detail.Text, raw_ranges = detailRange.Text, raw_offset = detailOffset, raw_next = detailNext, raw_x = detail.HorizontalOffset, raw_y = detail.VerticalOffset, retry_visible = retryComparison.IsVisible, status = status.Text };
+            Dictionary<string, bool> Retained() => new()
+            {
+                ["fixed_report_and_query_endpoints"] = reportId == report && currentReport.GetRawText() == reportBytes && CurrentChangeScope == expectedScope && ReferenceEquals(endpointA, queryBefore.SelectedItem) && ReferenceEquals(endpointB, queryAfter.SelectedItem),
+                ["exact_physical_selectors_windows_raw_scope_and_grid_value"] = Before.CaptureSelection() == physicalA && After.CaptureSelection() == physicalB && Before.RawIdentityForSmoke == rawA && After.RawIdentityForSmoke == rawB,
+                ["same_native_hosts_and_row_collections"] = ReferenceEquals(hostA, Before.Host) && ReferenceEquals(hostB, After.Host) && ReferenceEquals(gridA, Before.Cells.ItemsSource) && ReferenceEquals(gridB, After.Cells.ItemsSource),
+                ["zero_physical_grid_and_raw_rereads"] = Before.GridReadsForSmoke == gridReadsA && After.GridReadsForSmoke == gridReadsB && sourceDetailReadsForSmoke == sourceReads,
+                ["both_native_scroll_axes_retained"] = Before.GridScroll is { } scrollA && After.GridScroll is { } scrollB && Math.Abs(scrollA.HorizontalOffset - viewportA.X) <= 1 && Math.Abs(scrollA.VerticalOffset - viewportA.Y) <= 1 && Math.Abs(scrollB.HorizontalOffset - viewportB.X) <= 1 && Math.Abs(scrollB.VerticalOffset - viewportB.Y) <= 1,
+                ["raw_reader_ownership_and_continuation"] = append ? HasIndependentSourceDetail && ReferenceEquals(owner, singleCellSource) && ReferenceEquals(pair, pairedSource) && ReferenceEquals(read, detailCellRead) && ReferenceEquals(loader, detailLoader) && detailPayload.GetRawText() == raw && detail.Text == body && detailMetadata.Text == metadata && detailRange.Text == ranges && detailOffset == offset && detailNext == next && detailCursor == rawCursor && detailItemNext == itemNext && firstDetail.IsEnabled == firstEnabled && nextDetail.IsEnabled == nextEnabled && detail.IsVisible && Math.Abs(detail.HorizontalOffset - rawX) <= 1 && Math.Abs(detail.VerticalOffset - rawY) <= 1 : !HasIndependentSourceDetail && detailPayload.ValueKind == JsonValueKind.Undefined && detailLoader is null && singleCellSource is null && pairedSource is null,
+                ["failed_event_authority_retired"] = selectedChange.ValueKind == JsonValueKind.Undefined && selectedBefore is null && selectedAfter is null && changeList.SelectedItem is null && eventRetry is null && !returnChange.IsVisible
+            };
+            var route = append ? "owned-raw-pagination" : "no-detail-method"; var baseline = Reading(); await observe("source36-" + route + "-baseline", baseline); JsonElement failedReply = default; var actualReplies = 0;
+            workbookChangesReplyForSmoke = (reply, _) => { actualReplies++; if (reply.Get("project_id").Text() != projectId || reply.Get("report_id").Text() != reportId) throw new InvalidOperationException("The query fault did not follow a real fixed-scope response."); failedReply = reply; throw new IOException("SYNTHETIC query-install failure after a real fixed " + route + " response"); };
+            try { try { if (append) await LoadMoreChanges(); else await ChangeComparisonMode(!NetMode); throw new InvalidOperationException("The controlled query failure did not occur."); } catch (IOException) { } } finally { workbookChangesReplyForSmoke = null; }
+            await Settle(); var failed = Retained(); failed["explicit_scoped_query_failure_and_disabled_authority"] = actualReplies == 1 && changeQueryReadsForSmoke == queryReads + 1 && loadedChangeScope is null && queryRetry == new QueryRetry(expectedScope, append, append ? cursor : "") && !sourceOnlyFailure && !changesReady && ComparisonState == "failed" && !ChangeNavigationReady && !changeList.IsEnabled && !more.IsEnabled && retryComparison.IsVisible && status.Text == Copy["failed"] && (append ? rows.SequenceEqual(changes) && nextChanges == cursor : changes.Count == 0);
+            await observe("source36-" + route + "-failed", new { baseline, reading = Reading(), checks = failed }); foreach (var field in failed) if (!field.Value) throw new InvalidOperationException("Query-failure retention failed: " + route + " / " + field.Key);
+            JsonElement retryReply = default; workbookChangesReplyForSmoke = (reply, _) => { retryReply = reply; return Task.CompletedTask; };
+            try { await RetryComparison(); } finally { workbookChangesReplyForSmoke = null; }
+            await Settle(); var retried = Retained(); retried["one_exact_query_retry_without_event_reacquisition"] = changeQueryReadsForSmoke == queryReads + 2 && queryRetry is null && loadedChangeScope == expectedScope && changesReady && ComparisonState == "ready" && !retryComparison.IsVisible && retryReply.Get("items").GetRawText() == failedReply.Get("items").GetRawText() && nextChanges == failedReply.Get("next_cursor").Text();
+            retried["exact_failed_page_installed_once"] = append ? changes.Count == rows.Length + retryReply.Get("items").Items().Count && rows.SequenceEqual(changes.Take(rows.Length)) && changes.Skip(rows.Length).Select(row => row.Value.GetRawText()).SequenceEqual(retryReply.Get("items").Items().Select(item => item.GetRawText())) : changes.Select(row => row.Value.GetRawText()).SequenceEqual(retryReply.Get("items").Items().Select(item => item.GetRawText()));
+            var observed = new { route, baseline, reading = Reading(), checks = retried }; await observe("source36-" + route + "-retried", observed); foreach (var field in retried) if (!field.Value) throw new InvalidOperationException("Query-retry retention failed: " + route + " / " + field.Key); observations.Add(observed);
+        }
+        try
+        {
+            Width = 1024; Height = 768; workbookPageLimitForSmoke = 1; SetLayout(WorkspaceLayout.Preset("sourceFirst")); sourceView.SelectedIndex = 0; await Settle();
+            var arrowQueries = changeQueryReadsForSmoke; await Before.NextWindowForSmoke(); await Settle();
+            if (HasIndependentSourceDetail || detailPayload.ValueKind != JsonValueKind.Undefined || Before.SelectedRow != Math.Min(1_048_527, a.Row + 50) || changeQueryReadsForSmoke != arrowQueries) throw new InvalidOperationException("Actual native next-window action did not establish the normal source-only no-detail path without a changes query.");
+            await ScrollSources(); await Exercise(false);
+            await Before.GoForSmoke("D4"); SetLayout(Layout with { Inspector = true }); await NextDetail(); await Settle();
+            if (!HasIndependentSourceDetail || singleCellSource is null || detailOffset <= 0 || nextChanges.Length == 0 || !more.IsEnabled || !detail.IsVisible) throw new InvalidOperationException("Pagination fixture did not establish a valid nonzero physical raw reader and real query continuation.");
+            detail.ScrollToHorizontalOffset(20); detail.ScrollToVerticalOffset(24); await ScrollSources(); await Exercise(true);
+            return new { cases = observations, actual_native_arrow_and_manual_grid_scroll = true, no_detail_method_failure_and_owned_raw_pagination_failure = true, scoped_query_only_retry_without_physical_reads = true, scope = "Mounted WPF source hosts and production arrow/method/More/Retry handlers; synthetic installation faults only after real fixed query replies; no OS input claim" };
+        }
+        finally
+        {
+            workbookChangesReplyForSmoke = null; workbookPageLimitForSmoke = pageLimit; workbookNet = net; Before.RestoreSelection(a); After.RestoreSelection(b); intervalFrom = from; intervalTo = to; UpdateInterval(); await ReloadComparisonCore(true); await SelectCell(Before, Before.FocusedRow, Before.FocusedColumn); Width = width; Height = height; SetLayout(layout); sourceView.SelectedIndex = previousText ? 1 : 0; await Settle();
+        }
     }
     internal async Task<object> CheckPairedRawModeContinuationForSmoke(Func<string, object, Task> observe, Func<string, Task> capture)
     {
