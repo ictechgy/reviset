@@ -10,6 +10,10 @@
     <AssemblyName>Reviset</AssemblyName>
     <RootNamespace>Reviset.Windows</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../assets/branding/reviset.ico</ApplicationIcon>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
   </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="../../assets/branding/reviset.ico" Link="Assets/reviset.ico" />
+  </ItemGroup>
 </Project>

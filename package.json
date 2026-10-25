@@ -17,6 +17,7 @@
     "mac:build": "tsx scripts/build-macos.ts",
     "mac:run": "npm run mac:build && open release/Reviset.app",
     "mac:smoke": "node scripts/native-smoke.mjs",
+    "icons:build": "tsx scripts/build-app-icons.ts",
     "windows:build": "tsx scripts/build-windows.ts",
     "native:helpers": "tsx scripts/build-native-helpers.ts",
     "native:office": "tsx scripts/prepare-office.ts",

@@ -2,7 +2,6 @@ import { build } from 'esbuild';
 import { mkdir,cp,writeFile,rm,readFile,stat,appendFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { resolve,join } from 'node:path';
-import { createCanvas } from '@napi-rs/canvas';
 import { generateFixtures } from './generate-fixtures.js';
 import {preparePdfjs} from './prepare-pdfjs.js';
 import {optionalSidecarBuild} from './onlyoffice-build-policy.js';
@@ -44,8 +43,8 @@ await writeFile(join(resources,'THIRD-PARTY-NOTICES.txt'),'LibreOffice 26.8.1.1 
 if(optionalSidecar)await appendFile(join(resources,'THIRD-PARTY-NOTICES.txt'),'The optional ONLYOFFICE viewer calls a separately installed, pinned vendor app. The vendor app, its libraries, and the font indexer are not bundled. Only generated JSON-assignment font selection metadata is included; it contains host font paths and is bound to this Mac font inventory. Font program files are not copied. This optional private configuration is not a portable or public distribution qualification.\n');
 await generateFixtures(resolve('tests/fixtures/generated'));await mkdir(join(resources,'demo'),{recursive:true});await cp('tests/fixtures/generated/lifecycle-five',join(resources,'demo/lifecycle-five'),{recursive:true});
 await generateWorkbookDemo(join(resources,'demo/workbooks'));
-const canvas=createCanvas(1024,1024),ctx=canvas.getContext('2d');ctx.fillStyle='#1769e0';ctx.beginPath();ctx.roundRect(50,50,924,924,210);ctx.fill();ctx.fillStyle='#91bcf8';ctx.beginPath();ctx.roundRect(240,200,465,565,45);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.roundRect(330,280,465,565,45);ctx.fill();ctx.fillStyle='#1769e0';for(const [y,w] of [[440,270],[520,220],[600,265]])ctx.fillRect(425,y,w,25);
-await mkdir('dist/native-icon.iconset',{recursive:true});await writeFile('dist/native-icon.png',canvas.toBuffer('image/png'));
+await rm('dist/native-icon.iconset',{recursive:true,force:true});
+await mkdir('dist/native-icon.iconset',{recursive:true});await cp('assets/branding/reviset-icon.png','dist/native-icon.png');
 for(const size of [16,32,128,256,512])for(const scale of [1,2])execFileSync('sips',['-z',String(size*scale),String(size*scale),'dist/native-icon.png','--out',`dist/native-icon.iconset/icon_${size}x${size}${scale===2?'@2x':''}.png`],{stdio:'ignore'});
 execFileSync('iconutil',['-c','icns','dist/native-icon.iconset','-o',join(resources,'Reviset.icns')]);
 await writeFile(join(contents,'Info.plist'),`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleDevelopmentRegion</key><string>en</string><key>CFBundleLocalizations</key><array><string>en</string><string>ko</string></array><key>CFBundleName</key><string>Reviset</string><key>CFBundleDisplayName</key><string>Reviset</string><key>CFBundleIdentifier</key><string>org.docver.native</string><key>CFBundleExecutable</key><string>Reviset</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>0.5.0</string><key>CFBundleVersion</key><string>1</string><key>CFBundleIconFile</key><string>Reviset.icns</string><key>LSMinimumSystemVersion</key><string>14.0</string><key>NSHighResolutionCapable</key><true/><key>NSPrincipalClass</key><string>NSApplication</string><key>LSApplicationCategoryType</key><string>public.app-category.productivity</string></dict></plist>`);

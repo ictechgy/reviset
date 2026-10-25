@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Media.Imaging;
 
 namespace Reviset.Windows;
 
@@ -31,7 +32,10 @@ internal sealed class App : Application
         using (libraryLock)
         using (var bridge = new BridgeClient(bundle, library))
         {
-            var window = new MainWindow(bridge, Path.Combine(settingsRoot, "preferences.json"));
+            var window = new MainWindow(bridge, Path.Combine(settingsRoot, "preferences.json"))
+            {
+                Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/reviset.ico", UriKind.Absolute))
+            };
             app.MainWindow = window;
             window.Loaded += async (_, _) =>
             {
