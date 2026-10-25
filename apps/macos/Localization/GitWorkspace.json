@@ -3,6 +3,14 @@
     "en": "Query",
     "ko": "조회"
   },
+  "git.importComparisonMinimum": {
+    "en": "Add at least two version entries for a new comparison. A bundled PPTX and PDF count as one version.",
+    "ko": "새 비교에는 버전 항목을 2개 이상 추가하세요. 묶은 PPTX와 PDF는 버전 1개로 계산합니다."
+  },
+  "git.importVersionMinimum": {
+    "en": "Add at least one version entry to import.",
+    "ko": "가져올 버전 항목을 1개 이상 추가하세요."
+  },
   "git.net": {
     "en": "Two-version diff",
     "ko": "두 버전 차이"

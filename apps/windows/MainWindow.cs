@@ -290,7 +290,7 @@ internal sealed class MainWindow : Window
         intervalCaption.Visibility = Visibility.Collapsed;
         more = Command("more", LoadMoreChanges); DockPanel.SetDock(more, Dock.Bottom); changeDock.Children.Add(more);
         retryComparison = Command("retry", RetryComparison); retryComparison.Visibility = Visibility.Collapsed; DockPanel.SetDock(retryComparison, Dock.Bottom); changeDock.Children.Add(retryComparison);
-        ConfigureChangeList(); changeList.ItemsSource = changes; soleChanges.Children.Add(soleExplanation); newComparison = Command("newComparison", Import); soleChanges.Children.Add(newComparison); var changeBody = new Grid(); changeBody.Children.Add(changeList); changeBody.Children.Add(soleChanges); changeDock.Children.Add(changeBody); ChangesPane.Child = changeDock;
+        ConfigureChangeList(); changeList.ItemsSource = changes; soleChanges.Children.Add(soleExplanation); newComparison = Command("newComparison", NewComparison); soleChanges.Children.Add(newComparison); var changeBody = new Grid(); changeBody.Children.Add(changeList); changeBody.Children.Add(soleChanges); changeDock.Children.Add(changeBody); ChangesPane.Child = changeDock;
         changeList.SelectionChanged += async (_, _) => { if (!binding && changeList.SelectedItem is ChangeChoice choice) await Guard(() => SelectChange(choice.Value)); };
         BindText(inspectorHeading, "evidence");
         var pagingButtons = new WrapPanel(); firstDetail = Command("firstText", FirstDetail); nextDetail = Command("nextText", NextDetail); pagingButtons.Children.Add(firstDetail); pagingButtons.Children.Add(nextDetail); detailPaging.Children.Add(pagingButtons); BindText(detailStyle, "styleDetail"); detailPaging.Children.Add(detailStyle); detailStyle.Click += async (_, _) => await Guard(FirstDetail); var rangeDetails = new Expander { Content = detailRange, IsExpanded = false, Margin = new Thickness(8, 0, 8, 2) }; relocalize.Add(() => rangeDetails.Header = Copy["sourceRangeDetails"]); detailPaging.Children.Add(rangeDetails);
@@ -298,7 +298,7 @@ internal sealed class MainWindow : Window
         var sourceTools = new DockPanel { Margin = new Thickness(4, 1, 4, 1), LastChildFill = true };
         var sourceActions = new StackPanel { Orientation = Orientation.Horizontal }; previousChange = Command("previousChange", () => MoveChange(-1)); nextChange = Command("nextChange", () => MoveChange(1)); returnChange = Command("returnChange", ReturnToChange); sourceActions.Children.Add(previousChange); sourceActions.Children.Add(nextChange); sourceActions.Children.Add(returnChange); sourceActions.Children.Add(sourceView); DockPanel.SetDock(sourceActions, Dock.Right); sourceTools.Children.Add(sourceActions); sourceTools.Children.Add(sourcePair); DockPanel.SetDock(sourceTools, Dock.Top); sourceStage.Children.Add(sourceTools);
         firstTextStage = Command("firstText", FirstDetail); nextTextStage = Command("nextText", NextDetail); rawTextPaging.Children.Add(firstTextStage); rawTextPaging.Children.Add(nextTextStage); BindText(sourceDiagnostics, "sourceDetails"); sourceDiagnostics.Click += (_, _) => RenderSourceDiff(); rawTextPaging.Children.Add(sourceDiagnostics); DockPanel.SetDock(rawTextPaging, Dock.Top); sourceStage.Children.Add(rawTextPaging);
-        var sourceFooter = new DockPanel(); newComparisonStage = Command("newComparison", Import); DockPanel.SetDock(newComparisonStage, Dock.Right); sourceFooter.Children.Add(newComparisonStage); storedHistoryButton = Command("openStoredHistory", () => storedHistoryRequest = OpenStoredHistory()); DockPanel.SetDock(storedHistoryButton, Dock.Right); sourceFooter.Children.Add(storedHistoryButton); selectedLimitsButton = Command("selectedLimits", () => { CreateSelectedLimitsDialog().ShowDialog(); return Task.CompletedTask; }); DockPanel.SetDock(selectedLimitsButton, Dock.Right); sourceFooter.Children.Add(selectedLimitsButton); sourceFooter.Children.Add(sourceNotice); DockPanel.SetDock(sourceFooter, Dock.Bottom); sourceStage.Children.Add(sourceFooter); var sourceBody = new Grid(); sourceBody.Children.Add(comparison); sourceBody.Children.Add(unified); libraryPrompt.Children.Add(libraryPromptText); startupRetry = Command("retryStartup", () => startupRequest = InitializeCore()); firstImport = Command("import", Import); libraryPrompt.Children.Add(startupRetry); libraryPrompt.Children.Add(firstImport); sourceBody.Children.Add(libraryPrompt); sourceStage.Children.Add(sourceBody);
+        var sourceFooter = new DockPanel(); newComparisonStage = Command("newComparison", NewComparison); DockPanel.SetDock(newComparisonStage, Dock.Right); sourceFooter.Children.Add(newComparisonStage); storedHistoryButton = Command("openStoredHistory", () => storedHistoryRequest = OpenStoredHistory()); DockPanel.SetDock(storedHistoryButton, Dock.Right); sourceFooter.Children.Add(storedHistoryButton); selectedLimitsButton = Command("selectedLimits", () => { CreateSelectedLimitsDialog().ShowDialog(); return Task.CompletedTask; }); DockPanel.SetDock(selectedLimitsButton, Dock.Right); sourceFooter.Children.Add(selectedLimitsButton); sourceFooter.Children.Add(sourceNotice); DockPanel.SetDock(sourceFooter, Dock.Bottom); sourceStage.Children.Add(sourceFooter); var sourceBody = new Grid(); sourceBody.Children.Add(comparison); sourceBody.Children.Add(unified); libraryPrompt.Children.Add(libraryPromptText); startupRetry = Command("retryStartup", () => startupRequest = InitializeCore()); firstImport = Command("import", Import); libraryPrompt.Children.Add(startupRetry); libraryPrompt.Children.Add(firstImport); sourceBody.Children.Add(libraryPrompt); sourceStage.Children.Add(sourceBody);
         sourceView.SelectionChanged += (_, _) => { if (!binding) { textView = sourceView.SelectedIndex == 1; RenderSourceDiff(); } };
         root.Children.Add(workspace); ClearDetail(); SetBusy(false);
     }
@@ -1015,23 +1015,31 @@ internal sealed class MainWindow : Window
         catch { FailComparison(); }
         finally { restoringOperation = false; }
     }
-    private async Task Import()
+    private Task importRequest = Task.CompletedTask;
+    private Task Import() => importRequest = Import(ImportIntent.Reading(IsWorkbook));
+    private Task NewComparison() => importRequest = Import(ImportIntent.Comparison(IsWorkbook));
+    private async Task Import(ImportIntent intent)
     {
-        if (busy || initializing || !startupReady) return; var dialog = new ImportWindow(Copy, IsWorkbook) { Owner = this }; if (dialog.ShowDialog() != true) return;
-        await ImportAndAnalyze(dialog.ProjectTitle, dialog.Rows.ToList());
+        if (busy || initializing || !startupReady) return; var dialog = new ImportWindow(Copy, intent.Workbook, importIntent: intent) { Owner = this }; if (dialog.ShowDialog() != true) return;
+        await ImportAndAnalyze(dialog.ProjectTitle, dialog.Rows.ToList(), importIntent: intent);
     }
-    internal async Task ImportAndAnalyze(string title, IReadOnlyList<ImportRow> rows, Action<int>? startedForSmoke = null, Action? afterCreateForSmoke = null)
+    internal async Task ImportAndAnalyze(string title, IReadOnlyList<ImportRow> rows, Action<int>? startedForSmoke = null, Action? afterCreateForSmoke = null, ImportIntent? importIntent = null)
     {
-        if (busy || initializing || !startupReady) return; var owned = new CancellationTokenSource(); operation = owned; var previous = AdmitMutation(); var completed = false; status.Text = Copy["importing"];
+        if (busy || initializing || !startupReady) return;
+        var intent = importIntent ?? ImportIntent.Reading(IsWorkbook);
+        var entries = rows.ToArray();
+        if (intent.Workbook != IsWorkbook) throw new BridgeException("IMPORT_SCOPE", Copy["requestFailed"]);
+        if (!intent.Accepts(entries.Length)) throw new BridgeException("IMPORT_ENTRY_COUNT", Copy[intent.MinimumEntries == 2 ? "comparisonEntryMinimum" : intent.Workbook ? "workbookHint" : "documentHint"]);
+        var owned = new CancellationTokenSource(); operation = owned; var previous = AdmitMutation(); var completed = false; status.Text = Copy["importing"];
         try
         {
             await RecoverBeforeMutation(owned.Token);
-            var input = new List<object>(); foreach (var row in rows)
+            var input = new List<object>(); foreach (var row in entries)
             {
                 var hashes = new List<string>(); foreach (var path in row.Paths) hashes.Add(await ImportWindow.Identity(path, owned.Token));
-                input.Add(IsWorkbook ? new { label = row.Label.Trim(), path = row.Paths[0], expected_sha256 = hashes[0] } : (object)new { label = row.Label.Trim(), files = row.Paths, expected_sha256 = hashes });
+                input.Add(intent.Workbook ? new { label = row.Label.Trim(), path = row.Paths[0], expected_sha256 = hashes[0] } : (object)new { label = row.Label.Trim(), files = row.Paths, expected_sha256 = hashes });
             }
-            var project = await Bridge.Call(IsWorkbook ? "workbookCreate" : "create", new { title, revisions = input }, owned.Token);
+            var project = await Bridge.Call(intent.Workbook ? "workbookCreate" : "create", new { title, revisions = input }, owned.Token);
             currentProject = project; projectId = project.Get("project_id").Text(); reportId = ""; BeginScope(); ClearReport(); afterCreateForSmoke?.Invoke();
             await AnalyzeCore(owned.Token, startedForSmoke); await RefreshProjects();
             completed = true;
@@ -2204,7 +2212,7 @@ internal sealed class MainWindow : Window
             Before.RestoreSelection(before); After.RestoreSelection(after); await ReloadSourceWindow();
         }
     }
-    internal async Task<object> CheckSoleImportedRevisionForSmoke(ImportRow source, Func<string, Task> capture)
+    internal async Task<object> CheckSoleImportedRevisionForSmoke(ImportRow source, Func<string, Task> capture, ImportRow? bundledSource = null, Func<string, object, Task>? observe = null)
     {
         var project = projectId; var report = reportId; var reportBytes = currentReport.GetRawText(); var workbook = IsWorkbook; var layout = Layout; var language = Copy.Language; var originalNet = NetMode; var priorText = textView;
         var observations = new List<object>();
@@ -2237,16 +2245,61 @@ internal sealed class MainWindow : Window
                 if (workbook ? !After.Cells.IsVisible || After.Cells.Items.Count != 50 || After.GridScroll is not { ViewportHeight: >= 5 } : !After.PageImage.IsVisible || After.PageImage.Source is null) throw new InvalidOperationException("Actual sole-import reading does not expose its useful native source.");
                 await capture("sole-import-" + preset + "-" + locale); observations.Add(new { preset, language = locale, imported_occurrences = 1, source_occurrence = occurrence, guidance = SingleSourceGuidance, persistent_guidance = Copy["singleImportedSourceNotice"], import_action_enabled = actionItems["import"].IsEnabled, comparison_modes_disabled = !comparisonMode.IsEnabled });
             }
-            var opened = false; Exception? dialogFailure = null;
+            var newComparisonCases = new List<object>();
+            foreach (var locale in new[] { "en", "ko" }) foreach (var preset in new[] { "sourceFirst", "focus" })
+            {
+                SetLanguage(locale); SetLayout(WorkspaceLayout.Preset(preset)); await Settle();
+                var beforeIdentity = QueryIdentityForSmoke; var beforeA = Before.CaptureSelection(); var beforeB = After.CaptureSelection(); var hostA = Before.Host; var hostB = After.Host; var rowsA = Before.Cells.ItemsSource; var rowsB = After.Cells.ItemsSource; var rawText = detail.Text; var rawMetadata = detailMetadata.Text; var sourceTicket = generation;
+                var projectsBefore = (await Bridge.Call(workbook ? "workbookProjects" : "projects")).GetRawText(); var intent = ImportIntent.Comparison(workbook); var rejectedBoundary = false;
+                try { await ImportAndAnalyze("SYNTHETIC rejected one-entry comparison", [source], importIntent: intent); } catch (BridgeException error) when (error.Code == "IMPORT_ENTRY_COUNT") { rejectedBoundary = true; }
+                if (!workbook && bundledSource is not null)
+                {
+                    var bundleRejected = false; try { await ImportAndAnalyze("SYNTHETIC rejected bundled one-entry comparison", [bundledSource], importIntent: intent); } catch (BridgeException error) when (error.Code == "IMPORT_ENTRY_COUNT") { bundleRejected = true; }
+                    if (!bundleRejected || bundledSource.Paths.Length != 2) throw new InvalidOperationException("A supplied PPTX/PDF bundle acquired two version entries at the production boundary.");
+                }
+                Exception? dialogFailure = null; object? dialogObservation = null;
+                _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, () =>
+                {
+                    ImportWindow? dialog = null;
+                    try
+                    {
+                        dialog = Application.Current.Windows.OfType<ImportWindow>().Single(window => ReferenceEquals(window.Owner, this));
+                        var initial = dialog.Rows.Count == 0 && dialog.Intent == intent && dialog.Title == Copy["import"] && !dialog.SubmitEnabled;
+                        dialog.SetTitleForSmoke("SYNTHETIC cancelled comparison"); dialog.Rows.Add(new() { Label = source.Label, Paths = source.Paths }); var oneDisabled = !dialog.SubmitEnabled; dialog.SubmitForSmoke(); var oneRejected = dialog.IsVisible && dialog.DialogResult is null && dialog.RejectedEntrySubmissions == 1;
+                        var bundleRejected = workbook;
+                        if (!workbook && bundledSource is not null) { dialog.Rows.Clear(); dialog.Rows.Add(new() { Label = bundledSource.Label, Paths = bundledSource.Paths }); dialog.SubmitForSmoke(); bundleRejected = !dialog.SubmitEnabled && dialog.IsVisible && dialog.DialogResult is null && dialog.RejectedEntrySubmissions == 2; }
+                        dialog.Rows.Add(new() { Label = "SYNTHETIC second version", Paths = source.Paths });
+                        var fields = new Dictionary<string, bool> { ["captured_minimum_two"] = initial, ["one_entry_start_disabled"] = oneDisabled, ["actual_one_entry_submit_rejected"] = oneRejected, ["PPTX_PDF_bundle_is_one_entry"] = bundleRejected, ["two_entries_start_enabled"] = dialog.Rows.Count == 2 && dialog.SubmitEnabled, ["localized_minimum_guidance"] = dialog.EntryGuidance == Copy["comparisonEntryMinimum"] + (workbook ? "" : " " + Copy["comparisonDocumentBundle"]) };
+                        dialogObservation = new { language = locale, preset, dialog.Intent, guidance = dialog.EntryGuidance, rows = dialog.Rows.Select(row => new { row.Label, files = row.Paths.Length }).ToArray(), checks = fields };
+                        foreach (var field in fields) if (!field.Value) throw new InvalidOperationException("New comparison dialog failed: " + field.Key);
+                        Visit(dialog).OfType<Button>().Single(button => button.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    }
+                    catch (Exception error) { dialogFailure = error; dialog?.Close(); }
+                });
+                var button = preset == "sourceFirst" ? newComparison : newComparisonStage; if (!button.IsVisible) throw new InvalidOperationException("The New comparison route being qualified is not visible."); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await importRequest; await Settle();
+                var projectsAfter = (await Bridge.Call(workbook ? "workbookProjects" : "projects")).GetRawText();
+                var cancelFields = new Dictionary<string, bool> { ["production_one_entry_rejected"] = rejectedBoundary, ["no_mutation_admission"] = generation == sourceTicket && operation is null && !busy, ["projects_unchanged"] = projectsBefore == projectsAfter, ["fixed_report_and_query_raw_unchanged"] = QueryIdentityForSmoke == beforeIdentity && projectId == soleProject && reportId == soleReport && currentReport.GetRawText() == soleBytes, ["physical_sources_unchanged"] = Before.CaptureSelection() == beforeA && After.CaptureSelection() == beforeB, ["native_hosts_and_rows_retained"] = ReferenceEquals(hostA, Before.Host) && ReferenceEquals(hostB, After.Host) && ReferenceEquals(rowsA, Before.Cells.ItemsSource) && ReferenceEquals(rowsB, After.Cells.ItemsSource), ["raw_reader_unchanged"] = detail.Text == rawText && detailMetadata.Text == rawMetadata, ["dialog_completed_without_error"] = dialogObservation is not null && dialogFailure is null };
+                var outcome = new { language = locale, preset, dialog = dialogObservation, checks = cancelFields }; if (observe is not null) await observe("source33-minimum-cancel-" + preset + "-" + locale, outcome); foreach (var field in cancelFields) if (!field.Value) throw new InvalidOperationException("New comparison rejection/cancel failed: " + field.Key, dialogFailure); newComparisonCases.Add(outcome);
+                // A cancelled two-entry intent belongs to its own dialog only.
+                dialogFailure = null; object? ordinaryObservation = null;
+                _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, () =>
+                {
+                    ImportWindow? dialog = null;
+                    try { dialog = Application.Current.Windows.OfType<ImportWindow>().Single(window => ReferenceEquals(window.Owner, this)); dialog.SetTitleForSmoke("SYNTHETIC ordinary import"); dialog.Rows.Add(new() { Label = source.Label, Paths = source.Paths }); ordinaryObservation = new { dialog.Intent, entry_count = dialog.Rows.Count, one_entry_start_enabled = dialog.SubmitEnabled }; if (dialog.Intent != ImportIntent.Reading(workbook) || !dialog.SubmitEnabled) throw new InvalidOperationException("Cancelled comparison minimum leaked into ordinary Import."); Visit(dialog).OfType<Button>().Single(control => control.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); } catch (Exception error) { dialogFailure = error; dialog?.Close(); }
+                });
+                await Import(); await Settle(); if (dialogFailure is not null || ordinaryObservation is null || QueryIdentityForSmoke != beforeIdentity || generation != sourceTicket) throw new InvalidOperationException("Ordinary import reopen changed its minimum or the retained sole source.", dialogFailure); newComparisonCases.Add(new { language = locale, preset, ordinary_reopen = ordinaryObservation });
+            }
+            SetLayout(WorkspaceLayout.Preset("sourceFirst")); await Settle(); Exception? submitFailure = null; object? acceptedDialog = null;
             _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, () =>
             {
                 ImportWindow? dialog = null;
-                try { dialog = Application.Current.Windows.OfType<ImportWindow>().Single(window => ReferenceEquals(window.Owner, this)); opened = true; if (dialog.Rows.Count != 0 || dialog.Title != Copy["import"]) throw new InvalidOperationException("Import did not open its real new-timeline dialog."); Visit(dialog).OfType<Button>().Single(button => button.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
-                catch (Exception error) { dialogFailure = error; dialog?.Close(); }
+                try { dialog = Application.Current.Windows.OfType<ImportWindow>().Single(window => ReferenceEquals(window.Owner, this)); dialog.SetTitleForSmoke("SYNTHETIC actual two-entry comparison"); dialog.Rows.Add(new() { Label = "SYNTHETIC first version", Paths = source.Paths }); dialog.Rows.Add(new() { Label = "SYNTHETIC second version", Paths = source.Paths }); acceptedDialog = new { dialog.Intent, entries = dialog.Rows.Count, files_per_entry = dialog.Rows.Select(row => row.Paths.Length).ToArray(), start_enabled = dialog.SubmitEnabled }; if (dialog.Intent != ImportIntent.Comparison(workbook) || !dialog.SubmitEnabled) throw new InvalidOperationException("A valid two-entry comparison could not submit."); dialog.SubmitForSmoke(); } catch (Exception error) { submitFailure = error; dialog?.Close(); }
             });
-            newComparisonStage.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Settle();
-            if (!opened || dialogFailure is not null || projectId != soleProject || reportId != soleReport || currentReport.GetRawText() != soleBytes) throw new InvalidOperationException("The visible native New comparison route did not open/cancel a new timeline without changing the sole report.", dialogFailure);
-            return new { project_id = soleProject, report_id = soleReport, actual_imported_revision_count = 1, cases = observations, visible_native_new_comparison_opens_empty_new_timeline_and_cancel_preserves_report = true };
+            newComparison.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await importRequest; await Settle();
+            var retainedSole = await Bridge.Call(workbook ? "workbookView" : "view", Json.Scope(soleProject, soleReport));
+            var acceptedFields = new Dictionary<string, bool> { ["actual_dialog_accepted"] = submitFailure is null && acceptedDialog is not null, ["new_project_and_fixed_report"] = projectId != soleProject && reportId.Length > 0 && reportId != soleReport && ComparisonState == "ready" && !busy && operation is null, ["actual_two_occurrences"] = currentReport.Get("revisions").Items().Count == 2, ["previous_fixed_report_unchanged"] = retainedSole.GetRawText() == soleBytes };
+            var accepted = new { dialog = acceptedDialog, new_project = projectId, new_report = reportId, actual_revisions = currentReport.Get("revisions"), checks = acceptedFields }; if (observe is not null) await observe("source33-two-entry-production-submit", accepted); foreach (var field in acceptedFields) if (!field.Value) throw new InvalidOperationException("Actual two-entry comparison failed: " + field.Key, submitFailure);
+            return new { project_id = soleProject, report_id = soleReport, actual_imported_revision_count = 1, cases = observations, new_comparison_cases = newComparisonCases, actual_two_entry_submit = accepted, visible_native_new_comparison_opens_empty_new_timeline_and_cancel_preserves_report = true };
         }
         finally
         {
@@ -3005,11 +3058,26 @@ internal sealed class MainWindow : Window
         finally { await restore(); }
         await RetryComparison(); if (Before.ReadState != "ready" || ComparisonState != "ready" || Before.CaptureSelection() != expectedBefore || After.CaptureSelection() != expectedAfter || intervalFrom != expectedFrom || intervalTo != expectedTo || NetMode != expectedMode || !Before.AuthorizesCell(expectedBefore.Row, expectedBefore.Column) || loadedChangeScope != ownedScope || !rows.SequenceEqual(changes) || cursor != nextChanges || !ReferenceEquals(selectedRow, changeList.SelectedItem) || changeQueryReadsForSmoke != queryReads || selectedChange.GetRawText() != anchor.GetRawText() || selectedBefore != anchorBefore || selectedAfter != anchorAfter) throw new InvalidOperationException("Source-only retry did not recover the exact source window while preserving owned paged query objects, cursor and event anchors without a changes query.");
     }
-    internal async Task CheckFailedDetailForSmoke(Func<Task> corrupt, Func<Task> restore)
+    internal async Task<object> CheckFailedDetailForSmoke(Func<Task> corrupt, Func<Task> restore, Func<string, object, Task> observe)
     {
-        if (detailNext is null) throw new InvalidOperationException("Long source fixture did not expose a native continuation.");
-        await corrupt(); try { try { await NextDetail(); throw new InvalidOperationException("Corrupt raw continuation unexpectedly loaded."); } catch (BridgeException) { } if (detail.Text != Copy["failed"] || nextDetail.IsEnabled) throw new InvalidOperationException("Failed continuation retained authoritative old source text."); } finally { await restore(); }
-        await FirstDetail(); if (detailOffset != 0 || detailNext is null) throw new InvalidOperationException("Raw first/retry did not restore the exact selected source.");
+        var source = singleCellSource; var read = detailCellRead; var before = Before.CaptureSelection(); var after = After.CaptureSelection(); var scope = CurrentChangeScope; var loaded = loadedChangeScope; var queryRows = changes.ToArray(); var cursor = nextChanges; var queryReads = changeQueryReadsForSmoke; var hostA = Before.Host; var hostB = After.Host;
+        object Reading() => new { owner = singleCellSource, request = detailCellRead, payload = detailPayload.ValueKind == JsonValueKind.Undefined ? (JsonElement?)null : detailPayload, raw_text = detail.Text, raw_metadata = detailMetadata.Text, ranges = detailRange.Text, offset = detailOffset, next = detailNext, first_enabled = firstDetail.IsEnabled, next_enabled = nextDetail.IsEnabled, comparison_state = ComparisonState, current_query = CurrentChangeScope, loaded_query = loadedChangeScope, query_cursor = nextChanges, before = Before.CaptureSelection(), after = After.CaptureSelection(), before_native = SourceViewportForSmoke(Before), after_native = SourceViewportForSmoke(After) };
+        var baseline = Reading(); await observe("source33-failed-continuation-baseline", baseline);
+        var cell = detailPayload.Get("items").Items().FirstOrDefault(); var formula = SourceTextObservation.ReadSegment(cell.Get("formula"), cell.Get("text_continuations").Get("formula"));
+        if (Before.FocusedAddress != "D4" || source is null || !SingleSourceCurrent || read is not { Component: "cell", Offset: 0 } || !source.ReadResponse(read, detailPayload, out _) || formula is not { State: SourceTextState.Partial, Range.Valid: true } || formula.Range.Next != detailNext || detailNext is not > 0 || detailOffset != 0 || !nextDetail.IsEnabled || firstDetail.IsEnabled) throw new InvalidOperationException("The newly established real D4 source did not expose its owned first formula segment and native continuation.");
+        var raw = detailPayload.GetRawText(); var body = detail.Text; var metadata = detailMetadata.Text; var ranges = detailRange.Text; var expectedNext = detailNext; string? failureCode = null;
+        bool FixedSources() => Before.CaptureSelection() == before && After.CaptureSelection() == after && CurrentChangeScope == scope && loadedChangeScope == loaded && queryRows.SequenceEqual(changes) && nextChanges == cursor && queryReads == changeQueryReadsForSmoke && ReferenceEquals(hostA, Before.Host) && ReferenceEquals(hostB, After.Host) && ReferenceEquals(singleCellSource, source) && SingleSourceCurrent;
+        await corrupt();
+        try
+        {
+            try { await NextDetail(); throw new InvalidOperationException("Corrupt raw continuation unexpectedly loaded."); } catch (BridgeException error) { failureCode = error.Code; }
+            var failed = Reading(); await observe("source33-failed-continuation-rejected", new { reading = failed, actual_error_code = failureCode });
+            if (detail.Text != Copy["failed"] || nextDetail.IsEnabled || !firstDetail.IsEnabled || detailPayload.ValueKind != JsonValueKind.Undefined || detailCellRead is not null || detailMetadata.Text.Length != 0 || detailRange.Text.Length != 0 || detailNext is not null || !FixedSources()) throw new InvalidOperationException("Failed continuation retained authoritative old source text or changed its fixed retry scope.");
+        }
+        finally { await restore(); }
+        await FirstDetail(); var retried = Reading(); await observe("source33-failed-continuation-first-retry", retried);
+        if (detailOffset != 0 || detailNext != expectedNext || detailPayload.GetRawText() != raw || detail.Text != body || detailMetadata.Text != metadata || detailRange.Text != ranges || !nextDetail.IsEnabled || firstDetail.IsEnabled || !FixedSources()) throw new InvalidOperationException("Raw first/retry did not restore the exact selected source.");
+        return new { baseline, actual_error_code = failureCode, exact_scoped_first_retry = retried };
     }
     internal async Task SelectSourcePairForSmoke(int before, int after)
     {

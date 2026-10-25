@@ -28,6 +28,18 @@ struct ReorderConfirmation:Identifiable {
     @MainActor var message:String {uiMessage.text}
 }
 
+// A dialog captures its route when it opens. Bundled source files still form
+// one version entry; only a new-comparison route requires a pair of entries.
+enum ImportIntent {
+    case ordinary, newComparison
+    var minimumVersionEntries:Int {self == .newComparison ? 2:1}
+    @MainActor func validateVersionEntries(_ count:Int)throws {
+        guard count>=minimumVersionEntries else {
+            throw BridgeError(code:"IMPORT_VERSION_MINIMUM",message:UIMessage(self == .newComparison ? "git.importComparisonMinimum":"git.importVersionMinimum"))
+        }
+    }
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published var libraryAvailable = true
     @Published var initializing = true
@@ -93,7 +105,8 @@ struct ReorderConfirmation:Identifiable {
     @Published var mcpFailureMessage = UIMessage.raw("")
     var mcpFailure:String {get{mcpFailureMessage.text} set{mcpFailureMessage = .raw(newValue)}}
     @Published var reorderConfirmation:ReorderConfirmation?
-    @Published var importSheet = false
+    @Published var importSheet = false {didSet {if !importSheet {importIntent = .ordinary}}}
+    private(set) var importIntent:ImportIntent = .ordinary
     @Published var mappingSheet = false
     @Published var bundleSheet = false
     @Published var bundleOccurrence = ""
@@ -170,7 +183,7 @@ struct ReorderConfirmation:Identifiable {
         return to==from+1 ? L("git.documentStoredAdjacent"):L("git.documentComputedNet")
     }
     var canStartNewComparison:Bool {libraryAvailable && !initializing && !busy && !loading}
-    func openNewComparisonImport() {guard canStartNewComparison else{return};importSheet=true}
+    func openNewComparisonImport() {guard canStartNewComparison,!importSheet else{return};importIntent = .newComparison;importSheet=true}
     func primaryPages(_ revision: JSON) -> [JSON] {
         let pptx = revision["assets"].array.filter { $0["format"].string == "pptx" }.map { $0["asset_id"].string }
         return revision["pages"].array.filter { pptx.isEmpty || pptx.contains($0["asset_id"].string) }
@@ -419,7 +432,8 @@ struct ReorderConfirmation:Identifiable {
         statusMessage = .joined(summary, separator:" · ")
     }
     func cancel() { guard busy && !committing,let token=analysisToken else { return }; cancelRequested = true; bridge.cancel(owner:token); statusMessage = UIMessage("doc.analysis.cancelling") }
-    func create(title: String, rows: [ImportRow]) async throws -> JSON {
+    func create(title: String, rows: [ImportRow], intent:ImportIntent = .ordinary) async throws -> JSON {
+        try intent.validateVersionEntries(rows.count)
         let interrupted=pendingRange != nil || loadingChanges
         selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailureMessage=(!report.isNull && interrupted) ? UIMessage("doc.changes.interrupted"):.raw("")
         do{return try await bridge.call("create", ["title": title, "revisions": rows.map(\.createPayload)])}

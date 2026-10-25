@@ -97,7 +97,8 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     @Published private var mcpFailureContent = UIMessage.raw("")
     var mcpFailure: String { get { mcpFailureContent.text } set { mcpFailureContent = .raw(newValue) } }
     @Published var mcp = ""
-    @Published var importPresented = false
+    @Published var importPresented = false {didSet {if !importPresented {importIntent = .ordinary}}}
+    private(set) var importIntent:ImportIntent = .ordinary
     @Published var publishPresented = false
     @Published var addressInput = "A1"
     @Published var inspectorVisible = false
@@ -154,7 +155,7 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
     var emptyChangesMessage:String {
         switch emptyChangesKind {case .additionalVersion:return L("git.workbookNeedVersions");case .singleRead:return L("git.singleVersionChanges");case .noChanges:return L("workbook.changes.empty")}
     }
-    func openNewComparisonImport() {guard ready else{return};importPresented=true}
+    func openNewComparisonImport() {guard ready,!importPresented else{return};importIntent = .newComparison;importPresented=true}
     var showingSheetMetadata:Bool {
         let event=selectedChange,kind=event["kind"].string
         return !event.isNull && selectedRow==0 && beforeAddress.isEmpty && afterAddress.isEmpty && (kind.hasPrefix("sheet_") || ["merges","date_system","calculation_settings"].contains(kind)) && event["before_address"].string.isEmpty && event["after_address"].string.isEmpty && event["from_revision_occurrence_id"].string==beforeID && event["to_revision_occurrence_id"].string==afterID && event["from_sheet_id"].string==beforeSheetID && event["to_sheet_id"].string==afterSheetID
@@ -738,7 +739,8 @@ enum WorkbookEmptyChangesKind:String {case additionalVersion,singleRead,noChange
         }
     }
     func cancelAnalysis() { guard canCancelAnalysis,let token = analysisToken else { return }; cancelRequested = true; statusContent = UIMessage("workbook.status.cancelling"); bridge.cancel(owner:token) }
-    func create(title: String, rows: [WorkbookImportRow]) async throws {
+    func create(title: String, rows: [WorkbookImportRow], intent:ImportIntent = .ordinary) async throws {
+        try intent.validateVersionEntries(rows.count)
         guard active, !busy, !loadingDemo else { throw BridgeError(code:"WORKBOOK_BUSY",message:UIMessage("workbook.error.busy")) }
         let retainedProject = projectID, retainedReport = reportID, retainedRange = rangeScope
         let interruptedReport = loadingReport || report.isNull
@@ -872,7 +874,7 @@ struct WorkbookWorkspace: View {
         .onChange(of:model.inspectorVisible){layout.update{$0.inspectorVisible=model.inspectorVisible}}
         .onChange(of:layout.configuration.inspectorVisible){model.inspectorVisible=layout.configuration.inspectorVisible}
         .sheet(isPresented:Binding(get:{model.tab=="ai"},set:{if !$0{model.tab="compare"}})){NativeDetailSheet(title:L("git.aiTools")){aiAndReleases}}
-        .sheet(isPresented:$model.importPresented) { WorkbookImportSheet(model:model) }
+        .sheet(isPresented:$model.importPresented) { WorkbookImportSheet(model:model,intent:model.importIntent) }
         .sheet(isPresented:$model.publishPresented) { WorkbookPublishSheet(model:model) }
         .task { model.inspectorVisible=layout.configuration.inspectorVisible;await model.start(); await WorkbookNativeSmoke.runIfRequested(model,layout:layout) }
         .onDisappear { model.closeReads() }
@@ -1641,7 +1643,9 @@ struct WorkbookImportRow: Identifiable {
         return WorkbookImportRow(label:url.deletingPathExtension().lastPathComponent,url:url,identity:identity)
     }
 }
-private struct WorkbookImportSheet: View {
+struct WorkbookImportSheet: View {
+    // Keep the opening route for this sheet's lifetime, including parent redraws.
+    @State private var intent:ImportIntent
     @State private var language = LanguagePreferences.shared
     @ObservedObject var model: WorkbookModel
     @Environment(\.dismiss) private var dismiss
@@ -1652,8 +1656,9 @@ private struct WorkbookImportSheet: View {
     @State private var saving = false
     @State private var failureContent = UIMessage.raw("")
     private var failure: String { failureContent.text }
-    init(model: WorkbookModel, initialTitle: String? = nil, initialRows: [WorkbookImportRow] = []) {
+    init(model: WorkbookModel, intent:ImportIntent = .ordinary, initialTitle: String? = nil, initialRows: [WorkbookImportRow] = []) {
         self.model = model
+        _intent = State(initialValue:intent)
         _title = State(initialValue:initialTitle ?? "")
         _titleEdited = State(initialValue:initialTitle != nil)
         _rows = State(initialValue:initialRows)
@@ -1667,6 +1672,7 @@ private struct WorkbookImportSheet: View {
         VStack(alignment:.leading,spacing:16) {
             HStack { Text(L("workbook.import.title")).font(.title2.weight(.semibold)); Spacer(); Button(L("workbook.action.close")) { dismiss() }.keyboardShortcut(.cancelAction).disabled(locked) }
             Text(L("workbook.import.detail")).font(.callout).foregroundStyle(.secondary)
+            if intent == .newComparison {Text(L("git.importComparisonMinimum")).font(.callout).foregroundStyle(.secondary)}
             TextField(L("workbook.import.projectName"),text:titleBinding).accessibilityIdentifier("Docver.workbook.import.title").textFieldStyle(.roundedBorder).disabled(locked)
             Button(L("workbook.import.choose")) { choose() }.disabled(locked)
             List {
@@ -1682,7 +1688,7 @@ private struct WorkbookImportSheet: View {
             }.frame(minHeight:220,maxHeight:360)
             Text(L("workbook.import.limits")).font(.caption).foregroundStyle(.secondary)
             if !failure.isEmpty { Text(verbatim:failure).font(.caption).foregroundStyle(.red) }
-            HStack { if locked { ProgressView().controlSize(.small); Text(choosing ? L("workbook.import.checkingHash") : L("workbook.import.importing")).font(.caption) }; Spacer(); Button(L("workbook.import.start")) { Task { await create() } }.buttonStyle(.borderedProminent).disabled(locked || rows.isEmpty || rows.count > 100 || effectiveTitle.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rows.contains { $0.label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }) }
+            HStack { if locked { ProgressView().controlSize(.small); Text(choosing ? L("workbook.import.checkingHash") : L("workbook.import.importing")).font(.caption) }; Spacer(); Button(L("workbook.import.start")) { Task { await create() } }.buttonStyle(.borderedProminent).disabled(locked || rows.count<intent.minimumVersionEntries || rows.count > 100 || effectiveTitle.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rows.contains { $0.label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }) }
         }.padding(24).frame(width:840)
     }
     private func move(_ index: Int, _ by: Int) { let target = index+by; guard rows.indices.contains(index),rows.indices.contains(target) else { return }; rows.swapAt(index,target) }
@@ -1701,7 +1707,7 @@ private struct WorkbookImportSheet: View {
     }
     private func create() async {
         saving = true; failureContent = .raw("")
-        do { try await model.create(title:effectiveTitle,rows:rows); dismiss() } catch { failureContent = bridgeErrorMessage(error) }
+        do { try await model.create(title:effectiveTitle,rows:rows,intent:intent); dismiss() } catch { failureContent = bridgeErrorMessage(error) }
         saving = false
     }
 }

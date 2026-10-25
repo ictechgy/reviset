@@ -11,7 +11,11 @@ private struct PageColumnProbeHarness:View {
 private struct SoleDocumentImportProbeHarness:View {
     @ObservedObject var model:AppModel
     let layout:WorkspaceLayoutStore
-    var body:some View {ChangeListView().environmentObject(model).environmentObject(layout).sheet(isPresented:$model.importSheet){ImportView().environmentObject(model)}}
+    var body:some View {ChangeListView().environmentObject(model).environmentObject(layout).sheet(isPresented:$model.importSheet){ImportView(intent:model.importIntent).environmentObject(model)}}
+}
+private struct SoleWorkbookImportProbeHarness:View {
+    @ObservedObject var model:WorkbookModel
+    var body:some View {WorkbookEmptyChangesState(model:model).sheet(isPresented:$model.importPresented){WorkbookImportSheet(model:model,intent:model.importIntent)}}
 }
 
 @main struct GitDiffWorkspaceProbe {
@@ -226,6 +230,7 @@ private struct SoleDocumentImportProbeHarness:View {
         try await checkGridSourceAndHiddenInput()
         try await checkHiddenSourceHeaders()
         try await checkReviewRefinements()
+        print("CHECK source33 document CTA and controlled dismissal complete");fflush(stdout)
         guard let sheetEvent=engineCases.first(where:{$0["change"]["kind"].string=="date_system"}) else{throw NSError(domain:"ActualEngineSheetEventMissing",code:1)}
         try await checkSource16Presentation(sheetEvent["change"])
         try await checkNeutralObservationHosting(eligible)
@@ -240,6 +245,9 @@ private struct SoleDocumentImportProbeHarness:View {
         workbook.setDiffMode("text");try require(workbook.diffMode=="source","SingleWorkbookReadAllowedTextPicker")
         try require(workbook.changeListProvenance==L("git.reading"),"EqualWorkbookEndpointsClaimedComparedEvents")
         try await checkWorkbookReadingGuidance(workbook)
+        print("CHECK source33 workbook CTA and controlled dismissal complete");fflush(stdout)
+        try await checkImportMinimumSubmission()
+        print("CHECK source33 import submission boundaries complete");fflush(stdout)
         let reportProjection=documentReportDetails(JSON(["coverage_gap_count":750,"coverage_gaps":(0..<500).map{["reason":"gap_\($0)"]},"quality_counts":["ocr_inferred_pages":3,"ocr_failed_pages":1,"pptx_without_render":4,"unknown_future_key":999]]))
         try require(reportProjection.totalCoverageGaps==750 && reportProjection.gaps.count==50 && reportProjection.coverageTruncated && reportProjection.gaps.first?["reason"].string=="gap_0" && reportProjection.gaps.last?["reason"].string=="gap_49","ReportLimitProjectionLostCountOrBound")
         try require(reportProjection.quality.contains(DocumentReportQualityCount(key:"ocr_inferred_pages",count:3)) && reportProjection.quality.count==3,"ReportQualityProjectionLostKnownCounts")
@@ -403,10 +411,12 @@ private struct SoleDocumentImportProbeHarness:View {
         let languages=LanguagePreferences.shared,previous=LanguagePreferences.shared.selection
         defer{languages.selection=previous;model.importPresented=false}
         let revisions:[[String:Any]]=[["revision_occurrence_id":"w0","index":0,"sheets":[]],["revision_occurrence_id":"w1","index":1,"sheets":[]]]
-        let host=NSHostingView(rootView:WorkbookEmptyChangesState(model:model)),window=NSWindow(contentRect:NSRect(x:0,y:0,width:320,height:220),styleMask:[.titled],backing:.buffered,defer:false)
+        let host=NSHostingView(rootView:SoleWorkbookImportProbeHarness(model:model)),window=NSWindow(contentRect:NSRect(x:0,y:0,width:320,height:220),styleMask:[.titled],backing:.buffered,defer:false)
         window.isReleasedWhenClosed=false;window.contentView=host;window.orderFront(nil);defer{window.close()}
         func settle()async throws {try await Task.sleep(nanoseconds:100_000_000);host.layoutSubtreeIfNeeded()}
         func guidance(_ view:NSView)->WorkbookEmptyGuidanceView? {(view as? WorkbookEmptyGuidanceView) ?? view.subviews.lazy.compactMap{guidance($0)}.first}
+        func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
+        func importContent()async throws->NSView {for _ in 0..<50 {if let content=window.sheets.first?.contentView,views(content).compactMap({$0 as? NSTextField}).contains(where:{$0.isEditable && $0.placeholderString==L("workbook.import.projectName")}){return content};try await Task.sleep(nanoseconds:10_000_000)};throw NSError(domain:"WorkbookComparisonImportSheetMissing",code:1)}
         var observations:[[String:Any]]=[]
         for language in [UILanguage.en,.ko] {
             languages.selection=language
@@ -427,8 +437,16 @@ private struct SoleDocumentImportProbeHarness:View {
             try observe("one_imported_version",L("git.workbookNeedVersions"),1)
             let report=try model.report.data(),before=try model.beforeCell.data(),after=try model.afterCell.data()
             view.importButton.performClick(nil);try require(model.importPresented,"NativeNewComparisonDidNotReachExistingImportRoute")
+            let comparisonSheet=try await importContent()
+            try require(model.importIntent == .newComparison && model.importIntent.minimumVersionEntries==2 && views(comparisonSheet).compactMap({$0 as? NSTextField}).contains(where:{$0.isEditable}),"ActualWorkbookComparisonSheetLostCapturedMinimum")
             try require(try model.report.data()==report && model.beforeCell.data()==before && model.afterCell.data()==after,"OpeningNewComparisonMutatedReadingReportOrRawCells")
             model.importPresented=false
+            for _ in 0..<50 {if window.sheets.isEmpty{break};try await Task.sleep(nanoseconds:10_000_000)}
+            try require(!model.importPresented && model.importIntent == .ordinary && window.sheets.isEmpty,"WorkbookCancelKeptComparisonMinimum")
+            model.importPresented=true;let ordinarySheet=try await importContent()
+            try require(model.importIntent == .ordinary && model.importIntent.minimumVersionEntries==1 && !views(ordinarySheet).compactMap({$0 as? NSTextField}).filter({$0.isEditable}).isEmpty,"OrdinaryWorkbookReopenInheritedComparisonGuidance")
+            model.importPresented=false
+            for _ in 0..<50 {if window.sheets.isEmpty{break};try await Task.sleep(nanoseconds:10_000_000)}
             // The query owns the list: a manually equal source pair must not
             // replace a distinct query's truthful empty comparison message.
             model.report=JSON(["report_id":"workbook_report","revisions":revisions]);model.changesFromID="w0";model.changesToID="w1";try await settle()
@@ -436,6 +454,82 @@ private struct SoleDocumentImportProbeHarness:View {
         }
         let proof:[String:Any]=["scope":"production workbook reading model routes and actual visible native guidance fields/button in synthetic NSHostingView; existing import route reached without submitting a new timeline; no OS gestures","observations":observations,"native_new_comparison_action_reached":true,"report_and_raw_cells_unchanged_by_action":true]
         if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:proof,options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("workbook-reading-proof.json"))}
+    }
+
+    @MainActor static func checkImportMinimumSubmission()async throws {
+        func require(_ value:Bool,_ name:String)throws {if !value {throw NSError(domain:name,code:1)}}
+        func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap{views($0)}}
+        guard let originalRoot=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] else{throw NSError(domain:"ImportMinimumIsolatedRootMissing",code:1)}
+        let root=URL(fileURLWithPath:originalRoot).appendingPathComponent("import-minimum"),library=root.appendingPathComponent("library")
+        try FileManager.default.createDirectory(at:library,withIntermediateDirectories:true)
+        try JSON(["mode":"import-gate"]).data().write(to:library.appendingPathComponent("control.json"))
+        let pdf=root.appendingPathComponent("source.pdf"),pptx=root.appendingPathComponent("source.pptx"),csv=root.appendingPathComponent("source.csv")
+        for url in [pdf,pptx,csv] {try Data("isolated fixture bytes\n".utf8).write(to:url)}
+        let originals=try [pdf,pptx,csv].map{try ImportFileIdentity.capture($0)}
+        var bundled=[try ImportRow.selected(pptx),try ImportRow.selected(pdf)]
+        try require(ImportRow.group(&bundled,at:1) && bundled.count==1 && bundled[0].members.count==2,"ImportMinimumBundleFixtureNotOneVersion")
+        let single=try ImportRow.selected(pdf),second=try ImportRow.selected(pdf),workbookRow=try WorkbookImportRow.selected(csv),secondWorkbookRow=try WorkbookImportRow.selected(csv)
+        setenv("DOCVER_TEST_USER_DATA",root.path,1);let document=AppModel();setenv("DOCVER_TEST_USER_DATA",originalRoot,1)
+        document.initializing=false;document.projectID="fixed-document";document.report=JSON(["report_id":"fixed-document-report","revisions":[["revision_occurrence_id":"sole","pages":[]]]]);document.leftPageID="retained-page";document.rightPageID="retained-page";document.loadingChanges=true
+        let workbook=WorkbookModel(bridge:document.bridge);await workbook.start()
+        workbook.projectID="fixed-workbook";workbook.reportID="fixed-workbook-report";workbook.report=JSON(["report_id":"fixed-workbook-report","revisions":[["revision_occurrence_id":"sole","sheets":[]]]]);workbook.beforeID="sole";workbook.afterID="sole";workbook.beforeCell=JSON(["value":"é\r\ne\u{301}"]);workbook.afterCell=JSON(["value":"raw\n"]);workbook.loadingRange=true
+        let docReport=try document.report.data(),workbookReport=try workbook.report.data(),rawBefore=try workbook.beforeCell.data(),rawAfter=try workbook.afterCell.data(),events=library.appendingPathComponent("read-events.jsonl"),beforeEvents=try Data(contentsOf:events)
+        var rejected=0
+        for rows in [[single],bundled,[]] {
+            do{_ = try await document.create(title:"rejected",rows:rows,intent:rows.isEmpty ? .ordinary:.newComparison);throw NSError(domain:"DocumentMinimumSubmitted",code:1)}
+            catch let error as BridgeError {try require(error.code=="IMPORT_VERSION_MINIMUM","DocumentMinimumWrongFailure");rejected += 1}
+        }
+        for rows in [[workbookRow],[]] {
+            do{try await workbook.create(title:"rejected",rows:rows,intent:rows.isEmpty ? .ordinary:.newComparison);throw NSError(domain:"WorkbookMinimumSubmitted",code:1)}
+            catch let error as BridgeError {try require(error.code=="IMPORT_VERSION_MINIMUM","WorkbookMinimumWrongFailure");rejected += 1}
+        }
+        try require(try Data(contentsOf:events)==beforeEvents && document.report.data()==docReport && workbook.report.data()==workbookReport && workbook.beforeCell.data()==rawBefore && workbook.afterCell.data()==rawAfter && document.leftPageID=="retained-page" && document.rightPageID=="retained-page" && document.loadingChanges && workbook.loadingRange && !workbook.busy,"MinimumRejectionChangedSourceOrCancelledReadsOrReachedBackend")
+        print("CHECK source33 five rejected entries kept Bridge untouched");fflush(stdout)
+        let preferences=LanguagePreferences.shared,previous=preferences.selection
+        defer{preferences.selection=previous}
+        var mountedDrafts:[[String:Any]]=[]
+        for language in [UILanguage.en,.ko] {
+            preferences.selection=language
+            // Capture while the comparison route is open, then dismiss before
+            // mounting: the dialog's intent must not follow the reset model.
+            document.openNewComparisonImport();let capturedDocument=ImportView(intent:document.importIntent,initialRows:bundled).environmentObject(document);document.importSheet=false
+            workbook.loadingRange=false;workbook.openNewComparisonImport();let capturedWorkbook=WorkbookImportSheet(model:workbook,intent:workbook.importIntent,initialRows:[workbookRow]);workbook.importPresented=false
+            let cases:[(String,AnyView,Int,Int)]=[
+                ("document_bundle_one",AnyView(capturedDocument),1,2),
+                ("document_comparison_two",AnyView(ImportView(intent:.newComparison,initialRows:[single,second]).environmentObject(document)),2,2),
+                ("document_ordinary_one",AnyView(ImportView(intent:document.importIntent,initialRows:[single]).environmentObject(document)),1,1),
+                ("workbook_comparison_one",AnyView(capturedWorkbook),1,2),
+                ("workbook_comparison_two",AnyView(WorkbookImportSheet(model:workbook,intent:.newComparison,initialRows:[workbookRow,secondWorkbookRow])),2,2),
+                ("workbook_ordinary_one",AnyView(WorkbookImportSheet(model:workbook,intent:workbook.importIntent,initialRows:[workbookRow])),1,1)
+            ]
+            for (name,view,entries,minimum) in cases {
+                let host=NSHostingView(rootView:view),window=NSWindow(contentRect:NSRect(x:0,y:0,width:960,height:650),styleMask:[.titled],backing:.buffered,defer:false)
+                window.isReleasedWhenClosed=false;window.contentView=host;window.orderFront(nil)
+                try await Task.sleep(nanoseconds:60_000_000);host.layoutSubtreeIfNeeded()
+                let editable=views(host).compactMap{$0 as? NSTextField}.filter{$0.isEditable}
+                try require(editable.count==entries+1 && editable.allSatisfy{!$0.visibleRect.isEmpty},"ImportMinimumMountedVersionEntriesWrong_"+name+"_"+language.rawValue+"_fields_\(editable.map(\.stringValue))")
+                mountedDrafts.append(["language":language.rawValue,"route":name,"version_entry_count":entries,"captured_route_minimum":minimum,"native_editable_field_count":editable.count]);window.close()
+            }
+            print("CHECK source33 mounted import drafts "+language.rawValue);fflush(stdout)
+        }
+        document.loadingChanges=false
+        let comparison=try await document.create(title:"document-two",rows:[single,second],intent:.newComparison)
+        try require(comparison["project_id"].string=="fixture-created-create","DocumentTwoEntriesDidNotReachBackend")
+        _ = try await document.create(title:"document-one",rows:[single])
+        print("CHECK source33 document accepted submissions reached controlled Bridge");fflush(stdout)
+        try await workbook.create(title:"workbook-two",rows:[workbookRow,secondWorkbookRow],intent:.newComparison)
+        try await workbook.create(title:"workbook-one",rows:[workbookRow])
+        print("CHECK source33 workbook accepted submissions reached controlled Bridge");fflush(stdout)
+        let records=String(data:try Data(contentsOf:events),encoding:.utf8)!.split(separator:"\n").map{JSON(try! JSONSerialization.jsonObject(with:Data($0.utf8)))}
+        let submissions=records.filter{["create","workbookCreate"].contains($0["action"].string)}
+        try require(submissions.map{$0["query"]["revisions"].array.count}==[2,1,2,1] && submissions.map{$0["query"]["title"].string}==["document-two","document-one","workbook-two","workbook-one"],"CapturedIntentLostActualSubmittedEntryCounts")
+        try require(try [pdf,pptx,csv].map{try ImportFileIdentity.capture($0)}==originals,"ImportMinimumChangedOriginalBytes")
+        // Reuse the existing fresh reading proof; this adds source33 facts from
+        // this invocation without changing any prior round's evidence.
+        let proofURL=URL(fileURLWithPath:originalRoot).appendingPathComponent("workbook-reading-proof.json")
+        var proof=try JSONSerialization.jsonObject(with:Data(contentsOf:proofURL)) as! [String:Any]
+        proof["source33_import_minimum"]=["scope":"actual production model handlers and mounted production sheet drafts; isolated controlled bridge acceptance, no real document parsing or OS input. SwiftUI submit enabled/press state is not observable in this in-process probe; the production disabled binding is source-audited.","rejected_before_any_bridge_call":rejected,"rejection_keeps_raw_report_and_read_ownership":true,"bundle_member_count":2,"bundle_version_entry_count":1,"mounted_drafts":mountedDrafts,"native_submit_enabled_observation":NSNull(),"native_submit_press_observation":NSNull(),"submitted_version_entry_counts":submissions.map{$0["query"]["revisions"].array.count},"original_bytes_unchanged":true]
+        try JSONSerialization.data(withJSONObject:proof,options:[.sortedKeys]).write(to:proofURL)
     }
 
     @MainActor static func checkHiddenSourceHeaders()async throws {
@@ -549,13 +643,25 @@ private struct SoleDocumentImportProbeHarness:View {
             guard let button=views(actionHost).compactMap({$0 as? NSButton}).first(where:{$0.identifier?.rawValue=="Reviset.document.newComparison"}) else{throw NSError(domain:"ActualSoleDocumentNewComparisonButtonMissing",code:1)}
             let fields=views(host).compactMap{$0 as? NSTextField}.filter{$0.isEditable}
             try require(button.isEnabled && !button.visibleRect.isEmpty && button.title==L("git.workbookNewComparison") && fields.count==1 && !views(host).contains{String(describing:type(of:$0)).contains("SegmentedControl")},"SoleImportKeptIrrelevantChangeFiltersOrEndpointMode")
-            let fixed=try model.report.data(),source=[model.leftPageID,model.rightPageID];button.performClick(nil)
+            let fixed=try model.report.data(),source=[model.leftPageID,model.rightPageID],configuration=layout.configuration,nativeSources=views(host).filter{$0.identifier?.rawValue=="Docver.pdf.pane"};button.performClick(nil)
             for _ in 0..<50 {if let sheet=actionWindow.sheets.first,views(sheet.contentView!).compactMap({$0 as? NSTextField}).contains(where:{$0.isEditable && $0.placeholderString==L("doc.import.projectName")}){break};try await Task.sleep(nanoseconds:10_000_000)}
             try require(model.importSheet,"SoleDocumentNativeImportActionDidNotOpen_target_\(String(describing:button.target))_action_\(String(describing:button.action))_library_\(model.libraryAvailable)_busy_\(model.busy)_loading_\(model.loading)_initializing_\(model.initializing)")
             try require(actionWindow.sheets.first?.contentView.map{views($0).compactMap{$0 as? NSTextField}.contains{$0.isEditable && $0.placeholderString==L("doc.import.projectName") && $0.stringValue==L("doc.import.defaultTitle")}}==true,"SoleDocumentActionDidNotMountExistingImportSheet")
-            try require((try model.report.data())==fixed && source==[model.leftPageID,model.rightPageID],"SoleDocumentImportActionChangedFixedReportOrSource");model.importSheet=false
+            guard let comparisonSheet=actionWindow.sheets.first?.contentView else{throw NSError(domain:"ActualDocumentComparisonSheetMissing",code:1)}
+            try require(model.importIntent == .newComparison && model.importIntent.minimumVersionEntries==2 && views(comparisonSheet).compactMap({$0 as? NSTextField}).contains(where:{$0.isEditable}),"ActualDocumentComparisonSheetLostCapturedMinimum")
+            do {_ = try await model.create(title:"rejected comparison",rows:[ImportRow(label:"one",urls:[URL(fileURLWithPath:"/unsubmitted.pdf")])],intent:model.importIntent);throw NSError(domain:"MountedDocumentComparisonAcceptedOneEntry",code:1)}
+            catch let error as BridgeError {try require(error.code=="IMPORT_VERSION_MINIMUM","MountedDocumentComparisonRejectedTooLate")}
+            try require((try model.report.data())==fixed && source==[model.leftPageID,model.rightPageID],"SoleDocumentImportActionChangedFixedReportOrSource")
+            model.importSheet=false
             for _ in 0..<50 {if actionWindow.sheets.isEmpty{break};try await Task.sleep(nanoseconds:10_000_000)};try require(actionWindow.sheets.isEmpty,"SoleDocumentImportSheetDidNotDismiss")
-            observations.append(["language":language.rawValue,"native_new_comparison_button_action":true,"only_source_page_field_remains":true,"no_segmented_query_mode":true,"fixed_report_and_source_unchanged":true])
+            try require(!model.importSheet && model.importIntent == .ordinary,"DocumentCancelKeptComparisonMinimum")
+            model.importSheet=true
+            for _ in 0..<50 {if let content=actionWindow.sheets.first?.contentView,views(content).compactMap({$0 as? NSTextField}).contains(where:{$0.isEditable && $0.placeholderString==L("doc.import.projectName")}){break};try await Task.sleep(nanoseconds:10_000_000)}
+            try require(model.importIntent.minimumVersionEntries==1 && actionWindow.sheets.first?.contentView != nil,"OrdinaryDocumentReopenInheritedComparisonMinimum")
+            model.importSheet=false
+            for _ in 0..<50 {if actionWindow.sheets.isEmpty{break};try await Task.sleep(nanoseconds:10_000_000)}
+            try require((try model.report.data())==fixed && source==[model.leftPageID,model.rightPageID] && window.contentView === host && actionWindow.contentView === actionHost && layout.configuration==configuration && nativeSources.allSatisfy{sourceView in views(host).contains{$0===sourceView}},"DocumentRejectCancelOrOrdinaryReopenChangedFixedSourceHosts")
+            observations.append(["language":language.rawValue,"native_new_comparison_button_action":true,"comparison_intent_minimum":2,"controlled_dismissal_resets_ordinary_intent":true,"ordinary_reopen_minimum":1,"only_source_page_field_remains":true,"no_segmented_query_mode":true,"fixed_report_and_source_unchanged":true])
         }
         model.report=JSON(["report_id":"review-fixed","revisions":(0..<3).map{["revision_occurrence_id":"review-\($0)","pages":[["page_id":"review-page-\($0)","page":1]],"assets":[]]}]);model.from=0;model.to=0;model.selectEvidence();try await Task.sleep(nanoseconds:100_000_000)
         try require(!views(host).compactMap({$0 as? NSButton}).contains{$0.identifier?.rawValue=="Reviset.document.newComparison"} && views(host).compactMap({$0 as? NSTextField}).filter{$0.isEditable}.count>=2,"MultiVersionEqualEndpointsLostQueryOrFilters")

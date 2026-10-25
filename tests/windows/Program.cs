@@ -19,6 +19,13 @@ JsonElement Change(string json)
 }
 try
 {
+    foreach (var workbook in new[] { false, true })
+    {
+        var readingImport = ImportIntent.Reading(workbook); var comparisonImport = ImportIntent.Comparison(workbook);
+        Require(readingImport.Workbook == workbook && readingImport.MinimumEntries == 1 && readingImport.Accepts(1) && !readingImport.Accepts(0), "ordinary one-entry source reading remains valid in captured workspace: " + workbook);
+        Require(comparisonImport.Workbook == workbook && comparisonImport.MinimumEntries == 2 && !comparisonImport.Accepts(0) && !comparisonImport.Accepts(1) && comparisonImport.Accepts(2) && comparisonImport.Accepts(100) && !comparisonImport.Accepts(101), "new comparison requires two bounded version entries in captured workspace: " + workbook);
+        Require(ImportIntent.Reading(workbook).Accepts(1) && readingImport.MinimumEntries == 1 && comparisonImport.MinimumEntries == 2, "separate import intents do not leak a cancelled comparison minimum into ordinary import: " + workbook);
+    }
     var preferences = AppPreferences.Load(path); Require(preferences.Document.Current == new WorkspaceLayout(), "missing preferences use bounded defaults");
     Require(!preferences.Document.Current.Sidebar && !preferences.Document.Current.Inspector && preferences.Document.Current.ChangesVisible && preferences.Document.Current.Changes == "left" && preferences.Document.Current.ChangesWidth == 250, "fresh native workspace gives source-first geometry");
     var oldLayout = WorkspaceLayout.Preset("balanced") with { SidebarWidth = 318, ChangesHeight = 244, ComparisonRatio = .63 }; var oldPreferences = new AppPreferences(); oldPreferences.Document.Current = oldLayout; oldPreferences.Document.Named["custom legacy"] = oldLayout; oldPreferences.Save(path); var oldLoaded = AppPreferences.Load(path); Require(oldLoaded.Document.Current == oldLayout && oldLoaded.Document.Named["custom legacy"] == oldLayout, "legacy explicit geometry and named custom layouts survive source-first default change");

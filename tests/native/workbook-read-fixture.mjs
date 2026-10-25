@@ -15,7 +15,10 @@ process.stdin.on('end',()=>{
     while(n>0){n--;label=String.fromCharCode(65+n%26)+label;n=Math.floor(n/26);}
     return {address:label+row,row,column,value:`${control.value??'fresh'}:${scope.revision_occurrence_id}:${scope.sheet_id}:${label+row}`,formula:null,number_format:'General'};
   }
-  if(action==='workbookProjects'||action==='workbookReleases') value=[];
+  if((action==='create'||action==='workbookCreate')&&control.mode==='import-gate') value={project_id:'fixture-created-'+action};
+  else if(action==='workbookAnalyze'&&control.mode==='import-gate') error={code:'CONTROLLED_IMPORT_ANALYSIS_STOP',message:'controlled fixture stops after accepted import submission'};
+  else if(action==='workbookReports'&&control.mode==='import-gate') value=[];
+  else if(action==='workbookProjects'||action==='workbookReleases') value=[];
   else if(action==='workbookView'&&control.report_fixture) value=control.report_fixture;
   else if(action==='workbookGrid') {
     value={...args,items:[control.scoped_cells===true?observedCell(args,args.row_start,args.column_start):{address:'A2',row:2,column:1,value:control.value??'fresh'}]};

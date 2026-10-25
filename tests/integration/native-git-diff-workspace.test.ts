@@ -11,8 +11,13 @@ import {boundedWorkbookCell} from '../../packages/workbook/query.js';
 test('native Git-inspired workspace preserves query/event scope, source semantics, bounded diffs and existing layouts', {skip:process.platform !== 'darwin', timeout:75_000}, async () => {
   const root=await mkdtemp(join(tmpdir(), 'reviset-git-workspace-'));
   try {
-    await prepareLegacyNativeLocalization(root);
-    const executable=join(root,'probe');
+    const contents=join(root,'Probe.app/Contents'),resources=join(contents,'Resources');
+    for(const folder of ['MacOS','Helpers','Resources/backend']) await mkdir(join(contents,folder),{recursive:true});
+    await prepareLegacyNativeLocalization(resources);
+    await writeFile(join(contents,'Info.plist'),'<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>Probe</string><key>CFBundleIdentifier</key><string>org.reviset.git-workspace-probe</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>');
+    await symlink(process.execPath,join(contents,'Helpers/node'));
+    await copyFile(resolve('tests/native/workbook-read-fixture.mjs'),join(resources,'backend/bridge.mjs'));
+    const executable=join(contents,'MacOS/Probe');
     execFileSync('swiftc', ['-warnings-as-errors','-swift-version','5','-parse-as-library','-target','arm64-apple-macos14.0',...nativeSwiftSources.filter(source=>source!=='apps/macos/App.swift'),'tests/native/LocalizationTestSupport.swift','tests/native/GitDiffWorkspace.swift','-o',executable,'-framework','SwiftUI','-framework','AppKit'], {timeout:45_000,stdio:'pipe'});
     const revision=(id:string,format:'xlsx'|'ods',value:string,formula:string,withDate=false,keyed=true)=>WorkbookRevision.parse({
       revision_occurrence_id:id,label:id,index:id==='before'?0:1,asset_id:'sha256:'+'a'.repeat(64),format,date_system:format==='ods'?'iso8601':'1900',calc_flags:{},coverage_gaps:[],calculation:'stored_values_only_no_recalculation',
@@ -38,8 +43,8 @@ test('native Git-inspired workspace preserves query/event scope, source semantic
     ];
     const contexts=join(root,'engine-contexts.json');await writeFile(contexts,JSON.stringify(cases));
     const oneSidedResources=join(root,'one-sided','Resources');await mkdir(join(oneSidedResources,'backend'),{recursive:true});await mkdir(join(root,'one-sided','Helpers'),{recursive:true});await symlink(process.execPath,join(root,'one-sided','Helpers','node'));await copyFile(resolve('tests/native/workbook-read-fixture.mjs'),join(oneSidedResources,'backend','bridge.mjs'));
-    const run=spawnSync(executable,[contexts,resolve("tests/fixtures/native-workbook-observation-cases.json")],{encoding:'utf8',timeout:40_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata'),DOCVER_TEST_ONE_SIDED_RESOURCES:oneSidedResources}});
-    assert.equal(run.status,0,run.error?.message ?? run.stderr);assert.match(run.stdout,/PASS native Git diff workspace:/u,run.stderr);
+    const run=spawnSync(executable,[contexts,resolve("tests/fixtures/native-workbook-observation-cases.json")],{encoding:'utf8',timeout:50_000,env:{PATH:'/usr/bin:/bin',DOCVER_TEST_USER_DATA:join(root,'userdata'),DOCVER_TEST_ONE_SIDED_RESOURCES:oneSidedResources}});
+    assert.equal(run.status,0,[run.error?.message ?? '',run.stdout,run.stderr].join('\n'));assert.match(run.stdout,/PASS native Git diff workspace:/u,run.stderr);
     const source16Evidence=await readFile(join(root,'userdata','source16-proof.json'),'utf8');
     const source16=JSON.parse(source16Evidence) as {observations:unknown[];metadata_caption_has_no_cell_warning_or_field_rows:boolean};assert.equal(source16.observations.length,2);assert.equal(source16.metadata_caption_has_no_cell_warning_or_field_rows,true);
     if(process.env.DOCVER_TEST_SOURCE16_EVIDENCE_OUT) await writeFile(process.env.DOCVER_TEST_SOURCE16_EVIDENCE_OUT,source16Evidence);

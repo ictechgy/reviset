@@ -170,7 +170,7 @@ struct MainView: View {
         .onChange(of:model.tab){if model.tab == "export" {model.toolsSheet=true} else {model.changeRange()}}
         .sheet(isPresented:$model.toolsSheet){NativeDetailSheet(title:L("git.aiTools")){ExportView().environmentObject(model)}}
         .sheet(isPresented:$model.lineageSheet){NativeDetailSheet(title:L("git.lineage")){VStack(spacing:0){VersionBar().environmentObject(model);HistoryGraphView().environmentObject(model)}}}
-        .sheet(isPresented:$model.importSheet){ImportView()}
+        .sheet(isPresented:$model.importSheet){ImportView(intent:model.importIntent)}
         .alert(item:$model.reorderConfirmation){request in Alert(title:Text(L("doc.reorder.title")),message:Text(request.message),primaryButton:.destructive(Text(L("doc.reorder.confirm"))){Task{await model.confirmReorder(request)}},secondaryButton:.cancel(Text(L("doc.common.cancel"))))}
         .sheet(item:$model.sidecarRequest){request in OnlyOfficeSidecarSheet(request:request).environmentObject(model)}
         .sheet(isPresented:$model.bundleSheet){BundleSheet(projectID:model.bundleProjectID,reportID:model.bundleReportID,occurrence:model.bundleOccurrence,initialSource:model.bundleSourceID).environmentObject(model)}
@@ -574,6 +574,9 @@ struct ExportView: View {
     }.padding(35).frame(maxWidth:1000,alignment:.leading)}.task(id:model.projectID){await model.loadMCP()}}
 }
 struct ImportView: View {
+    // Initialized once per sheet; parent redraws and dismissal cannot replace
+    // the route used by a submission already belonging to this dialog.
+    @State private var intent:ImportIntent
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) var dismiss
     @State private var title=""
@@ -585,12 +588,13 @@ struct ImportView: View {
     @State private var choosing=false
     @State private var failureMessage=UIMessage.raw("")
     private var failure:String {get{failureMessage.text} nonmutating set{failureMessage = .raw(newValue)}}
-    init(initialRows:[ImportRow]=[],initialTitle:String?=nil){_rows=State(initialValue:initialRows);_title=State(initialValue:initialTitle ?? "");_titleEdited=State(initialValue:initialTitle != nil)}
+    init(intent:ImportIntent = .ordinary,initialRows:[ImportRow]=[],initialTitle:String?=nil){_intent=State(initialValue:intent);_rows=State(initialValue:initialRows);_title=State(initialValue:initialTitle ?? "");_titleEdited=State(initialValue:initialTitle != nil)}
     var locked:Bool{saving || choosing}
     var body: some View {
         VStack(alignment:.leading,spacing:17){
             HStack{Text(L("doc.import.documents")).font(.title2.weight(.semibold));Spacer();Button(L("doc.common.close")){dismiss()}.keyboardShortcut(.cancelAction).disabled(locked)}
             Text(L("doc.import.description")).font(.callout).foregroundStyle(.secondary)
+            if intent == .newComparison {Text(L("git.importComparisonMinimum")).font(.callout).foregroundStyle(.secondary)}
             TextField(L("doc.import.projectName"),text:titleBinding).textFieldStyle(.roundedBorder).disabled(locked).accessibilityIdentifier("Reviset.import.projectTitle")
             Button{choose()}label:{Label(L("doc.import.chooseFiles"),systemImage:"plus")}.disabled(locked)
             List{
@@ -618,7 +622,7 @@ struct ImportView: View {
                 Text(L("doc.import.integrityHelp")).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if locked{ProgressView().controlSize(.small);Text(choosing ? L("doc.import.checking"):L("doc.import.saving")).font(.caption)}
-                Button(L("doc.import.analyze")){Task{await create()}}.buttonStyle(.borderedProminent).disabled(locked || rows.isEmpty || effectiveTitle.trimmingCharacters(in:.whitespaces).isEmpty || rows.contains{$0.label.trimmingCharacters(in:.whitespaces).isEmpty})
+                Button(L("doc.import.analyze")){Task{await create()}}.buttonStyle(.borderedProminent).disabled(locked || rows.count<intent.minimumVersionEntries || effectiveTitle.trimmingCharacters(in:.whitespaces).isEmpty || rows.contains{$0.label.trimmingCharacters(in:.whitespaces).isEmpty})
             }
         }.padding(25).frame(width:900)
     }
@@ -633,5 +637,5 @@ struct ImportView: View {
             }
         }
     }
-    func create() async {saving=true;do{let p=try await model.create(title:effectiveTitle,rows:rows);model.report=JSON();try await model.refresh();model.projectID=p["project_id"].string;dismiss();await model.run(model.projectID)}catch{failureMessage=bridgeErrorMessage(error)};saving=false}
+    func create() async {saving=true;do{let p=try await model.create(title:effectiveTitle,rows:rows,intent:intent);model.report=JSON();try await model.refresh();model.projectID=p["project_id"].string;dismiss();await model.run(model.projectID)}catch{failureMessage=bridgeErrorMessage(error)};saving=false}
 }

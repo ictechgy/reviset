@@ -29,22 +29,42 @@ internal sealed class ImportWindow : Window
     private readonly Copy copy;
     private readonly bool workbook;
     private readonly bool reorder;
-    public ImportWindow(Copy copy, bool workbook, IEnumerable<JsonElement>? existing = null)
+    internal ImportIntent Intent { get; }
+    private Button submit = new();
+    private readonly TextBlock entryGuidance = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
+    internal int RejectedEntrySubmissions { get; private set; }
+    internal bool SubmitEnabled => submit.IsEnabled;
+    internal string EntryGuidance => entryGuidance.Text;
+    internal void SetTitleForSmoke(string value) => title.Text = value;
+    internal void SubmitForSmoke() => submit.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+    public ImportWindow(Copy copy, bool workbook, IEnumerable<JsonElement>? existing = null, ImportIntent? importIntent = null)
     {
         this.copy = copy; this.workbook = workbook; reorder = existing is not null;
+        Intent = reorder ? ImportIntent.Reading(workbook) : importIntent ?? ImportIntent.Reading(workbook);
+        if (Intent.Workbook != workbook) throw new ArgumentException("Import intent belongs to another workspace.", nameof(importIntent));
         Title = copy[reorder ? "reorder" : "import"]; Width = 790; Height = 550; MinWidth = 620; MinHeight = 420; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var root = new DockPanel { Margin = new Thickness(20) }; Content = root;
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);
         top.Children.Add(new TextBlock { Text = copy[reorder ? "reorderHint" : workbook ? "workbookHint" : "documentHint"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+        if (!reorder && Intent.MinimumEntries == 2) { entryGuidance.Text = copy["comparisonEntryMinimum"] + (workbook ? "" : " " + copy["comparisonDocumentBundle"]); top.Children.Add(entryGuidance); }
         if (!reorder) { top.Children.Add(new TextBlock { Text = copy["title"] }); top.Children.Add(title); }
         var bottom = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; DockPanel.SetDock(bottom, Dock.Bottom); root.Children.Add(bottom);
         var cancel = Button(copy["cancel"], () => DialogResult = false); cancel.IsCancel = true; bottom.Children.Add(cancel);
-        bottom.Children.Add(Button(copy[reorder ? "save" : "start"], () =>
+        submit = Button(copy[reorder ? "save" : "start"], () =>
         {
             table.CommitEdit(DataGridEditingUnit.Cell, true); table.CommitEdit(DataGridEditingUnit.Row, true);
-            if (Rows.Count is < 1 or > 100 || Rows.Any(r => string.IsNullOrWhiteSpace(r.Label) || r.Label.Trim().Length > 200) || (!reorder && (ProjectTitle.Length is < 1 or > 200))) { MessageBox.Show(this, copy["title"] + " / " + copy["label"] + " (1–200)", copy["error"]); return; }
+            UpdateSubmitState();
+            if (!Intent.Accepts(Rows.Count)) { RejectedEntrySubmissions++; return; }
+            if (!FieldsValid) { MessageBox.Show(this, copy["title"] + " / " + copy["label"] + " (1–200)", copy["error"]); return; }
             DialogResult = true;
-        }));
+        }); bottom.Children.Add(submit);
+        title.TextChanged += (_, _) => UpdateSubmitState();
+        Rows.CollectionChanged += (_, change) =>
+        {
+            if (change.OldItems is not null) foreach (ImportRow row in change.OldItems) row.PropertyChanged -= RowChanged;
+            if (change.NewItems is not null) foreach (ImportRow row in change.NewItems) row.PropertyChanged += RowChanged;
+            UpdateSubmitState();
+        };
         var commands = new StackPanel { Orientation = Orientation.Horizontal }; DockPanel.SetDock(commands, Dock.Top); root.Children.Add(commands);
         if (!reorder) commands.Children.Add(Button(copy["add"], Add));
         commands.Children.Add(Button(copy["up"], () => Move(-1))); commands.Children.Add(Button(copy["down"], () => Move(1)));
@@ -53,7 +73,11 @@ internal sealed class ImportWindow : Window
         table.Columns.Add(new DataGridTextColumn { Header = copy["files"], Binding = new Binding(nameof(ImportRow.Files)), Width = new DataGridLength(2, DataGridLengthUnitType.Star), IsReadOnly = true });
         table.ItemsSource = Rows; root.Children.Add(table);
         if (existing is not null) foreach (var item in existing.Select((value, index) => (value, index))) Rows.Add(new() { Label = item.value.Get("label").Text(), Paths = item.value.Get("files").Items().Select(v => v.ValueKind == JsonValueKind.Object ? v.Get("name").Text() : v.Text()).ToArray(), OriginalIndex = item.index });
+        UpdateSubmitState();
     }
+    private bool FieldsValid => Rows.All(row => !string.IsNullOrWhiteSpace(row.Label) && row.Label.Trim().Length <= 200) && (reorder || ProjectTitle.Length is >= 1 and <= 200);
+    private void RowChanged(object? sender, PropertyChangedEventArgs e) => UpdateSubmitState();
+    private void UpdateSubmitState() => submit.IsEnabled = Intent.Accepts(Rows.Count) && FieldsValid;
     private void Add()
     {
         if (Rows.Count >= 100) return;

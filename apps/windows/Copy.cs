@@ -136,6 +136,8 @@ internal sealed class Copy
         ["workbookNetProvenance"] = ("Computed workbook endpoint changes", "워크북 두 끝점에서 계산한 변경"),
         ["queryProvenanceHelp"] = ("Adjacent document choices show stored canonical events; wider Net computes endpoint changes. These can differ from a fresh MCP range_net. To recover the UI's stored IDs, use list_changes(mode=history) with this fixed report and interval, then get_change with the same report and containing endpoints; get_change has no mode argument.", "인접 문서 버전은 저장된 원본 변경 이력을, 더 넓은 최종 차이는 두 끝점에서 계산한 변경을 표시합니다. 새 MCP range_net과 다를 수 있습니다. 앱의 저장된 ID는 이 고정 보고서·구간에서 list_changes(mode=history)로 조회하고 같은 보고서·포함 구간으로 get_change를 사용하세요. get_change에는 mode 인자가 없습니다."),
         ["newComparison"] = ("New comparison…", "새 비교…"),
+        ["comparisonEntryMinimum"] = ("Add at least two version entries to start a new comparison.", "새 비교를 시작하려면 버전 항목을 두 개 이상 추가하세요."),
+        ["comparisonDocumentBundle"] = ("A PPTX with its supplied PDF counts as one version entry.", "PPTX와 함께 제공된 PDF 묶음은 버전 항목 하나로 셉니다."),
         ["startupFailed"] = ("Library recovery did not complete. Import, analysis and export remain disabled. Retry library recovery or use Project → Refresh.", "라이브러리 복구를 완료하지 못했습니다. 가져오기·분석·내보내기는 비활성 상태입니다. 라이브러리 복구를 다시 시도하거나 프로젝트 → 새로 고침을 사용하세요."),
         ["retryStartup"] = ("Retry library recovery", "라이브러리 복구 다시 시도"), ["retryEvent"] = ("Retry selected event", "선택한 변경 다시 읽기"),
         ["cellDetails"] = ("Cell details & navigation", "셀 상세 및 이동"), ["cellPreviewNotice"] = ("Bounded stored preview · select and copy text here. Open source segments for the complete stored fields.", "저장된 원본의 제한된 미리보기 · 텍스트를 선택·복사할 수 있습니다. 전체 저장 필드는 원본 구간을 여세요."),
