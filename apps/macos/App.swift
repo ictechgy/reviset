@@ -10,7 +10,7 @@ import Combine
     @StateObject private var documentLayout=WorkspaceLayoutStore(scope:.document)
     @Environment(\.openWindow) private var openWindow
     var body: some Scene {
-        Window("Reviset", id:"main") {MainView().environmentObject(model).environmentObject(documentLayout).environment(\.locale,language.localizer.locale).task {
+        Window("Reviset", id:"main") {MainView().environmentObject(model).environmentObject(documentLayout).environment(\.locale,language.localizer.locale).readableInterface().task {
             await Smoke.runIfRequested(model,layout:documentLayout)
             if ProcessInfo.processInfo.environment["DOCVER_WORKBOOK_SMOKE_REQUEST"] != nil {
                 for _ in 0..<400 { if !model.initializing { break }; try? await Task.sleep(nanoseconds:50_000_000) }
@@ -32,20 +32,22 @@ import Combine
                 ProgressView(L("app.library.preparing")).frame(minWidth:640,minHeight:420)
             } else {
                 VStack(spacing:0) {
-                    if !model.workbookRecoveryWarning.isEmpty { Label(model.workbookRecoveryWarning,systemImage:"info.circle").font(.caption).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(.orange.opacity(0.1)) }
+                    if !model.workbookRecoveryWarning.isEmpty { Label(model.workbookRecoveryWarning,systemImage:"info.circle").readableFont(.caption).padding(10).frame(maxWidth:.infinity,alignment:.leading).background(.orange.opacity(0.1)) }
                     WorkbookWorkspace(bridge:model.bridge)
                 }
             }
             }.task { await model.start() }
             .environment(\.locale,language.localizer.locale)
+            .readableInterface()
             .navigationTitle(L("app.window.workbooks"))
         }.defaultSize(width:1440,height:960).windowToolbarStyle(.unifiedCompact)
-        Settings { LanguageSettingsView().environment(\.locale,language.localizer.locale) }
+        Settings { LanguageSettingsView().environment(\.locale,language.localizer.locale).readableInterface() }
     }
 }
 @MainActor struct RevisetCommands: Commands {
     @ObservedObject var model: AppModel
     @ObservedObject var language: LanguagePreferences
+    @ObservedObject private var readability=ReadabilityPreferences.shared
     @FocusedObject private var activeLayout:WorkspaceLayoutStore?
     @Environment(\.openWindow) private var openWindow
     var body: some Commands {
@@ -63,6 +65,13 @@ import Combine
             Button(localizer.string("layout.panel.changes")) { activeLayout?.update{$0.changesVisible.toggle()} }.keyboardShortcut("c",modifiers:[.command,.option]).disabled(activeLayout == nil)
             Button(localizer.string("layout.customize")) { activeLayout?.settingsPresented=true }.keyboardShortcut("l",modifiers:[.command,.option]).disabled(activeLayout == nil)
             Button(localizer.string("layout.reset")) { activeLayout?.reset() }.keyboardShortcut("0",modifiers:[.command,.option]).disabled(activeLayout == nil)
+            Divider()
+            Menu(localizer.string("app.readability.label")) {
+                Picker(localizer.string("app.readability.label"),selection:$readability.selection) {ForEach(ReadableTextSize.allCases){size in Text(size.title).tag(size)}}
+            }
+            Button(localizer.string("app.readability.increase")) {readability.increase()}.keyboardShortcut("=",modifiers:[.command,.option]).disabled(!readability.canIncrease)
+            Button(localizer.string("app.readability.decrease")) {readability.decrease()}.keyboardShortcut("-",modifiers:[.command,.option]).disabled(!readability.canDecrease)
+            Button(localizer.string("app.readability.reset")) {readability.selection = .standard}.keyboardShortcut("0",modifiers:[.command,.control])
         }
     }
 }
@@ -71,15 +80,18 @@ struct LanguageSettingsView: View {
     var body: some View {
         @Bindable var preference=language
         Form {
-            Picker(L("app.settings.language"),selection:$preference.selection) {
-                Text(L("language.system")).tag(UILanguage.system)
-                Text("English").tag(UILanguage.en)
-                Text("한국어").tag(UILanguage.ko)
+            Section(L("app.readability.label")) {ReadabilitySettings()}
+            Section(L("app.settings.language")) {
+                Picker(L("app.settings.language"),selection:$preference.selection) {
+                    Text(L("language.system")).tag(UILanguage.system)
+                    Text("English").tag(UILanguage.en)
+                    Text("한국어").tag(UILanguage.ko)
+                }
+                Text(L("app.settings.description")).readableFont(.callout).foregroundStyle(.secondary)
+                Text(L("app.settings.ocrScope")).readableFont(.callout).foregroundStyle(.secondary)
+                Text(L("app.settings.systemMenuNote")).readableFont(.caption).foregroundStyle(.secondary)
             }
-            Text(L("app.settings.description")).font(.callout).foregroundStyle(.secondary)
-            Text(L("app.settings.ocrScope")).font(.callout).foregroundStyle(.secondary)
-            Text(L("app.settings.systemMenuNote")).font(.caption).foregroundStyle(.secondary)
-        }.padding(24).frame(width:520).fixedSize(horizontal:false,vertical:true)
+        }.padding(24).frame(width:620).fixedSize(horizontal:false,vertical:true).readableInterface()
         .navigationTitle(L("app.settings.title"))
     }
 }
@@ -153,6 +165,18 @@ private struct SmokeStructureView: View {
             let assetFacts=try FileManager.default.contentsOfDirectory(at:assets,includingPropertiesForKeys:nil).filter{$0.lastPathComponent.range(of:"^[a-f0-9]{64}$",options:.regularExpression) != nil}.map{url in
                 (url:url,sha:try fileDigest(url),modified:try FileManager.default.attributesOfItem(atPath:url.path)[.modificationDate] as? Date)
             }
+            let readabilityChecks:[String:Any]
+            if request["readability_checks"].bool {
+                do {readabilityChecks=try await exerciseReadability(model,layout:layout,output:output)}
+                catch {
+                    let failureURL=output.appendingPathComponent("readability-failure.json")
+                    var failure=(try? Data(contentsOf:failureURL)).flatMap{try? JSONSerialization.jsonObject(with:$0) as? [String:Any]} ?? ["passed":false,"stage":"setup","error":error.localizedDescription,"captures":[]]
+                    if !FileManager.default.fileExists(atPath:failureURL.path) {try? JSON(failure).data().write(to:failureURL)}
+                    failure["failure_artifact"]="readability-failure.json"
+                    try? JSON(["error":error.localizedDescription,"readability_checks":failure,"smoke_invocation_id":request["smoke_invocation_id"].string]).data().write(to:output.appendingPathComponent("result.json"))
+                    throw error
+                }
+            } else {readabilityChecks=[:]}
             let singleRevisionChecks=request["single_revision_checks"].bool ? try await exerciseSingleRevision(model,output:output):[:]
             let gitDiffChecks=request["git_diff_checks"].bool ? try await exerciseGitDiffWorkspace(model,layout:layout,output:output,expectReversion:request["git_diff_reversion"].bool):[:]
             let aspectChecks=request["aspect_ratio_checks"].bool ? try await exerciseAspectRatios(model,output):[]
@@ -229,9 +253,94 @@ private struct SmokeStructureView: View {
             complete["source_assets_unchanged"]=assetFacts.map{["name":$0.url.lastPathComponent,"sha256":$0.sha]}
             complete["history_change_check"]=historyChangeCheck
             complete["sidecar_checks"]=sidecarChecks
+            complete["readability_checks"]=readabilityChecks
             complete["language_checks"]=request["language_checks"].bool ? try await exerciseLanguageSwitch(model,output):[:]
             try JSON(complete).data().write(to:output.appendingPathComponent("result.json"));NSApp.terminate(nil)
         }catch{if let output=ProcessInfo.processInfo.environment["DOCVER_SMOKE_OUTPUT"]{try? JSON(["error":error.localizedDescription]).data().write(to:URL(fileURLWithPath:output))};fputs("Reviset native smoke failed: \(error)\n",stderr);NSApp.terminate(nil)}
+    }
+    // Opt-in qualification for a separate staged app and isolated synthetic
+    // library. This captures real client views, not a reference mockup or an OS
+    // input/accessibility exercise; viewport clamping during resizing is natural.
+    static func exerciseReadability(_ model:AppModel,layout:WorkspaceLayoutStore,output:URL)async throws->[String:Any] {
+        guard let profile=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"],!profile.isEmpty else{throw BridgeError(code:"READABILITY_TEST_LIBRARY",message:"Readability qualification requires an isolated DOCVER_TEST_USER_DATA library.")}
+        guard let window=NSApp.windows.first(where:{$0.isVisible && $0.contentView.map{workspaceLayoutMarkers(in:$0).contains{$0.identifier?.rawValue=="Reviset.document.readingGuide"}} == true}),let content=window.contentView else{throw BridgeError(code:"READABILITY_WINDOW",message:"The actual document window and reading guide are unavailable.")}
+        let language=LanguagePreferences.shared,text=ReadabilityPreferences.shared,defaults=UserDefaults.standard
+        let domain=Bundle.main.bundleIdentifier ?? "org.docver.native",raw=defaults.persistentDomain(forName:domain) ?? [:]
+        let originalLanguage=language.selection,originalText=text.selection,originalFrame=window.frame,originalDiff=model.diffMode,originalPageMode=model.pageMode,originalGuide=layout.readingGuideExpanded
+        let languageKey=LanguagePreferences.preferenceKey,textKey=ReadabilityPreferences.preferenceKey
+        var restored=false,restorationPassed=false,stage="setup",observations:[[String:Any]]=[],captures:[String]=[]
+        func sameRaw(_ left:Any?,_ right:Any?)->Bool {switch(left,right){case(nil,nil):return true;case(let a?,let b?):return (a as? NSObject)?.isEqual(b) == true;default:return false}}
+        @discardableResult func restore()->Bool {
+            if restored {return restorationPassed};restored=true
+            language.selection=originalLanguage;text.selection=originalText;model.diffMode=originalDiff;model.pageMode=originalPageMode;layout.readingGuideExpanded=originalGuide
+            window.setFrame(originalFrame,display:true)
+            for key in [languageKey,textKey] {if let value=raw[key] {defaults.set(value,forKey:key)} else {defaults.removeObject(forKey:key)}}
+            let current=defaults.persistentDomain(forName:domain) ?? [:]
+            restorationPassed=language.selection==originalLanguage && text.selection==originalText && layout.readingGuideExpanded==originalGuide && window.frame==originalFrame && sameRaw(current[languageKey],raw[languageKey]) && sameRaw(current[textKey],raw[textKey])
+            return restorationPassed
+        }
+        defer {restore()}
+        func descendants(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap(descendants)}
+        func pdfs()->[PDFView] {descendants(content).compactMap{$0 as? PDFView}}
+        func rect(_ value:NSRect)->[String:Double] {["x":value.origin.x,"y":value.origin.y,"width":value.width,"height":value.height]}
+        func finite(_ value:NSRect)->Bool {[value.origin.x,value.origin.y,value.width,value.height].allSatisfy(\.isFinite) && value.width>0 && value.height>0}
+        func reachable(_ view:NSView)->Bool {
+            let frame=view.convert(view.bounds,to:content)
+            return view.window===window && !view.isHiddenOrHasHiddenAncestor && finite(frame) && content.bounds.insetBy(dx:-1,dy:-1).contains(frame) && view.visibleRect.width>0 && view.visibleRect.height>0
+        }
+        func settle()async throws {try await Task.sleep(nanoseconds:300_000_000);content.layoutSubtreeIfNeeded();content.displayIfNeeded()}
+        do {
+            model.setDiffMode("source");model.pageMode="both"
+            let readiness=output.appendingPathComponent("readability-source-setup")
+            try FileManager.default.createDirectory(at:readiness,withIntermediateDirectories:true)
+            let mounted=try await captureSelectedPages(model,readiness,selectionReady:{!model.loadingChanges && !model.busy && !model.loading && model.effectiveDiffMode=="source"})
+            try await settle()
+            let originalPDFs=pdfs(),identities=Set(originalPDFs.map(ObjectIdentifier.init))
+            guard !originalPDFs.isEmpty,originalPDFs.allSatisfy({$0.document != nil && $0.currentPage != nil}) else{throw BridgeError(code:"READABILITY_PDF_SETUP",message:"Readability qualification needs mounted production PDF sources.")}
+            let sourceState=originalPDFs.map{($0,$0.document,$0.currentPage,$0.scaleFactor)}
+            let report=try model.report.data(),queryRows=try JSON(model.changes.map(\.raw)).data(),project=model.projectID,from=model.from,to=model.to,tab=model.tab,selected=model.selectedChangeID,left=model.leftPageID,right=model.rightPageID,zoom=model.zoom
+            let layoutState=layout.configuration,focused=layout.isFocused
+            var rangeReadObserved=false
+            let rangeObservation=model.$loadingChanges.dropFirst().sink{if $0 {rangeReadObserved=true}}
+            defer {rangeObservation.cancel()}
+            let minimumPDFHeight:CGFloat=180
+            var matrix:[(UILanguage,ReadableTextSize,NSSize,Bool)]=[]
+            for choice in [UILanguage.en,.ko] {
+                for size in [ReadableTextSize.standard,.extraLarge] {
+                    for dimensions in [NSSize(width:1440,height:960),NSSize(width:1100,height:740)] {matrix.append((choice,size,dimensions,false))}
+                }
+            }
+            for choice in [UILanguage.en,.ko] {matrix.append((choice,.extraLarge,NSSize(width:1440,height:960),true))}
+            for (choice,size,dimensions,expanded) in matrix {
+                stage=choice.rawValue+"-"+size.rawValue+"-\(Int(dimensions.width))x\(Int(dimensions.height))"+(expanded ? "-guide-expanded":"")
+                language.selection=choice;text.selection=size;layout.readingGuideExpanded=expanded;window.setContentSize(dimensions)
+                try await settle();try await settle()
+                let markers=workspaceLayoutMarkers(in:content),currentPDFs=pdfs()
+                let version=markers.first{$0.identifier?.rawValue=="Reviset.document.versionBar"},guide=markers.first{$0.identifier?.rawValue=="Reviset.document.readingGuide"}
+                let visiblePDFs=currentPDFs.filter{!$0.isHiddenOrHasHiddenAncestor && $0.visibleRect.width>0 && $0.visibleRect.height>0}
+                var facts:[String:Any]=["stage":stage,"language":choice.rawValue,"text_size":size.rawValue,"guide_expanded":expanded,"requested_client_size":["width":dimensions.width,"height":dimensions.height],"actual_client_bounds":rect(content.bounds),"window_frame":rect(window.frame),"version_bar":version.map{rect($0.convert($0.bounds,to:content))} ?? [:],"reading_guide":guide.map{rect($0.convert($0.bounds,to:content))} ?? [:],"version_bar_reachable":version.map(reachable) ?? false,"reading_guide_reachable":guide.map(reachable) ?? false,"source_pdf_frames":visiblePDFs.map{rect($0.convert($0.bounds,to:content))},"minimum_pdf_height":minimumPDFHeight,"source_pdf_count":currentPDFs.count]
+                let currentReport=try model.report.data(),currentRows=try JSON(model.changes.map(\.raw)).data()
+                let unchanged=project==model.projectID && currentReport==report && from==model.from && to==model.to && tab==model.tab && selected==model.selectedChangeID && left==model.leftPageID && right==model.rightPageID && model.zoom==zoom && currentRows==queryRows && !rangeReadObserved
+                facts["fixed_report_query_event_pages_and_model_zoom_unchanged"]=unchanged
+                observations.append(facts)
+                let file="native-readability-"+stage+".png"
+                try captureView(window,output.appendingPathComponent(file));captures.append(file)
+                guard unchanged,!model.loadingChanges,layout.configuration==layoutState,layout.isFocused==focused else{throw BridgeError(code:"READABILITY_MODEL",message:"A readability/window change altered the fixed report, query, selected event, source pages, zoom or layout.")}
+                guard let version,let guide,reachable(version),reachable(guide),version.bounds.height>=36,guide.bounds.height >= (expanded ? 80:28) else{throw BridgeError(code:"READABILITY_CHROME",message:"The version controls or \(expanded ? "expanded":"compact") reading guide are clipped/unreachable at \(stage).")}
+                guard !visiblePDFs.isEmpty,visiblePDFs.allSatisfy({reachable($0) && $0.bounds.height>=minimumPDFHeight && $0.bounds.width>=180}) else{throw BridgeError(code:"READABILITY_SOURCE_AREA",message:"The actual source PDF area is smaller than180pt high/wide or clipped at \(stage); see readability-failure.json and the capture.")}
+                guard Set(currentPDFs.map(ObjectIdentifier.init))==identities else{throw BridgeError(code:"READABILITY_SOURCE_HOST",message:"Readability changes replaced a live production PDFView.")}
+                for (pdf,document,page,scale) in sourceState {guard pdf.document === document,pdf.currentPage === page,abs(pdf.scaleFactor-scale)<0.001 else{throw BridgeError(code:"READABILITY_SOURCE_STATE",message:"Readability changes replaced a PDF document or reset its page/scale.")}}
+            }
+            guard restore() else{throw BridgeError(code:"READABILITY_RESTORE",message:"Original language/raw preferences, interface text size or window frame did not restore.")}
+            let result:[String:Any]=["passed":true,"checks":observations.count,"matrix":"8 compact-guide cases: EN/KO × comfortable/extra large ×1440×960/1100×740 client points; 2 expanded-guide cases: EN/KO ×extra large ×1440×960","captures":captures,"observations":observations,"mounted_source_readiness":mounted,"production_pdf_views_retained":originalPDFs.count,"fixed_report_query_rows_selected_event_pages_and_model_zoom_retained":true,"range_read_observed":rangeReadObserved,"language_raw_preferences_text_size_guide_and_window_frame_restored":restorationPassed,"minimum_actual_pdf_height":minimumPDFHeight,"interaction_scope":"actual native client-view captures and public in-process AppKit geometry; no OS input, accessibility automation, full Dock or viewport-position preservation claim"]
+            try JSON(result).data().write(to:output.appendingPathComponent("readability-observations.json"));return result
+        } catch {
+            let file="native-readability-failure-"+stage+".png"
+            if (try? captureView(window,output.appendingPathComponent(file))) != nil {captures.append(file)}
+            let didRestore=restore()
+            try? JSON(["passed":false,"stage":stage,"error":error.localizedDescription,"captures":captures,"observations":observations,"language_raw_preferences_text_size_guide_and_window_frame_restored":didRestore,"interaction_scope":"actual native client-view capture and in-process geometry; no OS input or accessibility automation claim"]).data().write(to:output.appendingPathComponent("readability-failure.json"))
+            throw error
+        }
     }
     static func exerciseLanguageSwitch(_ model:AppModel,_ output:URL) async throws->[String:Any] {
         let preferences=LanguagePreferences.shared,original=preferences.selection

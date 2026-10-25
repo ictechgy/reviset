@@ -381,9 +381,12 @@ private struct SoleWorkbookImportProbeHarness:View {
         // Match the production 100-row viewport. A 10-row document shorter than
         // this window makes AppKit clamp negative origins as the window grows;
         // that geometry cannot represent a retained manual scroll position.
-        let manual=NSPoint(x:40,y:56)
+        let horizontalExtent=table.bounds.width-scroll.contentView.bounds.width
+        try require(horizontalExtent>0,"CompactManualViewportNeedsPositiveHorizontalExtent_extent_\(horizontalExtent)_table_\(table.bounds)_clip_\(scroll.contentView.bounds)")
+        let manual=NSPoint(x:min(40,floor(horizontalExtent/2)),y:56)
+        try require(manual.x>0,"CompactManualViewportNeedsPositiveNonzeroOrigin_extent_\(horizontalExtent)_origin_\(manual)")
         scroll.contentView.scroll(to:manual);scroll.reflectScrolledClipView(scroll.contentView)
-        try require(scroll.contentView.bounds.origin==manual && table.bounds.height>scroll.contentView.bounds.height+manual.y && table.bounds.width>scroll.contentView.bounds.width+manual.x,"CompactManualViewportFixtureOutsideNativeScrollableBounds")
+        try require(scroll.contentView.bounds.origin==manual && table.bounds.height>scroll.contentView.bounds.height+manual.y && table.bounds.width>scroll.contentView.bounds.width+manual.x,"CompactManualViewportFixtureOutsideNativeScrollableBounds_extent_\(horizontalExtent)_requested_\(manual)_actual_\(scroll.contentView.bounds.origin)_table_\(table.bounds)_clip_\(scroll.contentView.bounds)")
         let columns=table.tableColumns,origin=scroll.contentView.bounds.origin,selected=table.selectedRow
         func geometry()->[String:String] {["clip_bounds":NSStringFromRect(scroll.contentView.bounds),"clip_frame":NSStringFromRect(scroll.contentView.frame),"document_bounds":NSStringFromRect(table.bounds),"document_frame":NSStringFromRect(table.frame)]}
         let manualBeforeGeometry=geometry()
@@ -401,8 +404,10 @@ private struct SoleWorkbookImportProbeHarness:View {
         host.rootView=WorkbookGrid(sourceIdentity:"badge-source",language:"en",pane:"compact",revealIntent:"badge",cells:[badge],rowStart:1,columnStart:1,rowCount:100,columnCount:1,selectedRow:0,selectedColumn:0,onSelect:{_,_ in});try await settle()
         guard let badgeCell=table.view(atColumn:1,row:1,makeIfNecessary:true) as? NSTableCellView,let badgeField=badgeCell.textField,let annotation=badgeCell.subviews.compactMap({$0 as? NSTextField}).first(where:{$0 !== badgeField}) else{throw NSError(domain:"CompactMultiFlagNativeSourceMissing",code:1)}
         badgeCell.layoutSubtreeIfNeeded()
-        let badgeReserved=badgeField.frame.minX-6,badgeExpected=min(180,max(96,ceil((badgeRaw as NSString).size(withAttributes:[.font:NSFont.systemFont(ofSize:12)]).width+16+badgeReserved))),badgeActual=table.tableColumns[1].width
-        try require(annotation.stringValue=="?ƒ · ∅ · …" && badgeReserved>36 && badgeReserved<=48 && abs(badgeActual-badgeExpected)<0.5 && badgeField.stringValue.utf16.elementsEqual(badgeRaw.utf16),"CompactDefaultWidthDidNotReserveActualNativeBadgeOrChangedRaw_width_\(badgeActual)_expected_\(badgeExpected)_reserved_\(badgeReserved)")
+        guard let badgeFont=badgeField.font,let annotationFont=annotation.font,let annotationCell=annotation.cell else{throw NSError(domain:"CompactNativeFontMetricsMissing",code:1)}
+        let badgeReserved=badgeField.frame.minX-6,badgeExpected=min(180,max(96,ceil((badgeRaw as NSString).size(withAttributes:[.font:badgeFont]).width+16+badgeReserved))),badgeActual=table.tableColumns[1].width
+        try require(badgeFont.pointSize==ReadabilityPreferences.shared.pointSize(.body) && annotationFont.pointSize==ReadabilityPreferences.shared.pointSize(.caption2),"CompactNativeFontsDidNotFollowReadabilityPreference")
+        try require(annotation.stringValue=="?ƒ · ∅ · …" && badgeReserved>36 && abs(badgeReserved-(annotationCell.cellSize.width+5))<0.5 && abs(badgeActual-badgeExpected)<0.5 && badgeField.stringValue.utf16.elementsEqual(badgeRaw.utf16),"CompactDefaultWidthDidNotReserveActualNativeBadgeOrChangedRaw_width_\(badgeActual)_expected_\(badgeExpected)_reserved_\(badgeReserved)")
         let retainedRaw="left aligned e\u{301} / é "+String(repeating:"wide ",count:8)
         func samples(_ text:String,_ start:Int)->[JSON] {(1...8).map{JSON(["row":start+1,"column":$0,"address":WorkbookGrid.address(start+1,$0),"value":text,"value_type":"string","formula":NSNull()])}}
         func retainedGrid(_ cells:[JSON],start:Int=1,identity:String="retained-default-source")->WorkbookGrid {WorkbookGrid(sourceIdentity:identity,language:"en",pane:"compact",revealIntent:"no-auto-reveal",cells:cells,rowStart:start,columnStart:1,rowCount:100,columnCount:8,selectedRow:0,selectedColumn:0,onSelect:{_,_ in})}

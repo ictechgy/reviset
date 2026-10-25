@@ -32,8 +32,8 @@
     "ko": "보관소를 준비하는 중…"
   },
   "app.settings.title": {
-    "en": "Language",
-    "ko": "언어"
+    "en": "Appearance and Language",
+    "ko": "화면과 언어"
   },
   "app.settings.language": {
     "en": "Interface language",
@@ -50,5 +50,41 @@
   "app.settings.systemMenuNote": {
     "en": "Some macOS menu items follow the app language selected in System Settings after reopening.",
     "ko": "일부 macOS 메뉴는 앱을 다시 열면 시스템 설정에서 선택한 앱 언어를 따릅니다."
+  },
+  "app.readability.label": {
+    "en": "Interface text size",
+    "ko": "화면 글자 크기"
+  },
+  "app.readability.standard": {
+    "en": "Comfortable",
+    "ko": "편안하게"
+  },
+  "app.readability.large": {
+    "en": "Large",
+    "ko": "크게"
+  },
+  "app.readability.extraLarge": {
+    "en": "Extra large",
+    "ko": "아주 크게"
+  },
+  "app.readability.help": {
+    "en": "Make interface text easier to read. Document zoom stays unchanged.",
+    "ko": "화면 글자 크기를 조절합니다. 문서 확대 비율은 유지됩니다."
+  },
+  "app.readability.description": {
+    "en": "Applies throughout the interface. Document and spreadsheet zoom are controlled separately.",
+    "ko": "앱 화면 전체의 글자 크기를 조절합니다. 문서와 스프레드시트 확대 비율은 별도로 조절할 수 있습니다."
+  },
+  "app.readability.increase": {
+    "en": "Increase Interface Text Size",
+    "ko": "화면 글자 크게"
+  },
+  "app.readability.decrease": {
+    "en": "Decrease Interface Text Size",
+    "ko": "화면 글자 작게"
+  },
+  "app.readability.reset": {
+    "en": "Reset Interface Text Size",
+    "ko": "화면 글자 크기 초기화"
   }
 }

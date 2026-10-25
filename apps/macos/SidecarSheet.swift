@@ -16,23 +16,23 @@ struct OnlyOfficeSidecarSheet: View {
         VStack(spacing: 12) {
             HStack {
                 VStack(alignment:.leading,spacing:4) {
-                    Text(L("doc.sidecar.title", .verbatim(request.label))).font(.headline)
-                    Text(payload.isNull ? L("doc.tail.onlyOfficeLocalConversion"):L("doc.tail.rendererVersionPageMappingEstimate", .verbatim(payload["renderer"].string), .verbatim(payload["version"].string))).font(.caption).foregroundStyle(.secondary)
+                    Text(L("doc.sidecar.title", .verbatim(request.label))).readableFont(.headline)
+                    Text(payload.isNull ? L("doc.tail.onlyOfficeLocalConversion"):L("doc.tail.rendererVersionPageMappingEstimate", .verbatim(payload["renderer"].string), .verbatim(payload["version"].string))).readableFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if !payload.isNull {
                     Button { go(shownPage-1) } label: {Image(systemName:"chevron.left")}.disabled(shownPage<=1).accessibilityLabel(L("doc.tail.previousReferencePage"))
-                    TextField(L("doc.tail.referencePage"),text:$pageInput).frame(width:55).onSubmit{go(Int(pageInput) ?? shownPage)}
-                    Text("/ \(payload["pages"].int)").font(.caption).foregroundStyle(.secondary)
+                    TextField(L("doc.tail.referencePage"),text:$pageInput).frame(width:72).onSubmit{go(Int(pageInput) ?? shownPage)}
+                    Text("/ \(payload["pages"].int)").readableFont(.caption).foregroundStyle(.secondary)
                     Button { go(shownPage+1) } label: {Image(systemName:"chevron.right")}.disabled(shownPage>=payload["pages"].int).accessibilityLabel(L("doc.tail.nextReferencePage"))
                     Picker(L("doc.common.zoom"),selection:$zoom){Text(L("doc.tail.fit")).tag(0.0);Text("100%").tag(1.0);Text("150%").tag(1.5);Text("200%").tag(2.0)}.frame(width:110)
                 }
                 Button(L("doc.common.close")){dismiss()}.keyboardShortcut(.cancelAction)
             }
             Text(L("doc.tail.referenceConversionMayDifferFromPowerPoint"))
-                .font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
+                .readableFont(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
             Text(L("doc.tail.hiddenOrNonUniquePagesLimitConversion"))
-                .font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
+                .readableFont(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
             if !failure.isEmpty {
                 ContentUnavailableView(L("doc.tail.referenceViewOpenFailed"),systemImage:"exclamationmark.triangle",description:Text(failure)).frame(maxWidth:.infinity,maxHeight:.infinity)
             } else if payload.isNull {
@@ -45,14 +45,14 @@ struct OnlyOfficeSidecarSheet: View {
                     ScrollView {
                         VStack(alignment:.leading,spacing:5) {
                             ForEach(payload["warnings"].array.indices,id:\.self){index in
-                                Text(renderWarningName(payload["warnings"].array[index].string)).font(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading)
+                                Text(renderWarningName(payload["warnings"].array[index].string)).readableFont(.caption).foregroundStyle(.orange).frame(maxWidth:.infinity,alignment:.leading)
                             }
-                            if payload["omitted_font_warnings"].int>0 {Text(LC("doc.tail.additionalFontCheckItemCount", payload["omitted_font_warnings"].int)).font(.caption).foregroundStyle(.orange)}
+                            if payload["omitted_font_warnings"].int>0 {Text(LC("doc.tail.additionalFontCheckItemCount", payload["omitted_font_warnings"].int)).readableFont(.caption).foregroundStyle(.orange)}
                         }
                     }.frame(maxHeight:130)
                 }
             }
-        }.padding(16).frame(minWidth:850,idealWidth:1200,minHeight:600,idealHeight:820).background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light)
+        }.padding(16).frame(minWidth:850,idealWidth:1200,minHeight:600,idealHeight:820).background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light).readableInterface()
         .task {
             guard !Task.isCancelled,model.sidecarRequest?.id==request.id else{return}
             do {

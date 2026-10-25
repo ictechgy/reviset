@@ -52,27 +52,27 @@ struct OcrContextEvidence: View {
             DisclosureGroup(L("doc.tail.ocr.contextRereadingEvidence")) {
                 VStack(alignment:.leading,spacing:7) {
                     if !reconsideration.isNull {
-                        Text(L("doc.ocr.labelWithScore", .verbatim(element["comparison_reason"].string == "roi_evidence_or_primary_relationship_unverified" ? L("doc.tail.ocr.recordedInitialLinkUnverified"):L("doc.tail.ocr.initial")), .count(Int(reconsideration["primary_confidence"].number*100)))).font(.caption2).foregroundStyle(.secondary)
+                        Text(L("doc.ocr.labelWithScore", .verbatim(element["comparison_reason"].string == "roi_evidence_or_primary_relationship_unverified" ? L("doc.tail.ocr.recordedInitialLinkUnverified"):L("doc.tail.ocr.initial")), .count(Int(reconsideration["primary_confidence"].number*100)))).readableFont(.caption2).foregroundStyle(.secondary)
                         Text(reconsideration["primary_text"].string).textSelection(.enabled)
                     }
                     let statuses=["available":L("doc.tail.ocr.regionObservationCreated"),"budget_exceeded":L("doc.tail.ocr.processingLimitReached"),"unsupported_bitmap":L("doc.tail.ocr.imageFormatUnsupported"),"unsupported_background":L("doc.tail.ocr.backgroundReadingUnsupported"),"empty_ink":L("doc.tail.ocr.noTextInkObserved"),"failed":L("doc.tail.ocr.contextReadingFailed")]
-                    Text(L("doc.ocr.contextStatus", .verbatim(statuses[observation["status"].string] ?? observation["status"].string))).font(.caption2).foregroundStyle(.secondary)
-                    Text(observation["contexts"].array.isEmpty ? L("doc.tail.ocr.contextReadingIncompleteInitialRetainedAsEstimate"):L("doc.tail.ocr.sameRecognizerMultiConditionEstimate")).font(.caption2).foregroundStyle(.secondary)
+                    Text(L("doc.ocr.contextStatus", .verbatim(statuses[observation["status"].string] ?? observation["status"].string))).readableFont(.caption2).foregroundStyle(.secondary)
+                    Text(observation["contexts"].array.isEmpty ? L("doc.tail.ocr.contextReadingIncompleteInitialRetainedAsEstimate"):L("doc.tail.ocr.sameRecognizerMultiConditionEstimate")).readableFont(.caption2).foregroundStyle(.secondary)
                     ForEach(observation["contexts"].array.indices,id:\.self){i in
                         let context=observation["contexts"].array[i]
                         let names=["available":L("doc.tail.ocr.recognitionComplete"),"not_detected":L("doc.tail.ocr.noReading"),"contaminated":L("doc.tail.ocr.surroundingContentMixedIn"),"edge_cut":L("doc.tail.ocr.clippedAtBoundary"),"ambiguous":L("doc.tail.ocr.conflictingAlternatives"),"failed":L("doc.tail.ocr.recognitionFailed"),"budget_exceeded":L("doc.tail.ocr.processingLimitReached")]
                         let languages=context["languages"].array.map{localizedOCRLanguageCode($0.string)}.joined(separator:"+")
                         VStack(alignment:.leading,spacing:3) {
-                            Text(L("doc.ocr.condition", .integer(i+1), .verbatim(languages), .integer(Int(context["scale"].number)), .verbatim(context["padding"].number>0.5 ? L("doc.tail.ocr.wideSurroundingContext"):L("doc.tail.ocr.narrowSurroundingContext")))).font(.caption2).foregroundStyle(.secondary)
-                            Text(names[context["status"].string] ?? context["status"].string).font(.caption2).foregroundStyle(.secondary)
+                            Text(L("doc.ocr.condition", .integer(i+1), .verbatim(languages), .integer(Int(context["scale"].number)), .verbatim(context["padding"].number>0.5 ? L("doc.tail.ocr.wideSurroundingContext"):L("doc.tail.ocr.narrowSurroundingContext")))).readableFont(.caption2).foregroundStyle(.secondary)
+                            Text(names[context["status"].string] ?? context["status"].string).readableFont(.caption2).foregroundStyle(.secondary)
                             ForEach(context["observations"].array.indices,id:\.self){n in
-                                Text(context["observations"].array[n]["text"].string).font(.caption).textSelection(.enabled)
-                                Text(L("doc.tail.ocr.recognitionScore", .count(Int(context["observations"].array[n]["confidence"].number*100)))).font(.caption2).foregroundStyle(.secondary)
+                                Text(context["observations"].array[n]["text"].string).readableFont(.caption).textSelection(.enabled)
+                                Text(L("doc.tail.ocr.recognitionScore", .count(Int(context["observations"].array[n]["confidence"].number*100)))).readableFont(.caption2).foregroundStyle(.secondary)
                             }
                         }
                     }
                 }.padding(.top,4).frame(maxWidth:.infinity,alignment:.leading)
-            }.font(.caption)
+            }.readableFont(.caption)
         }
     }
 }
@@ -106,13 +106,14 @@ final class OriginalPDFPaneView:NSView {
     let pdfView=OriginalPDFHostView()
     let zoomOutButton=NSButton(),zoomInButton=NSButton(),fitWidthButton=NSButton()
     private let toolbar=NSView()
+    private var toolbarHeight:NSLayoutConstraint?
     private var pendingInitialFit=false
     private var controlsEnabled=true
     override init(frame:NSRect) {
         super.init(frame:frame)
         identifier=NSUserInterfaceItemIdentifier("Docver.pdf.pane")
         let buttons=[zoomOutButton,zoomInButton,fitWidthButton]
-        for button in buttons {button.controlSize = .small;button.bezelStyle = .rounded;button.target=self;button.translatesAutoresizingMaskIntoConstraints=false}
+        for button in buttons {button.controlSize = .regular;button.bezelStyle = .rounded;button.target=self;button.translatesAutoresizingMaskIntoConstraints=false}
         zoomOutButton.image=NSImage(systemSymbolName:"minus.magnifyingglass",accessibilityDescription:nil)
         zoomInButton.image=NSImage(systemSymbolName:"plus.magnifyingglass",accessibilityDescription:nil)
         zoomOutButton.identifier=NSUserInterfaceItemIdentifier("Docver.pdf.zoomOut")
@@ -122,10 +123,11 @@ final class OriginalPDFPaneView:NSView {
         let stack=NSStackView(views:buttons);stack.orientation = .horizontal;stack.spacing=4;stack.translatesAutoresizingMaskIntoConstraints=false
         toolbar.addSubview(stack);toolbar.translatesAutoresizingMaskIntoConstraints=false;addSubview(toolbar)
         pdfView.translatesAutoresizingMaskIntoConstraints=false;addSubview(pdfView)
+        let height=toolbar.heightAnchor.constraint(equalToConstant:38);toolbarHeight=height
         NSLayoutConstraint.activate([
-            toolbar.leadingAnchor.constraint(equalTo:leadingAnchor),toolbar.trailingAnchor.constraint(equalTo:trailingAnchor),toolbar.topAnchor.constraint(equalTo:topAnchor),toolbar.heightAnchor.constraint(equalToConstant:30),
+            toolbar.leadingAnchor.constraint(equalTo:leadingAnchor),toolbar.trailingAnchor.constraint(equalTo:trailingAnchor),toolbar.topAnchor.constraint(equalTo:topAnchor),height,
             stack.leadingAnchor.constraint(greaterThanOrEqualTo:toolbar.leadingAnchor,constant:8),stack.trailingAnchor.constraint(equalTo:toolbar.trailingAnchor,constant:-8),stack.centerYAnchor.constraint(equalTo:toolbar.centerYAnchor),
-            zoomOutButton.widthAnchor.constraint(equalToConstant:28),zoomInButton.widthAnchor.constraint(equalToConstant:28),
+            zoomOutButton.widthAnchor.constraint(equalToConstant:32),zoomInButton.widthAnchor.constraint(equalToConstant:32),
             pdfView.leadingAnchor.constraint(equalTo:leadingAnchor),pdfView.trailingAnchor.constraint(equalTo:trailingAnchor),pdfView.topAnchor.constraint(equalTo:toolbar.bottomAnchor),pdfView.bottomAnchor.constraint(equalTo:bottomAnchor)
         ])
         NotificationCenter.default.addObserver(self,selector:#selector(scaleChanged(_:)),name:.PDFViewScaleChanged,object:pdfView)
@@ -136,8 +138,10 @@ final class OriginalPDFPaneView:NSView {
         super.layout()
         if pendingInitialFit,fitToWidth() {pendingInitialFit=false}
     }
-    func configureControls(enabled:Bool) {
+    func configureControls(enabled:Bool,textSize:CGFloat=15) {
         controlsEnabled=enabled
+        for button in [zoomOutButton,zoomInButton,fitWidthButton] {button.font = .systemFont(ofSize:textSize);button.controlSize = .regular}
+        toolbarHeight?.constant=max(38,ceil(textSize+18))
         zoomOutButton.toolTip=L("doc.pdf.zoomOut");zoomOutButton.setAccessibilityLabel(L("doc.pdf.zoomOut"))
         zoomInButton.toolTip=L("doc.pdf.zoomIn");zoomInButton.setAccessibilityLabel(L("doc.pdf.zoomIn"))
         fitWidthButton.title=L("doc.pdf.fitWidth");fitWidthButton.toolTip=L("doc.pdf.fitWidth");fitWidthButton.setAccessibilityLabel(L("doc.pdf.fitWidth"))
@@ -188,6 +192,7 @@ final class OriginalPDFPaneView:NSView {
 }
 
 struct OriginalPDFView: NSViewRepresentable {
+    @ObservedObject private var readability=ReadabilityPreferences.shared
     var keyboardEnabled=true
     let path: String
     let pageNumber: Int
@@ -283,7 +288,7 @@ struct OriginalPDFView: NSViewRepresentable {
     }
     func updateNSView(_ pane: OriginalPDFPaneView, context: Context) {
         let view=pane.pdfView
-        pane.configureControls(enabled:keyboardEnabled)
+        pane.configureControls(enabled:keyboardEnabled,textSize:readability.pointSize(.callout))
         defer {pane.updateControlAvailability()}
         view.sourceKeyboardEnabled=keyboardEnabled;view.setAccessibilityHidden(!keyboardEnabled)
         if !keyboardEnabled {resignHiddenSourceFirstResponder(in:pane)}
@@ -416,23 +421,23 @@ struct PageColumn: View {
     var evidence: JSON { model.selected["evidence"].array.first { $0["page_id"].string == pageID || (!current["appearance"]["source_page_id"].string.isEmpty && $0["page_id"].string == current["appearance"]["source_page_id"].string) } ?? JSON() }
     var body: some View {
         VStack(spacing: 9) {
-            HStack { Text(side + " · " + (model.revisions.firstIndex(where:{$0["revision_occurrence_id"].string==revision["revision_occurrence_id"].string}).map{versionDisplayName($0,revision)} ?? revision["label"].string)).font(.caption.weight(.semibold)); Spacer()
+            HStack { Text(side + " · " + (model.revisions.firstIndex(where:{$0["revision_occurrence_id"].string==revision["revision_occurrence_id"].string}).map{versionDisplayName($0,revision)} ?? revision["label"].string)).readableFont(.caption,weight:.semibold); Spacer()
                 Picker(L("doc.common.page"), selection: Binding(get:{pageID},set:{model.navigatePage($0,in:revision["revision_occurrence_id"].string)})) { Text(L("doc.tail.source.noSourceText")).tag(""); ForEach(pages) { p in Text(pickerTitle(p)).tag(p["page_id"].string) } }.labelsHidden().frame(maxWidth:260).background(PageColumnControlObservation(kind:"pagePicker",occurrence:revision["revision_occurrence_id"].string,selection:pageID,title:current.isNull ? L("doc.tail.source.noSourceText"):pickerTitle(current)))
             }
             HStack(spacing: 8) {
                 Button { go(current["page"].int-1) } label: { Image(systemName:"chevron.left") }.disabled(current.isNull || current["page"].int <= 1).accessibilityLabel(L("doc.tail.sourcePage.previous"))
-                TextField(L("doc.common.page"), text:$pageInput).frame(width:48).multilineTextAlignment(.center).onSubmit { if let number=Int(pageInput) {go(number)}else{pageInput=currentPageInput} }.disabled(currentPageNumber==nil).accessibilityLabel(L("doc.page.sideNumber", .verbatim(side))).background(PageColumnControlObservation(kind:"pageNumber",occurrence:revision["revision_occurrence_id"].string,selection:pageID,title:currentPageInput))
-                Text("/ \(pages.count)").foregroundStyle(.secondary).font(.caption)
+                TextField(L("doc.common.page"), text:$pageInput).frame(width:64).multilineTextAlignment(.center).onSubmit { if let number=Int(pageInput) {go(number)}else{pageInput=currentPageInput} }.disabled(currentPageNumber==nil).accessibilityLabel(L("doc.page.sideNumber", .verbatim(side))).background(PageColumnControlObservation(kind:"pageNumber",occurrence:revision["revision_occurrence_id"].string,selection:pageID,title:currentPageInput))
+                Text("/ \(pages.count)").foregroundStyle(.secondary).readableFont(.caption)
                 Button { go(current["page"].int+1) } label: { Image(systemName:"chevron.right") }.disabled(current.isNull || current["page"].int>=pages.count).accessibilityLabel(L("doc.tail.sourcePage.next"))
-                Spacer(); Text(loadingPage ? (payload.isNull ? L("doc.tail.sourcePage.checking"):L("doc.tail.sourcePage.showingPreviousVerifyingNext")) : !payloadReady ? L("doc.tail.sourcePage.infoNeedsCheck") : payload["source"]["origin"].string == "reference_pdf" ? (payload["page"]["appearance"]["association"].string == "human_confirmed" ? L("doc.tail.renderSource.suppliedPdfUserLinkedReference"):L("doc.tail.renderSource.suppliedPdfPageMappingInferred")) : payload["source"]["origin"].string == "pptx_converted" ? L("doc.tail.renderSource.pptxLibreOffice") : payload["source"]["kind"].string == "pdf" ? L("doc.tail.renderSource.originalPdfPdfKit") : L("doc.tail.renderSource.structureViewNoRender")).font(.caption).foregroundStyle(.secondary)
+                Spacer(); Text(loadingPage ? (payload.isNull ? L("doc.tail.sourcePage.checking"):L("doc.tail.sourcePage.showingPreviousVerifyingNext")) : !payloadReady ? L("doc.tail.sourcePage.infoNeedsCheck") : payload["source"]["origin"].string == "reference_pdf" ? (payload["page"]["appearance"]["association"].string == "human_confirmed" ? L("doc.tail.renderSource.suppliedPdfUserLinkedReference"):L("doc.tail.renderSource.suppliedPdfPageMappingInferred")) : payload["source"]["origin"].string == "pptx_converted" ? L("doc.tail.renderSource.pptxLibreOffice") : payload["source"]["kind"].string == "pdf" ? L("doc.tail.renderSource.originalPdfPdfKit") : L("doc.tail.renderSource.structureViewNoRender")).readableFont(.caption).foregroundStyle(.secondary)
                 if model.isBundle(revision) {Button{model.openBundle(revision,source:pageID)}label:{Image(systemName:"link")}.help(model.bundleEditingUnavailable == nil ? L("doc.tail.suppliedPdf.editPageLinksForVersion"):L("doc.tail.suppliedPdf.viewReportLinksAndHistory")).disabled(model.busy || model.loading).accessibilityLabel(L("doc.tail.suppliedPdf.reviewPageLinksAndHistory"))}
                 if model.sidecarConfigured && revision["assets"].array.contains(where:{$0["format"].string=="pptx"&&$0["asset_id"].string==current["asset_id"].string}) {
                     Button {model.openSidecar(revision,page:pageID)} label:{Label(L("doc.tail.render.referenceRender"),systemImage:"rectangle.on.rectangle")}
                         .help(L("doc.tail.render.viewOnlyofficeConversionForReference")).disabled(model.busy||model.loading)
                 }
-            }.controlSize(.small)
+            }.readableFont(.callout).controlSize(.regular)
             if payloadReady && !evidence.isNull && ["reference_pdf","pptx_converted"].contains(payload["source"]["origin"].string) {
-                Text(evidence["method"].string == "provided_pdf_native_raster" ? (payload["page"]["appearance"]["association"].string == "human_confirmed" ? L("doc.tail.suppliedPdf.visualEvidenceUserLinkedFidelityUnverified"):L("doc.tail.suppliedPdf.visualEvidencePageMappingInferred")) : L("doc.tail.evidence.pptxCoordinatesUnverifiedCheckExtractedText")).font(.caption).foregroundStyle(.orange)
+                Text(evidence["method"].string == "provided_pdf_native_raster" ? (payload["page"]["appearance"]["association"].string == "human_confirmed" ? L("doc.tail.suppliedPdf.visualEvidenceUserLinkedFidelityUnverified"):L("doc.tail.suppliedPdf.visualEvidencePageMappingInferred")) : L("doc.tail.evidence.pptxCoordinatesUnverifiedCheckExtractedText")).readableFont(.caption).foregroundStyle(.orange)
             }
             GeometryReader { geometry in
                 if current.isNull { ContentUnavailableView(L("doc.tail.evidence.noCorrespondingSourceText"), systemImage:"doc", description:Text(L("doc.tail.evidence.distinguishObservedAbsenceFromDeletion"))) }
@@ -447,28 +452,28 @@ struct PageColumn: View {
                     }
                 } else {ContentUnavailableView(L("doc.tail.page.sizeUndeterminable"),systemImage:"exclamationmark.triangle")}
             }.background(Color(nsColor:.windowBackgroundColor).overlay(Color.primary.opacity(0.045))).clipShape(RoundedRectangle(cornerRadius:5))
-                .overlay {if loadingPage && !payload.isNull && failure.isEmpty {VStack(spacing:6){ProgressView();Text(L("doc.tail.sourcePage.previousShownWhileVerifyingNext")).font(.caption)}.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:8))}}.allowsHitTesting(!loadingPage)
+                .overlay {if loadingPage && !payload.isNull && failure.isEmpty {VStack(spacing:6){ProgressView();Text(L("doc.tail.sourcePage.previousShownWhileVerifyingNext")).readableFont(.caption)}.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:8))}}.allowsHitTesting(!loadingPage)
             DisclosureGroup(L("doc.tail.inspector.extractedContentTablesDisplayState"),isExpanded:$rawOpen) {
                 if payloadReady {ScrollView { LazyVStack(alignment:.leading,spacing:10) {
-                    Text(L("doc.tail.inspector.extractionAndOcrRetainedSeparately")).font(.caption).foregroundStyle(.secondary)
-                    if !payload["page"]["ocr"].isNull {Text(L("doc.tail.ocr.localStatusVerifyAgainstSource", .verbatim(ocrStatusName(payload["page"]["ocr"]["status"].string)))).font(.caption).foregroundStyle(.orange)}
-                    if ["unsupported_format","unsupported_dimensions","budget_exceeded","ambiguous_boundaries","partial"].contains(payload["page"]["ocr"]["grid_status"].string) {Text(L("doc.tail.table.gridBoundsUnconfirmedCheckRowsColumns")).font(.caption).foregroundStyle(.orange)}
-                    ForEach(payload["source"]["warnings"].array.indices,id:\.self){i in Text(renderWarningName(payload["source"]["warnings"].array[i].string)).font(.caption).foregroundStyle(.orange)}
+                    Text(L("doc.tail.inspector.extractionAndOcrRetainedSeparately")).readableFont(.caption).foregroundStyle(.secondary)
+                    if !payload["page"]["ocr"].isNull {Text(L("doc.tail.ocr.localStatusVerifyAgainstSource", .verbatim(ocrStatusName(payload["page"]["ocr"]["status"].string)))).readableFont(.caption).foregroundStyle(.orange)}
+                    if ["unsupported_format","unsupported_dimensions","budget_exceeded","ambiguous_boundaries","partial"].contains(payload["page"]["ocr"]["grid_status"].string) {Text(L("doc.tail.table.gridBoundsUnconfirmedCheckRowsColumns")).readableFont(.caption).foregroundStyle(.orange)}
+                    ForEach(payload["source"]["warnings"].array.indices,id:\.self){i in Text(renderWarningName(payload["source"]["warnings"].array[i].string)).readableFont(.caption).foregroundStyle(.orange)}
                     ForEach(payload["page"]["elements"].array) { e in
                         VStack(alignment:.leading,spacing:4) {
                             Text(e["method"].string == "pdf_page_annotation" ? (e["source_ref"].string.hasSuffix("/StrikeOut") ? L("doc.tail.strikethroughAnnotationDisplayUnverified") : e["source_ref"].string.hasSuffix("/Redact") ? L("doc.tail.deletionIntentAnnotationApplyCheck") : L("doc.tail.pdfAnnotationRegionSourceCheckRequired")) : e["text"].string).textSelection(.enabled)
-                            if hasEstimatedPDFGeometry(e) { Text(e["visibility"].string == "hidden_render_mode" ? L("doc.tail.sourcePositionUnverifiedEstimatedCoordsHiddenMode") : L("doc.tail.sourcePositionDisplayUnverifiedFontCoordsEstimated")).font(.caption).foregroundStyle(.orange) }
+                            if hasEstimatedPDFGeometry(e) { Text(e["visibility"].string == "hidden_render_mode" ? L("doc.tail.sourcePositionUnverifiedEstimatedCoordsHiddenMode") : L("doc.tail.sourcePositionDisplayUnverifiedFontCoordsEstimated")).readableFont(.caption).foregroundStyle(.orange) }
                             HStack { Text(e["visibility"].string.isEmpty ? L("doc.tail.sourceStructure") : appearanceStateName(e["visibility"].string))
                                 if e["method"].string == "vision_ocr" {Text(L("doc.ocr.labelWithScore", .verbatim(e["ocr"]["reconsideration"].isNull ? L("doc.tail.initialOcrEstimate"):L("doc.tail.contextualRereadEstimate")), .count(Int(e["ocr"]["confidence"].number*100))))}
                                 if !e["comparison_role"].string.isEmpty {Text(comparisonRoleName(e))}
                                 if !e["table"].isNull { Text(e["table"]["origin"].string == "ooxml_table" ? L("doc.tail.pptxCellStructureObserved") : e["table"]["origin"].string == "vision_table_inferred" ? L("doc.tail.screenOcrTableCellEstimate") : L("doc.tail.pdfGridEstimate")) }
-                            }.font(.caption2).foregroundStyle(e["visibility"].string.contains("occluded") || e["visibility"].string.contains("struck") ? .orange : .secondary)
+                            }.readableFont(.caption2).foregroundStyle(e["visibility"].string.contains("occluded") || e["visibility"].string.contains("struck") ? .orange : .secondary)
                             if e["method"].string == "vision_ocr" {OcrContextEvidence(element:e)}
                         }.padding(8).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:4))
                     }
-                    Text(L("doc.tail.speakerNotes")).font(.headline); Text(notesDisplayText(payload["page"]))
+                    Text(L("doc.tail.speakerNotes")).readableFont(.headline); Text(notesDisplayText(payload["page"]))
                 }.frame(maxWidth:.infinity,alignment:.leading) }.frame(maxHeight:220)}else{Text(loadingPage ? L("doc.tail.verifyingSelectedPageExtract"):L("doc.tail.currentPageExtractReadFailed")).foregroundStyle(.secondary)}
-            }.font(.caption).disabled(!payloadReady)
+            }.readableFont(.caption).disabled(!payloadReady)
         }.padding(12).onChange(of:selectionIdentity,initial:true){pageInput=currentPageInput}.task(id:readIdentity) {
             let source=readIdentity
             if loadedSource?.report != source.report {payload=JSON()}

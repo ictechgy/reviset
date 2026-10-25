@@ -63,8 +63,8 @@ struct BundleSheet: View {
     }
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
-            HStack {Text(L("doc.tail.providedPdfPageLink")).font(.title2.weight(.semibold));Text(revision["label"].string).foregroundStyle(.secondary);Spacer();Button(LC("doc.tail.linkHistoryCount", context["decision_count"].int)){showHistory=true}.disabled(context.isNull || context["decision_count"].int==0 || saving);Button(L("doc.common.cancel")){dismiss()}.keyboardShortcut(.cancelAction).disabled(saving)}
-            Text(L("doc.tail.pairSameVersionPptxPdfNoFidelity")).font(.caption).foregroundStyle(.secondary)
+            HStack {Text(L("doc.tail.providedPdfPageLink")).readableFont(.title2, weight: .semibold);Text(revision["label"].string).foregroundStyle(.secondary);Spacer();Button(LC("doc.tail.linkHistoryCount", context["decision_count"].int)){showHistory=true}.disabled(context.isNull || context["decision_count"].int==0 || saving);Button(L("doc.common.cancel")){dismiss()}.keyboardShortcut(.cancelAction).disabled(saving)}
+            Text(L("doc.tail.pairSameVersionPptxPdfNoFidelity")).readableFont(.caption).foregroundStyle(.secondary)
             HStack(spacing:16) {
                 pageList(sources,search:$sourceSearch,selection:$sourceID,title:L("doc.tail.pptxSourceSlide"))
                 Image(systemName:mode=="link" ? "link":"link.badge.plus").foregroundStyle(.secondary).frame(width:20)
@@ -76,24 +76,24 @@ struct BundleSheet: View {
                 BundlePagePreview(projectID:projectID,reportID:reportID,pageID:pdfID,basis:"source",title:L("doc.tail.providedPdfSource"))
             }.frame(maxHeight:.infinity)
             if !selectionWarnings.isEmpty {
-                DisclosureGroup(LC("doc.tail.selectedSourceLinkCautionCount", selectionWarnings.count),isExpanded:$warningsExpanded){ScrollView{VStack(alignment:.leading,spacing:4){ForEach(selectionWarnings,id:\.self){Text($0).font(.caption).foregroundStyle(.orange)}}.frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:65)}.font(.caption)
+                DisclosureGroup(LC("doc.tail.selectedSourceLinkCautionCount", selectionWarnings.count),isExpanded:$warningsExpanded){ScrollView{VStack(alignment:.leading,spacing:4){ForEach(selectionWarnings,id:\.self){Text($0).readableFont(.caption).foregroundStyle(.orange)}}.frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:65)}.readableFont(.caption)
             }
-            HStack {Picker(L("doc.tail.linkMethod"),selection:$mode){Text(L("doc.tail.linkPdfPage")).tag("link");Text(L("doc.tail.unlinkBlockSlidePdf")).tag("unlink")}.labelsHidden().pickerStyle(.segmented).disabled(saving);Text(statusText).font(.caption).foregroundStyle(.secondary)}
-            Text(proposedPair).font(.caption.weight(.medium))
-            if keepsPair {Text(L("doc.tail.keepLinkRecordReasonConfirmation")).font(.caption).foregroundStyle(.secondary)}
+            HStack {Picker(L("doc.tail.linkMethod"),selection:$mode){Text(L("doc.tail.linkPdfPage")).tag("link");Text(L("doc.tail.unlinkBlockSlidePdf")).tag("unlink")}.labelsHidden().pickerStyle(.segmented).disabled(saving);Text(statusText).readableFont(.caption).foregroundStyle(.secondary)}
+            Text(proposedPair).readableFont(.caption, weight: .medium)
+            if keepsPair {Text(L("doc.tail.keepLinkRecordReasonConfirmation")).readableFont(.caption).foregroundStyle(.secondary)}
             if !conflicts.isEmpty {
                 DisclosureGroup(keepsPair ? L("doc.tail.previousChangeReasonForCurrentLink"):LC("doc.tail.replacesExistingLinksConfirmReason", conflicts.count),isExpanded:$conflictsExpanded) {
                     ScrollView {VStack(alignment:.leading,spacing:6){ForEach(Array(conflicts.enumerated()),id:\.offset){_,entry in
-                        Text(L("doc.bundle.pairAssociation", .verbatim(pairLabel(entry)), .verbatim(entry["association"].string=="human_confirmed" ? L("doc.bundle.userLinked"):L("doc.bundle.inferred")))).font(.caption.weight(.medium))
-                        if !entry["reason"].string.isEmpty {Text(L("doc.tail.previouslyRecordedChangeReason")).font(.caption2).foregroundStyle(.secondary);Text(entry["reason"].string).font(.caption).textSelection(.enabled)}
+                        Text(L("doc.bundle.pairAssociation", .verbatim(pairLabel(entry)), .verbatim(entry["association"].string=="human_confirmed" ? L("doc.bundle.userLinked"):L("doc.bundle.inferred")))).readableFont(.caption, weight: .medium)
+                        if !entry["reason"].string.isEmpty {Text(L("doc.tail.previouslyRecordedChangeReason")).readableFont(.caption2).foregroundStyle(.secondary);Text(entry["reason"].string).readableFont(.caption).textSelection(.enabled)}
                     }}.frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:65)
-                }.font(.caption)
+                }.readableFont(.caption)
             }
             TextField(L("doc.tail.changeReasonRequiredKeptVerbatim"),text:$reason,axis:.vertical).lineLimit(2...3).textFieldStyle(.roundedBorder).disabled(saving)
-            HStack {Text(validation ?? L("doc.tail.applyPreservesHistoryAnalyzesFixedReport")).foregroundStyle(validation == nil ? Color.secondary:Color.orange);Spacer();Text("\(reason.utf16.count)/2000").help(L("doc.tail.someEmojiCountAsMultipleUnits"))}.font(.caption)
-            if !failure.isEmpty {Text(failure).font(.caption).foregroundStyle(.red).textSelection(.enabled)}
-            HStack {Text(L("doc.tail.cancelBeforeApplyDoesNotSave")).font(.caption).foregroundStyle(.secondary);Spacer();if saving{ProgressView().controlSize(.small)};Button(L("doc.tail.applyAndReanalyze")){Task{await apply()}}.buttonStyle(.borderedProminent).disabled(validation != nil || saving || model.busy)}
-        }.padding(22).frame(width:1040,height:780).background(Color(nsColor:.windowBackgroundColor))
+            HStack {Text(validation ?? L("doc.tail.applyPreservesHistoryAnalyzesFixedReport")).foregroundStyle(validation == nil ? Color.secondary:Color.orange);Spacer();Text("\(reason.utf16.count)/2000").help(L("doc.tail.someEmojiCountAsMultipleUnits"))}.readableFont(.caption)
+            if !failure.isEmpty {Text(failure).readableFont(.caption).foregroundStyle(.red).textSelection(.enabled)}
+            HStack {Text(L("doc.tail.cancelBeforeApplyDoesNotSave")).readableFont(.caption).foregroundStyle(.secondary);Spacer();if saving{ProgressView().controlSize(.small)};Button(L("doc.tail.applyAndReanalyze")){Task{await apply()}}.buttonStyle(.borderedProminent).disabled(validation != nil || saving || model.busy)}
+        }.padding(22).frame(minWidth:1040,idealWidth:1120,minHeight:780,idealHeight:860).background(Color(nsColor:.windowBackgroundColor)).readableInterface()
         .sheet(isPresented:$showHistory){BundleHistorySheet(projectID:projectID,reportID:reportID,occurrence:occurrence,activeDecisionIDs:activeDecisionIDs).environmentObject(model)}
         .onChange(of:sourceID){selectCurrentPDF()}
         .task {
@@ -120,12 +120,12 @@ struct BundleSheet: View {
         let selected=all.first{$0["page_id"].string==selection.wrappedValue}
         return ScrollViewReader {proxy in
             VStack(alignment:.leading,spacing:6){
-                HStack{Text(title).font(.headline);Spacer();Text(LC("doc.tail.pageCount", all.count)).font(.caption).foregroundStyle(.secondary)}
+                HStack{Text(title).readableFont(.headline);Spacer();Text(LC("doc.tail.pageCount", all.count)).readableFont(.caption).foregroundStyle(.secondary)}
                 TextField(L("doc.tail.searchNumberOrWording"),text:search).textFieldStyle(.roundedBorder)
                 List(selection:Binding<String?>(get:{selection.wrappedValue.isEmpty ? nil:selection.wrappedValue},set:{selection.wrappedValue=$0 ?? ""})) {
-                    ForEach(pages){page in HStack(alignment:.top){Text("p.\(page["page"].int)").monospacedDigit().frame(width:50,alignment:.leading);Text(page["text"].string.isEmpty ? L("doc.tail.noSummaryRead"):page["text"].string).font(.caption).lineLimit(2);if page["hidden"].bool{Text(L("doc.tail.hidden")).font(.caption2).foregroundStyle(.secondary)}}.tag(page["page_id"].string).id(page["page_id"].string)}
+                    ForEach(pages){page in HStack(alignment:.top){Text("p.\(page["page"].int)").monospacedDigit().frame(minWidth:62,alignment:.leading);Text(page["text"].string.isEmpty ? L("doc.tail.noSummaryRead"):page["text"].string).readableFont(.caption).lineLimit(2);if page["hidden"].bool{Text(L("doc.tail.hidden")).readableFont(.caption2).foregroundStyle(.secondary)}}.tag(page["page_id"].string).id(page["page_id"].string)}
                 }
-                if let selected {Button(L("doc.tail.selectedPageViewInList", .integer(selected["page"].int))){search.wrappedValue="";Task{@MainActor in await Task.yield();proxy.scrollTo(selection.wrappedValue,anchor:.center)}}.buttonStyle(.plain).font(.caption).foregroundStyle(.blue)}
+                if let selected {Button(L("doc.tail.selectedPageViewInList", .integer(selected["page"].int))){search.wrappedValue="";Task{@MainActor in await Task.yield();proxy.scrollTo(selection.wrappedValue,anchor:.center)}}.buttonStyle(.plain).readableFont(.caption).foregroundStyle(.blue)}
             }.frame(maxWidth:.infinity).onChange(of:selection.wrappedValue){proxy.scrollTo(selection.wrappedValue,anchor:.center)}
         }
     }
@@ -155,8 +155,8 @@ struct BundleHistorySheet:View {
     @State private var expanding=Set<String>()
     var body:some View {
         VStack(alignment:.leading,spacing:12){
-            HStack{Text(L("doc.tail.providedPdfLinkHistory")).font(.title2.weight(.semibold));Spacer();Button(L("doc.common.close")){dismiss()}.keyboardShortcut(.cancelAction)}
-            Text(L("doc.tail.linkHistoryOldestFirstFixedReport")).font(.caption).foregroundStyle(.secondary)
+            HStack{Text(L("doc.tail.providedPdfLinkHistory")).readableFont(.title2, weight: .semibold);Spacer();Button(L("doc.common.close")){dismiss()}.keyboardShortcut(.cancelAction)}
+            Text(L("doc.tail.linkHistoryOldestFirstFixedReport")).readableFont(.caption).foregroundStyle(.secondary)
             ScrollView {
                 LazyVStack(alignment:.leading,spacing:14) {
                     ForEach(Array(entries.enumerated()),id:\.offset){_,entry in historyRow(entry)}
@@ -165,19 +165,19 @@ struct BundleHistorySheet:View {
                     if loaded && entries.isEmpty {Text(L("doc.tail.noSavedLinkHistory")).foregroundStyle(.secondary)}
                 }
             }
-            if !failure.isEmpty{Text(failure).font(.caption).foregroundStyle(.red);if !loaded{Button(L("doc.tail.reload")){Task{await load()}}.disabled(loading)}}
-            Text(L("doc.tail.userLinkNotExportOrFidelityCertification")).font(.caption).foregroundStyle(.secondary)
-        }.padding(22).frame(width:800,height:580).background(Color(nsColor:.windowBackgroundColor)).task{await load()}
+            if !failure.isEmpty{Text(failure).readableFont(.caption).foregroundStyle(.red);if !loaded{Button(L("doc.tail.reload")){Task{await load()}}.disabled(loading)}}
+            Text(L("doc.tail.userLinkNotExportOrFidelityCertification")).readableFont(.caption).foregroundStyle(.secondary)
+        }.padding(22).frame(minWidth:800,idealWidth:900,minHeight:580,idealHeight:680).background(Color(nsColor:.windowBackgroundColor)).readableInterface().task{await load()}
     }
     func historyRow(_ entry:JSON)->some View {
         let id=entry["decision_id"].string
         return VStack(alignment:.leading,spacing:6){
-            Text(L("doc.bundle.historyEntry", .integer(entry["ordinal"].int+1), .integer(entry["source_page"].int), .verbatim(entry["action"].string=="unlink" ? L("doc.tail.noPdfLink"):"PDF p.\(entry["rendered_page"].int)"))).font(.headline)
-            if activeDecisionIDs.contains(id) {Label(L("doc.tail.currentAppliedState"),systemImage:"checkmark.circle.fill").font(.caption).foregroundStyle(.blue)}
-            Text(L("doc.tail.changeReason")).font(.caption).foregroundStyle(.secondary)
-            Text(reasons[id] ?? entry["reason"].string).font(.callout).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
+            Text(L("doc.bundle.historyEntry", .integer(entry["ordinal"].int+1), .integer(entry["source_page"].int), .verbatim(entry["action"].string=="unlink" ? L("doc.tail.noPdfLink"):"PDF p.\(entry["rendered_page"].int)"))).readableFont(.headline)
+            if activeDecisionIDs.contains(id) {Label(L("doc.tail.currentAppliedState"),systemImage:"checkmark.circle.fill").readableFont(.caption).foregroundStyle(.blue)}
+            Text(L("doc.tail.changeReason")).readableFont(.caption).foregroundStyle(.secondary)
+            Text(reasons[id] ?? entry["reason"].string).readableFont(.callout).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)
             if !entry["next_reason_offset"].isNull && reasons[id]==nil {Button(expanding.contains(id) ? L("doc.tail.loadingReason"):L("doc.tail.viewFullChangeReason")){Task{await expand(entry)}}.disabled(expanding.contains(id))}
-            Text(L("doc.bundle.displacedWithID", .verbatim(LC("doc.bundle.displaced",entry["displaced"].array.count)), .verbatim(String(id.prefix(17))+"…"))).font(.caption2).foregroundStyle(.secondary)
+            Text(L("doc.bundle.displacedWithID", .verbatim(LC("doc.bundle.displaced",entry["displaced"].array.count)), .verbatim(String(id.prefix(17))+"…"))).readableFont(.caption2).foregroundStyle(.secondary)
         }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:6))
     }
     func request(_ extra:[String:Any]=[:]) async throws->JSON {
@@ -212,17 +212,17 @@ struct BundlePagePreview:View {
     var sourceCaption:String {payload["source"]["origin"].string=="pptx_converted" ? L("doc.tail.libreOfficeRender"):payload["source"]["kind"].string=="pptx" ? L("doc.tail.structureViewSourceScreenUnverified"):" "}
     var body:some View {
         VStack(alignment:.leading,spacing:5){
-            VStack(alignment:.leading,spacing:3){Text(title);Text(sourceCaption).accessibilityHidden(sourceCaption==" ")}.font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
-            if !payload["source"]["warnings"].array.isEmpty {Text(payload["source"]["warnings"].array.map{renderWarningName($0.string)}.joined(separator:" · ")).font(.caption2).foregroundStyle(.orange).lineLimit(2)}
+            VStack(alignment:.leading,spacing:3){Text(title);Text(sourceCaption).accessibilityHidden(sourceCaption==" ")}.readableFont(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading)
+            if !payload["source"]["warnings"].array.isEmpty {Text(payload["source"]["warnings"].array.map{renderWarningName($0.string)}.joined(separator:" · ")).readableFont(.caption2).foregroundStyle(.orange).lineLimit(2)}
             GeometryReader{geometry in
                 if pageID.isEmpty {ContentUnavailableView(L("doc.tail.selectPage"),systemImage:"doc")}
-                else if !failure.isEmpty {Text(failure).foregroundStyle(.red).font(.caption)}
+                else if !failure.isEmpty {Text(failure).foregroundStyle(.red).readableFont(.caption)}
                 else if payload.isNull {ProgressView().frame(maxWidth:.infinity,maxHeight:.infinity)}
                 else if payload["source"]["kind"].string=="pdf" {OriginalPDFView(path:payload["source"]["path"].string,pageNumber:payload["page"]["page"].int,zoom:0,evidence:JSON(),page:payload["display_page"])}
                 else if let size=fittedPageSize(width:payload["page"]["width"].number,height:payload["page"]["height"].number,available:geometry.size,inset:8) {StructureCanvas(page:payload["page"],evidence:JSON()).frame(width:size.width,height:size.height).frame(maxWidth:.infinity,maxHeight:.infinity)}
                 else {ContentUnavailableView(L("doc.tail.page.sizeUndeterminable"),systemImage:"exclamationmark.triangle")}
             }.background(Color(nsColor:.windowBackgroundColor).overlay(Color.primary.opacity(0.045))).clipShape(RoundedRectangle(cornerRadius:5))
-                .overlay{if loadingPage && !payload.isNull && failure.isEmpty{VStack{ProgressView();Text(L("doc.tail.verifyingPagePreviousLookupView")).font(.caption)}.padding(8).background(.regularMaterial,in:RoundedRectangle(cornerRadius:6))}}.allowsHitTesting(!loadingPage)
+                .overlay{if loadingPage && !payload.isNull && failure.isEmpty{VStack{ProgressView();Text(L("doc.tail.verifyingPagePreviousLookupView")).readableFont(.caption)}.padding(8).background(.regularMaterial,in:RoundedRectangle(cornerRadius:6))}}.allowsHitTesting(!loadingPage)
         }.frame(maxWidth:.infinity).task(id:projectID+reportID+pageID+basis){
             let scope=projectID+"|"+reportID+"|"+basis;if loadedScope != scope{payload=JSON()};failure="";loadingPage=true;defer{if !Task.isCancelled{loadingPage=false}};guard !pageID.isEmpty else{payload=JSON();return}
             do{let result=try await model.bridge.call("page",["project_id":projectID,"report_id":reportID,"page_id":pageID,"basis":basis]);if !Task.isCancelled{payload=result;loadedScope=scope}}catch{if !Task.isCancelled{payload=JSON();failureMessage=bridgeErrorMessage(error)}}

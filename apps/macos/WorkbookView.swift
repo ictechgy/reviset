@@ -866,7 +866,7 @@ struct WorkbookWorkspace: View {
                 if model.busy || model.loadingDemo { ProgressView().controlSize(.small) }
                 Text(verbatim:model.status.isEmpty ? L("workbook.status.readOnlyDetail") : model.status).lineLimit(2)
                 Spacer(); Text(L("workbook.status.readOnly"))
-            }.font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)
+            }.readableFont(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)
         }.frame(minWidth:1180,minHeight:760).background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light)
         .toolbar {
             ToolbarItem { Menu {ForEach(model.projects,id:\.id){project in Button(project["title"].string){Task{await model.selectProject(project["project_id"].string)}}};Divider();Button(L("git.manageVersions")){layout.update{$0.sidebarVisible=true}}} label:{Label(model.project["title"].string.isEmpty ? L("workbook.window.title"):model.project["title"].string,systemImage:"folder")}.disabled(model.busy || model.loadingReport) }
@@ -893,22 +893,22 @@ struct WorkbookWorkspace: View {
     }
     private var sidebar: some View {
         VStack(alignment:.leading,spacing:10) {
-            HStack { Text(L("workbook.sidebar.title")).font(.headline); Spacer(); Button { Task { await model.refreshProjects() } } label: { Image(systemName:"arrow.clockwise") }.disabled(model.busy) }
+            HStack { Text(L("workbook.sidebar.title")).readableFont(.headline); Spacer(); Button { Task { await model.refreshProjects() } } label: { Image(systemName:"arrow.clockwise") }.disabled(model.busy) }
             List(selection:Binding<String?>(get:{model.projectID.isEmpty ? nil : model.projectID},set:{if let id = $0 { Task { await model.selectProject(id) } }})) {
                 ForEach(model.projects,id:\.id) { project in
-                    VStack(alignment:.leading,spacing:3) { Text(verbatim:project["title"].string).lineLimit(2); Text(LC("workbook.count.versions",project["revision_count"].int)).font(.caption).foregroundStyle(.secondary) }.tag(project["project_id"].string)
+                    VStack(alignment:.leading,spacing:3) { Text(verbatim:project["title"].string).lineLimit(2); Text(LC("workbook.count.versions",project["revision_count"].int)).readableFont(.caption).foregroundStyle(.secondary) }.tag(project["project_id"].string)
                 }
             }.disabled(model.busy || model.loadingDemo).frame(minHeight:130,maxHeight:260)
             Button { model.importPresented = true } label: { Label(L("workbook.action.importFormats"),systemImage:"plus.circle") }.disabled(model.busy || model.loadingDemo)
             Button(L("workbook.action.demo")) { Task { await model.useDemo() } }.disabled(model.busy || model.loadingDemo || model.loadingReport)
             Divider()
-            Text(L("workbook.sidebar.versions")).font(.headline)
+            Text(L("workbook.sidebar.versions")).readableFont(.headline)
             ScrollView {
                 VStack(alignment:.leading,spacing:9) {
                     ForEach(model.revisions,id:\.id) { r in
                         VStack(alignment:.leading,spacing:3) {
-                            Text(verbatim:model.versionLabel(r["revision_occurrence_id"].string)).font(.callout.weight(.medium)).lineLimit(2)
-                            HStack { Text(r["format"].string.uppercased()); Text(LC("workbook.count.sheets",r["sheets"].array.count)); if r["revision_occurrence_id"].string == model.beforeID { Text(L("workbook.before")).foregroundStyle(.orange) }; if r["revision_occurrence_id"].string == model.afterID { Text(L("workbook.after")).foregroundStyle(.blue) } }.font(.caption).foregroundStyle(.secondary)
+                            Text(verbatim:model.versionLabel(r["revision_occurrence_id"].string)).readableFont(.callout, weight: .medium).lineLimit(2)
+                            HStack { Text(r["format"].string.uppercased()); Text(LC("workbook.count.sheets",r["sheets"].array.count)); if r["revision_occurrence_id"].string == model.beforeID { Text(L("workbook.before")).foregroundStyle(.orange) }; if r["revision_occurrence_id"].string == model.afterID { Text(L("workbook.after")).foregroundStyle(.blue) } }.readableFont(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth:.infinity,alignment:.leading)
                     }
                 }.padding(.horizontal,3)
@@ -917,7 +917,7 @@ struct WorkbookWorkspace: View {
                 if model.busy { Button(L("workbook.action.cancelAnalysis")) { model.cancelAnalysis() }.disabled(!model.canCancelAnalysis) }
                 else { Button(L("workbook.action.reanalyze")) { Task { await model.run() } }.disabled(model.loadingReport || model.loadingDemo) }
             }
-            Text(L("workbook.sidebar.versionExplanation")).font(.caption).foregroundStyle(.secondary)
+            Text(L("workbook.sidebar.versionExplanation")).readableFont(.caption).foregroundStyle(.secondary)
         }.padding(12)
     }
     private var reportBar: some View {
@@ -930,8 +930,8 @@ struct WorkbookWorkspace: View {
                 Spacer()
                 if model.busy {ProgressView().controlSize(.small);Button(L("workbook.action.cancelAnalysis")){model.cancelAnalysis()}.disabled(!model.canCancelAnalysis)}
             }.background(WorkspaceLayoutMarker(name:"Reviset.workbook.reportBar"))
-            if !model.failure.isEmpty {Text(verbatim:model.failure).font(.caption).foregroundStyle(.red).textSelection(.enabled)}
-            if !model.recoveryWarning.isEmpty {Text(verbatim:model.recoveryWarning).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
+            if !model.failure.isEmpty {Text(verbatim:model.failure).readableFont(.caption).foregroundStyle(.red).textSelection(.enabled)}
+            if !model.recoveryWarning.isEmpty {Text(verbatim:model.recoveryWarning).readableFont(.caption).foregroundStyle(.orange).textSelection(.enabled)}
         }.controlSize(.small).padding(.horizontal,12).padding(.vertical,5)
     }
     private var emptyWorkspace: some View {
@@ -950,22 +950,22 @@ struct WorkbookWorkspace: View {
                 Button(L("workbook.action.go")) { Task { await model.goToAddress() } }
                 Spacer()
                 Button { Task { await model.moveWindow(columns:-model.columnLimit) } } label: { Image(systemName:"chevron.left") }.disabled(model.columnStart == 1).accessibilityLabel(L("workbook.nav.previousColumns"))
-                Text(L("workbook.nav.columns",.verbatim(model.navigationRangePrefix),.verbatim(WorkbookGrid.columnLabel(model.columnStart)),.verbatim(WorkbookGrid.columnLabel(model.columnStart+model.columnLimit-1)))).font(.caption.monospacedDigit())
+                Text(L("workbook.nav.columns",.verbatim(model.navigationRangePrefix),.verbatim(WorkbookGrid.columnLabel(model.columnStart)),.verbatim(WorkbookGrid.columnLabel(model.columnStart+model.columnLimit-1)))).readableFont(.caption).monospacedDigit()
                 Button { Task { await model.moveWindow(columns:model.columnLimit) } } label: { Image(systemName:"chevron.right") }.disabled(model.columnStart+model.columnLimit>16384).accessibilityLabel(L("workbook.nav.nextColumns"))
                 Button { Task { await model.moveWindow(rows:-model.rowLimit) } } label: { Image(systemName:"chevron.up") }.disabled(model.rowStart == 1).accessibilityLabel(L("workbook.nav.previousRows"))
-                Text(L("workbook.nav.rows",.verbatim(model.navigationRangePrefix),.integer(model.rowStart),.integer(model.rowStart+model.rowLimit-1))).font(.caption.monospacedDigit())
+                Text(L("workbook.nav.rows",.verbatim(model.navigationRangePrefix),.integer(model.rowStart),.integer(model.rowStart+model.rowLimit-1))).readableFont(.caption).monospacedDigit()
                 Button { Task { await model.moveWindow(rows:model.rowLimit) } } label: { Image(systemName:"chevron.down") }.disabled(model.rowStart+model.rowLimit>1048576).accessibilityLabel(L("workbook.nav.nextRows"))
                 } else {
-                    Text(L("workbook.nav.textModeDetail")).font(.caption).foregroundStyle(.secondary)
+                    Text(L("workbook.nav.textModeDetail")).readableFont(.caption).foregroundStyle(.secondary)
                     Button(L("git.original")){model.setDiffMode("source")}.background(WorkspaceLayoutMarker(name:"Reviset.workbook.showOriginal"))
                     Spacer()
                 }
                 WorkbookCellDetailsButton(model:model).frame(width:110,height:24)
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready)
-            if !model.addressFailure.isEmpty { Text(verbatim:model.addressFailure).font(.caption).foregroundStyle(.red).padding(8) }
+            if !model.addressFailure.isEmpty { Text(verbatim:model.addressFailure).readableFont(.caption).foregroundStyle(.red).padding(8) }
             if !model.rangeFailure.isEmpty {
                 HStack {
-                    Text(verbatim:model.rangeFailure).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    Text(verbatim:model.rangeFailure).readableFont(.caption).foregroundStyle(.red).textSelection(.enabled)
                     Button(L("workbook.action.reloadRange")) { Task { await model.loadRange() } }.disabled(!model.ready || model.loadingRange)
                 }.padding(8)
             }
@@ -976,17 +976,17 @@ struct WorkbookWorkspace: View {
                     .frame(minHeight:160,maxHeight:.infinity).opacity(model.effectiveDiffMode=="source" ? 1:0).allowsHitTesting(model.effectiveDiffMode=="source").accessibilityHidden(model.effectiveDiffMode != "source")
                     .overlay {if model.effectiveDiffMode=="text" {WorkbookUnifiedDiff(model:model)}}
                     .overlay { if model.loadingRange { ZStack { Color(nsColor:.windowBackgroundColor).opacity(0.94); ProgressView(L("workbook.status.loadingRange")) } } }
-                    if model.effectiveDiffMode=="source" {Text(model.navigationDetail).font(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)}
+                    if model.effectiveDiffMode=="source" {Text(model.navigationDetail).readableFont(.caption).foregroundStyle(.secondary).padding(.horizontal,12).padding(.vertical,6)}
                     WorkbookSelectedWarnings(model:model).padding(.horizontal,12).padding(.bottom,4)
-                    HStack{Text(L("workbook.cell.storedOnly")).font(.caption2).foregroundStyle(.secondary);if !model.selectedChange.isNull{Text(WorkbookLabels.association(model.selectedChange["association"].string)).font(.caption2).foregroundStyle(.orange)};Spacer();if model.canReturnToChange {Button(L("git.returnToChange")){Task{await model.returnToChange()}}.font(.caption).background(WorkspaceLayoutMarker(name:"Reviset.workbook.returnToChange"))}}.padding(.horizontal,12).padding(.bottom,5)
+                    HStack{Text(L("workbook.cell.storedOnly")).readableFont(.caption2).foregroundStyle(.secondary);if !model.selectedChange.isNull{Text(WorkbookLabels.association(model.selectedChange["association"].string)).readableFont(.caption2).foregroundStyle(.orange)};Spacer();if model.canReturnToChange {Button(L("git.returnToChange")){Task{await model.returnToChange()}}.readableFont(.caption).background(WorkspaceLayoutMarker(name:"Reviset.workbook.returnToChange"))}}.padding(.horizontal,12).padding(.bottom,5)
                 }
             } auxiliary:{changesPane}
         }
     }
     private var versionBar: some View {
         HStack(spacing:8) {
-            Text(L("git.query")).font(.caption).foregroundStyle(.secondary)
-            if model.revisions.count==1 {Text(verbatim:model.versionLabel(model.revisions[0]["revision_occurrence_id"].string)).font(.caption.weight(.semibold))} else {
+            Text(L("git.query")).readableFont(.caption).foregroundStyle(.secondary)
+            if model.revisions.count==1 {Text(verbatim:model.versionLabel(model.revisions[0]["revision_occurrence_id"].string)).readableFont(.caption, weight: .semibold)} else {
             Menu {ForEach(model.revisions,id:\.id){revision in Button(model.versionLabel(revision["revision_occurrence_id"].string)){Task{await model.selectVersion(revision["revision_occurrence_id"].string)}}}} label:{Image(systemName:"clock.arrow.circlepath")}.help(L("git.versions")).accessibilityLabel(L("git.versions"))
             versionPicker(title:L("workbook.before"),selection:model.changesFromID.isEmpty ? model.beforeID:model.changesFromID,before:true)
             Image(systemName:"arrow.right").foregroundStyle(.secondary)
@@ -1021,11 +1021,11 @@ struct WorkbookWorkspace: View {
         let column = before ? model.beforeColumnStart : model.afterColumnStart
         let coordinate = model.paneCoordinate(before:before)
         return VStack(alignment:.leading,spacing:0) {
-            HStack { Text(verbatim:(model.readingSingleVersion ? L("doc.common.source")+" · ":(before ? L("workbook.pane.beforePrefix") : L("workbook.pane.afterPrefix"))) + model.versionLabel(occurrence)).font(.caption.weight(.semibold)); Spacer();sheetPicker(before:before).labelsHidden().controlSize(.small); if sheet["hidden"].bool { Label(L("workbook.sheet.hidden"),systemImage:"eye.slash").font(.caption) } }.padding(8).background(Color(nsColor:.controlBackgroundColor))
+            HStack { Text(verbatim:(model.readingSingleVersion ? L("doc.common.source")+" · ":(before ? L("workbook.pane.beforePrefix") : L("workbook.pane.afterPrefix"))) + model.versionLabel(occurrence)).readableFont(.caption, weight: .semibold); Spacer();sheetPicker(before:before).labelsHidden().controlSize(.small); if sheet["hidden"].bool { Label(L("workbook.sheet.hidden"),systemImage:"eye.slash").readableFont(.caption) } }.padding(8).background(Color(nsColor:.controlBackgroundColor))
             HStack {
-                Text(L("workbook.pane.range",.integer(row),.integer(row+model.rowLimit-1),.verbatim(WorkbookGrid.columnLabel(column)),.verbatim(WorkbookGrid.columnLabel(column+model.columnLimit-1)))).font(.caption2).foregroundStyle(.secondary)
+                Text(L("workbook.pane.range",.integer(row),.integer(row+model.rowLimit-1),.verbatim(WorkbookGrid.columnLabel(column)),.verbatim(WorkbookGrid.columnLabel(column+model.columnLimit-1)))).readableFont(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                if let coordinate { Text(L("workbook.pane.evidence",.verbatim(WorkbookGrid.address(coordinate.row,coordinate.column)))).font(.system(.caption,design:.monospaced)).foregroundStyle(.blue) }
+                if let coordinate { Text(L("workbook.pane.evidence",.verbatim(WorkbookGrid.address(coordinate.row,coordinate.column)))).readableFont(.caption, design: .monospaced).foregroundStyle(.blue) }
             }.padding(.horizontal,8).padding(.bottom,5)
             if id.isEmpty { WorkbookStatus(title:L("workbook.sheet.unmatched"),detail:L("workbook.sheet.unmatchedDetail"),loading:false) }
             else { WorkbookGrid(keyboardEnabled:model.effectiveDiffMode=="source",sourceIdentity:[model.scope,occurrence,id].joined(separator:"|"),language:language.effectiveLanguage,pane:before ? "before" : "after",revealIntent:[model.scope,occurrence,id,String(model.revealGeneration)].joined(separator:"|"),cells:cells,rowStart:row,columnStart:column,rowCount:model.rowLimit,columnCount:model.columnLimit,selectedRow:coordinate?.row ?? 0,selectedColumn:coordinate?.column ?? 0,onSelect:{row,column in Task { await model.selectCell(row,column) }}).disabled(!model.ready || model.loadingRange) }
@@ -1037,8 +1037,8 @@ struct WorkbookWorkspace: View {
             if model.revisions.count != 1 {
             let arrangement=compact ? AnyLayout(VStackLayout(alignment:.leading,spacing:6)):AnyLayout(HStackLayout())
             arrangement {
-                Text(model.changesFromID==model.changesToID ? L("git.reading"):(model.changesMode == "history" ? L("workbook.changes.historyTitle") : L("workbook.changes.netTitle"))).font(.headline)
-                Text(L("workbook.changes.page",.integer(model.changePageNumber),.count(model.changes.count),.count(model.changeTotal))).font(.caption).foregroundStyle(.secondary)
+                Text(model.changesFromID==model.changesToID ? L("git.reading"):(model.changesMode == "history" ? L("workbook.changes.historyTitle") : L("workbook.changes.netTitle"))).readableFont(.headline)
+                Text(L("workbook.changes.page",.integer(model.changePageNumber),.count(model.changes.count),.count(model.changeTotal))).readableFont(.caption).foregroundStyle(.secondary)
                 if !compact {Spacer()}
                 HStack(spacing:6) {
                     Button { Task { await model.stepChange(-1) } } label: { Image(systemName:"chevron.up") }.accessibilityLabel(L("workbook.changes.previous"))
@@ -1048,31 +1048,31 @@ struct WorkbookWorkspace: View {
                     if !model.changeCursor.isEmpty { Button { Task { await model.loadChanges(next:true) } } label: {if compact {Image(systemName:"chevron.right")} else {Text(L("workbook.paging.next"))}}.accessibilityLabel(L("workbook.paging.next")).help(L("workbook.paging.next")) }
                 }.controlSize(compact ? .small:.regular)
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready || model.loadingChanges)
-            Text(model.changeListProvenance).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
-            Text(verbatim:model.versionLabel(model.changesFromID)+" → "+model.versionLabel(model.changesToID)).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
+            Text(model.changeListProvenance).readableFont(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
+            Text(verbatim:model.versionLabel(model.changesFromID)+" → "+model.versionLabel(model.changesToID)).readableFont(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
             }
             if !model.sourceScopeDescription.isEmpty { WorkbookSourceScopeCaption(text:model.sourceScopeDescription).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
-            if !model.changeCursor.isEmpty { Text(L("workbook.paging.more")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
-            else if !model.changePreviousCursors.isEmpty { Text(L("workbook.paging.last")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
-            if !model.comparisonNotice.isEmpty { Text(verbatim:model.comparisonNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
-            if !model.selectionNotice.isEmpty { Text(verbatim:model.selectionNotice).font(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
+            if !model.changeCursor.isEmpty { Text(L("workbook.paging.more")).readableFont(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            else if !model.changePreviousCursors.isEmpty { Text(L("workbook.paging.last")).readableFont(.caption2).foregroundStyle(.secondary).padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading) }
+            if !model.comparisonNotice.isEmpty { Text(verbatim:model.comparisonNotice).readableFont(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
+            if !model.selectionNotice.isEmpty { Text(verbatim:model.selectionNotice).readableFont(.caption).foregroundStyle(.orange).padding(.horizontal,12).padding(.vertical,3) }
             if !model.blankFormattingWarning.isEmpty {
-                Label(model.blankFormattingWarning,systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,12).padding(.vertical,3).accessibilityIdentifier("Docver.workbook.blankFormattingWarning")
+                Label(model.blankFormattingWarning,systemImage:"exclamationmark.triangle").readableFont(.caption).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,12).padding(.vertical,3).accessibilityIdentifier("Docver.workbook.blankFormattingWarning")
             }
-            if model.changePageNumber > model.changePreviousCursors.count+1 { Text(L("workbook.paging.historyLimit")).font(.caption2).foregroundStyle(.secondary).padding(.horizontal,12) }
+            if model.changePageNumber > model.changePreviousCursors.count+1 { Text(L("workbook.paging.historyLimit")).readableFont(.caption2).foregroundStyle(.secondary).padding(.horizontal,12) }
             if model.loadingChanges { ProgressView(L("workbook.status.loadingChanges")).frame(maxWidth:.infinity,maxHeight:.infinity) }
-            else if !model.changesFailure.isEmpty { Text(verbatim:model.changesFailure).font(.caption).foregroundStyle(.red).padding(12).frame(maxWidth:.infinity,maxHeight:.infinity) }
+            else if !model.changesFailure.isEmpty { Text(verbatim:model.changesFailure).readableFont(.caption).foregroundStyle(.red).padding(12).frame(maxWidth:.infinity,maxHeight:.infinity) }
             else if model.changes.isEmpty {WorkbookEmptyChangesState(model:model).frame(maxWidth:.infinity,maxHeight:.infinity)}
             else {
                 List(selection:Binding<String?>(get:{model.selectedChangeID.isEmpty ? nil : model.selectedChangeID},set:{if let id = $0 { Task { await model.chooseChange(id) } }})) {
                     ForEach(model.changes,id:\.workbookChangeID) { change in
                         let rowLayout=compact ? AnyLayout(VStackLayout(alignment:.leading,spacing:5)):AnyLayout(HStackLayout(spacing:10))
                         rowLayout {
-                            Text(verbatim:WorkbookLabels.kind(change["kind"].string)).font(.caption.weight(.semibold)).frame(width:compact ? nil:110,alignment:.leading)
-                            Text(verbatim:change["before_address"].string + " → " + change["after_address"].string).font(.system(.caption,design:.monospaced)).frame(width:compact ? nil:125,alignment:.leading)
-                            Text(verbatim:WorkbookLabels.description(change)).font(.caption).lineLimit(compact ? 4:2)
+                            Text(verbatim:WorkbookLabels.kind(change["kind"].string)).readableFont(.caption, weight: .semibold).frame(width:compact ? nil:110,alignment:.leading)
+                            Text(verbatim:change["before_address"].string + " → " + change["after_address"].string).readableFont(.caption, design: .monospaced).frame(width:compact ? nil:125,alignment:.leading)
+                            Text(verbatim:WorkbookLabels.description(change)).readableFont(.caption).lineLimit(compact ? 4:2)
                             if !compact {Spacer()}
-                            Text(verbatim:WorkbookLabels.association(change["association"].string)).font(.caption).foregroundStyle(change["association"].string == "needs_review" ? .orange : .secondary)
+                            Text(verbatim:WorkbookLabels.association(change["association"].string)).readableFont(.caption).foregroundStyle(change["association"].string == "needs_review" ? .orange : .secondary)
                         }.tag(change["change_id"].string)
                     }
                 }.listStyle(.inset).disabled(!model.ready).background(WorkspaceLayoutMarker(name:"Reviset.workbook.changes.list"))
@@ -1082,25 +1082,25 @@ struct WorkbookWorkspace: View {
     private var aiAndReleases: some View {
         ScrollView {
             VStack(alignment:.leading,spacing:18) {
-                Text(L("git.reportDetails")).font(.headline)
-                Text(model.reportID).font(.system(.caption,design:.monospaced)).textSelection(.enabled)
-                Text(localizedISODate(model.report["created_at"].string)).font(.caption)
-                Text(L("git.reportScope")).font(.caption).foregroundStyle(.secondary)
-                Text(L("workbook.ai.title")).font(.title2.weight(.semibold))
+                Text(L("git.reportDetails")).readableFont(.headline)
+                Text(model.reportID).readableFont(.caption, design: .monospaced).textSelection(.enabled)
+                Text(localizedISODate(model.report["created_at"].string)).readableFont(.caption)
+                Text(L("git.reportScope")).readableFont(.caption).foregroundStyle(.secondary)
+                Text(L("workbook.ai.title")).readableFont(.title2, weight: .semibold)
                 Text(L("workbook.ai.detail")).foregroundStyle(.secondary)
                 HStack { Button(L("workbook.action.loadMCP")) { Task { await model.loadMCP() } }.disabled(!model.ready || model.loadingMCP); Button(L("workbook.action.copyConfig")) { model.copyMCP() }.disabled(!model.canCopyMCP); if model.loadingMCP { ProgressView().controlSize(.small) } }
-                if !model.mcpFailure.isEmpty { Text(verbatim:model.mcpFailure).foregroundStyle(.red).font(.caption) }
-                if model.canCopyMCP { Text(verbatim:model.mcp).font(.system(.caption,design:.monospaced)).textSelection(.enabled).padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:6)) }
+                if !model.mcpFailure.isEmpty { Text(verbatim:model.mcpFailure).foregroundStyle(.red).readableFont(.caption) }
+                if model.canCopyMCP { Text(verbatim:model.mcp).readableFont(.caption, design: .monospaced).textSelection(.enabled).padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:6)) }
                 Divider()
-                HStack { Text(L("workbook.release.title")).font(.headline); Spacer(); Button(L("workbook.action.pinRelease")) { model.publishPresented = true }.disabled(!model.ready); Button(L("workbook.action.exportReport")) { Task { await model.export() } }.disabled(!model.ready) }
-                Text(L("workbook.release.detail")).font(.caption).foregroundStyle(.secondary)
+                HStack { Text(L("workbook.release.title")).readableFont(.headline); Spacer(); Button(L("workbook.action.pinRelease")) { model.publishPresented = true }.disabled(!model.ready); Button(L("workbook.action.exportReport")) { Task { await model.export() } }.disabled(!model.ready) }
+                Text(L("workbook.release.detail")).readableFont(.caption).foregroundStyle(.secondary)
                 if model.releases.isEmpty { Text(L("workbook.release.empty")).foregroundStyle(.secondary) }
-                if model.releases.count > 100 { Text(L("workbook.release.limit")).font(.caption).foregroundStyle(.secondary) }
+                if model.releases.count > 100 { Text(L("workbook.release.limit")).readableFont(.caption).foregroundStyle(.secondary) }
                 ForEach(Array(model.releases.prefix(100).enumerated()),id:\.offset) { _, release in
                     VStack(alignment:.leading,spacing:5) {
-                        Text(verbatim:release["label"].string).font(.headline)
+                        Text(verbatim:release["label"].string).readableFont(.headline)
                         Text(verbatim:release["reason"].string).textSelection(.enabled)
-                        Text(verbatim:localizedISODate(release["recorded_at"].string) + " · " + release["report_id"].string).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        Text(verbatim:localizedISODate(release["recorded_at"].string) + " · " + release["report_id"].string).readableFont(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.controlBackgroundColor)).clipShape(RoundedRectangle(cornerRadius:6))
                 }
                 Divider()
@@ -1283,11 +1283,11 @@ private struct WorkbookSelectedWarnings:View {
     @ObservedObject var model:WorkbookModel
     var body:some View {
         VStack(alignment:.leading,spacing:3){
-            if model.loadingCell {Text(L("workbook.status.loadingCell")).font(.caption2).foregroundStyle(.secondary)}
-            else if !model.cellFailure.isEmpty {HStack{Text(verbatim:model.cellFailure).textSelection(.enabled);Button(L("workbook.action.reloadSourceStart")){Task{await model.loadSelectedCells()}}.disabled(!model.ready)}.font(.caption).foregroundStyle(.orange)}
+            if model.loadingCell {Text(L("workbook.status.loadingCell")).readableFont(.caption2).foregroundStyle(.secondary)}
+            else if !model.cellFailure.isEmpty {HStack{Text(verbatim:model.cellFailure).textSelection(.enabled);Button(L("workbook.action.reloadSourceStart")){Task{await model.loadSelectedCells()}}.disabled(!model.ready)}.readableFont(.caption).foregroundStyle(.orange)}
             else if model.selectedRow>0 || !model.selectedChange.isNull {
-                if model.showingSheetMetadata {Text(L("workbook.cell.metadataEvent")).font(.caption2).foregroundStyle(.secondary)}
-                else {ForEach(Array(model.selectedSourceWarnings.enumerated()),id:\.offset){index,message in Label(message,systemImage:"exclamationmark.circle").font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true).background(WorkspaceLayoutMarker(name:"Reviset.workbook.selectedCellWarning.\(index)"))}}
+                if model.showingSheetMetadata {Text(L("workbook.cell.metadataEvent")).readableFont(.caption2).foregroundStyle(.secondary)}
+                else {ForEach(Array(model.selectedSourceWarnings.enumerated()),id:\.offset){index,message in Label(message,systemImage:"exclamationmark.circle").readableFont(.caption2).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true).background(WorkspaceLayoutMarker(name:"Reviset.workbook.selectedCellWarning.\(index)"))}}
             }
         }.frame(maxWidth:.infinity,alignment:.leading)
     }
@@ -1303,16 +1303,16 @@ private struct WorkbookUnifiedDiff:View {
     @ObservedObject var model:WorkbookModel
     var body:some View {
         VStack(alignment:.leading,spacing:12){
-            Text(L("git.storedDiff")).font(.headline)
-            Text(verbatim:model.sourceIdentity(before:true)+" → "+model.sourceIdentity(before:false)).font(.caption).textSelection(.enabled).background(WorkspaceLayoutMarker(name:"Reviset.workbook.textSourceIdentity"))
-            ForEach(Array(model.missingSourceSheetCaptions.enumerated()),id:\.offset){_,caption in Text(verbatim:caption).font(.caption2).foregroundStyle(.secondary)}
+            Text(L("git.storedDiff")).readableFont(.headline)
+            Text(verbatim:model.sourceIdentity(before:true)+" → "+model.sourceIdentity(before:false)).readableFont(.caption).textSelection(.enabled).background(WorkspaceLayoutMarker(name:"Reviset.workbook.textSourceIdentity"))
+            ForEach(Array(model.missingSourceSheetCaptions.enumerated()),id:\.offset){_,caption in Text(verbatim:caption).readableFont(.caption2).foregroundStyle(.secondary)}
             if model.loadingCell {ProgressView(L("workbook.status.loadingCell"))}
             else if !model.cellFailure.isEmpty {Text(model.cellFailure).foregroundStyle(.red)}
             else if model.showingSheetMetadata {
                 VStack(alignment:.leading,spacing:8){
-                    Text(L("workbook.cell.metadataEvent")).font(.caption).foregroundStyle(.secondary)
-                    Text(WorkbookLabels.kind(model.selectedChange["kind"].string)).font(.headline)
-                    Text(verbatim:WorkbookLabels.description(model.selectedChange)).font(.callout).textSelection(.enabled)
+                    Text(L("workbook.cell.metadataEvent")).readableFont(.caption).foregroundStyle(.secondary)
+                    Text(WorkbookLabels.kind(model.selectedChange["kind"].string)).readableFont(.headline)
+                    Text(verbatim:WorkbookLabels.description(model.selectedChange)).readableFont(.callout).textSelection(.enabled)
                     WorkbookSheetMetadata(title:L("workbook.sheet.beforeMetadata"),sheet:model.sheet(model.beforeID,model.beforeSheetID))
                     WorkbookSheetMetadata(title:L("workbook.sheet.afterMetadata"),sheet:model.sheet(model.afterID,model.afterSheetID))
                 }.background(WorkspaceLayoutMarker(name:"Reviset.workbook.sheetMetadataDiff"))
@@ -1333,20 +1333,20 @@ private struct WorkbookUnifiedDiff:View {
         let diff=workbookFieldTextDiff(before:model.beforeCell,after:model.afterCell,field:key,textOffset:model.cellTextOffset,eligibility:eligibility)
         let caption=workbookFieldCaption(change:model.selectedChange,before:model.beforeCell,after:model.afterCell,field:key,textOffset:model.cellTextOffset,scope:WorkbookSelectedEventScope(beforeOccurrence:model.beforeID,afterOccurrence:model.afterID,beforeSheet:model.beforeSheetID,afterSheet:model.afterSheetID))
         VStack(alignment:.leading,spacing:7){
-            Text(title).font(.caption.weight(.semibold))
+            Text(title).readableFont(.caption, weight: .semibold)
             // Status/offset/type labels live outside the verbatim source text.
             observation(old,before:true,showSource:workbookFieldShowsRaw(caption:caption,diff:diff),field:key)
             observation(new,before:false,showSource:workbookFieldShowsRaw(caption:caption,diff:diff),field:key)
             if let diff {
-                if !diff.bounded {Text(L("git.diffBound")).font(.caption).foregroundStyle(.secondary)}
+                if !diff.bounded {Text(L("git.diffBound")).readableFont(.caption).foregroundStyle(.secondary)}
                 else {
-                    if caption != .compared {Text(workbookFieldCaptionText(caption)).font(.caption).foregroundStyle(.secondary)}
-                    if diff.terminatorsDiffer {Text(L("git.terminatorsDiffer")).font(.caption).foregroundStyle(.secondary)}
+                    if caption != .compared {Text(workbookFieldCaptionText(caption)).readableFont(.caption).foregroundStyle(.secondary)}
+                    if diff.terminatorsDiffer {Text(L("git.terminatorsDiffer")).readableFont(.caption).foregroundStyle(.secondary)}
                     if diff.semantic && caption == .compared {
                     ForEach(Array(diff.lines.enumerated()),id:\.offset){_,line in NativeDiffSourceLine(prefix:line.prefix,text:line.text,semantic:diff.semantic,terminator:line.terminator)}
                     }
                 }
-            } else {Text(workbookFieldCaptionText(caption)).font(.caption2).foregroundStyle(.secondary)}
+            } else {Text(workbookFieldCaptionText(caption)).readableFont(.caption2).foregroundStyle(.secondary)}
         }
     }
     @ViewBuilder private func observation(_ value:WorkbookRawFieldObservation,before:Bool,showSource:Bool,field:String)->some View {
@@ -1361,7 +1361,7 @@ private struct WorkbookUnifiedDiff:View {
             case .complete:return field=="value" ? WorkbookLabels.valueType(cell["value_type"].string):field=="formula" ? L("workbook.cell.formula"):L("workbook.cell.numberFormat")
         }}()
         VStack(alignment:.leading,spacing:3){
-            Text(side+" · "+status).font(.caption).foregroundStyle(.secondary)
+            Text(side+" · "+status).readableFont(.caption).foregroundStyle(.secondary)
             if showSource,let text=value.text,!text.isEmpty {NativeNeutralSourceText(text:text,lines:neutralSourceLines(text,complete:value.complete)?.map{(text:$0.text,terminator:$0.terminator)}).background(WorkspaceLayoutMarker(name:"Reviset.workbook.rawField."+field+"."+(before ? "before":"after")))}
         }
     }
@@ -1371,10 +1371,11 @@ private struct WorkbookStatus: View {
     let title: String
     let detail: String
     let loading: Bool
-    var body: some View { VStack(spacing:12) { if loading { ProgressView() } else { Image(systemName:"tablecells").font(.system(size:36)).foregroundStyle(.secondary) }; Text(verbatim:title).font(.title3.weight(.semibold)); Text(verbatim:detail).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth:520) }.padding(28).frame(maxWidth:.infinity,maxHeight:.infinity) }
+    var body: some View { VStack(spacing:12) { if loading { ProgressView() } else { Image(systemName:"tablecells").font(.system(size:36)).foregroundStyle(.secondary) }; Text(verbatim:title).readableFont(.title3, weight: .semibold); Text(verbatim:detail).readableFont(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth:520) }.padding(28).frame(maxWidth:.infinity,maxHeight:.infinity) }
 }
 
 private struct WorkbookCellDetailsButton:NSViewRepresentable {
+    @ObservedObject private var readability=ReadabilityPreferences.shared
     @ObservedObject var model:WorkbookModel
     @MainActor final class Coordinator:NSObject {
         var model:WorkbookModel?
@@ -1405,14 +1406,15 @@ private struct WorkbookCellDetailsButton:NSViewRepresentable {
     }
     func makeCoordinator()->Coordinator {Coordinator()}
     func makeNSView(context:Context)->NSButton {let button=NSButton(title:"",target:context.coordinator,action:#selector(Coordinator.open(_:)));button.bezelStyle = .rounded;button.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.cellDetailsAction");return button}
-    func updateNSView(_ button:NSButton,context:Context) {context.coordinator.model=model;button.title=L("workbook.action.cellDetails");button.setAccessibilityLabel(button.title);button.isEnabled=model.canOpenCellDetails}
+    func updateNSView(_ button:NSButton,context:Context) {context.coordinator.model=model;button.title=L("workbook.action.cellDetails");button.font = .systemFont(ofSize:readability.pointSize(.body));button.setAccessibilityLabel(button.title);button.isEnabled=model.canOpenCellDetails}
 }
 struct WorkbookSourceScopeCaption:NSViewRepresentable {
+    @ObservedObject private var readability=ReadabilityPreferences.shared
     let text:String
     func makeNSView(context:Context)->NSTextField {
-        let field=NSTextField(wrappingLabelWithString:"");field.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.queryEventScopeCopy");field.font = .systemFont(ofSize:NSFont.smallSystemFontSize);field.textColor = .secondaryLabelColor;field.setContentHuggingPriority(.defaultLow,for:.horizontal);return field
+        let field=NSTextField(wrappingLabelWithString:"");field.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.queryEventScopeCopy");field.textColor = .secondaryLabelColor;field.setContentHuggingPriority(.defaultLow,for:.horizontal);return field
     }
-    func updateNSView(_ field:NSTextField,context:Context) {field.stringValue=text;field.setAccessibilityLabel(text)}
+    func updateNSView(_ field:NSTextField,context:Context) {field.stringValue=text;field.font = .systemFont(ofSize:readability.pointSize(.caption));field.setAccessibilityLabel(text);field.invalidateIntrinsicContentSize()}
     static func finiteWidth(_ proposed:CGFloat?)->CGFloat {max(1,proposed.flatMap{$0.isFinite ? $0:nil} ?? 280)}
     func sizeThatFits(_ proposal:ProposedViewSize,nsView:NSTextField,context:Context)->CGSize? {
         let width=Self.finiteWidth(proposal.width)
@@ -1427,42 +1429,42 @@ private struct WorkbookInspector: View {
     var body: some View {
         ScrollView {
             VStack(alignment:.leading,spacing:15) {
-                HStack { Text(L("workbook.inspector.title")).font(.headline); Spacer(); if model.selectedRow > 0 { Text(WorkbookGrid.address(model.selectedRow,model.selectedColumn)).font(.system(.headline,design:.monospaced)) } }
-                Text(L("workbook.cell.storedOnly")).font(.caption.weight(.medium)).foregroundStyle(.orange)
-                Text(verbatim:L("workbook.cell.dateBeforePrefix") + WorkbookLabels.dateSystem(model.revision(model.beforeID)["date_system"].string) + L("workbook.cell.dateAfterPrefix") + WorkbookLabels.dateSystem(model.revision(model.afterID)["date_system"].string)).font(.caption).foregroundStyle(.secondary)
+                HStack { Text(L("workbook.inspector.title")).readableFont(.headline); Spacer(); if model.selectedRow > 0 { Text(WorkbookGrid.address(model.selectedRow,model.selectedColumn)).readableFont(.headline, design: .monospaced) } }
+                Text(L("workbook.cell.storedOnly")).readableFont(.caption, weight: .medium).foregroundStyle(.orange)
+                Text(verbatim:L("workbook.cell.dateBeforePrefix") + WorkbookLabels.dateSystem(model.revision(model.beforeID)["date_system"].string) + L("workbook.cell.dateAfterPrefix") + WorkbookLabels.dateSystem(model.revision(model.afterID)["date_system"].string)).readableFont(.caption).foregroundStyle(.secondary)
                 if model.loadingCell { ProgressView(L("workbook.status.loadingCell")) }
                 else if !model.cellFailure.isEmpty {
-                    Text(verbatim:model.cellFailure).font(.caption).foregroundStyle(.red)
+                    Text(verbatim:model.cellFailure).readableFont(.caption).foregroundStyle(.red)
                     if model.cellHistoryAnchor != nil { Button(model.cellTextOffset > 0 ? L("workbook.action.reloadSourceStart") : L("workbook.action.reloadCellSource")) { Task { await model.loadSelectedCells() } }.disabled(!model.ready) }
                 }
-                else if model.showingSheetMetadata {Text(L("workbook.cell.metadataEvent")).font(.caption).foregroundStyle(.secondary)}
+                else if model.showingSheetMetadata {Text(L("workbook.cell.metadataEvent")).readableFont(.caption).foregroundStyle(.secondary)}
                 else if model.selectedRow == 0, model.selectedChangeID.isEmpty { Text(L("workbook.cell.selectPrompt")).foregroundStyle(.secondary) }
                 else { cellSection((model.readingSingleVersion ? L("doc.common.source")+" · ":L("workbook.pane.beforePrefix")) + model.versionLabel(model.beforeID),cell:model.beforeCell); if !model.readingSingleVersion {Divider(); cellSection(L("workbook.pane.afterPrefix") + model.versionLabel(model.afterID),cell:model.afterCell)} }
                 if !model.selectedChange.isNull {
-                    Divider(); Text(L("workbook.cell.changeMethod")).font(.headline)
-                    Text(verbatim:WorkbookLabels.kind(model.selectedChange["kind"].string)).font(.callout)
-                    Text(verbatim:WorkbookLabels.association(model.selectedChange["association"].string)).font(.caption.weight(.medium))
-                    Text(verbatim:WorkbookLabels.method(model.selectedChange["alignment_method"].string)).font(.caption).textSelection(.enabled)
-                    Text(verbatim:WorkbookLabels.description(model.selectedChange)).font(.caption)
-                    Text(L("workbook.cell.inferenceWarning")).font(.caption).foregroundStyle(.secondary)
+                    Divider(); Text(L("workbook.cell.changeMethod")).readableFont(.headline)
+                    Text(verbatim:WorkbookLabels.kind(model.selectedChange["kind"].string)).readableFont(.callout)
+                    Text(verbatim:WorkbookLabels.association(model.selectedChange["association"].string)).readableFont(.caption, weight: .medium)
+                    Text(verbatim:WorkbookLabels.method(model.selectedChange["alignment_method"].string)).readableFont(.caption).textSelection(.enabled)
+                    Text(verbatim:WorkbookLabels.description(model.selectedChange)).readableFont(.caption)
+                    Text(L("workbook.cell.inferenceWarning")).readableFont(.caption).foregroundStyle(.secondary)
                 }
                 if model.selectedRow > 0 {
                     Button(L("workbook.action.cellHistory")) { Task { await model.loadCellHistory() } }.disabled(!model.ready || model.loadingCell || model.loadingHistory)
                     if model.loadingHistory { ProgressView(L("workbook.status.loadingHistory")).controlSize(.small) }
-                    if !model.cellHistoryFailure.isEmpty { Text(verbatim:model.cellHistoryFailure).font(.caption).foregroundStyle(.red) }
-                    if !model.cellHistoryMessage.isEmpty { Text(verbatim:model.cellHistoryMessage).font(.caption).foregroundStyle(.secondary) }
+                    if !model.cellHistoryFailure.isEmpty { Text(verbatim:model.cellHistoryFailure).readableFont(.caption).foregroundStyle(.red) }
+                    if !model.cellHistoryMessage.isEmpty { Text(verbatim:model.cellHistoryMessage).readableFont(.caption).foregroundStyle(.secondary) }
                     HStack {
                         if !model.cellHistoryPreviousCursors.isEmpty { Button(L("workbook.paging.historyPrevious")) { Task { await model.loadCellHistory(previous:true) } } }
                         if !model.cellHistoryCursor.isEmpty { Button(L("workbook.paging.historyNext")) { Task { await model.loadCellHistory(next:true) } } }
                     }.disabled(!model.ready || model.loadingCell || model.loadingHistory)
-                    if !model.cellHistory.isEmpty { Text(L("workbook.history.page",.integer(model.cellHistoryPageNumber))).font(.caption2).foregroundStyle(.secondary) }
+                    if !model.cellHistory.isEmpty { Text(L("workbook.history.page",.integer(model.cellHistoryPageNumber))).readableFont(.caption2).foregroundStyle(.secondary) }
                     ForEach(Array(model.cellHistory.enumerated()),id:\.offset) { _, event in
                         VStack(alignment:.leading,spacing:3) {
                             Text(verbatim:model.versionLabel(event["revision_occurrence_id"].string)).lineLimit(2)
                             Text(verbatim:(event["cell"]["address"].string.isEmpty ? event["address"].string : event["cell"]["address"].string) + (event["cell"].isNull ? "" : " · " + event["cell"]["value"].string))
                             Text(verbatim:WorkbookLabels.availability(event["availability"].string) + " · " + WorkbookLabels.association(event["association"].string))
                             Text(verbatim:WorkbookLabels.method(event["alignment_method"].string))
-                        }.font(.caption).textSelection(.enabled)
+                        }.readableFont(.caption).textSelection(.enabled)
                     }
                 }
                 Divider()
@@ -1486,26 +1488,26 @@ private struct WorkbookCellDetail: View {
     let onTextPage: (Int) -> Void
     var body: some View {
         VStack(alignment:.leading,spacing:7) {
-            Text(verbatim:title).font(.headline).lineLimit(2)
-            if cell.isNull { Text(L("workbook.cell.noObservation")).font(.caption).foregroundStyle(.secondary) }
+            Text(verbatim:title).readableFont(.headline).lineLimit(2)
+            if cell.isNull { Text(L("workbook.cell.noObservation")).readableFont(.caption).foregroundStyle(.secondary) }
             else {
-                Text(verbatim:cell["address"].string + " · " + WorkbookLabels.valueType(cell["value_type"].string)).font(.system(.caption,design:.monospaced))
-                if !cell["source_range"].string.isEmpty { Text(verbatim:L("workbook.cell.blankRangePrefix") + cell["source_range"].string).font(.caption).textSelection(.enabled) }
-                if !cell["difference_range"].string.isEmpty { Text(verbatim:L("workbook.cell.differenceRangePrefix") + cell["difference_range"].string).font(.caption).textSelection(.enabled) }
-                if cell["formula_interpretation"].string == "unresolved" { Text(L("workbook.cell.unresolvedFormula")).font(.caption.weight(.medium)).foregroundStyle(.orange) }
+                Text(verbatim:cell["address"].string + " · " + WorkbookLabels.valueType(cell["value_type"].string)).readableFont(.caption, design: .monospaced)
+                if !cell["source_range"].string.isEmpty { Text(verbatim:L("workbook.cell.blankRangePrefix") + cell["source_range"].string).readableFont(.caption).textSelection(.enabled) }
+                if !cell["difference_range"].string.isEmpty { Text(verbatim:L("workbook.cell.differenceRangePrefix") + cell["difference_range"].string).readableFont(.caption).textSelection(.enabled) }
+                if cell["formula_interpretation"].string == "unresolved" { Text(L("workbook.cell.unresolvedFormula")).readableFont(.caption, weight: .medium).foregroundStyle(.orange) }
                 rawDetail(cell["formula_interpretation"].string == "unresolved" ? L("workbook.cell.unresolvedValue") : cell["formula"].isNull ? L("workbook.cell.input") : L("workbook.cell.result"),field:"value")
-                if !cell["formula"].isNull { rawDetail(L("workbook.cell.formula"),field:"formula"); Text(L("workbook.cell.formulaNotExecuted")).font(.caption2).foregroundStyle(.secondary) }
+                if !cell["formula"].isNull { rawDetail(L("workbook.cell.formula"),field:"formula"); Text(L("workbook.cell.formulaNotExecuted")).readableFont(.caption2).foregroundStyle(.secondary) }
                 if textOffset > 0 || ["value","formula","number_format"].contains(where:{cell["text_continuations"][$0]["state"].string == "truncated"}) {
                     HStack {
                         if textOffset > 0 { Button(L("workbook.action.sourceStartBoth")) { onTextPage(0) } }
                         if let nextTextOffset { Button(L("workbook.action.sourceNextBoth")) { onTextPage(nextTextOffset) } }
                     }.disabled(!canPage)
-                    Text(L("workbook.cell.sourcePaging")).font(.caption2).foregroundStyle(.secondary)
+                    Text(L("workbook.cell.sourcePaging")).readableFont(.caption2).foregroundStyle(.secondary)
                 }
                 if !cell["number_format"].isNull { rawDetail(L("workbook.cell.numberFormat"),field:"number_format") }
-                if cell["hidden_row"].bool || cell["hidden_column"].bool { Label((cell["hidden_row"].bool ? L("workbook.cell.hiddenRowPrefix") : "") + (cell["hidden_column"].bool ? L("workbook.cell.hiddenColumn") : ""),systemImage:"eye.slash").font(.caption).foregroundStyle(.orange) }
+                if cell["hidden_row"].bool || cell["hidden_column"].bool { Label((cell["hidden_row"].bool ? L("workbook.cell.hiddenRowPrefix") : "") + (cell["hidden_column"].bool ? L("workbook.cell.hiddenColumn") : ""),systemImage:"eye.slash").readableFont(.caption).foregroundStyle(.orange) }
                 if !cell["style"].dictionary.isEmpty { detail(L("workbook.cell.style"),cell["style"].dictionary.keys.sorted().map { $0 + ": " + cell["style"][$0].string }.joined(separator:"\n")) }
-                if cell["style_truncated"].bool { Text(L("workbook.cell.styleTruncated")).font(.caption).foregroundStyle(.orange) }
+                if cell["style_truncated"].bool { Text(L("workbook.cell.styleTruncated")).readableFont(.caption).foregroundStyle(.orange) }
                 detail(L("workbook.cell.sourceRef"),cell["source_ref"].string)
             }
         }
@@ -1520,14 +1522,14 @@ private struct WorkbookCellDetail: View {
     }
     private func rawDetail(_ label: String,field: String) -> some View {
         VStack(alignment:.leading,spacing:4) {
-            Text(verbatim:sourceLabel(label,field:field)).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            Text(verbatim:sourceLabel(label,field:field)).readableFont(.caption, weight: .medium).foregroundStyle(.secondary)
             if let status = sourceStatus(field) {
-                Text(verbatim:status).font(.caption).foregroundStyle(.secondary)
+                Text(verbatim:status).readableFont(.caption).foregroundStyle(.secondary)
             } else {
-                Text(verbatim:cell[field].string).font(.system(.caption,design:.monospaced)).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
+                Text(verbatim:cell[field].string).readableFont(.caption, design: .monospaced).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
             }
             if cell["text_continuations"][field]["state"].string == "truncated",!cell[field].string.isEmpty {
-                Text(cell["text_continuations"][field]["next_offset"].isNull ? L("workbook.cell.sourceLastChunk") : L("workbook.cell.sourceMoreChunks")).font(.caption2.weight(.medium)).foregroundStyle(.orange)
+                Text(cell["text_continuations"][field]["next_offset"].isNull ? L("workbook.cell.sourceLastChunk") : L("workbook.cell.sourceMoreChunks")).readableFont(.caption2, weight: .medium).foregroundStyle(.orange)
             }
         }.background(WorkspaceLayoutMarker(name:"Reviset.workbook.inspector.raw."+field))
     }
@@ -1540,7 +1542,7 @@ private struct WorkbookCellDetail: View {
         }
         return nil
     }
-    private func detail(_ label: String, _ value: String) -> some View { VStack(alignment:.leading,spacing:3) { Text(verbatim:label).font(.caption.weight(.medium)).foregroundStyle(.secondary); Text(verbatim:value).font(.system(.caption,design:.monospaced)).textSelection(.enabled).fixedSize(horizontal:false,vertical:true) } }
+    private func detail(_ label: String, _ value: String) -> some View { VStack(alignment:.leading,spacing:3) { Text(verbatim:label).readableFont(.caption, weight: .medium).foregroundStyle(.secondary); Text(verbatim:value).readableFont(.caption, design: .monospaced).textSelection(.enabled).fixedSize(horizontal:false,vertical:true) } }
 }
 private struct WorkbookSheetMetadata: View {
     @State private var language = LanguagePreferences.shared
@@ -1549,14 +1551,14 @@ private struct WorkbookSheetMetadata: View {
     var body: some View {
         if !sheet.isNull {
             VStack(alignment:.leading,spacing:5) {
-                Text(verbatim:title).font(.caption.weight(.semibold))
-                Text(verbatim:sheet["name"].string + (sheet["hidden"].bool ? L("workbook.sheet.hiddenNameSuffix") : "")).font(.caption)
-                Text(L("workbook.sheet.metadataCounts",.count(sheet["merge_count"].int),.count(sheet["row_metadata_count"].int),.count(sheet["column_metadata_count"].int))).font(.caption).foregroundStyle(.secondary)
-                if sheet["blank_style_range_count"].int > 0 { Text(L("workbook.sheet.blankRanges",.count(sheet["blank_style_range_count"].int))).font(.caption).foregroundStyle(.secondary) }
-                ForEach(Array(sheet["row_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text(L("workbook.sheet.hiddenRows",.integer(range["start"].int),.integer(range["end"].int))).font(.caption) }
-                ForEach(Array(sheet["column_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text(L("workbook.sheet.hiddenColumns",.verbatim(WorkbookGrid.columnLabel(range["start"].int)),.verbatim(WorkbookGrid.columnLabel(range["end"].int)))).font(.caption) }
-                if !sheet["merges"].array.isEmpty { Text(verbatim:L("workbook.sheet.mergesPrefix") + sheet["merges"].array.map(\.string).joined(separator:", ")).font(.caption).textSelection(.enabled) }
-                if sheet["metadata_truncated"].bool { Text(L("workbook.sheet.metadataTruncated")).font(.caption).foregroundStyle(.secondary) }
+                Text(verbatim:title).readableFont(.caption, weight: .semibold)
+                Text(verbatim:sheet["name"].string + (sheet["hidden"].bool ? L("workbook.sheet.hiddenNameSuffix") : "")).readableFont(.caption)
+                Text(L("workbook.sheet.metadataCounts",.count(sheet["merge_count"].int),.count(sheet["row_metadata_count"].int),.count(sheet["column_metadata_count"].int))).readableFont(.caption).foregroundStyle(.secondary)
+                if sheet["blank_style_range_count"].int > 0 { Text(L("workbook.sheet.blankRanges",.count(sheet["blank_style_range_count"].int))).readableFont(.caption).foregroundStyle(.secondary) }
+                ForEach(Array(sheet["row_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text(L("workbook.sheet.hiddenRows",.integer(range["start"].int),.integer(range["end"].int))).readableFont(.caption) }
+                ForEach(Array(sheet["column_metadata"].array.filter { $0["hidden"].bool }.prefix(10).enumerated()),id:\.offset) { _, range in Text(L("workbook.sheet.hiddenColumns",.verbatim(WorkbookGrid.columnLabel(range["start"].int)),.verbatim(WorkbookGrid.columnLabel(range["end"].int)))).readableFont(.caption) }
+                if !sheet["merges"].array.isEmpty { Text(verbatim:L("workbook.sheet.mergesPrefix") + sheet["merges"].array.map(\.string).joined(separator:", ")).readableFont(.caption).textSelection(.enabled) }
+                if sheet["metadata_truncated"].bool { Text(L("workbook.sheet.metadataTruncated")).readableFont(.caption).foregroundStyle(.secondary) }
             }
         }
     }
@@ -1597,26 +1599,26 @@ private struct WorkbookCoverageView: View {
     }
     var body: some View {
         VStack(alignment:.leading,spacing:7) {
-            Text(L("workbook.coverage.title")).font(.headline)
-            Text(L("workbook.coverage.detail")).font(.caption).foregroundStyle(.secondary)
-            if truncated || gaps.count > 50 { Text(L("workbook.coverage.shown",.count(min(50,gaps.count)),.count(total))).font(.caption).foregroundStyle(.orange) }
-            if gaps.isEmpty { Text(L("workbook.coverage.none")).font(.caption).foregroundStyle(.secondary) }
-            if !gaps.isEmpty { Text(L("workbook.coverage.grouped",.count(min(50,gaps.count)),.count(entries.count))).font(.caption).foregroundStyle(.secondary) }
+            Text(L("workbook.coverage.title")).readableFont(.headline)
+            Text(L("workbook.coverage.detail")).readableFont(.caption).foregroundStyle(.secondary)
+            if truncated || gaps.count > 50 { Text(L("workbook.coverage.shown",.count(min(50,gaps.count)),.count(total))).readableFont(.caption).foregroundStyle(.orange) }
+            if gaps.isEmpty { Text(L("workbook.coverage.none")).readableFont(.caption).foregroundStyle(.secondary) }
+            if !gaps.isEmpty { Text(L("workbook.coverage.grouped",.count(min(50,gaps.count)),.count(entries.count))).readableFont(.caption).foregroundStyle(.secondary) }
             ForEach(entries) { entry in
                 let label = WorkbookLabels.coverage(entry.feature)
                 VStack(alignment:.leading,spacing:3) {
-                    Text(verbatim:label.title).font(.caption.weight(.medium))
+                    Text(verbatim:label.title).readableFont(.caption, weight: .medium)
                     // Stored reason text and feature identifiers are source evidence,
                     // not localization keys. Retain the exact bytes in either UI language.
-                    Text(L("workbook.coverage.sourceReason")).font(.caption2).foregroundStyle(.secondary)
-                    Text(verbatim:entry.reason).font(.caption).textSelection(.enabled)
-                    Text(verbatim:entry.feature).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                    Text(L("workbook.coverage.sourceReason")).readableFont(.caption2).foregroundStyle(.secondary)
+                    Text(verbatim:entry.reason).readableFont(.caption).textSelection(.enabled)
+                    Text(verbatim:entry.feature).readableFont(.caption2, design: .monospaced).foregroundStyle(.secondary)
                     if let detail = label.detail {
                         DisclosureGroup(L("workbook.coverage.sourceEvidence")) {
-                            Text(verbatim:detail).font(.caption).foregroundStyle(.secondary)
-                        }.font(.caption)
+                            Text(verbatim:detail).readableFont(.caption).foregroundStyle(.secondary)
+                        }.readableFont(.caption)
                     }
-                    Text(verbatim:provenance(entry)).font(.caption2).foregroundStyle(.secondary)
+                    Text(verbatim:provenance(entry)).readableFont(.caption2).foregroundStyle(.secondary)
                 }
             }
         }
@@ -1683,25 +1685,25 @@ struct WorkbookImportSheet: View {
     private var titleBinding: Binding<String> { Binding(get:{effectiveTitle},set:{value in guard titleEdited || value != effectiveTitle else{return};title=value;titleEdited=true}) }
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
-            HStack { Text(L("workbook.import.title")).font(.title2.weight(.semibold)); Spacer(); Button(L("workbook.action.close")) { dismiss() }.keyboardShortcut(.cancelAction).disabled(locked) }
-            Text(L("workbook.import.detail")).font(.callout).foregroundStyle(.secondary)
-            if intent == .newComparison {Text(L("git.importComparisonMinimum")).font(.callout).foregroundStyle(.secondary)}
+            HStack { Text(L("workbook.import.title")).readableFont(.title2, weight: .semibold); Spacer(); Button(L("workbook.action.close")) { dismiss() }.keyboardShortcut(.cancelAction).disabled(locked) }
+            Text(L("workbook.import.detail")).readableFont(.callout).foregroundStyle(.secondary)
+            if intent == .newComparison {Text(L("git.importComparisonMinimum")).readableFont(.callout).foregroundStyle(.secondary)}
             TextField(L("workbook.import.projectName"),text:titleBinding).accessibilityIdentifier("Docver.workbook.import.title").textFieldStyle(.roundedBorder).disabled(locked)
             Button(L("workbook.import.choose")) { choose() }.disabled(locked)
             List {
                 ForEach(Array(rows.enumerated()),id:\.element.id) { index, row in
                     HStack {
-                        Text("v\(index+1)").font(.caption).foregroundStyle(.secondary)
-                        VStack(alignment:.leading,spacing:3) { TextField(L("workbook.import.versionName"),text:Binding(get:{rows.indices.contains(index) ? rows[index].label : ""},set:{if rows.indices.contains(index) { rows[index].label = $0 }})).accessibilityIdentifier("Docver.workbook.import.version." + row.id.uuidString); Text(verbatim:row.url.lastPathComponent + " · " + LC("workbook.import.bytes",row.identity.bytes)).font(.caption).foregroundStyle(.secondary) }
+                        Text("v\(index+1)").readableFont(.caption).foregroundStyle(.secondary)
+                        VStack(alignment:.leading,spacing:3) { TextField(L("workbook.import.versionName"),text:Binding(get:{rows.indices.contains(index) ? rows[index].label : ""},set:{if rows.indices.contains(index) { rows[index].label = $0 }})).accessibilityIdentifier("Docver.workbook.import.version." + row.id.uuidString); Text(verbatim:row.url.lastPathComponent + " · " + LC("workbook.import.bytes",row.identity.bytes)).readableFont(.caption).foregroundStyle(.secondary) }
                         Button { move(index,-1) } label: { Image(systemName:"chevron.up") }.disabled(index == 0 || locked).accessibilityLabel(L("workbook.import.moveUp"))
                         Button { move(index,1) } label: { Image(systemName:"chevron.down") }.disabled(index == rows.count-1 || locked).accessibilityLabel(L("workbook.import.moveDown"))
                         Button { if rows.indices.contains(index) { rows.remove(at:index) } } label: { Image(systemName:"xmark") }.disabled(locked).accessibilityLabel(L("workbook.import.remove"))
                     }.disabled(locked)
                 }
             }.frame(minHeight:220,maxHeight:360)
-            Text(L("workbook.import.limits")).font(.caption).foregroundStyle(.secondary)
-            if !failure.isEmpty { Text(verbatim:failure).font(.caption).foregroundStyle(.red) }
-            HStack { if locked { ProgressView().controlSize(.small); Text(choosing ? L("workbook.import.checkingHash") : L("workbook.import.importing")).font(.caption) }; Spacer(); Button(L("workbook.import.start")) { Task { await create() } }.buttonStyle(.borderedProminent).disabled(locked || rows.count<intent.minimumVersionEntries || rows.count > 100 || effectiveTitle.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rows.contains { $0.label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }) }
+            Text(L("workbook.import.limits")).readableFont(.caption).foregroundStyle(.secondary)
+            if !failure.isEmpty { Text(verbatim:failure).readableFont(.caption).foregroundStyle(.red) }
+            HStack { if locked { ProgressView().controlSize(.small); Text(choosing ? L("workbook.import.checkingHash") : L("workbook.import.importing")).readableFont(.caption) }; Spacer(); Button(L("workbook.import.start")) { Task { await create() } }.buttonStyle(.borderedProminent).disabled(locked || rows.count<intent.minimumVersionEntries || rows.count > 100 || effectiveTitle.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || rows.contains { $0.label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }) }
         }.padding(24).frame(width:840)
     }
     private func move(_ index: Int, _ by: Int) { let target = index+by; guard rows.indices.contains(index),rows.indices.contains(target) else { return }; rows.swapAt(index,target) }
@@ -1735,13 +1737,13 @@ private struct WorkbookPublishSheet: View {
     @State private var saving = false
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
-            Text(L("workbook.release.pinTitle")).font(.title2.weight(.semibold))
+            Text(L("workbook.release.pinTitle")).readableFont(.title2, weight: .semibold)
             Text(L("workbook.release.pinDetail")).foregroundStyle(.secondary)
-            Text(verbatim:model.reportID).font(.system(.caption,design:.monospaced)).textSelection(.enabled)
+            Text(verbatim:model.reportID).readableFont(.caption, design: .monospaced).textSelection(.enabled)
             TextField(L("workbook.release.namePlaceholder"),text:$label).textFieldStyle(.roundedBorder)
-            Text(L("workbook.release.reason")).font(.headline)
+            Text(L("workbook.release.reason")).readableFont(.headline)
             TextEditor(text:$reason).frame(height:100).border(Color.secondary.opacity(0.3))
-            if !failure.isEmpty { Text(verbatim:failure).font(.caption).foregroundStyle(.red) }
+            if !failure.isEmpty { Text(verbatim:failure).readableFont(.caption).foregroundStyle(.red) }
             HStack { Button(L("workbook.action.cancel")) { dismiss() }.keyboardShortcut(.cancelAction); Spacer(); if saving { ProgressView().controlSize(.small) }; Button(L("workbook.release.pinAction")) { Task { saving = true; do { try await model.publish(label:label,reason:reason); dismiss() } catch { failureContent = bridgeErrorMessage(error) }; saving = false } }.buttonStyle(.borderedProminent).disabled(saving || label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || reason.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) }
         }.padding(24).frame(width:620).disabled(saving)
     }
@@ -1891,14 +1893,17 @@ private final class WorkbookPinnedRowsView:NSView {
     override func draw(_ dirtyRect:NSRect){NSColor.controlBackgroundColor.setFill();bounds.fill();NSColor.gridColor.setFill();NSRect(x:max(0,bounds.width-1),y:0,width:1,height:bounds.height).fill()}
     func synchronize(_ table:NSTableView,rowStart:Int,pane:String){
         let range=table.rows(in:table.visibleRect),start=range.location==NSNotFound ? 0:range.location,count=heading ? 1:min(max(0,table.numberOfRows-start),range.length)
-        while fields.count<count {let field=NSTextField(labelWithString:"");field.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular);field.alignment = .right;field.isEditable=false;field.isSelectable=false;addSubview(field);fields.append(field)}
+        let pointSize=table.tableColumns.first?.headerCell.font?.pointSize ?? 14
+        let font=NSFont.monospacedDigitSystemFont(ofSize:pointSize,weight:.regular)
+        let textHeight=ceil(font.ascender-font.descender+font.leading)+2
+        while fields.count<count {let field=NSTextField(labelWithString:"");field.alignment = .right;field.isEditable=false;field.isSelectable=false;addSubview(field);fields.append(field)}
         for (index,field) in fields.enumerated(){
             field.isHidden=index>=count
             guard index<count else{continue}
             let local=start+index,physical=rowStart+local,text=heading ? L("workbook.grid.rowHeader"):String(physical)
             field.stringValue=text;field.identifier=NSUserInterfaceItemIdentifier(heading ? "Reviset.workbook.rowGutterHeader."+pane:"Reviset.workbook.rowGutter."+pane+".row.\(physical)");field.setAccessibilityLabel(heading ? text:L("workbook.grid.rowAX",.integer(physical)))
             let row=heading ? bounds:table.convert(table.rect(ofRow:local),to:self)
-            field.frame=NSRect(x:6,y:row.midY-8.5,width:max(0,bounds.width-12),height:17)
+            field.font=font;field.frame=NSRect(x:6,y:row.midY-textHeight/2,width:max(0,bounds.width-12),height:textHeight)
             field.textColor = !heading && table.selectedRow==local ? .labelColor:.secondaryLabelColor
         }
     }
@@ -1992,9 +1997,20 @@ final class WorkbookSourceTableView:NSTableView {
     override var canBecomeKeyView:Bool {sourceKeyboardEnabled && super.canBecomeKeyView}
     override func becomeFirstResponder()->Bool {sourceKeyboardEnabled && super.becomeFirstResponder()}
 }
+private final class WorkbookReadableHeaderCell:NSTableHeaderCell {
+    var readablePointSize:CGFloat=14 {
+        didSet {super.font = .systemFont(ofSize:readablePointSize,weight:.medium)}
+    }
+    // AppKit reapplies its small default header font during native layout.
+    // Retain the interface preference whenever the table reapplies that style.
+    override var font:NSFont? {
+        get {super.font}
+        set {super.font = .systemFont(ofSize:readablePointSize,weight:.medium)}
+    }
+}
 @MainActor private enum WorkbookGridAnnotation {
     private static let measurementCell:NSCell = {
-        let label=NSTextField(labelWithString:"");label.font = .systemFont(ofSize:10)
+        let label=NSTextField(labelWithString:"");label.font = .systemFont(ofSize:13)
         return label.cell!
     }()
     static func flags(_ cell:JSON)->String {
@@ -2004,10 +2020,11 @@ final class WorkbookSourceTableView:NSTableView {
         if cell["text_truncated"].bool || cell["source_lengths"]["value"].int>raw.utf16.count {result += (result.isEmpty ? "":" · ")+"…"}
         return result
     }
-    static func reservedWidth(for flags:String)->CGFloat {
+    static func reservedWidth(for flags:String,pointSize:CGFloat=13)->CGFloat {
         guard !flags.isEmpty else{return 0}
+        measurementCell.font = .systemFont(ofSize:pointSize)
         measurementCell.stringValue=flags
-        return min(48,measurementCell.cellSize.width+5)
+        return min(max(80,pointSize*6),measurementCell.cellSize.width+5)
     }
 }
 private final class WorkbookValueCellView:NSTableCellView {
@@ -2015,19 +2032,22 @@ private final class WorkbookValueCellView:NSTableCellView {
     override init(frame:NSRect) {
         super.init(frame:frame)
         let source=NSTextField(labelWithString:"");source.lineBreakMode = .byTruncatingTail
-        annotation.font = .systemFont(ofSize:10);annotation.textColor = .secondaryLabelColor
+        annotation.font = .systemFont(ofSize:13);annotation.textColor = .secondaryLabelColor
         addSubview(annotation);addSubview(source);textField=source
     }
     required init?(coder:NSCoder) {fatalError("init(coder:) is unavailable")}
-    func setAnnotation(_ value:String) {annotation.stringValue=value;annotation.isHidden=value.isEmpty;needsLayout=true}
+    func setAnnotation(_ value:String,pointSize:CGFloat) {annotation.stringValue=value;annotation.font = .systemFont(ofSize:pointSize);annotation.isHidden=value.isEmpty;needsLayout=true}
     override func layout() {
         super.layout()
-        let width=WorkbookGridAnnotation.reservedWidth(for:annotation.stringValue)
-        annotation.frame=NSRect(x:6,y:max(0,(bounds.height-14)/2),width:max(0,width-5),height:14)
-        textField?.frame=NSRect(x:6+width,y:max(0,(bounds.height-17)/2),width:max(0,bounds.width-11-width),height:17)
+        let width=WorkbookGridAnnotation.reservedWidth(for:annotation.stringValue,pointSize:annotation.font?.pointSize ?? 13)
+        let annotationHeight=ceil(annotation.font.map{$0.ascender-$0.descender+$0.leading} ?? 16)+2
+        let sourceHeight=ceil(textField?.font.map{$0.ascender-$0.descender+$0.leading} ?? 19)+2
+        annotation.frame=NSRect(x:6,y:max(0,(bounds.height-annotationHeight)/2),width:max(0,width-5),height:annotationHeight)
+        textField?.frame=NSRect(x:6+width,y:max(0,(bounds.height-sourceHeight)/2),width:max(0,bounds.width-11-width),height:sourceHeight)
     }
 }
 struct WorkbookGrid: NSViewRepresentable {
+    @ObservedObject private var readability=ReadabilityPreferences.shared
     var keyboardEnabled=true
     var sourceIdentity=""
     let language: String
@@ -2044,7 +2064,12 @@ struct WorkbookGrid: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = WorkbookTableScrollView(); scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = false
-        let table = WorkbookSourceTableView(); table.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.grid." + pane); table.usesAlternatingRowBackgroundColors = true; table.gridStyleMask = [.solidHorizontalGridLineMask,.solidVerticalGridLineMask]; table.rowHeight = 27; table.headerView = NSTableHeaderView(); table.allowsMultipleSelection = false; table.allowsColumnReordering = false; table.columnAutoresizingStyle = .noColumnAutoresizing
+        let table = WorkbookSourceTableView()
+        // Spreadsheet geometry uses explicit cell padding. Inset table styles
+        // resize columns asynchronously at mount, which can be mistaken for a
+        // user resize and overwrite the retained compact width.
+        table.style = .plain;table.intercellSpacing=NSSize(width:1,height:1)
+        table.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.grid." + pane); table.usesAlternatingRowBackgroundColors = true; table.gridStyleMask = [.solidHorizontalGridLineMask,.solidVerticalGridLineMask]; table.headerView = NSTableHeaderView(); table.allowsMultipleSelection = false; table.allowsColumnReordering = false; table.columnAutoresizingStyle = .noColumnAutoresizing
         table.dataSource = context.coordinator; table.delegate = context.coordinator; table.target = context.coordinator; table.action = #selector(Coordinator.clicked(_:)); table.setAccessibilityLabel((pane == "before" ? L("workbook.grid.beforeAX") : L("workbook.grid.afterAX")))
         scroll.documentView = table; context.coordinator.table = table; context.coordinator.update(self)
         return scroll
@@ -2080,6 +2105,9 @@ struct WorkbookGrid: NSViewRepresentable {
         private var defaultWidthColumns:[String:[Int]]=[:]
         private var defaultWidthSources:[String]=[]
         private var widthSource:String {parent.sourceIdentity.isEmpty ? parent.pane:parent.sourceIdentity}
+        private var valuePointSize:CGFloat {parent.readability.pointSize(.body)}
+        private var annotationPointSize:CGFloat {parent.readability.pointSize(.caption2)}
+        private var chromePointSize:CGFloat {parent.readability.pointSize(.caption)}
         init(_ parent: WorkbookGrid) { self.parent = parent }
         func update(_ value: WorkbookGrid) {
             updating = true; defer { updating = false }
@@ -2087,13 +2115,25 @@ struct WorkbookGrid: NSViewRepresentable {
             lastRequested = "\(value.selectedRow):\(value.selectedColumn)"
             sparse = Dictionary(value.cells.map { (String($0["row"].int)+":"+String($0["column"].int),$0) },uniquingKeysWith:{a,_ in a})
             guard let table else { return }
+            // Change native typography in place: the same table, physical
+            // source range and selected-cell reveal intent remain mounted.
+            let rowHeight=valuePointSize+14,headerHeight=chromePointSize+14
+            let previousRowHeight=table.rowHeight
+            let previousOrigin=table.enclosingScrollView?.contentView.bounds.origin
+            table.rowHeight=rowHeight
+            if let header=table.headerView,abs(header.frame.height-headerHeight)>0.5 {var frame=header.frame;frame.size.height=headerHeight;header.frame=frame;table.enclosingScrollView?.tile()}
             let key = "\(widthSource):\(value.columnStart):\(value.columnCount)"
             if columnsKey != key {
                 for column in table.tableColumns { table.removeTableColumn(column) }
-                let row = NSTableColumn(identifier:NSUserInterfaceItemIdentifier("row")); row.title = L("workbook.grid.rowHeader"); row.width = 58; row.minWidth = 58; table.addTableColumn(row)
-                for offset in 0..<value.columnCount { let n = value.columnStart+offset; let column = NSTableColumn(identifier:NSUserInterfaceItemIdentifier(String(n))); column.title = WorkbookGrid.columnLabel(n); column.minWidth = 64; column.width = 64; table.addTableColumn(column) }
+                let row = NSTableColumn(identifier:NSUserInterfaceItemIdentifier("row")); row.headerCell = WorkbookReadableHeaderCell(textCell:L("workbook.grid.rowHeader")); row.width = 58; row.minWidth = 58; table.addTableColumn(row)
+                for offset in 0..<value.columnCount { let n = value.columnStart+offset; let column = NSTableColumn(identifier:NSUserInterfaceItemIdentifier(String(n))); column.headerCell = WorkbookReadableHeaderCell(textCell:WorkbookGrid.columnLabel(n)); column.minWidth = 64; column.width = 64; table.addTableColumn(column) }
                 columnsKey = key
             }
+            let rowFont=NSFont.monospacedDigitSystemFont(ofSize:chromePointSize,weight:.regular)
+            let lastRow=String(max(value.rowStart,value.rowStart+value.rowCount-1))
+            let gutterWidth=max(58,ceil((lastRow as NSString).size(withAttributes:[.font:rowFont]).width)+18)
+            if let gutter=table.tableColumns.first {gutter.minWidth=gutterWidth;gutter.width=gutterWidth}
+            for column in table.tableColumns {(column.headerCell as? WorkbookReadableHeaderCell)?.readablePointSize=chromePointSize}
             for column in table.tableColumns.dropFirst() {
                 guard let physical=Int(column.identifier.rawValue) else{continue}
                 let width=resizedWidths[widthSource]?[physical] ?? retainedDefaultWidth(physical)
@@ -2103,6 +2143,10 @@ struct WorkbookGrid: NSViewRepresentable {
             table.setAccessibilityLabel(value.pane == "before" ? L("workbook.grid.beforeAX") : L("workbook.grid.afterAX"))
             table.headerView?.needsDisplay = true
             table.reloadData()
+            if abs(previousRowHeight-rowHeight)>0.5,previousRowHeight>0,let previousOrigin,let scroll=table.enclosingScrollView {
+                let stride=previousRowHeight+table.intercellSpacing.height,newStride=rowHeight+table.intercellSpacing.height
+                scroll.contentView.scroll(to:NSPoint(x:previousOrigin.x,y:max(0,previousOrigin.y/stride*newStride)));scroll.reflectScrolledClipView(scroll.contentView)
+            }
             if value.selectedRow >= value.rowStart,value.selectedRow < value.rowStart+value.rowCount,value.selectedColumn >= value.columnStart,value.selectedColumn < value.columnStart+value.columnCount {
                 let row = value.selectedRow-value.rowStart,column = value.selectedColumn-value.columnStart+1
                 table.selectRowIndexes(IndexSet(integer:row),byExtendingSelection:false)
@@ -2155,8 +2199,8 @@ struct WorkbookGrid: NSViewRepresentable {
                 guard !raw.isEmpty else{continue}
                 let sample=String(decoding:raw.utf16.prefix(64),as:UTF16.self)
                 let numeric=["number","boolean"].contains(cell["value_type"].string)
-                let annotationWidth=WorkbookGridAnnotation.reservedWidth(for:WorkbookGridAnnotation.flags(cell))
-                let measured=(sample as NSString).size(withAttributes:[.font:NSFont.systemFont(ofSize:12)]).width+16+annotationWidth
+                let annotationWidth=WorkbookGridAnnotation.reservedWidth(for:WorkbookGridAnnotation.flags(cell),pointSize:annotationPointSize)
+                let measured=(sample as NSString).size(withAttributes:[.font:NSFont.systemFont(ofSize:valuePointSize)]).width+16+annotationWidth
                 result=max(result,min(numeric ? 112:180,max(numeric || numericColumn ? 64:96,ceil(measured))))
             }
             return result
@@ -2183,7 +2227,7 @@ struct WorkbookGrid: NSViewRepresentable {
             if let existing = cell.textField { text = existing } else { text = NSTextField(labelWithString:""); text.translatesAutoresizingMaskIntoConstraints = false; text.lineBreakMode = .byTruncatingTail; cell.addSubview(text); cell.textField = text; NSLayoutConstraint.activate([text.leadingAnchor.constraint(equalTo:cell.leadingAnchor,constant:6),text.trailingAnchor.constraint(equalTo:cell.trailingAnchor,constant:-5),text.centerYAnchor.constraint(equalTo:cell.centerYAnchor)]) }
             text.maximumNumberOfLines=1;text.cell?.usesSingleLineMode=true;text.cell?.wraps=false;text.lineBreakMode = .byTruncatingTail
             let physicalRow = parent.rowStart+row
-            if tableColumn.identifier.rawValue == "row" { text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.row.\(physicalRow)"); text.stringValue = String(physicalRow); text.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular); text.textColor = .secondaryLabelColor; text.setAccessibilityLabel(L("workbook.grid.rowAX",.integer(physicalRow))); cell.toolTip = nil }
+            if tableColumn.identifier.rawValue == "row" { text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.row.\(physicalRow)"); text.stringValue = String(physicalRow); text.font = .monospacedDigitSystemFont(ofSize:chromePointSize,weight:.regular); text.textColor = .secondaryLabelColor; text.setAccessibilityLabel(L("workbook.grid.rowAX",.integer(physicalRow))); cell.toolTip = nil }
             else {
                 let column = Int(tableColumn.identifier.rawValue) ?? 1
                 text.identifier = NSUserInterfaceItemIdentifier("Docver.workbook.cell." + WorkbookGrid.address(physicalRow,column))
@@ -2192,8 +2236,8 @@ struct WorkbookGrid: NSViewRepresentable {
                 let raw = value["value"].isNull ? "" : value["value"].string
                 let flags=WorkbookGridAnnotation.flags(value)
                 let valueTruncated = value["source_lengths"]["value"].int > raw.utf16.count
-                (cell as? WorkbookValueCellView)?.setAnnotation(flags)
-                text.stringValue = raw; text.font = .systemFont(ofSize:12); text.textColor = value["hidden_row"].bool || value["hidden_column"].bool ? .secondaryLabelColor : .labelColor
+                (cell as? WorkbookValueCellView)?.setAnnotation(flags,pointSize:annotationPointSize)
+                text.stringValue = raw; text.font = .systemFont(ofSize:valuePointSize); text.textColor = value["hidden_row"].bool || value["hidden_column"].bool ? .secondaryLabelColor : .labelColor
                 let formula = value["formula"].isNull ? "" : L("workbook.grid.formulaPrefix") + String(value["formula"].string.prefix(600))
                 let interpretation = value["formula_interpretation"].string == "unresolved" ? L("workbook.grid.unresolvedSuffix") : value["formula"].isNull ? "" : L("workbook.grid.resultSuffix")
                 cell.toolTip = WorkbookGrid.address(physicalRow,column) + (value.isNull ? L("workbook.grid.absentSuffix") : " · " + WorkbookLabels.valueType(value["value_type"].string) + formula + interpretation + "\n" + (valueTruncated ? L("git.savedValuePreview"):L("git.savedValue")) + ": " + raw + (value["text_truncated"].bool || valueTruncated ? "\n"+L("git.gridPreviewRoute"):""))

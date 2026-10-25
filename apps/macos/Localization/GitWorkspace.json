@@ -1,7 +1,7 @@
 {
   "git.query": {
-    "en": "Query",
-    "ko": "조회"
+    "en": "Compare versions",
+    "ko": "비교할 버전"
   },
   "git.importComparisonMinimum": {
     "en": "Add at least two version entries for a new comparison. A bundled PPTX and PDF count as one version.",
@@ -318,5 +318,81 @@
   "git.lineEndingAnnotation": {
     "en": "Line ending {0}",
     "ko": "줄 끝 {0}"
+  },
+  "git.versionList": {
+    "en": "Versions",
+    "ko": "버전"
+  },
+  "git.guide.open": {
+    "en": "How to use",
+    "ko": "사용 방법"
+  },
+  "git.guide.title": {
+    "en": "How to read this workspace",
+    "ko": "이 화면, 이렇게 보세요"
+  },
+  "git.guide.summary": {
+    "en": "Import versions → choose before / after → select a change",
+    "ko": "버전 가져오기 → 이전·이후 선택 → 변경 확인"
+  },
+  "git.empty.title": {
+    "en": "Compare versions of the same document",
+    "ko": "같은 문서의 버전들을 비교해 보세요"
+  },
+  "git.empty.subtitle": {
+    "en": "Add your PPTX or PDF versions. You can read a single version, or compare two or more.",
+    "ko": "PPTX·PDF 버전들을 가져오세요. 한 버전을 읽거나, 두 버전 이상을 비교할 수 있습니다."
+  },
+  "git.empty.workbooks": {
+    "en": "Open spreadsheets · XLSX / ODS / CSV",
+    "ko": "스프레드시트 열기 · XLSX / ODS / CSV"
+  },
+  "git.guide.import.title": {
+    "en": "Add document versions",
+    "ko": "문서 버전 가져오기"
+  },
+  "git.guide.import.detail": {
+    "en": "Choose versions of the same document, order them oldest to newest, then start analysis.",
+    "ko": "같은 문서의 여러 버전을 선택하고, 오래된 순서로 정렬한 뒤 분석을 시작하세요."
+  },
+  "git.guide.compare.title": {
+    "en": "Choose before and after",
+    "ko": "비교할 이전·이후 선택"
+  },
+  "git.guide.compare.detail": {
+    "en": "Use the version controls above the originals. Intermediate history shows changes that happened between those versions.",
+    "ko": "원문 위에서 이전·이후 버전을 고르세요. 중간 변경 이력에서는 그 사이에 일어난 변경을 볼 수 있습니다."
+  },
+  "git.guide.inspect.title": {
+    "en": "Select a change and read the originals",
+    "ko": "변경을 누르고 원문 확인"
+  },
+  "git.guide.inspect.detail": {
+    "en": "Select an item in the change list to open its before and after pages. Switch to text changes to read the changed passages.",
+    "ko": "변경 목록에서 항목을 누르면 이전·이후 원문 페이지로 이동합니다. 바뀐 문장은 텍스트 비교로 읽을 수 있습니다."
+  },
+  "git.guide.import.short": {
+    "en": "Choose the document versions to compare with the import button above.",
+    "ko": "위쪽 가져오기 버튼으로 비교할 문서 버전들을 선택하세요."
+  },
+  "git.guide.compare.short": {
+    "en": "Choose the before and after versions above the originals.",
+    "ko": "원문 위에서 비교할 이전·이후 버전을 고르세요."
+  },
+  "git.guide.inspect.short": {
+    "en": "Select a change to open its original pages. Text view shows the changed passages.",
+    "ko": "변경 목록에서 항목을 누르면 원문으로 이동합니다. 문장은 텍스트 비교로 읽으세요."
+  },
+  "git.guide.showChanges": {
+    "en": "Show change list",
+    "ko": "변경 목록 보기"
+  },
+  "git.guide.singleRead": {
+    "en": "Choose a page above the original. Document zoom changes the page, not the app text.",
+    "ko": "원문 위에서 페이지를 고르세요. 문서 확대는 원문 배율만 바꿉니다."
+  },
+  "git.guide.singleCompare": {
+    "en": "A comparison needs two different versions. Use Import to choose the versions for a comparison.",
+    "ko": "비교하려면 서로 다른 두 버전이 필요합니다. 가져오기에서 비교할 버전들을 선택하세요."
   }
 }

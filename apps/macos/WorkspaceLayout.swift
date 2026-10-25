@@ -3,6 +3,77 @@ import AppKit
 import Combine
 import CoreFoundation
 
+// Interface readability is deliberately independent from PDF/slide/grid zoom.
+// Keep these helpers in the shared workspace source so standalone native probes
+// and every hosting-controller boundary use the same bounded preference.
+enum ReadableTextRole:CaseIterable {
+    case body,callout,caption,caption2,headline,title3,title2
+    var basePointSize:CGFloat {
+        switch self {case .body,.headline:return 16;case .callout:return 15;case .caption:return 14;case .caption2:return 13;case .title3:return 20;case .title2:return 24}
+    }
+    var defaultWeight:Font.Weight {self == .headline ? .semibold:.regular}
+}
+enum ReadableTextSize:String,CaseIterable,Identifiable {
+    case standard,large,extraLarge
+    var id:String {rawValue}
+    var pointOffset:CGFloat {switch self {case .standard:return 0;case .large:return 2;case .extraLarge:return 4}}
+    @MainActor var title:String {switch self {case .standard:return L("app.readability.standard");case .large:return L("app.readability.large");case .extraLarge:return L("app.readability.extraLarge")}}
+}
+@MainActor final class ReadabilityPreferences:ObservableObject {
+    static let shared=ReadabilityPreferences()
+    static let preferenceKey="Reviset.uiTextSize.v1"
+    private static var testSelection:String?
+    private let defaults:UserDefaults
+    private let isolated:Bool
+    @Published var selection:ReadableTextSize {
+        didSet {
+            guard selection != oldValue else{return}
+            if isolated {Self.testSelection=selection.rawValue} else {defaults.set(selection.rawValue,forKey:Self.preferenceKey)}
+        }
+    }
+    init(defaults:UserDefaults = .standard) {
+        self.defaults=defaults;isolated=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] != nil
+        let stored=isolated ? Self.testSelection:defaults.string(forKey:Self.preferenceKey)
+        selection=ReadableTextSize(rawValue:stored ?? "") ?? .standard
+    }
+    func pointSize(_ role:ReadableTextRole)->CGFloat {role.basePointSize+selection.pointOffset}
+    var canIncrease:Bool {selection != .extraLarge}
+    var canDecrease:Bool {selection != .standard}
+    func increase() {selection=selection == .standard ? .large:.extraLarge}
+    func decrease() {selection=selection == .extraLarge ? .large:.standard}
+}
+private struct ReadableFontModifier:ViewModifier {
+    @ObservedObject private var preference=ReadabilityPreferences.shared
+    let role:ReadableTextRole
+    let weight:Font.Weight?
+    let design:Font.Design
+    func body(content:Content)->some View {content.font(.system(size:preference.pointSize(role),weight:weight ?? role.defaultWeight,design:design))}
+}
+private struct ReadableInterfaceModifier:ViewModifier {
+    @ObservedObject private var preference=ReadabilityPreferences.shared
+    func body(content:Content)->some View {content.font(.system(size:preference.pointSize(.body))).controlSize(.regular)}
+}
+extension View {
+    func readableFont(_ role:ReadableTextRole,weight:Font.Weight?=nil,design:Font.Design = .default)->some View {modifier(ReadableFontModifier(role:role,weight:weight,design:design))}
+    func readableInterface()->some View {modifier(ReadableInterfaceModifier())}
+}
+struct ReadabilityMenu:View {
+    @ObservedObject private var preference=ReadabilityPreferences.shared
+    var body:some View {
+        Menu {
+            Picker(L("app.readability.label"),selection:$preference.selection) {ForEach(ReadableTextSize.allCases){size in Text(size.title).tag(size)}}
+        } label:{Label(L("app.readability.label"),systemImage:"textformat.size")}
+        .help(L("app.readability.help")).accessibilityIdentifier("Reviset.readability.menu")
+    }
+}
+struct ReadabilitySettings:View {
+    @ObservedObject private var preference=ReadabilityPreferences.shared
+    var body:some View {
+        Picker(L("app.readability.label"),selection:$preference.selection) {ForEach(ReadableTextSize.allCases){size in Text(size.title).tag(size)}}
+        Text(L("app.readability.description")).readableFont(.callout).foregroundStyle(.secondary)
+    }
+}
+
 enum WorkspaceLayoutScope:String,Codable {case document,workbook}
 enum WorkspaceChangesDock:String,Codable,CaseIterable {case bottom,left,right}
 enum WorkspaceInspectorDock:String,Codable,CaseIterable {case left,right}
@@ -66,11 +137,21 @@ private struct WorkspaceLayoutEnvelope:Codable {
     // panels remains a normal layout, including after preference reload.
     @Published private(set) var isFocused=false
     @Published var settingsPresented=false
+    @Published var readingGuideExpanded=false {
+        didSet {
+            if scope == .document,readingGuideExpanded != oldValue,ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] == nil {
+                UserDefaults.standard.set(readingGuideExpanded,forKey:"Reviset.readingGuideExpanded.v1")
+            }
+        }
+    }
     private(set) var persistenceReadOnly=false
     private var preFocusConfiguration:WorkspaceLayoutConfiguration?
     init(scope:WorkspaceLayoutScope) {
         self.scope=scope
         configuration = .preset(.sourceFirst,scope:scope)
+        if scope == .document,ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] == nil {
+            readingGuideExpanded=UserDefaults.standard.object(forKey:"Reviset.readingGuideExpanded.v1") as? Bool ?? false
+        }
         if let data=WorkspaceLayoutPreferences.data(scope) {
             if data.count>65_536 || Self.excessivelyNested(data) {persistenceReadOnly=true}
             else if let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any],Self.currentSchema(object["schemaVersion"]) {
@@ -217,7 +298,7 @@ struct WorkspaceHostedRoot<Content:View>:View {
     let content:Content
     let isEnabled:Bool
     let locale:Locale
-    var body:some View {content.environment(\.isEnabled,isEnabled).environment(\.locale,locale)}
+    var body:some View {content.environment(\.isEnabled,isEnabled).environment(\.locale,locale).readableInterface()}
 }
 final class WorkspaceLayoutMarkerView:NSView {
     var contentEnabled=true
@@ -238,16 +319,18 @@ func workspaceIdentityTitle(projectTitle:String,reportTitle:String,fallback:Stri
     !projectTitle.isEmpty ? projectTitle:!reportTitle.isEmpty ? reportTitle:fallback
 }
 struct NativeWorkspaceIdentity:NSViewRepresentable {
+    @ObservedObject private var readability=ReadabilityPreferences.shared
     let name:String
     let title:String
     let reportID:String
     func makeNSView(context:Context)->NSTextField {
         let field=NSTextField(labelWithString:"");field.identifier=NSUserInterfaceItemIdentifier(name)
-        field.font = .systemFont(ofSize:14,weight:.semibold);field.lineBreakMode = .byTruncatingTail;field.maximumNumberOfLines=1
+        field.lineBreakMode = .byTruncatingTail;field.maximumNumberOfLines=1
         field.setContentCompressionResistancePriority(.defaultLow,for:.horizontal)
         return field
     }
     func updateNSView(_ field:NSTextField,context:Context) {
+        field.font = .systemFont(ofSize:readability.pointSize(.headline),weight:.semibold)
         field.stringValue=title;field.setAccessibilityLabel(title)
         let reportHelp=reportID.isEmpty ? nil:L("git.reportChip",.verbatim(reportID))
         field.toolTip=title+(reportHelp.map{"\n"+$0} ?? "");field.setAccessibilityHelp(reportHelp)
@@ -466,9 +549,9 @@ struct WorkspaceLayoutSettings:View {
     }
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
-            Text(L("layout.customize")).font(.title2.weight(.semibold))
-            Text(L("layout.liveDescription")).font(.callout).foregroundStyle(.secondary)
-            if layout.persistenceReadOnly {Text(L("layout.persistenceReadOnly")).font(.caption).foregroundStyle(.secondary)}
+            Text(L("layout.customize")).readableFont(.title2,weight:.semibold)
+            Text(L("layout.liveDescription")).readableFont(.callout).foregroundStyle(.secondary)
+            if layout.persistenceReadOnly {Text(L("layout.persistenceReadOnly")).readableFont(.caption).foregroundStyle(.secondary)}
             Form {
                 Toggle(L("layout.panel.projects"),isOn:binding(\.sidebarVisible))
                 Slider(value:binding(\.sidebarWidth),in:180...380,step:10){Text(L("layout.width.projects"))}.disabled(!layout.configuration.sidebarVisible)
@@ -489,7 +572,7 @@ struct WorkspaceLayoutSettings:View {
                 }
             }
             HStack {Button(L("layout.reset")){layout.reset()};Spacer();Button(L("layout.done")){dismiss()}.keyboardShortcut(.defaultAction)}
-        }.padding(24).frame(width:580).fixedSize(horizontal:false,vertical:true)
+        }.padding(24).frame(width:660).fixedSize(horizontal:false,vertical:true).readableInterface()
     }
 }
 
@@ -497,7 +580,7 @@ struct NativeDetailSheet<Content:View>:View {
     @Environment(\.dismiss) private var dismiss
     let title:String
     @ViewBuilder var content:()->Content
-    var body:some View {VStack(spacing:0){HStack{Text(title).font(.headline);Spacer();Button(L("doc.common.close")){dismiss()}.keyboardShortcut(.cancelAction)}.padding(16);Divider();content()}.frame(width:940,height:680)}
+    var body:some View {VStack(spacing:0){HStack{Text(title).readableFont(.headline);Spacer();Button(L("doc.common.close")){dismiss()}.keyboardShortcut(.cancelAction)}.padding(16);Divider();content()}.frame(width:940,height:680).readableInterface()}
 }
 
 // Hiding a native host visually does not remove AppKit keyboard focus. Resign
@@ -512,9 +595,10 @@ struct NativeDetailSheet<Content:View>:View {
 // source word independently. Explicit source newlines remain unchanged.
 func sourceTerminatorLabel(_ value:String)->String {switch value {case "\r\n":return "⟦CRLF⟧";case "\r":return "⟦CR⟧";case "\n":return "⟦LF⟧";default:return "⟦EOF⟧"}}
 struct NativeTerminatorLabel:NSViewRepresentable {
+    @ObservedObject private var readability=ReadabilityPreferences.shared
     let terminator:String
-    func makeNSView(context:Context)->NSTextField {let field=NSTextField(labelWithString:"");field.font = .systemFont(ofSize:NSFont.smallSystemFontSize);field.textColor = .secondaryLabelColor;field.identifier=NSUserInterfaceItemIdentifier("Reviset.diff.terminator");return field}
-    func updateNSView(_ field:NSTextField,context:Context) {field.stringValue=sourceTerminatorLabel(terminator);field.setAccessibilityLabel(L("git.lineEndingAnnotation",.verbatim(field.stringValue)))}
+    func makeNSView(context:Context)->NSTextField {let field=NSTextField(labelWithString:"");field.textColor = .secondaryLabelColor;field.identifier=NSUserInterfaceItemIdentifier("Reviset.diff.terminator");return field}
+    func updateNSView(_ field:NSTextField,context:Context) {field.font = .systemFont(ofSize:readability.pointSize(.caption));field.stringValue=sourceTerminatorLabel(terminator);field.setAccessibilityLabel(L("git.lineEndingAnnotation",.verbatim(field.stringValue)))}
 }
 struct NativeDiffSourceLine:View {
     let prefix:String
@@ -524,7 +608,7 @@ struct NativeDiffSourceLine:View {
     var markerName:String?=nil
     private var foreground:Color {guard semantic else{return .primary};return prefix=="−" ? Color(red:0.55,green:0.12,blue:0.12):prefix=="+" ? Color(red:0.08,green:0.36,blue:0.18):.primary}
     var body:some View {
-        HStack(alignment:.top,spacing:8){Text(prefix).frame(width:18);Text(verbatim:text).fixedSize(horizontal:true,vertical:true).textSelection(.enabled);if let terminator {NativeTerminatorLabel(terminator:terminator).fixedSize()}}.font(.system(.body,design:.monospaced)).foregroundStyle(foreground).frame(maxWidth:.infinity,alignment:.leading).background {if let markerName {WorkspaceLayoutMarker(name:markerName)}}
+        HStack(alignment:.top,spacing:8){Text(prefix).frame(width:18);Text(verbatim:text).fixedSize(horizontal:true,vertical:true).textSelection(.enabled);if let terminator {NativeTerminatorLabel(terminator:terminator).fixedSize()}}.readableFont(.body,design:.monospaced).foregroundStyle(foreground).frame(maxWidth:.infinity,alignment:.leading).background {if let markerName {WorkspaceLayoutMarker(name:markerName)}}
     }
 }
 
@@ -537,7 +621,7 @@ struct NativeNeutralSourceText:View {
             if let lines {
                 VStack(alignment:.leading,spacing:1){ForEach(Array(lines.enumerated()),id:\.offset){_,line in NativeDiffSourceLine(prefix:"",text:line.text,semantic:false,terminator:line.terminator)}}
             } else {
-                Text(verbatim:text).font(.system(.body,design:.monospaced)).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)
+                Text(verbatim:text).readableFont(.body,design:.monospaced).fixedSize(horizontal:true,vertical:true).textSelection(.enabled)
             }
         }.frame(maxWidth:.infinity,alignment:.leading)
     }
@@ -564,17 +648,18 @@ struct NativeContextSummaryLine:View {
     let warning:Bool
     var body:some View {
         HStack(alignment:.center,spacing:5){Image(systemName:symbol);Text(verbatim:text).lineLimit(1).truncationMode(.tail).frame(maxWidth:.infinity,alignment:.leading)}
-            .font(.caption2).foregroundStyle(warning ? Color.orange:Color.secondary)
-            .frame(height:16,alignment:.leading).clipped().accessibilityElement(children:.ignore).accessibilityLabel(text)
+            .readableFont(.caption2).foregroundStyle(warning ? Color.orange:Color.secondary)
+            .fixedSize(horizontal:false,vertical:true).accessibilityElement(children:.ignore).accessibilityLabel(text)
     }
 }
 struct NativeVerbatimReasonReader:NSViewRepresentable {
+    @ObservedObject private var readability=ReadabilityPreferences.shared
     let text:String
     func makeNSView(context:Context)->NSScrollView {
         let scroll=NSScrollView();scroll.hasVerticalScroller=true;scroll.autohidesScrollers=false;scroll.borderType = .bezelBorder
         let reader=NSTextView(frame:scroll.contentView.bounds)
         reader.isEditable=false;reader.isSelectable=true;reader.isRichText=false
-        reader.font = .monospacedSystemFont(ofSize:NSFont.smallSystemFontSize,weight:.regular)
+        reader.font = .monospacedSystemFont(ofSize:readability.pointSize(.body),weight:.regular)
         reader.textContainerInset=NSSize(width:8,height:8)
         reader.isVerticallyResizable=true;reader.isHorizontallyResizable=false;reader.autoresizingMask = [.width]
         reader.minSize = .zero;reader.maxSize=NSSize(width:CGFloat.greatestFiniteMagnitude,height:CGFloat.greatestFiniteMagnitude)
@@ -584,6 +669,8 @@ struct NativeVerbatimReasonReader:NSViewRepresentable {
     }
     func updateNSView(_ scroll:NSScrollView,context:Context) {
         guard let reader=scroll.documentView as? NSTextView else{return}
+        let font=NSFont.monospacedSystemFont(ofSize:readability.pointSize(.body),weight:.regular)
+        if reader.font != font {reader.font=font}
         reader.setAccessibilityLabel(L("git.rawReasons"))
         if !reader.string.utf16.elementsEqual(text.utf16) {reader.string=text;reader.scrollToBeginningOfDocument(nil)}
     }
@@ -632,6 +719,7 @@ final class WorkbookEmptyGuidanceView:NSScrollView {
     }
 }
 struct NativeEmptyComparisonGuidance:NSViewRepresentable {
+    @ObservedObject private var readability=ReadabilityPreferences.shared
     let message:String
     let showsImport:Bool
     let canImport:Bool
@@ -640,5 +728,5 @@ struct NativeEmptyComparisonGuidance:NSViewRepresentable {
     final class Coordinator:NSObject {var onImport:()->Void={};@objc func openImport(_ sender:NSButton){onImport()}}
     func makeCoordinator()->Coordinator {Coordinator()}
     func makeNSView(context:Context)->WorkbookEmptyGuidanceView {let view=WorkbookEmptyGuidanceView();view.importButton.target=context.coordinator;view.importButton.action=#selector(Coordinator.openImport(_:));return view}
-    func updateNSView(_ view:WorkbookEmptyGuidanceView,context:Context) {context.coordinator.onImport=onImport;view.message.stringValue=message;view.importButton.title=L("git.workbookNewComparison");view.importButton.identifier=NSUserInterfaceItemIdentifier(actionIdentifier);view.importButton.isHidden = !showsImport;view.importButton.isEnabled=canImport;view.needsLayout=true}
+    func updateNSView(_ view:WorkbookEmptyGuidanceView,context:Context) {context.coordinator.onImport=onImport;view.message.font = .systemFont(ofSize:readability.pointSize(.body));view.importButton.font = .systemFont(ofSize:readability.pointSize(.callout));view.importButton.controlSize = .regular;view.message.stringValue=message;view.importButton.title=L("git.workbookNewComparison");view.importButton.identifier=NSUserInterfaceItemIdentifier(actionIdentifier);view.importButton.isHidden = !showsImport;view.importButton.isEnabled=canImport;view.needsLayout=true}
 }
