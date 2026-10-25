@@ -47,7 +47,7 @@ internal sealed class MainWindow : Window
     private Task storedHistoryRequest = Task.CompletedTask;
     private (string Project, string Report, string From, string To)? documentRecoveryScope;
     private readonly ComboBox sourceView = new() { Width = 155, FontSize = 14, Margin = new Thickness(4, 2, 4, 2) };
-    private readonly StackPanel rawTextPaging = new() { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed };
+    private readonly WrapPanel rawTextPaging = new() { Visibility = Visibility.Collapsed };
     private readonly CheckBox sourceDiagnostics = new() { Margin = new Thickness(10, 5, 4, 5), VerticalAlignment = VerticalAlignment.Center };
     private Button reportDetailsButton = new();
     private Button firstTextStage = new();

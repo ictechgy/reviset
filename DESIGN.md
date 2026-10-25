@@ -34,7 +34,7 @@
 
 ## Visual language
 - Color: A 시안의 밝은 macOS형 중립색과 파란 강조색을 기본으로 사용. 상태는 색과 문자 함께 표시.
-- Typography: 시스템 -apple-system/sans-serif. 기본 UI 본문 16pt, 보조 설명 14pt, 짧은 메타데이터도 13pt 이상을 사용한다. 사용자는 UI 글자를 2pt·4pt 더 키울 수 있다. 문서/PDF 자체 배율과 UI 글자 크기는 별도로 유지한다. 주요 제목 20~28pt.
+- Typography: 시스템 -apple-system/sans-serif. macOS 기본 UI 본문 16pt, 보조 설명 14pt, 짧은 메타데이터도 13pt 이상을 사용한다. macOS 사용자는 UI 글자를 2pt·4pt 더 키울 수 있다. 문서/PDF 자체 배율과 UI 글자 크기는 별도로 유지한다. Windows는 이번 변경에서 본문 15px, 조작부 14px와 보조 설명 13px를 사용하며, 앱 자체의 추가 글자 크기 설정은 후속 범위다. 주요 제목 20~28pt.
 - Spacing/layout rhythm: 4/8px 기반, 문서 비교가 중심이고 긴 hash는 축약.
 - Shape/radius/elevation: A 시안의 얇은 경계·낮은 그림자·작은 곡률의 panel·sheet.
 - Motion: 짧은 상태 전환, reduced-motion 준수.
@@ -88,7 +88,7 @@
 - User evidence: the current app's text is too small and the user cannot tell how to use or read it. Existing source uses caption/caption2 for primary change excerpts, small query controls and fixed-height context rows. The retained synthetic native Mac36 source/text screenshots show this density; they are before-state evidence, not a capture of private current documents.
 - Keep the source-first native split layout and large original-document area. Improve hierarchy and instructions within it; do not scale or recreate PDF/grid hosts to enlarge UI text.
 - Show a clear empty-state path: import versions of the same document, order them oldest to newest and start analysis, then select a change and inspect before/after originals. One-version reading stays supported.
-- Loaded reports also get a compact, collapsible and reopenable reading guide. Default to its one-line summary to preserve the source canvas; the explicit How to use action opens the steps, and the user's expansion preference persists. Name the actual controls and explain that selecting a change moves the displayed originals. Do not hardcode a left/right panel position because users can customize it.
+- Loaded reports also get a compact, reopenable reading guide. Keep its one-line summary in the document flow; the explicit How to use action opens three steps in a bounded, scrollable native popover so help does not reduce the source canvas at the minimum window size. Open help is session state rather than a persisted overlay. Name the actual controls and explain that selecting a change moves the displayed originals. Do not hardcode a left/right panel position because users can customize it.
 - Label the before/after version controls visibly. Keep endpoint differences and intermediate stored history distinct; explain the latter as changes that happened between the chosen versions. Do not call both modes the same computed diff.
 - UI text-size controls remain discoverable in the toolbar/settings. Native controls use regular size. Primary change excerpts and text diffs use body-size text; inference/coverage warnings remain visible with readable secondary text. Technical details remain available through the existing detail actions.
 - Use intrinsic heights, bounded wrapping and responsive rows instead of fixed heights that clip larger text. Do not increase every pane minimum and shrink the source canvas. Recheck narrow windows and both EN/KO.

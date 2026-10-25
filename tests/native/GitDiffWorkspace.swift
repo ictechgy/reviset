@@ -820,14 +820,34 @@ private struct SoleWorkbookImportProbeHarness:View {
         model.report=JSON(["report_id":"report","revisions":[["revision_occurrence_id":"old","index":0,"sheets":[["sheet_id":"sheet-old","name":"Old source"]]],["revision_occurrence_id":"new","index":1,"sheets":[["sheet_id":"sheet-new","name":"New source"]]],["revision_occurrence_id":"later","index":2,"sheets":[]]]]);model.beforeID="old";model.afterID="new";model.beforeSheetID="sheet-old";model.afterSheetID="sheet-new";model.changesFromID="old";model.changesToID="later";model.changesMode="history";model.mode="history";model.changes=[event]
         let host=NSHostingView(rootView:WorkbookWorkspace(model:model)),window=NSWindow(contentRect:NSRect(x:0,y:0,width:1280,height:800),styleMask:[.titled],backing:.buffered,defer:false);window.isReleasedWhenClosed=false;window.contentView=host;window.orderFront(nil);defer{window.close()};try await settle(window)
         model.projectID="project";await model.chooseChange("selected-event");try await settle(window)
-        let preferences=LanguagePreferences.shared,previous=LanguagePreferences.shared.selection;defer{preferences.selection=previous}
-        var observations:[[String:Any]]=[]
+        let preferences=LanguagePreferences.shared,previous=LanguagePreferences.shared.selection
+        let readability=ReadabilityPreferences.shared,previousTextSize=ReadabilityPreferences.shared.selection
+        defer{preferences.selection=previous;readability.selection=previousTextSize}
+        var observations:[[String:Any]]=[],readabilityButtonGeometry:[[String:Any]]=[]
         for language in [UILanguage.en,.ko] {
             preferences.selection=language;model.inspectorVisible=false;try await settle(window)
             guard let button=views(host).compactMap({$0 as? NSButton}).first(where:{$0.identifier?.rawValue=="Reviset.workbook.cellDetailsAction"}) else{throw NSError(domain:"ActualCellDetailsActionMissing",code:1)}
             let fixed=try model.report.data(),rows=try JSON(model.changes.map(\.raw)).data(),query=model.comparisonScope,identity=[model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress,model.selectedChangeID],before=try model.beforeCell.data(),after=try model.afterCell.data()
             let tables=views(host).compactMap{$0 as? NSTableView}.filter{$0.identifier?.rawValue.hasPrefix("Docver.workbook.grid.")==true}
             try require(tables.count==2,"CellDetailsPhysicalGridPairMissing")
+            let physicalSelection=[model.selectedRow,model.selectedColumn],gridOwners=tables.map{($0,$0.dataSource as AnyObject?,$0.selectedRow)}
+            let readabilityRequests=try Data(contentsOf:library.appendingPathComponent("read-events.jsonl"))
+            for size in [ReadableTextSize.standard,.extraLarge] {
+                readability.selection=size;try await settle(window)
+                let native=button.fittingSize,cell=button.cell?.cellSize ?? .zero
+                let required=NSSize(width:ceil(max(native.width,cell.width)),height:ceil(max(native.height,cell.height)))
+                let fits=button.bounds.width>=required.width && button.bounds.height>=required.height
+                let reachable=button.isEnabled && !button.isHiddenOrHasHiddenAncestor && button.visibleRect.insetBy(dx:-0.5,dy:-0.5).contains(button.bounds) && host.bounds.contains(button.convert(button.bounds,to:host))
+                let geometry:[String:Any]=["language":language.rawValue,"size":size.rawValue,"title":button.title,"font_points":button.font?.pointSize ?? 0,"button_bounds":NSStringFromRect(button.bounds),"native_required_size":NSStringFromSize(required),"fits_native_intrinsic_size":fits,"reachable":reachable]
+                try require(views(host).contains{$0===button} && button.title==L("workbook.action.cellDetails") && button.font?.pointSize==readability.pointSize(.body) && fits && reachable,"ReadableCellDetailsButtonClippedOrUnreachable_\(geometry)")
+                button.performClick(nil);try await settle(window)
+                try require(model.inspectorVisible && workspaceLayoutMarkers(in:host).contains{$0.identifier?.rawValue=="Reviset.workbook.cellDetails" && !$0.visibleRect.isEmpty},"ReadableCellDetailsActionDidNotOpenInspector")
+                try require(gridOwners.allSatisfy{table,owner,row in views(host).contains{$0===table} && (table.dataSource as AnyObject?) === owner && table.selectedRow==row} && physicalSelection==[model.selectedRow,model.selectedColumn],"ReadableCellDetailsChangedPhysicalGridOrSelection")
+                try require(try model.report.data()==fixed && JSON(model.changes.map(\.raw)).data()==rows && model.comparisonScope==query && identity==[model.beforeID,model.afterID,model.beforeSheetID,model.afterSheetID,model.beforeAddress,model.afterAddress,model.selectedChangeID] && model.beforeCell.data()==before && model.afterCell.data()==after && Data(contentsOf:library.appendingPathComponent("read-events.jsonl"))==readabilityRequests,"ReadableCellDetailsChangedSourceOrQueriedAgain")
+                readabilityButtonGeometry.append(geometry.merging(["native_action_performed":true,"physical_selection_retained":true,"grid_hosts_and_coordinators_retained":true,"source_and_requests_unchanged":true]){_,new in new})
+                model.inspectorVisible=false;try await settle(window)
+            }
+            readability.selection=previousTextSize;try await settle(window)
             for table in tables {if let scroll=table.enclosingScrollView {scroll.contentView.scroll(to:NSPoint(x:400,y:scroll.contentView.bounds.origin.y));scroll.reflectScrolledClipView(scroll.contentView)}}
             try await settle(window)
             let states=tables.map{($0,$0.dataSource as AnyObject?,$0.enclosingScrollView!.contentView.bounds.origin,$0.selectedRow)}
@@ -997,7 +1017,7 @@ private struct SoleWorkbookImportProbeHarness:View {
         try require(!workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"UnselectedDocumentDiffClaimedSelectedEvent")
         document.changes=[JSON(["change_id":"selected","kind":"text_modified","before":"100","after":"120"])];document.selectedChangeID="selected";try await settle(docWindow)
         try require(workspaceLayoutMarkers(in:docWindow.contentView!).contains{$0.identifier?.rawValue=="Reviset.document.selectedEventHeader"},"SelectedDocumentEventHeaderMissing")
-        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true,"source26_shared_shipped_oversized_assertion_used":true,"source26_mixed_observation_leading_source":mixedObservationFacts,"source26_missing_native_field_and_invented_raw_hard_fail":true,"source24_oversized_cell_details":oversizedGeometry,"source24_passive_window_and_divider_resize_keeps_manual_origin":true,"source24_missing_native_marker_readiness_expires":true,"source23_cell_details_both_directions_after_final_inspector_geometry":directionalGeometry,"source18_scope_caption_geometry":captionGeometry,"source18_nonfinite_width_resolved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
+        try JSONSerialization.data(withJSONObject:["scope":"controlled production WorkbookWorkspace/AppKit button and DocumentUnifiedDiff; synthetic cell fixture plus real diffWorkbooks date_system event; no submitted import or OS input","observations":observations,"readability_button_geometry":readabilityButtonGeometry,"single_source_warning_and_footer":true,"real_engine_metadata_event":metadataEvent.raw,"metadata_caption_has_no_cell_warning_or_field_rows":true,"null_cell_event_keeps_unmaterialized_warning":true,"metadata_manual_cell_details_and_return_preserves_query_rows":true,"stale_metadata_id_cannot_hide_physical_focus":true,"selected_null_document_header_hidden":true,"source26_shared_shipped_oversized_assertion_used":true,"source26_mixed_observation_leading_source":mixedObservationFacts,"source26_missing_native_field_and_invented_raw_hard_fail":true,"source24_oversized_cell_details":oversizedGeometry,"source24_passive_window_and_divider_resize_keeps_manual_origin":true,"source24_missing_native_marker_readiness_expires":true,"source23_cell_details_both_directions_after_final_inspector_geometry":directionalGeometry,"source18_scope_caption_geometry":captionGeometry,"source18_nonfinite_width_resolved":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:data).appendingPathComponent("source16-proof.json"))
     }
 
 }

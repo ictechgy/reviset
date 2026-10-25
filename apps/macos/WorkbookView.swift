@@ -960,7 +960,7 @@ struct WorkbookWorkspace: View {
                     Button(L("git.original")){model.setDiffMode("source")}.background(WorkspaceLayoutMarker(name:"Reviset.workbook.showOriginal"))
                     Spacer()
                 }
-                WorkbookCellDetailsButton(model:model).frame(width:110,height:24)
+                WorkbookCellDetailsButton(model:model)
             }.padding(.horizontal,12).padding(.vertical,7).disabled(!model.ready)
             if !model.addressFailure.isEmpty { Text(verbatim:model.addressFailure).readableFont(.caption).foregroundStyle(.red).padding(8) }
             if !model.rangeFailure.isEmpty {
@@ -1405,8 +1405,12 @@ private struct WorkbookCellDetailsButton:NSViewRepresentable {
         }
     }
     func makeCoordinator()->Coordinator {Coordinator()}
-    func makeNSView(context:Context)->NSButton {let button=NSButton(title:"",target:context.coordinator,action:#selector(Coordinator.open(_:)));button.bezelStyle = .rounded;button.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.cellDetailsAction");return button}
-    func updateNSView(_ button:NSButton,context:Context) {context.coordinator.model=model;button.title=L("workbook.action.cellDetails");button.font = .systemFont(ofSize:readability.pointSize(.body));button.setAccessibilityLabel(button.title);button.isEnabled=model.canOpenCellDetails}
+    func makeNSView(context:Context)->NSButton {let button=NSButton(title:"",target:context.coordinator,action:#selector(Coordinator.open(_:)));button.bezelStyle = .rounded;button.controlSize = .regular;button.identifier=NSUserInterfaceItemIdentifier("Reviset.workbook.cellDetailsAction");return button}
+    func updateNSView(_ button:NSButton,context:Context) {context.coordinator.model=model;button.title=L("workbook.action.cellDetails");button.font = .systemFont(ofSize:readability.pointSize(.body));button.setAccessibilityLabel(button.title);button.isEnabled=model.canOpenCellDetails;button.invalidateIntrinsicContentSize()}
+    func sizeThatFits(_ proposal:ProposedViewSize,nsView:NSButton,context:Context)->CGSize? {
+        let native=nsView.fittingSize
+        return CGSize(width:max(110,ceil(native.width)),height:max(32,ceil(native.height)))
+    }
 }
 struct WorkbookSourceScopeCaption:NSViewRepresentable {
     @ObservedObject private var readability=ReadabilityPreferences.shared

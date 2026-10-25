@@ -163,7 +163,7 @@ internal sealed class Copy
         ["importLabelRequired"] = ("Give each version entry a label with 1–200 characters.", "각 버전 항목의 이름을 1~200자로 입력하세요."),
         ["startupFailed"] = ("Library recovery did not complete. Import, analysis and export remain disabled. Retry library recovery or use Project → Refresh.", "라이브러리 복구를 완료하지 못했습니다. 가져오기·분석·내보내기는 비활성 상태입니다. 라이브러리 복구를 다시 시도하거나 프로젝트 → 새로 고침을 사용하세요."),
         ["retryStartup"] = ("Retry library recovery", "라이브러리 복구 다시 시도"), ["retryEvent"] = ("Retry selected event", "선택한 변경 다시 읽기"),
-        ["cellDetails"] = ("Cell details & navigation", "셀 상세 및 이동"), ["cellPreviewNotice"] = ("Bounded stored preview · select and copy text here. Open source segments for the complete stored fields.", "저장된 원본의 제한된 미리보기 · 텍스트를 선택·복사할 수 있습니다. 전체 저장 필드는 원본 구간을 여세요."),
+        ["cellDetails"] = ("Grid options & navigation", "표시 설정·이동"), ["cellPreviewNotice"] = ("Bounded stored preview · select and copy text here. Open source segments for the complete stored fields.", "저장된 원본의 제한된 미리보기 · 텍스트를 선택·복사할 수 있습니다. 전체 저장 필드는 원본 구간을 여세요."),
         ["morePages"] = ("… (+{0} more)", "… (추가 {0}페이지)"),
         ["whitespaceText"] = ("Whitespace-only text", "공백·줄바꿈만 있는 텍스트"),
         ["openCellSource"] = ("Open source segments", "원본 구간 열기"),

@@ -276,8 +276,10 @@ private struct SmokeStructureView: View {
         var restored=false,restorationPassed=false,stage="setup",observations:[[String:Any]]=[],captures:[String]=[]
         @discardableResult func restore()->Bool {
             if restored {return restorationPassed};restored=true
-            language.selection=originalLanguage;text.selection=originalText;model.diffMode=originalDiff;model.pageMode=originalPageMode;layout.readingGuideExpanded=originalGuide
+            layout.readingGuideExpanded=false
+            language.selection=originalLanguage;text.selection=originalText;model.diffMode=originalDiff;model.pageMode=originalPageMode
             window.setFrame(originalFrame,display:true)
+            layout.readingGuideExpanded=originalGuide
             restorationPassed=language.selection==originalLanguage && text.selection==originalText && layout.readingGuideExpanded==originalGuide && window.frame==originalFrame
             return restorationPassed
         }
@@ -289,6 +291,14 @@ private struct SmokeStructureView: View {
         func reachable(_ view:NSView)->Bool {
             let frame=view.convert(view.bounds,to:content)
             return view.window===window && !view.isHiddenOrHasHiddenAncestor && finite(frame) && content.bounds.insetBy(dx:-1,dy:-1).contains(frame) && view.visibleRect.width>0 && view.visibleRect.height>0
+        }
+        func guidePopover()->WorkspaceLayoutMarkerView? {
+            NSApp.windows.filter{$0 !== window && $0.isVisible}.compactMap(\.contentView).flatMap{workspaceLayoutMarkers(in:$0)}.first{$0.identifier?.rawValue=="Reviset.document.readingGuide.popover" && !$0.isHiddenOrHasHiddenAncestor}
+        }
+        func popoverReachable(_ view:NSView)->Bool {
+            guard let popup=view.window,popup !== window,popup.isVisible,let client=popup.contentView,let screen=popup.screen ?? window.screen else{return false}
+            let frame=view.convert(view.bounds,to:client)
+            return finite(frame) && client.bounds.insetBy(dx:-1,dy:-1).contains(frame) && view.visibleRect.width>0 && view.visibleRect.height>0 && finite(popup.frame) && screen.visibleFrame.insetBy(dx:-1,dy:-1).contains(popup.frame)
         }
         func settle()async throws {try await Task.sleep(nanoseconds:300_000_000);content.layoutSubtreeIfNeeded();content.displayIfNeeded()}
         do {
@@ -312,15 +322,24 @@ private struct SmokeStructureView: View {
                     for dimensions in [NSSize(width:1440,height:960),NSSize(width:1100,height:740)] {matrix.append((choice,size,dimensions,false))}
                 }
             }
-            for choice in [UILanguage.en,.ko] {matrix.append((choice,.extraLarge,NSSize(width:1440,height:960),true))}
+            for choice in [UILanguage.en,.ko] {for dimensions in [NSSize(width:1440,height:960),NSSize(width:1100,height:740)] {matrix.append((choice,.extraLarge,dimensions,true))}}
+            var compactSourceSizes:[String:[ObjectIdentifier:NSSize]]=[:]
             for (choice,size,dimensions,expanded) in matrix {
-                stage=choice.rawValue+"-"+size.rawValue+"-\(Int(dimensions.width))x\(Int(dimensions.height))"+(expanded ? "-guide-expanded":"")
-                language.selection=choice;text.selection=size;layout.readingGuideExpanded=expanded;window.setContentSize(dimensions)
+                layout.readingGuideExpanded=false
+                try await settle()
+                guard guidePopover()==nil else{throw BridgeError(code:"READABILITY_POPOVER_CLOSE",message:"The guide popover did not close before the next readability stage.")}
+                let compactStage=choice.rawValue+"-"+size.rawValue+"-\(Int(dimensions.width))x\(Int(dimensions.height))"
+                stage=compactStage+(expanded ? "-guide-expanded":"")
+                language.selection=choice;text.selection=size;window.setContentSize(dimensions)
                 try await settle();try await settle()
+                if expanded {layout.readingGuideExpanded=true;try await settle();try await settle()}
                 let markers=workspaceLayoutMarkers(in:content),currentPDFs=pdfs()
                 let version=markers.first{$0.identifier?.rawValue=="Reviset.document.versionBar"},guide=markers.first{$0.identifier?.rawValue=="Reviset.document.readingGuide"}
                 let visiblePDFs=currentPDFs.filter{!$0.isHiddenOrHasHiddenAncestor && $0.visibleRect.width>0 && $0.visibleRect.height>0}
-                var facts:[String:Any]=["stage":stage,"language":choice.rawValue,"text_size":size.rawValue,"guide_expanded":expanded,"requested_client_size":["width":dimensions.width,"height":dimensions.height],"actual_client_bounds":rect(content.bounds),"window_frame":rect(window.frame),"version_bar":version.map{rect($0.convert($0.bounds,to:content))} ?? [:],"reading_guide":guide.map{rect($0.convert($0.bounds,to:content))} ?? [:],"version_bar_reachable":version.map(reachable) ?? false,"reading_guide_reachable":guide.map(reachable) ?? false,"source_pdf_frames":visiblePDFs.map{rect($0.convert($0.bounds,to:content))},"minimum_pdf_height":minimumPDFHeight,"source_pdf_count":currentPDFs.count]
+                let popup=guidePopover(),popupWindow=popup?.window
+                let sizes=Dictionary(uniqueKeysWithValues:visiblePDFs.map{(ObjectIdentifier($0),$0.bounds.size)})
+                let retainedCanvas = !expanded || compactSourceSizes[compactStage].map{previous in previous.count==sizes.count && previous.allSatisfy{identity,expected in sizes[identity].map{abs($0.width-expected.width)<0.5 && abs($0.height-expected.height)<0.5} ?? false}} == true
+                var facts:[String:Any]=["stage":stage,"language":choice.rawValue,"text_size":size.rawValue,"guide_expanded":expanded,"guide_presentation":"native popover; compact parent row stays visible","requested_client_size":["width":dimensions.width,"height":dimensions.height],"actual_client_bounds":rect(content.bounds),"window_frame":rect(window.frame),"version_bar":version.map{rect($0.convert($0.bounds,to:content))} ?? [:],"reading_guide":guide.map{rect($0.convert($0.bounds,to:content))} ?? [:],"version_bar_reachable":version.map(reachable) ?? false,"reading_guide_reachable":guide.map(reachable) ?? false,"source_pdf_frames":visiblePDFs.map{rect($0.convert($0.bounds,to:content))},"minimum_pdf_height":minimumPDFHeight,"source_pdf_count":currentPDFs.count,"popover_reachable":popup.map(popoverReachable) ?? false,"popover_window_frame":popupWindow.map{rect($0.frame)} ?? [:],"popover_client_bounds":popupWindow?.contentView.map{rect($0.bounds)} ?? [:],"popover_preserves_compact_source_canvas":retainedCanvas]
                 let currentReport=try model.report.data(),currentRows=try JSON(model.changes.map(\.raw)).data()
                 let unchanged=project==model.projectID && currentReport==report && from==model.from && to==model.to && tab==model.tab && selected==model.selectedChangeID && left==model.leftPageID && right==model.rightPageID && model.zoom==zoom && currentRows==queryRows && !rangeReadObserved
                 facts["fixed_report_query_event_pages_and_model_zoom_unchanged"]=unchanged
@@ -330,18 +349,28 @@ private struct SmokeStructureView: View {
                 try captureView(window,output.appendingPathComponent(file));captures.append(file)
                 guard standardPreferencesUnchanged() else{throw BridgeError(code:"READABILITY_PREFERENCE_ISOLATION",message:"Standard language or text-size preferences changed during isolated readability qualification; no persistent values were restored.")}
                 guard unchanged,!model.loadingChanges,layout.configuration==layoutState,layout.isFocused==focused else{throw BridgeError(code:"READABILITY_MODEL",message:"A readability/window change altered the fixed report, query, selected event, source pages, zoom or layout.")}
-                guard let version,let guide,reachable(version),reachable(guide),version.bounds.height>=36,guide.bounds.height >= (expanded ? 80:28) else{throw BridgeError(code:"READABILITY_CHROME",message:"The version controls or \(expanded ? "expanded":"compact") reading guide are clipped/unreachable at \(stage).")}
+                guard let version,let guide,reachable(version),reachable(guide),version.bounds.height>=36,guide.bounds.height>=28 else{throw BridgeError(code:"READABILITY_CHROME",message:"The version controls or compact reading-guide button are clipped/unreachable at \(stage).")}
+                if expanded {
+                    guard let popup,let popupWindow,popoverReachable(popup),popup.bounds.width>=600,popup.bounds.height>=380,layout.readingGuideExpanded else{throw BridgeError(code:"READABILITY_POPOVER",message:"The actual bounded guide popover is missing or unreachable at \(stage).")}
+                    let popupFile="native-readability-"+stage+"-popover.png"
+                    try captureView(popupWindow,output.appendingPathComponent(popupFile));captures.append(popupFile)
+                    guard retainedCanvas else{throw BridgeError(code:"READABILITY_POPOVER_CANVAS",message:"Opening the guide popover changed the compact source canvas at \(stage).")}
+                } else {compactSourceSizes[compactStage]=sizes}
                 guard !visiblePDFs.isEmpty,visiblePDFs.allSatisfy({reachable($0) && $0.bounds.height>=minimumPDFHeight && $0.bounds.width>=180}) else{throw BridgeError(code:"READABILITY_SOURCE_AREA",message:"The actual source PDF area is smaller than180pt high/wide or clipped at \(stage); see readability-failure.json and the capture.")}
                 guard Set(currentPDFs.map(ObjectIdentifier.init))==identities else{throw BridgeError(code:"READABILITY_SOURCE_HOST",message:"Readability changes replaced a live production PDFView.")}
                 for (pdf,document,page,scale) in sourceState {guard pdf.document === document,pdf.currentPage === page,abs(pdf.scaleFactor-scale)<0.001 else{throw BridgeError(code:"READABILITY_SOURCE_STATE",message:"Readability changes replaced a PDF document or reset its page/scale.")}}
+                layout.readingGuideExpanded=false
+                try await settle()
+                guard guidePopover()==nil else{throw BridgeError(code:"READABILITY_POPOVER_CLOSE",message:"The guide popover did not close after capture at \(stage).")}
             }
             guard restore() else{throw BridgeError(code:"READABILITY_RESTORE",message:"Original in-memory language, interface text size or window frame did not restore.")}
             guard standardPreferencesUnchanged() else{throw BridgeError(code:"READABILITY_PREFERENCE_ISOLATION",message:"Standard language or text-size preferences changed during isolated readability qualification; no persistent values were restored.")}
-            let result:[String:Any]=["passed":true,"checks":observations.count,"matrix":"8 compact-guide cases: EN/KO × comfortable/extra large ×1440×960/1100×740 client points; 2 expanded-guide cases: EN/KO ×extra large ×1440×960","captures":captures,"observations":observations,"mounted_source_readiness":mounted,"production_pdf_views_retained":originalPDFs.count,"fixed_report_query_rows_selected_event_pages_and_model_zoom_retained":true,"range_read_observed":rangeReadObserved,"in_memory_language_text_size_guide_and_window_frame_restored":restorationPassed,"standard_language_and_text_preferences_unchanged":standardPreferencesUnchanged(),"minimum_actual_pdf_height":minimumPDFHeight,"interaction_scope":"actual native client-view captures and public in-process AppKit geometry; no OS input, accessibility automation, full Dock or viewport-position preservation claim"]
+            let result:[String:Any]=["passed":true,"checks":observations.count,"matrix":"8 compact-guide cases: EN/KO × comfortable/extra large ×requested1440×960/1100×740 client points; 4 native-guide-popover cases: EN/KO ×extra large ×both requested sizes; observations record actual bounds after native minimum-size clamping","captures":captures,"observations":observations,"mounted_source_readiness":mounted,"production_pdf_views_retained":originalPDFs.count,"fixed_report_query_rows_selected_event_pages_and_model_zoom_retained":true,"range_read_observed":rangeReadObserved,"in_memory_language_text_size_guide_and_window_frame_restored":restorationPassed,"standard_language_and_text_preferences_unchanged":standardPreferencesUnchanged(),"minimum_actual_pdf_height":minimumPDFHeight,"guide_popover_preserves_parent_source_canvas":true,"guide_popover_closed_between_stages":true,"interaction_scope":"actual native parent and popover client-view captures and public in-process AppKit geometry; requested sizes may be clamped to recorded actual bounds; no OS input, accessibility automation, full Dock or viewport-position preservation claim"]
             try JSON(result).data().write(to:output.appendingPathComponent("readability-observations.json"));return result
         } catch {
             let file="native-readability-failure-"+stage+".png"
             if (try? captureView(window,output.appendingPathComponent(file))) != nil {captures.append(file)}
+            if let popup=guidePopover()?.window {let popupFile="native-readability-failure-"+stage+"-popover.png";if (try? captureView(popup,output.appendingPathComponent(popupFile))) != nil {captures.append(popupFile)}}
             let didRestore=restore()
             try? JSON(["passed":false,"stage":stage,"error":error.localizedDescription,"captures":captures,"observations":observations,"in_memory_language_text_size_guide_and_window_frame_restored":didRestore,"standard_language_and_text_preferences_unchanged":standardPreferencesUnchanged(),"interaction_scope":"actual native client-view capture and in-process geometry; no OS input or accessibility automation claim"]).data().write(to:output.appendingPathComponent("readability-failure.json"))
             throw error

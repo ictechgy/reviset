@@ -249,22 +249,38 @@ private struct WorkspaceReadingGuide:View {
     @EnvironmentObject var layout:WorkspaceLayoutStore
     @Binding var expanded:Bool
     var body:some View {
-        DisclosureGroup(isExpanded:$expanded) {
-            HStack(alignment:.top,spacing:24) {
-                ReadingGuideStep(number:1,title:L("git.guide.import.title"),detail:L("git.guide.import.short"))
-                ReadingGuideStep(number:2,title:L(model.revisions.count==1 ? "git.reading":"git.guide.compare.title"),detail:L(model.revisions.count==1 ? "git.guide.singleRead":"git.guide.compare.short"))
-                ReadingGuideStep(number:3,title:L(model.revisions.count==1 ? "git.guide.compare.title":"git.guide.inspect.title"),detail:L(model.revisions.count==1 ? "git.guide.singleCompare":"git.guide.inspect.short"))
-            }.padding(.top,10).padding(.bottom,5)
-            if !layout.configuration.changesVisible {
-                Button(L("git.guide.showChanges")){layout.update{$0.changesVisible=true}}.padding(.top,6)
-            }
-        } label:{
+        Button{expanded.toggle()} label:{
             HStack(spacing:14) {
                 Label(L("git.guide.title"),systemImage:"lightbulb").readableFont(.callout,weight:.semibold)
-                if !expanded {Text(L("git.guide.summary")).readableFont(.caption).foregroundStyle(.secondary).lineLimit(1)}
+                Text(L("git.guide.summary")).readableFont(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength:8)
+                Image(systemName:"questionmark.circle").foregroundStyle(.secondary)
             }
-        }.readableFont(.callout).padding(.horizontal,18).padding(.vertical,6)
+            .frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+        }.buttonStyle(.plain).help(L("git.guide.open")).accessibilityIdentifier("Reviset.document.readingGuide.open")
+            .readableFont(.callout).padding(.horizontal,18).padding(.vertical,6)
             .background(Color.blue.opacity(0.035)).background(WorkspaceLayoutMarker(name:"Reviset.document.readingGuide"))
+            .popover(isPresented:$expanded,arrowEdge:.bottom) {
+                VStack(spacing:0) {
+                    HStack(spacing:16) {
+                        Label(L("git.guide.title"),systemImage:"lightbulb").readableFont(.headline)
+                        Spacer()
+                        Button(L("doc.common.close")){expanded=false}.keyboardShortcut(.cancelAction)
+                    }.padding(20)
+                    Divider()
+                    ScrollView {
+                        VStack(alignment:.leading,spacing:24) {
+                            ReadingGuideStep(number:1,title:L("git.guide.import.title"),detail:L("git.guide.import.short"))
+                            ReadingGuideStep(number:2,title:L(model.revisions.count==1 ? "git.reading":"git.guide.compare.title"),detail:L(model.revisions.count==1 ? "git.guide.singleRead":"git.guide.compare.short"))
+                            ReadingGuideStep(number:3,title:L(model.revisions.count==1 ? "git.guide.compare.title":"git.guide.inspect.title"),detail:L(model.revisions.count==1 ? "git.guide.singleCompare":"git.guide.inspect.short"))
+                            if !layout.configuration.changesVisible {
+                                Button(L("git.guide.showChanges")){layout.update{$0.changesVisible=true};expanded=false}
+                            }
+                        }.padding(24).frame(maxWidth:.infinity,alignment:.leading)
+                    }
+                }.frame(width:620,height:400).readableInterface()
+                    .background(WorkspaceLayoutMarker(name:"Reviset.document.readingGuide.popover"))
+            }
     }
 }
 struct ReportBar: View {

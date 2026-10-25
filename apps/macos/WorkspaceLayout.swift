@@ -137,21 +137,13 @@ private struct WorkspaceLayoutEnvelope:Codable {
     // panels remains a normal layout, including after preference reload.
     @Published private(set) var isFocused=false
     @Published var settingsPresented=false
-    @Published var readingGuideExpanded=false {
-        didSet {
-            if scope == .document,readingGuideExpanded != oldValue,ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] == nil {
-                UserDefaults.standard.set(readingGuideExpanded,forKey:"Reviset.readingGuideExpanded.v1")
-            }
-        }
-    }
+    // Help is a transient popover. Reopening the app never restores an overlay.
+    @Published var readingGuideExpanded=false
     private(set) var persistenceReadOnly=false
     private var preFocusConfiguration:WorkspaceLayoutConfiguration?
     init(scope:WorkspaceLayoutScope) {
         self.scope=scope
         configuration = .preset(.sourceFirst,scope:scope)
-        if scope == .document,ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] == nil {
-            readingGuideExpanded=UserDefaults.standard.object(forKey:"Reviset.readingGuideExpanded.v1") as? Bool ?? false
-        }
         if let data=WorkspaceLayoutPreferences.data(scope) {
             if data.count>65_536 || Self.excessivelyNested(data) {persistenceReadOnly=true}
             else if let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any],Self.currentSchema(object["schemaVersion"]) {
