@@ -86,7 +86,8 @@ internal sealed class MainWindow : Window
     private readonly ComboBox reports = new() { Width = 245, Height = 30, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 2, 3, 2) };
     private readonly TextBox detail = SourceText();
     private readonly TextBlock detailRange = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8) };
-    private readonly TextBlock detailSourceContext = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(10, 4, 10, 4), FontSize = 12, Visibility = Visibility.Collapsed };
+    private readonly TextBlock detailSourceContext = new() { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 4, 8, 4), FontSize = 11, LineHeight = 13, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, MaxHeight = 60, Visibility = Visibility.Collapsed };
+    private ScrollViewer? detailToolsScroll;
     private readonly TextBlock rawTextPageSummary = new() { TextWrapping = TextWrapping.Wrap, MaxWidth = 430, Margin = new Thickness(8, 3, 4, 3), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
     private readonly StackPanel detailPaging = new();
     private readonly TextBox detailMetadata = SourceText();
@@ -314,11 +315,11 @@ internal sealed class MainWindow : Window
         if (inspectorArrangementBottom == bottom && InspectorPane.Child is not null) return;
         inspectorArrangementBottom = bottom;
         foreach (var element in new FrameworkElement[] { inspectorHeading, detailPaging, technicalDetails, detailSourceContext, detail }) if (VisualTreeHelper.GetParent(element) is Panel parent) parent.Children.Remove(element);
-        InspectorPane.Child = null;
+        InspectorPane.Child = null; detailToolsScroll = null;
         if (bottom)
         {
             var grid = new Grid(); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(225) }); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            var tools = new StackPanel(); tools.Children.Add(inspectorHeading); tools.Children.Add(detailPaging); tools.Children.Add(technicalDetails); var scroll = new ScrollViewer { Content = tools, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; var controls = new DockPanel(); DockPanel.SetDock(detailSourceContext, Dock.Top); controls.Children.Add(detailSourceContext); controls.Children.Add(scroll); grid.Children.Add(controls); Grid.SetColumn(detail, 1); grid.Children.Add(detail); InspectorPane.Child = grid;
+            var tools = new StackPanel(); tools.Children.Add(inspectorHeading); tools.Children.Add(detailPaging); tools.Children.Add(technicalDetails); var scroll = new ScrollViewer { Content = tools, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; var controls = new Grid(); controls.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto, MaxHeight = 68 }); controls.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 74 }); Grid.SetRow(detailSourceContext, 0); controls.Children.Add(detailSourceContext); Grid.SetRow(scroll, 1); controls.Children.Add(scroll); detailToolsScroll = scroll; grid.Children.Add(controls); Grid.SetColumn(detail, 1); grid.Children.Add(detail); InspectorPane.Child = grid;
         }
         else
         {
@@ -1738,7 +1739,7 @@ internal sealed class MainWindow : Window
         ChangeVisibility(inspector: true); await SelectCell(pane, pane.FocusedRow, pane.FocusedColumn);
     }
     private Task<JsonElement> QueryFixed(string name, Dictionary<string, object?> args, string project, string report, CancellationToken token) { if (name is "get_workbook_cell" or "get_workbook_change") sourceDetailReadsForSmoke++; args["project_id"] = project; args["report_id"] = report; args["max_output_tokens"] = 8000; return Bridge.Call("workbookQuery", new { name, args }, token); }
-    private void ClearDetail() { pairedSource = null; singleCellSource = null; detailCellRead = null; ++detailGeneration; cellReads.Cancel(); detailLoader = null; detailPayload = default; documentDetail = default; inspectorMode = "prompt"; detailNext = null; detailOffset = 0; detailCursor = ""; detailItemNext = ""; detailStyle.IsChecked = false; detailStyle.IsEnabled = false; detailRange.Text = ""; detailMetadata.Text = ""; detailSourceContext.Text = ""; detailSourceContext.Visibility = Visibility.Collapsed; rawTextPageSummary.Text = ""; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; }
+    private void ClearDetail() { pairedSource = null; singleCellSource = null; detailCellRead = null; ++detailGeneration; cellReads.Cancel(); detailLoader = null; detailPayload = default; documentDetail = default; inspectorMode = "prompt"; detailNext = null; detailOffset = 0; detailCursor = ""; detailItemNext = ""; detailStyle.IsChecked = false; detailStyle.IsEnabled = false; detailRange.Text = ""; detailMetadata.Text = ""; detailSourceContext.Text = ""; detailSourceContext.Visibility = Visibility.Collapsed; detailSourceContext.ToolTip = null; AutomationProperties.SetName(detailSourceContext, ""); rawTextPageSummary.Text = ""; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; }
     private Task FirstDetail() { detailCursor = ""; return LoadDetail(0); }
     private Task NextDetail() { if (detailNext is { } offset) return LoadDetail(offset); if (detailItemNext.Length > 0) { detailCursor = detailItemNext; return LoadDetail(0); } return Task.CompletedTask; }
     private async Task LoadDetail(int offset, JsonElement? initialPayload = null)
@@ -1768,7 +1769,14 @@ internal sealed class MainWindow : Window
         var sheet = revision.Get("sheets").Items().Find(value => value.Get("sheet_id").Text() == cell.Sheet).Get("name").Text();
         return Copy[side] + " · " + (VersionLabel(cell.Occurrence) is { Length: > 0 } version ? version : cell.Occurrence) + " · " + Copy["sheet"] + ": " + (sheet.Length > 0 ? sheet : cell.Sheet) + (cell.HasCell ? "!" + cell.Address : " · " + Copy["cellNotMaterialized"]);
     }
-    private string RawPagerSummary()
+    private static string OwnerChromeLine(string value) => new(value.Select(character => char.IsControl(character) || character is '\u2028' or '\u2029' ? ' ' : character).ToArray());
+    private string CompactRawOwnerCaption(string side, WorkbookCellSource cell)
+    {
+        var revision = currentReport.Get("revisions").Items().Find(value => value.Get("revision_occurrence_id").Text() == cell.Occurrence);
+        var sheet = revision.Get("sheets").Items().Find(value => value.Get("sheet_id").Text() == cell.Sheet).Get("name").Text();
+        return Copy[side] + " · " + VersionOrdinal(cell.Occurrence) + " · " + (cell.HasCell ? cell.Address : Copy["cellNotMaterialized"]) + " · " + Copy["sheet"] + ": " + OwnerChromeLine(sheet.Length > 0 ? sheet : cell.Sheet);
+    }
+    private string RawPagerSummary(bool compact = false)
     {
         var contributors = new List<string>();
         void Fields(JsonElement cell, string side)
@@ -1780,17 +1788,19 @@ internal sealed class MainWindow : Window
         if (pairedSource is not null) { Fields(PairCell(detailPayload, "before"), "before"); Fields(PairCell(detailPayload, "after"), "after"); }
         else if (detailPayload.Get("component").Text() == "style")
         {
-            foreach (var item in detailPayload.Get("items").Items()) if (detailNext is { } next && SourceTextObservation.ReadSegment(item.Get("value"), item.Get("text_continuations").Get("value")).Range is { Valid: true, Next: { } fieldNext } && fieldNext == next) contributors.Add(item.Get("key").Text());
+            foreach (var item in detailPayload.Get("items").Items()) if (detailNext is { } next && SourceTextObservation.ReadSegment(item.Get("value"), item.Get("text_continuations").Get("value")).Range is { Valid: true, Next: { } fieldNext } && fieldNext == next) contributors.Add(compact ? OwnerChromeLine(item.Get("key").Text()) : item.Get("key").Text());
         }
         else Fields(detailPayload.Get("items").Items().FirstOrDefault(), singleCellSource?.Side ?? "");
-        return Copy["requestedOffset"] + ": " + detailOffset.ToString(CultureInfo.InvariantCulture) + " · " + Copy["nextOffset"] + ": " + (detailNext?.ToString(CultureInfo.InvariantCulture) ?? "∅") + (contributors.Count > 0 ? " (" + string.Join(", ", contributors) + ")" : "") + (detailItemNext.Length > 0 ? " · " + Copy["nextText"] + ": " + Copy["styleDetail"] : "");
+        return Copy["requestedOffset"] + ": " + detailOffset.ToString(CultureInfo.InvariantCulture) + (compact ? "\n" : " · ") + Copy["nextOffset"] + ": " + (detailNext?.ToString(CultureInfo.InvariantCulture) ?? "∅") + (contributors.Count > 0 ? " (" + string.Join(", ", contributors) + ")" : "") + (detailItemNext.Length > 0 ? " · " + Copy["nextText"] + ": " + Copy["styleDetail"] : "");
     }
     private void RefreshRawSourceContext()
     {
         var owner = HasIndependentSourceDetail ? singleCellSource is { } single ? RawOwnerCaption(single.Side, single.Cell) : RawOwnerCaption("before", pairedSource!.Before) + "\n" + RawOwnerCaption("after", pairedSource.After) : "";
-        detailSourceContext.Text = owner.Length > 0 ? owner + "\n" + RawPagerSummary() : "";
+        var compactOwner = owner.Length == 0 ? "" : singleCellSource is { } one ? CompactRawOwnerCaption(one.Side, one.Cell) : CompactRawOwnerCaption("before", pairedSource!.Before) + "\n" + CompactRawOwnerCaption("after", pairedSource.After);
+        detailSourceContext.Text = owner.Length > 0 ? compactOwner + "\n" + RawPagerSummary(true) : "";
         detailSourceContext.Visibility = owner.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-        AutomationProperties.SetName(detailSourceContext, detailSourceContext.Text);
+        detailSourceContext.ToolTip = owner.Length > 0 ? owner + "\n" + RawPagerSummary() : null;
+        AutomationProperties.SetName(detailSourceContext, detailSourceContext.ToolTip as string ?? "");
         rawTextPageSummary.Text = owner.Length > 0 ? RawPagerSummary() : "";
     }
     private void RerenderInspector()
@@ -2824,11 +2834,12 @@ internal sealed class MainWindow : Window
                     ["both_null_formats_annotated"] = body.Split(Copy["number_format"] + ":\n" + Copy["observationNull"], StringSplitOptions.None).Length - 1 == 2,
                     ["partial_formula_literal_exact"] = formulaB.State == SourceTextState.Partial && body.Contains(Copy["formula"] + ":\n" + Copy["partialSourceSegment"] + "\n" + formulaB.Text, StringComparison.Ordinal),
                     ["global_next_follows_remaining_formula"] = offset == 256 && next == 512 && formulaB.Range is { Valid: true, Next: 512, Total: 7210 } && nextDetail.IsEnabled,
-                    ["sticky_pair_owners"] = detailSourceContext.Text.StartsWith(RawOwnerCaption("before", owner.Before) + "\n" + RawOwnerCaption("after", owner.After) + "\n", StringComparison.Ordinal),
+                    ["sticky_pair_owners"] = detailSourceContext.Text.StartsWith(CompactRawOwnerCaption("before", owner.Before) + "\n" + CompactRawOwnerCaption("after", owner.After) + "\n", StringComparison.Ordinal),
                     ["global_next_names_after_formula"] = rawTextPageSummary.Text == RawPagerSummary() && rawTextPageSummary.Text.Contains(Copy["requestedOffset"] + ": 256", StringComparison.Ordinal) && rawTextPageSummary.Text.Contains(Copy["nextOffset"] + ": 512 (" + Copy["after"] + " · " + Copy["formula"] + ")", StringComparison.Ordinal)
                 };
                 await observe("source37-paired-raw-field-states-" + locale, new { physical_before = a, physical_after = b, before_value = valueA, after_value = valueB, after_formula = formulaB, raw_body = body, sticky_context = detailSourceContext.Text, global_pager_summary = rawTextPageSummary.Text, offset, next, next_enabled = nextDetail.IsEnabled, checks = rawFieldChecks });
                 foreach (var field in rawFieldChecks) if (!field.Value) throw new InvalidOperationException("Real paired raw field presentation failed: " + field.Key);
+                await observe("source40-bounded-owner-pair-" + locale, await CheckBoundedOwnerChromeForSmoke());
                 var hostA = Before.Host; var hostB = After.Host; var rowsA = Before.Cells.ItemsSource; var rowsB = After.Cells.ItemsSource;
                 Before.GridScroll?.ScrollToHorizontalOffset(40); Before.GridScroll?.ScrollToVerticalOffset(3); After.GridScroll?.ScrollToHorizontalOffset(30); After.GridScroll?.ScrollToVerticalOffset(2); detail.ScrollToVerticalOffset(24); unified.ScrollToVerticalOffset(24); await Settle();
                 var viewportA = Before.CaptureGridViewport(); var viewportB = After.CaptureGridViewport(); var rawY = detail.VerticalOffset; var textY = unified.VerticalOffset; var firstEnabled = firstDetail.IsEnabled; var nextEnabled = nextDetail.IsEnabled;
@@ -3001,6 +3012,35 @@ internal sealed class MainWindow : Window
         }
         finally { SetLayout(layout); await Settle(); }
     }
+    private async Task<object> CheckBoundedOwnerChromeForSmoke()
+    {
+        var canonical = currentReport; var canonicalBytes = currentReport.GetRawText(); var payload = detailPayload.GetRawText(); var metadata = detailMetadata.Text; var body = detail.Text; var ranges = detailRange.Text; var query = QueryIdentityForSmoke; var sourceA = Before.CaptureSelection(); var sourceB = After.CaptureSelection(); var reads = changeQueryReadsForSmoke; var rawReads = sourceDetailReadsForSmoke; var width = Width; var height = Height; var previousText = textView; var preferences = await File.ReadAllBytesAsync(PreferencesPath);
+        var label = string.Join("\n", Enumerable.Range(1, 18).Select(index => "label" + index.ToString("00", CultureInfo.InvariantCulture) + "___"));
+        var sheetName = Copy.Language == "ko" ? new string('가', 31) : new string('s', 31);
+        async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        try
+        {
+            Width = 1024; Height = 768; sourceView.SelectedIndex = 0; await Settle();
+            var projection = canonical.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value);
+            projection["revisions"] = canonical.Get("revisions").Items().Select(revision => { var fields = revision.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value); fields["label"] = label; fields["sheets"] = revision.Get("sheets").Items().Select(sheet => { var values = sheet.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value); values["name"] = sheetName; return values; }).ToArray(); return fields; }).ToArray();
+            // Display-only clones exercise the actual owner controls. Canonical
+            // report storage, physical identities and raw replies stay intact.
+            currentReport = JsonSerializer.SerializeToElement(projection); RerenderInspector(); await Settle();
+            var scroll = detailToolsScroll ?? throw new InvalidOperationException("The compact owner control did not mount its narrow tools viewport."); scroll.ScrollToTop(); await Settle();
+            Rect Bounds(FrameworkElement element) => element.TransformToAncestor(scroll).TransformBounds(new Rect(new Point(), element.RenderSize));
+            bool Reachable(FrameworkElement element) { var bounds = Bounds(element); return element.IsVisible && bounds.Top >= -0.5 && bounds.Left >= -0.5 && bounds.Bottom <= scroll.ActualHeight + 0.5 && bounds.Right <= scroll.ActualWidth + 0.5; }
+            var owners = singleCellSource is { } single ? RawOwnerCaption(single.Side, single.Cell) : RawOwnerCaption("before", pairedSource!.Before) + "\n" + RawOwnerCaption("after", pairedSource.After);
+            var checks = new Dictionary<string, bool> { ["legal_multiline_label"] = label.Length <= 200 && label.Split('\n').Length == 18, ["legal_sheet_name_length"] = sheetName.Length == 31, ["bounded_sticky_chrome"] = detailSourceContext.ActualHeight <= 60 && detailSourceContext.Text.Split('\n').Length <= 4 && detailSourceContext.TextWrapping == TextWrapping.NoWrap && detailSourceContext.TextTrimming == TextTrimming.CharacterEllipsis && !detailSourceContext.Text.Contains(label, StringComparison.Ordinal), ["reserved_tools_viewport"] = scroll.ActualHeight >= 74 && scroll.ViewportHeight >= 74, ["first_action_fully_reachable"] = Reachable(firstDetail), ["next_action_fully_reachable"] = Reachable(nextDetail), ["raw_body_floor"] = detail.ActualHeight >= 140, ["source_grid_floor"] = Before.Cells.ActualHeight >= 150 && After.Cells.ActualHeight >= 150, ["full_owner_preserved"] = detail.Text.Contains(label, StringComparison.Ordinal) && detailRange.Text.Contains(label, StringComparison.Ordinal) && detailSourceContext.ToolTip as string == owners + "\n" + RawPagerSummary() && AutomationProperties.GetName(detailSourceContext) == detailSourceContext.ToolTip as string, ["raw_payload_and_queries_unchanged"] = detailPayload.GetRawText() == payload && detailMetadata.Text == metadata && changeQueryReadsForSmoke == reads && sourceDetailReadsForSmoke == rawReads && Before.CaptureSelection() == sourceA && After.CaptureSelection() == sourceB };
+            var result = new { scope = "Synthetic schema-valid display-label/sheet clones on actual WPF controls; no producer, OS input or pixel-fidelity claim", language = Copy.Language, pair = pairedSource is not null, label_utf16_units = label.Length, label_lines = 18, sheet_name_utf16_units = sheetName.Length, sticky_context = detailSourceContext.Text, full_owner_tooltip = detailSourceContext.ToolTip, geometry = new { sticky_height = detailSourceContext.ActualHeight, tools_height = scroll.ActualHeight, tools_viewport_height = scroll.ViewportHeight, first_bounds = Bounds(firstDetail), next_bounds = Bounds(nextDetail), raw_height = detail.ActualHeight, before_grid_height = Before.Cells.ActualHeight, after_grid_height = After.Cells.ActualHeight }, checks };
+            foreach (var check in checks) if (!check.Value) throw new InvalidOperationException("Bounded owner chrome failed: " + check.Key + " · " + JsonSerializer.Serialize(result));
+            return result;
+        }
+        finally
+        {
+            currentReport = canonical; Width = width; Height = height; sourceView.SelectedIndex = previousText ? 1 : 0; RerenderInspector(); await Settle();
+            if (currentReport.GetRawText() != canonicalBytes || QueryIdentityForSmoke != query || detailPayload.GetRawText() != payload || detail.Text != body || detailRange.Text != ranges || detailMetadata.Text != metadata || !Enumerable.SequenceEqual(preferences, await File.ReadAllBytesAsync(PreferencesPath))) throw new InvalidOperationException("Owner display-label controls did not restore exact canonical report, query, raw reader or saved preferences.");
+        }
+    }
     internal async Task<object> CheckSource27PresentationForSmoke(Func<string, Task> capture, Func<string, object, Task> observe)
     {
         if (!IsWorkbook || Before.FocusedAddress != "D4") throw new InvalidOperationException("Source27 requires the real workbook D4 source control.");
@@ -3039,10 +3079,11 @@ internal sealed class MainWindow : Window
                 var sourceOwner = singleCellSource ?? throw new InvalidOperationException("The narrow reader lost its captured cell owner.");
                 var ownerCaption = RawOwnerCaption(sourceOwner.Side, sourceOwner.Cell); var readerQuery = QueryIdentityForSmoke;
                 detail.ScrollToVerticalOffset(24); await Settle();
-                var ownerChecks = new Dictionary<string, bool> { ["same_address_both_panes"] = Before.FocusedAddress == "D4" && After.FocusedAddress == "D4", ["captured_before_owner"] = sourceOwner.Side == "before" && sourceOwner.Cell.Occurrence == focusedA.Revision && sourceOwner.Cell.Sheet == focusedA.Sheet && sourceOwner.Cell.Address == "D4", ["visible_non_scrolling_owner"] = detailSourceContext.IsVisible && detailSourceContext.Text.StartsWith(ownerCaption + "\n", StringComparison.Ordinal) && VisualTreeHelper.GetParent(detailSourceContext) is DockPanel && !ReferenceEquals(VisualTreeHelper.GetParent(detailSourceContext), VisualTreeHelper.GetParent(detailPaging)), ["body_and_ranges_owned"] = detail.Text.StartsWith(ownerCaption + "\n", StringComparison.Ordinal) && detailRange.Text.Contains(ownerCaption, StringComparison.Ordinal), ["global_pager_summary"] = detailSourceContext.Text.Contains(RawPagerSummary(), StringComparison.Ordinal), ["query_unchanged"] = QueryIdentityForSmoke == readerQuery };
+                var ownerChecks = new Dictionary<string, bool> { ["same_address_both_panes"] = Before.FocusedAddress == "D4" && After.FocusedAddress == "D4", ["captured_before_owner"] = sourceOwner.Side == "before" && sourceOwner.Cell.Occurrence == focusedA.Revision && sourceOwner.Cell.Sheet == focusedA.Sheet && sourceOwner.Cell.Address == "D4", ["visible_non_scrolling_owner"] = detailSourceContext.IsVisible && detailSourceContext.Text.StartsWith(CompactRawOwnerCaption(sourceOwner.Side, sourceOwner.Cell) + "\n", StringComparison.Ordinal) && VisualTreeHelper.GetParent(detailSourceContext) is Grid && !ReferenceEquals(VisualTreeHelper.GetParent(detailSourceContext), VisualTreeHelper.GetParent(detailPaging)), ["body_and_ranges_owned"] = detail.Text.StartsWith(ownerCaption + "\n", StringComparison.Ordinal) && detailRange.Text.Contains(ownerCaption, StringComparison.Ordinal), ["global_pager_summary"] = detailSourceContext.Text.Contains(RawPagerSummary(true), StringComparison.Ordinal), ["query_unchanged"] = QueryIdentityForSmoke == readerQuery };
                 await observe("source38-single-owner-context-" + locale, new { captured_owner = sourceOwner, physical_before = Before.CaptureSelection(), physical_after = After.CaptureSelection(), sticky_context = detailSourceContext.Text, reader_geometry = new { raw_height = detail.ActualHeight, raw_width = detail.ActualWidth, sticky_height = detailSourceContext.ActualHeight, inspector_height = InspectorPane.ActualHeight, evidenceBottomDock }, raw_body = detail.Text, ranges = detailRange.Text, offset = detailOffset, next = detailNext, checks = ownerChecks });
                 foreach (var check in ownerChecks) if (!check.Value) throw new InvalidOperationException("Single raw owner context failed: " + check.Key);
                 if (detail.ActualHeight < 140 || detail.ActualWidth < 300 || detailPayload.GetRawText() != rawDetail || detailMetadata.Text != rawMetadata || technicalDetails.Header as string != Copy["technicalDetails"] || !detail.Text.Contains(Copy["number_format"], StringComparison.Ordinal) || detail.Text.Contains("cache_freshness:", StringComparison.Ordinal) || detail.Text.Contains("cached_result:", StringComparison.Ordinal) || detailRange.Text.Contains(" · complete", StringComparison.Ordinal) || detailRange.Text.Contains(" · truncated", StringComparison.Ordinal)) throw new InvalidOperationException("Ordinary source detail failed: " + JsonSerializer.Serialize(new { raw_height = detail.ActualHeight, minimum_raw_height = 140, raw_width = detail.ActualWidth, minimum_raw_width = 300, sticky_height = detailSourceContext.ActualHeight, inspector_height = InspectorPane.ActualHeight, evidenceBottomDock, payload_exact = detailPayload.GetRawText() == rawDetail, metadata_exact = detailMetadata.Text == rawMetadata, technical_caption_localized = technicalDetails.Header as string == Copy["technicalDetails"], number_format_caption_present = detail.Text.Contains(Copy["number_format"], StringComparison.Ordinal), raw_cache_freshness_label = detail.Text.Contains("cache_freshness:", StringComparison.Ordinal), raw_cached_result_label = detail.Text.Contains("cached_result:", StringComparison.Ordinal), raw_complete_enum = detailRange.Text.Contains(" · complete", StringComparison.Ordinal), raw_truncated_enum = detailRange.Text.Contains(" · truncated", StringComparison.Ordinal) }));
+                await observe("source40-bounded-owner-single-" + locale, await CheckBoundedOwnerChromeForSmoke());
                 await capture("source27-narrow-evidence-" + locale); results.Add(new { language = locale, before = homeA, after = homeB, header_before = headerA, header_after = headerB, bottom_evidence_width = InspectorPane.ActualWidth, bottom_evidence_height = InspectorPane.ActualHeight, source_detail_localized = true, raw_reader_width = detail.ActualWidth, raw_reader_height = detail.ActualHeight, raw_source_identity_retained = true });
                 Width = 1440; Height = 940; await Settle(); await observe("source29-window-geometry-widen-attempt-" + locale, Geometry());
                 if (workspace.ActualWidth >= 1200)
