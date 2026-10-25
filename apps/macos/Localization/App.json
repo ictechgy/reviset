@@ -72,8 +72,8 @@
     "ko": "화면 글자 크기를 조절합니다. 문서 확대 비율은 유지됩니다."
   },
   "app.readability.description": {
-    "en": "Applies throughout the interface. Document and spreadsheet zoom are controlled separately.",
-    "ko": "앱 화면 전체의 글자 크기를 조절합니다. 문서와 스프레드시트 확대 비율은 별도로 조절할 수 있습니다."
+    "en": "Enlarges workspace text, change content and primary actions. Document and spreadsheet zoom are controlled separately.",
+    "ko": "본문·변경 내용·주요 버튼의 글자를 키웁니다. 문서와 스프레드시트 확대 비율은 별도로 조절할 수 있습니다."
   },
   "app.readability.increase": {
     "en": "Increase Interface Text Size",

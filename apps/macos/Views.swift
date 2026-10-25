@@ -218,8 +218,8 @@ struct EmptyWorkspace: View {
                     ReadingGuideStep(number:3,title:L("git.guide.inspect.title"),detail:L("git.guide.inspect.detail"))
                 }
                 HStack(spacing:14) {
-                    Button(L("doc.import.documents")){model.importSheet=true}.buttonStyle(.borderedProminent)
-                    Button(L("git.empty.workbooks")){openWindow(id:"workbooks")}
+                    ReadableActionButton(L("doc.import.documents"),prominent:true,identifier:"Reviset.document.empty.import"){model.importSheet=true}
+                    ReadableActionButton(L("git.empty.workbooks"),identifier:"Reviset.document.empty.workbooks"){openWindow(id:"workbooks")}
                 }.disabled(model.busy || model.loading)
                 if model.projects.isEmpty {Button(L("doc.empty.demo")){Task{await model.demo()}}.buttonStyle(.link).disabled(model.busy || model.loading)}
                 Text(L("doc.empty.privacy")).readableFont(.caption).foregroundStyle(.secondary)
@@ -265,7 +265,7 @@ private struct WorkspaceReadingGuide:View {
                     HStack(spacing:16) {
                         Label(L("git.guide.title"),systemImage:"lightbulb").readableFont(.headline)
                         Spacer()
-                        Button(L("doc.common.close")){expanded=false}.keyboardShortcut(.cancelAction)
+                        ReadableActionButton(L("doc.common.close"),identifier:"Reviset.document.readingGuide.close",isCancel:true){expanded=false}
                     }.padding(20)
                     Divider()
                     ScrollView {
@@ -274,7 +274,7 @@ private struct WorkspaceReadingGuide:View {
                             ReadingGuideStep(number:2,title:L(model.revisions.count==1 ? "git.reading":"git.guide.compare.title"),detail:L(model.revisions.count==1 ? "git.guide.singleRead":"git.guide.compare.short"))
                             ReadingGuideStep(number:3,title:L(model.revisions.count==1 ? "git.guide.compare.title":"git.guide.inspect.title"),detail:L(model.revisions.count==1 ? "git.guide.singleCompare":"git.guide.inspect.short"))
                             if !layout.configuration.changesVisible {
-                                Button(L("git.guide.showChanges")){layout.update{$0.changesVisible=true};expanded=false}
+                                ReadableActionButton(L("git.guide.showChanges"),identifier:"Reviset.document.readingGuide.showChanges"){layout.update{$0.changesVisible=true};expanded=false}
                             }
                         }.padding(24).frame(maxWidth:.infinity,alignment:.leading)
                     }
@@ -440,7 +440,7 @@ struct SelectedChangeContext:View {
                     if !model.selected["coverage_gaps"].array.isEmpty {Menu {ForEach(Array(model.selected["coverage_gaps"].array.enumerated()),id:\.offset){_,gap in Text(verbatim:String(selectedCoverageCaption(gap).prefix(240)))}}label:{Label(L("doc.coverage.heading"),systemImage:"exclamationmark.circle")}.readableFont(.caption2)}
                     Spacer(minLength:4)
                     if model.manuallyBrowsing {Button(L("git.returnToChange")){model.returnToChange()}.readableFont(.caption)}
-                    Button(L("git.contextDetails")){detailsPresented=true}.readableFont(.caption).accessibilityIdentifier("Reviset.document.contextDetails")
+                    ReadableActionButton(L("git.contextDetails"),identifier:"Reviset.document.contextDetails"){detailsPresented=true}
                 }else {Text(model.readingSingleVersion ? L("git.reading"):model.unselectedChangeMessage).readableFont(.caption).foregroundStyle(.secondary);Spacer()}
             }.lineLimit(1).frame(minHeight:28)
             ForEach(documentSelectedContext(model.selected),id:\.category.rawValue){item in

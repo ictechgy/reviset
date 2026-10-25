@@ -74,6 +74,50 @@ struct ReadabilitySettings:View {
     }
 }
 
+// SwiftUI's bordered macOS button theme can keep a 13pt AppKit title despite
+// an inherited Font. These few primary workflow actions use the actual native
+// font and intrinsic size, while retaining their live target/action identity.
+private final class ReadableNativeActionButton:NSButton {
+    override var intrinsicContentSize:NSSize {
+        let native=super.intrinsicContentSize,font=self.font ?? .systemFont(ofSize:16)
+        let text=(title as NSString).size(withAttributes:[.font:font])
+        return NSSize(width:max(native.width,ceil(text.width)+28),height:max(32,native.height,ceil(font.ascender-font.descender+font.leading)+10))
+    }
+}
+struct ReadableActionButton:NSViewRepresentable {
+    @ObservedObject private var readability=ReadabilityPreferences.shared
+    @Environment(\.isEnabled) private var isEnabled
+    let title:String
+    var prominent=false
+    var identifier:String?=nil
+    var isCancel=false
+    let action:()->Void
+    init(_ title:String,prominent:Bool=false,identifier:String?=nil,isCancel:Bool=false,action:@escaping()->Void) {
+        self.title=title;self.prominent=prominent;self.identifier=identifier;self.isCancel=isCancel;self.action=action
+    }
+    @MainActor final class Coordinator:NSObject {
+        var action:()->Void={}
+        @objc func invokeReadableAction(_ sender:NSButton) {guard sender.isEnabled else{return};action()}
+    }
+    func makeCoordinator()->Coordinator {Coordinator()}
+    func makeNSView(context:Context)->NSButton {
+        let button=ReadableNativeActionButton(title:title,target:context.coordinator,action:#selector(Coordinator.invokeReadableAction(_:)))
+        button.bezelStyle = .rounded;button.controlSize = .regular;button.setButtonType(.momentaryPushIn)
+        button.setContentCompressionResistancePriority(.required,for:.horizontal);button.setContentCompressionResistancePriority(.required,for:.vertical)
+        button.setContentHuggingPriority(.required,for:.horizontal);button.setContentHuggingPriority(.required,for:.vertical)
+        return button
+    }
+    func updateNSView(_ button:NSButton,context:Context) {
+        context.coordinator.action=action
+        button.title=title;button.font = .systemFont(ofSize:readability.pointSize(.body));button.isEnabled=isEnabled
+        button.identifier=identifier.map{NSUserInterfaceItemIdentifier($0)};button.setAccessibilityLabel(title)
+        button.bezelColor=prominent ? .controlAccentColor:nil;button.contentTintColor=prominent ? .white:nil
+        button.keyEquivalent=isCancel ? "\u{1b}":"";button.keyEquivalentModifierMask=[]
+        button.invalidateIntrinsicContentSize()
+    }
+    func sizeThatFits(_ proposal:ProposedViewSize,nsView:NSButton,context:Context)->CGSize? {nsView.fittingSize}
+}
+
 enum WorkspaceLayoutScope:String,Codable {case document,workbook}
 enum WorkspaceChangesDock:String,Codable,CaseIterable {case bottom,left,right}
 enum WorkspaceInspectorDock:String,Codable,CaseIterable {case left,right}

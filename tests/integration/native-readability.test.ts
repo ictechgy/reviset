@@ -24,9 +24,12 @@ test('native interface text size recovers and persists independently; nested liv
       assert.match(execFileSync(executable,args,{encoding:'utf8',timeout:5000,env:isolatedEnv}),/PASS isolated shared language\/text size:/u);
     }
     assert.match(execFileSync(executable,[],{encoding:'utf8',timeout:15_000,env:{...process.env,DOCVER_TEST_USER_DATA:root}}),/PASS live readability:/u);
-    const result=JSON.parse(await readFile(join(root,'readability-observations.json'),'utf8')) as {observations:Array<{size:string;body_height:number;caption_height:number}>;native_hosts_retained:boolean;page_zoom_grid_viewport_draft_and_focus_retained:boolean};
+    const result=JSON.parse(await readFile(join(root,'readability-observations.json'),'utf8')) as {observations:Array<{size:string;body_height:number;caption_height:number;action_button_font:number;action_button_fitting_height:number;action_button_actual_height:number}>;native_hosts_retained:boolean;page_zoom_grid_viewport_draft_and_focus_retained:boolean;native_action_button_and_coordinator_retained:boolean;native_action_closure_updates_and_disabled_guard_verified:boolean};
     assert.deepEqual(result.observations.map(value=>value.size),['standard','large','extraLarge','standard']);
     assert.ok(result.observations[2]!.body_height>result.observations[0]!.body_height && result.observations[2]!.caption_height>result.observations[0]!.caption_height);
     assert.equal(result.native_hosts_retained,true);assert.equal(result.page_zoom_grid_viewport_draft_and_focus_retained,true);
+    assert.deepEqual(result.observations.map(value=>value.action_button_font),[16,18,20,16]);
+    assert.ok(result.observations.every(value=>value.action_button_fitting_height>=32 && value.action_button_actual_height+0.5>=value.action_button_fitting_height));
+    assert.equal(result.native_action_button_and_coordinator_retained,true);assert.equal(result.native_action_closure_updates_and_disabled_guard_verified,true);
   }finally{spawnSync('/usr/bin/defaults',['delete',bundleIdentifier],{stdio:'ignore'});await rm(root,{recursive:true,force:true});}
 });

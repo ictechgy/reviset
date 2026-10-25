@@ -33,7 +33,13 @@ private struct ReadabilityDraft:NSViewRepresentable {
     func makeNSView(context:Context)->NSTextField {let field=NSTextField(string:"Unsaved 한글 {0} 50%");ReadabilityRegistry.draft=field;return field}
     func updateNSView(_ view:NSTextField,context:Context){}
 }
+@MainActor private final class ReadabilityActionState:ObservableObject {
+    @Published var enabled=true
+    @Published var generation=0
+    var invocations:[Int]=[]
+}
 private struct ReadabilityHarness:View {
+    @ObservedObject var actions:ReadabilityActionState
     var body:some View {
         WorkspacePaneSplit(name:"typography.outer",auxiliaryFirst:true,extent:.points(240),primaryMinimum:500,auxiliaryMinimum:200) {
             WorkspacePaneSplit(name:"typography.inner",isVertical:false,extent:.points(160),primaryMinimum:350,auxiliaryMinimum:120) {
@@ -55,6 +61,7 @@ private struct ReadabilityHarness:View {
                 Text("Default body 한글").fixedSize().background(WorkspaceLayoutMarker(name:"typography.inherited"))
                 Text("Version history 한글").readableFont(.caption).fixedSize().background(WorkspaceLayoutMarker(name:"typography.caption"))
                 NativeTerminatorLabel(terminator:"\r\n").fixedSize()
+                ReadableActionButton("Import versions…",identifier:"typography.action"){[generation=actions.generation] in actions.invocations.append(generation)}.disabled(!actions.enabled)
                 Spacer()
             }
         }
@@ -122,7 +129,7 @@ private struct ReadabilityHarness:View {
         func visit(_ view:NSView) {if let split=view as? NSSplitView,let controller=split.delegate as? NSSplitViewController {for child in controller.children {result.insert(ObjectIdentifier(child))}};view.subviews.forEach(visit)}
         visit(root);return result
     }
-    @MainActor static func run(_ window:NSWindow)async {
+    @MainActor static func run(_ window:NSWindow,actions:ReadabilityActionState)async {
         do {
             await settle();await settle()
             guard let root=window.contentView,let pdf=ReadabilityRegistry.pdf,let grid=ReadabilityRegistry.grid,let coordinator=ReadabilityRegistry.coordinator,let draft=ReadabilityRegistry.draft else{throw NSError(domain:"ReadabilityHostsMissing",code:1)}
@@ -136,6 +143,8 @@ private struct ReadabilityHarness:View {
             let focus=window.firstResponder,origin=grid.contentView.bounds.origin,document=pdf.document,page=pdf.currentPage,draftText=draft.stringValue
             var observed:[[String:Any]]=[]
             func views(_ view:NSView)->[NSView] {[view]+view.subviews.flatMap(views)}
+            guard let action=views(root).compactMap({$0 as? NSButton}).first(where:{$0.identifier?.rawValue=="typography.action"}),let target=action.target,let selector=action.action else{throw NSError(domain:"ReadableActionButtonMissing",code:1)}
+            let actionTarget=ObjectIdentifier(target)
             for size in [ReadableTextSize.standard,.large,.extraLarge,.standard] {
                 ReadabilityPreferences.shared.selection=size
                 await settle()
@@ -146,12 +155,30 @@ private struct ReadabilityHarness:View {
                 try require(hostIDs(root)==hosts && ReadabilityRegistry.pdf === pdf && ReadabilityRegistry.grid === grid && ReadabilityRegistry.coordinator === coordinator && ReadabilityRegistry.draft === draft,"Text size replaced a live host or coordinator")
                 try require(pdf.document === document && pdf.currentPage === page && abs(pdf.scaleFactor-1.5)<0.001 && grid.contentView.bounds.origin==origin,"Text size reset source page/zoom or manual grid viewport")
                 try require(draft.stringValue==draftText && window.firstResponder === focus,"Text size changed a draft or stole editor focus")
-                observed.append(["size":size.rawValue,"body_height":body.bounds.height,"inherited_body_height":inherited.bounds.height,"caption_height":caption.bounds.height,"context_height":context.bounds.height])
+                guard let currentAction=children.compactMap({$0 as? NSButton}).first(where:{$0.identifier?.rawValue=="typography.action"}),let currentTarget=currentAction.target,let font=currentAction.font else{throw NSError(domain:"ReadableActionButtonDisappeared",code:1)}
+                let titleSize=(currentAction.title as NSString).size(withAttributes:[.font:font]),fitting=currentAction.fittingSize
+                try require(currentAction === action && ObjectIdentifier(currentTarget)==actionTarget,"Readable action button or coordinator was replaced")
+                try require(font.pointSize==ReadabilityPreferences.shared.pointSize(.body) && currentAction.controlSize == .regular,"Actual native action font remained at the platform's small button default")
+                try require(fitting.width>=ceil(titleSize.width)+20 && fitting.height>=32 && currentAction.bounds.width+0.5>=fitting.width && currentAction.bounds.height+0.5>=fitting.height,"Native action title or rounded bezel did not fit its actual host")
+                try require(currentAction.keyEquivalent.isEmpty,"Readable action introduced an unsolicited keyboard equivalent")
+                actions.generation+=1
+                await settle()
+                let beforeAction=actions.invocations.count
+                try require(NSApp.sendAction(selector,to:action.target,from:action) && actions.invocations.count==beforeAction+1 && actions.invocations.last==actions.generation,"Native button did not invoke its updated action closure")
+                actions.enabled=false;await settle()
+                try require(!action.isEnabled,"Inherited SwiftUI disabled state did not reach the native button")
+                _ = NSApp.sendAction(selector,to:action.target,from:action)
+                action.performClick(nil)
+                try require(actions.invocations.count==beforeAction+1,"Disabled native button invoked its action")
+                actions.enabled=true;await settle()
+                try require(action.isEnabled && ObjectIdentifier(action.target!)==actionTarget,"Re-enabling replaced the button coordinator")
+                try require(pdf.document === document && pdf.currentPage === page && abs(pdf.scaleFactor-1.5)<0.001 && grid.contentView.bounds.origin==origin && draft.stringValue==draftText && window.firstResponder === focus,"Native action state changes altered source, draft, viewport or focus")
+                observed.append(["size":size.rawValue,"body_height":body.bounds.height,"inherited_body_height":inherited.bounds.height,"caption_height":caption.bounds.height,"context_height":context.bounds.height,"action_button_font":font.pointSize,"action_button_fitting_width":fitting.width,"action_button_fitting_height":fitting.height,"action_button_actual_width":currentAction.bounds.width,"action_button_actual_height":currentAction.bounds.height])
             }
             try require((observed[2]["body_height"] as! CGFloat)>(observed[0]["body_height"] as! CGFloat) && (observed[2]["caption_height"] as! CGFloat)>(observed[0]["caption_height"] as! CGFloat),"Explicit SwiftUI fonts failed to observe size changes")
             try require((observed[2]["inherited_body_height"] as! CGFloat)>(observed[0]["inherited_body_height"] as! CGFloat),"Default interface font did not cross the hosting-controller boundary")
             try require(String(describing:UserDefaults.standard.object(forKey:ReadabilityPreferences.preferenceKey))==originalDefaults,"Native typography probe wrote user defaults")
-            if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["observations":observed,"native_hosts_retained":true,"page_zoom_grid_viewport_draft_and_focus_retained":true,"scope":"in-process native font and geometry observations; no OS accessibility or gesture claim"],options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:path).appendingPathComponent("readability-observations.json"))}
+            if let path=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["observations":observed,"native_hosts_retained":true,"page_zoom_grid_viewport_draft_and_focus_retained":true,"native_action_button_and_coordinator_retained":true,"native_action_closure_updates_and_disabled_guard_verified":true,"scope":"in-process native font, fitting geometry and target/action observations; no OS accessibility or gesture claim"],options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:path).appendingPathComponent("readability-observations.json"))}
             print("PASS live readability: nested fonts update; PDF/grid/hosts/page/zoom/manual viewport/draft/focus retained; test defaults isolated")
             fflush(stdout);NSApp.terminate(nil)
         }catch{fputs("Readability failed: \(error)\n",stderr);exit(1)}
@@ -162,8 +189,9 @@ private struct ReadabilityHarness:View {
         try isolatedPreference()
         NSApplication.shared.setActivationPolicy(.accessory)
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:1100,height:820),styleMask:[.titled,.closable],backing:.buffered,defer:false)
-        window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:ReadabilityHarness());window.makeKeyAndOrderFront(nil)
-        Task{@MainActor in await run(window)}
+        let actions=ReadabilityActionState()
+        window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:ReadabilityHarness(actions:actions));window.makeKeyAndOrderFront(nil)
+        Task{@MainActor in await run(window,actions:actions)}
         NSApp.run()
     }
 }
