@@ -2,69 +2,50 @@
 
 [English (기준 문서)](README.md) · 한국어
 
-이 문서는 한국어 번역입니다. 내용이 다를 경우 영어 README를 기준으로 합니다.
+**원문 옆에서 문서 버전과 변경 이력을 읽습니다.**
 
-이전 이름은 **Docver**입니다. [리네이밍과 호환성](docs/RENAMING.md)을 참고하세요.
+Reviset은 PPTX/PDF 문서와 XLSX/ODS/CSV 통합 문서를 비교하는 로컬 데스크톱 앱입니다. 버전을 따라가며 변경을 선택하고 원래 페이지나 실제 셀을 나란히 확인합니다. AI 클라이언트는 읽기 전용 MCP 서버로 같은 고정 보고서를 조회할 수 있습니다. 가져오기와 분석에는 계정, API 키, 클라우드 업로드가 필요하지 않습니다.
 
-**문서의 변경 이력을 원문 근거와 함께 읽는 네이티브 데스크톱 앱.**
+예를 들어 `draft.pptx → review.pdf → final.pptx`에서 전망치가 `100억 → 120억 → 110억`으로 바뀐 과정을 확인합니다. 중간 이력은 처음과 마지막 비교(`100억 → 110억`)에서 보이지 않는 `120억` 단계를 보존합니다.
 
-Reviset은 여러 버전의 PPTX·PDF와 XLSX·ODS·CSV를 비교합니다. 사람은 원문을 나란히 보고, AI는 같은 고정 보고서를 읽기 전용 MCP로 조회합니다. 문서를 가져오고 분석하는 데 계정·API 키·클라우드 업로드가 필요하지 않습니다.
+Apple Silicon macOS와 Windows x64의 네이티브 화면은 영어와 한국어를 지원합니다. 이전 이름은 **Docver**입니다. [이름 변경과 호환성](docs/RENAMING.md).
 
-예를 들어 `초안.pptx → 검토.pdf → 최종.pptx`에서 매출이 `100억 → 120억 → 110억`으로 바뀐 과정과 각 버전의 원문을 확인할 수 있습니다. 처음과 마지막의 차이뿐 아니라 중간에 추가됐다가 사라진 내용도 이력으로 남깁니다.
+## 버전과 변경 읽기
 
-> **개발·검증 중인 프로젝트입니다.** Apple Silicon macOS와 Windows x64의 소스 빌드 경로를 제공합니다. 두 플랫폼의 실제 네이티브 앱 실행 검사는 통과했습니다. 검사한 소스 `29f3a8ad`는 Claude·Devin·Grok의 승인을 받았습니다. Mac 공증·Windows 패키지 서명·다른 컴퓨터 설치 검증은 남아 있습니다. 실행 소스와 범위는 [네이티브 화면 배치 검증 기록](docs/NATIVE-WORKSPACES-2026-10-23.md)을 참고하세요. 프로젝트 라이선스는 아직 확정하지 않았습니다. UI는 영어·한국어를 지원합니다.
+1. 문서나 통합 문서 버전을 순서대로 가져옵니다. 같은 버전의 PPTX와 제공 PDF 한 쌍은 버전 항목 하나입니다.
+2. 양 끝 버전을 비교하거나 중간 이력을 읽습니다. 변경을 선택하면 목록의 넓은 조회 구간을 유지하면서 해당 변경의 원문을 엽니다.
+3. 원래 페이지나 실제 좌표의 셀을 읽습니다. **추출 텍스트 diff**는 한도가 있는 `−/+` 발췌를 보여 주고, **원문**은 해당 페이지나 격자로 돌아갑니다. 긴 저장 셀 필드는 명시된 이어 읽기로 확인합니다.
+4. macOS에서는 **AI 도구 연결 및 내보내기**에서 고정 보고서를 내보내거나 프로젝트 MCP 설정을 복사합니다. Windows에서는 **프로젝트 → 내보내기…**로 내보내고 **프로젝트 → AI 도구 연결 · MCP 설정 복사**로 설정을 복사합니다.
 
-## 실제 화면
+가져온 버전 하나도 단독으로 읽을 수 있습니다. **새 비교 / 버전 가져오기**는 항목이 둘 이상인 별도 타임라인을 만듭니다. 가져온 버전은 스냅샷이며, Reviset이 Git 커밋을 만들거나 실제 편집자·편집 시각을 증명하지 않습니다.
 
-### PPTX·PDF 비교
+통합 문서의 변경 조회, 선택한 이벤트, 실제 원문은 각각의 식별 범위를 가집니다. Windows에서는 실패한 통합 문서 조회를 재시도해도 별도로 검증된 물리 원문과 원문 판독 위치를 유지하며, 비교 방법을 바꿔도 표시 중인 물리 원문을 유지합니다. 조회 재시도는 저장해 둔 요청을 그대로 반복합니다. 원문 판독 재시도는 저장해 둔 물리 원문, 좌우 구분, 구성 요소, UTF-16 오프셋, 커서와 한도를 그대로 반복합니다. [셀 읽기와 복구](docs/SPREADSHEETS.md#cell-reading-and-recovery).
 
-![PPTX와 PDF를 나란히 보고 숫자 변경의 전후 원문과 근거를 확인하는 Reviset 화면](docs/images/document-comparison.png)
+## 네이티브 작업 공간
 
-5버전 합성 데모에서 `100억 → 120억`의 숫자 변경과 해당 원문 근거를 확인하는 화면입니다. 왼쪽은 PPTX의 LibreOffice 변환, 오른쪽은 원본 PDF입니다.
+**원문 우선**은 간결한 변경 목록 옆에 원문을 크게 표시합니다. 패널 크기·위치, 각 원문의 확대와 **맞춤**, 비교 방향을 조정하거나 이름 있는 배치를 저장합니다. 문서와 통합 문서의 설정은 별도입니다. 임시 집중 모드를 닫으면 앞선 배치를 복원하며, 고정 보고서와 조회 제어는 계속 사용할 수 있습니다. [화면 배치 안내](docs/WORKSPACE-LAYOUTS.md).
 
-### 스프레드시트 비교
+![영어 macOS 문서 원문 작업 공간](docs/images/macos-git-source-en.png)
 
-![이전 A2와 이후 A3의 셀을 나란히 표시하고 저장값과 행 이동 근거를 확인하는 Reviset 화면](docs/images/workbook-comparison.png)
+macOS 원문 v2 → v3. 간결한 변경 목록 옆에 PDFKit 페이지를 크게 표시합니다.
 
-이전 `A2`와 이후 `A3`의 실제 주소, 저장된 입력값과 추정 행 이동을 표시합니다. 두 화면 모두 합성 데모를 실제 앱에서 캡처한 것입니다.
+![영어 macOS 추출 문구 보기](docs/images/macos-git-text-en.png)
 
-### 사용자 화면 배치
+macOS 추출 문구. 조회 v1 → v3에서 중간 변경 v1 → v2를 선택하며 원문 줄 끝을 표시합니다.
 
-![원문 페이지를 위아래로 배치한 네이티브 Mac 문서 비교 화면](docs/images/macos-document-stacked-en.png)
+![영어 macOS 통합 문서 원문 격자](docs/images/macos-git-workbook-en.png)
 
-원문을 위아래로 배치해 각 페이지의 가로 공간을 넓힐 수 있습니다. 실제 앱에서 선택한 페이지와 150% 확대 상태를 유지합니다. 이 배율에서 패널이 좁아지면 원문의 일부만 보일 수 있으며 원본 파일은 바뀌지 않습니다.
+macOS 통합 문서의 실제 셀 격자와 저장값. 대응 관계는 추정이며 수식을 재계산하지 않습니다.
 
-![변경 목록을 왼쪽에 두고 선택한 원본 셀 근거를 보여 주는 네이티브 Mac 화면](docs/images/macos-workbook-changes-left-en.png)
+![영어 Windows 네이티브 문서 작업 공간](docs/images/windows-git-source-en.png)
 
-변경 목록을 통합문서 옆으로 옮겨도 간결한 페이지 이동 조작부와 선택한 원본 셀의 근거를 볼 수 있습니다. 두 화면은 영어 Mac 앱 `29f3a8ad`에서 캡처한 원본입니다. [검증 범위](docs/NATIVE-WORKSPACES-2026-10-23.md)를 참고하세요.
+Windows 원문 페이지 100%. 조회 v1 → v3과 선택한 변경 v1 → v2를 구분합니다.
 
-### 네이티브 Windows 앱
+네이티브 앱 내부 캡처에는 운영체제 제목 표시줄이 없습니다. 위의 네 화면은 저장소에 공개한 다섯 개의 Mac36·Windows41 원본 중에서 골랐으며, 실제 생성 소스는 각각 `158dd21`과 `13bee23`입니다. [화면 출처](docs/images/README.md)에 전체 커밋, 파일 해시와 검토 범위를 기록했습니다.
 
-![문서 집중 배치에서 원본 PDF를 비교하는 네이티브 Windows WPF 앱](docs/images/windows-document-focus-en.png)
+## 소스에서 빌드
 
-실제 Windows x64 패키지 `29f3a8ad`에서 원본 PDF를 문서 집중 배치로 비교한 화면입니다. WPF 네이티브 컨트롤을 사용합니다. [빌드 방법·통합문서 화면·플랫폼 한계](docs/WINDOWS.md)를 참고하세요.
-
-## 주요 기능
-
-| 대상 | 지원하는 작업 | 해석할 때의 한계 |
-| --- | --- | --- |
-| PPTX·PDF | 버전별 원문, 숫자·텍스트 변경, 페이지 이동, 중간 이력, 화면 차이 | 형식 간 정보 부재와 추출 실패를 실제 삭제와 구분합니다. |
-| 스캔·복합 PDF | macOS Vision 로컬 OCR, 가림·취소선의 표시 상태, 표 구조 추정 | OCR·가림·표 대응은 불확실성을 함께 보존하며 작성자의 삭제 의도를 확정하지 않습니다. |
-| XLSX·ODS·UTF-8 CSV | 시트·셀·수식·저장값·기본 서식·숨김·행 이동 비교 | 수식을 재계산하지 않습니다. CSV는 문자열로 읽고 고급 Excel/Calc 개체는 별도 한계로 표시합니다. |
-| 사람의 검토 | 페이지 연결·해제·분할·병합, 같은 버전 PPTX와 제공 PDF의 대응 수정 | 사용자 연결은 참고용이며 렌더 충실도를 보증하지 않습니다. |
-| AI·내보내기 | 고정 보고서 JSON·JSONL·Markdown, 특정 버전 조회, 변경 근거·이력의 읽기 전용 MCP | AI는 원문을 지시가 아닌 데이터로 취급하고 고정 보고서 ID를 인용해야 합니다. |
-| 화면 배치 | 패널 크기·표시·위치, 좌우·위아래 비교, 사용자 배치 저장·복원 | 화면 설정은 원문·보고서와 분리해 저장합니다. |
-
-macOS UI는 **SwiftUI·AppKit·PDFKit**, Windows UI는 **WPF 네이티브 컨트롤**을 사용하며 TypeScript·SQLite 엔진을 공유합니다. macOS의 PPTX 미리보기는 동봉 LibreOffice 변환 또는 제공 PDF를 사용합니다. Windows는 검증한 PDF 미리보기와 명시적인 PPTX 구조 보기를 제공하며 Apple OCR과 격리된 Office 변환은 아직 사용할 수 없습니다. [Windows 기능·빌드 안내](docs/WINDOWS.md)를 참고하세요.
-
-## 소스에서 시작하기
-
-### 준비
-
-- Apple Silicon Mac. 앱의 빌드 대상은 macOS 14 이상이며 현재 실행 검증 환경은 macOS 27.0.1입니다.
-- Node.js 24 이상과 npm.
-- Xcode 또는 Command Line Tools의 Swift·C 컴파일러와 macOS SDK. 현재 검증에는 macOS 27.0 SDK를 사용했습니다.
-- 빌드 시 npm 의존성 설치와 첫 빌드의 LibreOffice 다운로드를 위한 인터넷 연결.
+Apple Silicon macOS 14 이상에서 Node 24 이상과 macOS SDK가 포함된 Xcode/Command Line Tools를 설치합니다.
 
 ```sh
 git clone https://github.com/ictechgy/reviset.git
@@ -74,120 +55,35 @@ REVISET_APP_NAME=Reviset-Local.app npm run mac:build
 open release/Reviset-Local.app
 ```
 
-빌드는 고정한 LibreOffice를 내려받아 SHA-256·TDF 서명을 확인한 뒤 앱에 포함합니다. 앱에는 Node 실행 파일과 운영 의존성도 포함하므로 **빌드한 앱 실행에는 별도의 Node 설치가 필요하지 않습니다**. 분석은 로컬에서 수행합니다.
+macOS 빌드는 고정 LibreOffice, Node, 실행 의존성을 검증해 포함합니다. 완성된 앱 실행에 별도 Node 설치는 필요하지 않습니다. 패키징에 쓰는 Node는 시스템 dylib만 연결해야 합니다. [패키징 안내](docs/dependencies.md).
 
-패키징에 쓰는 Node는 시스템 dylib에만 연결된 실행 파일이어야 합니다. 빌드가 `Node links a non-system dylib`로 중단되면 `otool -L "$(command -v node)"`로 연결을 확인하고 이 조건을 만족하는 Node 실행 파일을 사용하세요. Vision API를 컴파일하지 못하면 Xcode/SDK 선택과 버전을 확인하세요. [의존성·패키징 기록](docs/dependencies.md)에 세부 조건이 있습니다.
-
-### Windows 빌드
-
-Windows x64에 .NET 10 SDK와 Node 24를 설치한 뒤 실행합니다.
+Windows x64에서는 .NET 10 SDK와 Node 24를 설치합니다.
 
 ```powershell
 npm ci --ignore-scripts
+npm run build
 npm run windows:build
 .\release\Reviset-Windows-x64\Reviset.exe
 ```
 
-출력 폴더 전체를 함께 사용하세요. .NET·Node·운영 의존성이 포함됩니다. [Windows 워크플로](.github/workflows/windows.yml)는 실제 패키지를 빌드·검사합니다. 가져오기·고정 보고서 비교·스프레드시트·내보내기·MCP는 공통 엔진을 사용하며 수동 페이지·묶음 대응 편집은 macOS UI에서 제공합니다. 실행 검증 상태는 [플랫폼 안내](docs/WINDOWS.md)에 기록합니다.
+.NET·Node·실행 의존성을 포함한 출력 폴더 전체를 함께 둡니다. [Windows 기능과 빌드](docs/WINDOWS.md).
 
-### macOS 앱 사용
+## AI와 내보내기
 
-1. 문서는 **문서 버전 가져오기**(`⌘O`), 스프레드시트는 **스프레드시트 버전 비교…**(`⌘⇧O`)로 엽니다. 파일 순서를 버전 순서로 지정합니다.
-2. PPTX 또는 PDF 하나만으로 문서 버전이 성립합니다. 같은 버전의 PPTX와 PDF를 함께 묶는 것은 선택 사항입니다.
-3. 이전·이후 버전과 페이지 또는 시트를 고릅니다. 문서는 **비교**와 **전체 이력** 탭을 전환하고, 스프레드시트는 **두 버전 순변경** 또는 **구간 전체 이력**을 선택합니다.
-4. 변경을 선택해 전후 원문과 근거를 읽습니다. 스프레드시트의 긴 원문은 이어 읽기로 확인하고 조회 실패 시 다시 읽을 수 있습니다.
-5. **AI·내보내기**에서 고정 보고서를 내보내거나 해당 프로젝트의 MCP 설정을 복사합니다.
+MCP는 프로젝트 범위의 내용·변경·근거를 읽기 전용으로 제공합니다. `latest`를 한 번 해석한 뒤 반환된 고정 보고서 ID를 재사용하고 `next_cursor`와 문구 이어 읽기를 끝까지 따릅니다. 앱을 옮기면 설정을 다시 복사합니다. 앱의 보고서 선택이 외부 클라이언트의 보고서를 고정하지는 않습니다. 클라우드 AI 클라이언트가 조회한 원문에는 해당 서비스의 데이터 정책이 적용됩니다. [MCP 안내](docs/MCP.md).
 
-앱의 **5버전 합성 데모**와 **3버전 엑셀 데모**로 직접 확인할 수 있습니다. 문서 집중 모드는 `⌘⌥F`, 근거 패널은 `⌘⌥I`입니다.
+CLI는 `analyze`, `query`, `export`와 별도 `workbook-analyze`, `workbook-query`, `workbook-export` 명령을 제공합니다. 기본 저장소는 `.docver/`이고 `--store PATH`로 바꿉니다. [통합 문서 계약](docs/SPREADSHEETS.md).
 
-**화면 배치**에서 균형·문서 집중·검토 프리셋, 패널 크기·표시·위치, 원문 비교 방향과 사용자 배치를 조정합니다. 문서와 통합문서의 설정은 따로 저장합니다. macOS에서 임시 집중 모드를 토글로 끄면 집중 중 바꾼 크기·방향을 반영해 이전 패널 표시로 돌아갑니다. 집중 중 패널을 열어도 다른 패널의 이전 표시를 복원합니다. 집중 중 사용자 배치를 저장하면 복원할 배치를 저장하며 집중 모드는 유지됩니다. 프리셋·저장 배치·초기화를 적용하면 새 기준 배치가 됩니다. 패널을 개별적으로 숨겨도 보고서·이력 구간 조작부는 유지됩니다. [화면 배치 안내](docs/WORKSPACE-LAYOUTS.md)를 참고하세요.
+## 지원 범위와 검증
 
-**Reviset → 설정…**(`⌘,`)에서 **시스템 기본값**, **English**, **한국어**를 고릅니다. 시스템 기본은 앱 실행 시 지원하는 시스템 언어의 선호 순서를 확인하고 해당 언어가 없으면 영어로 표시합니다. macOS 언어 순서를 바꾼 뒤에는 Reviset을 다시 여세요. 앱 자체의 문구는 작성 중인 가져오기·검토 초안을 유지하면서 바뀝니다. 일부 macOS 메뉴는 앱을 다시 열면 시스템 앱 언어를 따를 수 있습니다.
+지원 입력은 `.pptx`, `.pdf`, `.xlsx`, `.ods`와 UTF-8 쉼표 구분 CSV입니다. 이전 `.ppt`/`.xls`, 암호화 파일, ODP 직접 가져오기는 지원하지 않습니다. 가져온 원본은 복사하며 선택한 원본 파일을 덮어쓰지 않습니다. 통합 문서의 크기 한도는 [통합 문서 계약](docs/SPREADSHEETS.md)을 확인하세요.
 
-화면 언어와 OCR은 별도입니다. OCR은 현재 **한국어·영어**로 설정되며 다른 언어의 OCR 정확도를 새로 보장하지 않습니다. [언어 지원 범위와 원문 보존 계약](docs/LOCALIZATION.md)을 참고하세요.
+PPTX/PDF 문구·페이지·노트·화면 관측에는 추출과 대응 관계의 한계가 남습니다. 통합 문서는 지원하는 셀 값·수식·저장 결과·기본 서식을 보존하며 수식·매크로·외부 연결을 실행하거나 재계산하지 않습니다. 누락·빈 값·구체화된 빈 셀·일부·유효하지 않은·이미 끝까지 읽은 필드를 구분합니다. OCR 불확실성, 미지원 개체, 변환 공백을 표시합니다. 보편적 OCR 정확도, 완전한 PowerPoint 렌더링과 Excel/Calc 호환성은 검증되지 않았습니다. Windows는 PDF 미리보기와 PPTX 구조를 제공하며 Apple OCR과 격리된 Office 렌더링은 사용할 수 없습니다.
 
-리네이밍 후에도 기존 저장 위치를 유지합니다. 가져온 원본은 `~/Library/Application Support/Docver/library/`에 복사하며 사용자가 선택한 원본을 덮어쓰지 않습니다. 분석을 다시 해도 과거 고정 보고서는 별도로 보존합니다.
+개발과 검증은 진행 중입니다. [네이티브 검증 기록](docs/NATIVE-GIT-DIFF-2026-10-24.md)은 검사한 동작과 기능의 한계를 설명합니다. Mac 공증, Windows 서명, 다른 컴퓨터 설치 검증은 남아 있습니다. 이전 [공개 문서 측정](docs/PUBLIC-CORPUS-FIXES-2026-10-23.md)은 각 원래 실행 소스를 유지합니다.
 
-## CLI와 MCP
-
-위 앱 빌드를 마친 소스 폴더에서 실행합니다.
-
-```sh
-# 합성 문서 생성 → 분석 → 변경 조회 → 내보내기
-npm run fixtures
-npm run cli -- analyze --manifest tests/fixtures/generated/forward/manifest.json
-npm run cli -- query --project prj_forward --tool list_changes --args '{"kind":"text_modified","max_output_tokens":8000}'
-npm run cli -- export --project prj_forward --out artifacts/forward-ko --language ko
-```
-
-CLI 저장소 기본값은 `.docver/`이고 `--store PATH`로 바꿀 수 있습니다. 문서 manifest의 `revisions` 배열 순서가 버전 순서입니다. 스프레드시트 CLI는 `workbook-analyze`, `workbook-query`, `workbook-export`를 제공합니다. [스프레드시트 계약](docs/SPREADSHEETS.md)을 참고하세요.
-
-MCP는 분석·수정·셸 실행을 제공하지 않는 프로젝트 범위의 읽기 전용 서버입니다. 문서와 스프레드시트의 특정 버전 내용, 중간 변경, 전후값과 근거를 조회합니다. 앱이 만든 설정은 동봉 Node·서버를 가리키므로 앱을 이동하면 설정을 다시 복사하세요.
-
-MCP로 조회한 원문은 연결한 AI 클라이언트로 전달되며 해당 클라이언트의 데이터 정책이 적용됩니다. 클라우드 모델을 연결하면 조회한 내용이 외부 서비스로 전달될 수 있습니다.
-
-AI에게는 다음처럼 요청할 수 있습니다.
-
-> 이 프로젝트의 매출 전망 변경 이력을 찾아줘. 각 변경의 버전과 페이지 또는 셀 주소, 고정 보고서 ID를 근거로 제시하고 OCR·대응 추정의 한계도 알려줘.
-
-`latest` 조회는 응답에서 고정 보고서 ID로 해석합니다. 후속 조회와 인용에는 그 ID를 사용하고, 원문은 `next_cursor`와 텍스트 continuation을 끝까지 읽어야 합니다. 연결 방법과 조회 예시는 [MCP 가이드](docs/MCP.md)에 있습니다.
-
-## 지원 범위와 한계
-
-- `.pptx`, `.pdf`, `.xlsx`, `.ods`, UTF-8 쉼표 CSV를 지원합니다. 구형 `.ppt`·`.xls`, 암호화 파일은 지원 범위 밖입니다.
-- 앱과 문서 CLI는 직접 선택한 일반 파일을 읽으며 마지막 경로 요소의 심볼릭 링크·특수 파일은 거절합니다. PPTX는 일치하는 ZIP 헤더·크기·CRC, UTF-8 이름, 무압축 또는 Deflate 항목을 요구하며 ZIP64와 비정규 경로는 지원하지 않습니다.
-- PDF의 취소선 주석은 관측 사실로, 납작해진 선·박스 가림·화면 OCR의 대응은 추정으로 구분합니다. 가림·OCR 누락을 의미상 삭제로 단정하지 않습니다.
-- PDF의 텍스트 조각 분할·기록 순서 차이는 보이는 원문 글자와 대조한 뒤 문구 수정 여부를 판단합니다. 화면 차이는 별도로 유지하며 내보내기·글꼴 차이와 실제 그림·서식 편집을 항상 구별할 수는 없습니다. [PDF 내보내기 비교](docs/PDF-EXPORTER-COMPARISON.md)를 참고하세요.
-- PDF 표는 원래 PPTX 셀 식별자를 복구한 것이 아닙니다. Vision 문서 표 구조는 macOS 26 이상에서 사용하며 이전 지원 OS에서는 일반 OCR과 미지원 상태를 제공합니다.
-- 수식·매크로·외부 링크를 실행하거나 재계산하지 않습니다. 저장된 계산 결과는 누락되거나 오래된 값일 수 있습니다.
-- 모든 문서의 완벽한 OCR, PowerPoint와 픽셀 단위로 같은 렌더링, 차트·피벗·고급 서식의 완전한 재현은 달성하지 못했습니다. 글꼴 대체·관측 공백·불확실성을 함께 표시합니다.
-- 매크로/OLE·지원하지 않는 임베디드 개체·외부 리소스가 있는 PPTX는 LibreOffice 변환을 보류합니다. 구조 보기나 별도로 제공한 같은 버전의 PDF에서 확인할 수 있습니다.
-- 문서는 파일당 512 MiB·PDF 1,000쪽·프로젝트 100버전, 스프레드시트는 파일당 64 MiB·보고서 합계 50만 관측 셀/10만 빈 셀 서식 범위/10만 변경/256 MiB 등의 한도가 함께 적용됩니다. 상한은 처리 시간·메모리·정확도 보장이 아닙니다. 세부 조건은 [스프레드시트 계약](docs/SPREADSHEETS.md)을 참고하세요.
-
-## 개발과 검증
-
-```sh
-npm run build   # TypeScript 검사
-npm run fixtures # 통합 검사에 필요한 합성 입력 생성
-npm test        # 전체 통합 검사; 네이티브 검사는 macOS 도구 체인 필요
-```
-
-테스트 준비 단계는 PDF.js worker의 고정 패치를 적용하고 지원 Mac에서는 Vision helper를 빌드합니다. 전체 검사는 OCR·Office·네이티브 검사를 포함해 시간이 걸릴 수 있습니다.
-
-[공식 공개 문서 검사](docs/PUBLIC-CORPUS-2026-10-22.md)는 DESNZ·NASA·NIST·W3C 원본 9개를 격리해 확인했습니다. [수정 및 검증 보고서](docs/PUBLIC-CORPUS-FIXES-2026-10-23.md)는 측정마다 실제 소스 커밋과 판독기를 명시합니다. 최종 구현 `8d5e189`에서 ODS 값 48,660개와 넓은 빈 셀 서식을 보존했고, 저장된 492쪽 보고서의 MCP 544회 호출과 네이티브 앱 5개 시나리오가 통과했습니다. 앞선 초기·캐시 분석 및 전체 통합 검사 439개와 이후 영향 범위 검사는 구분해 기록했습니다. 캐시 분석은 4 GiB 검사 예산의 97.2%를 사용했으므로 일반적인 메모리·정확도 보장은 아닙니다. LibreOffice 변환의 텍스트 누락과 불확실한 버전 간 대응은 계속 한계로 표시합니다.
-
-이전 [LibreOffice 호환성 검사](docs/LIBREOFFICE-2026-10-22.md)는 실제 Calc·Impress 저장 파일을 사용했고, 출력 PDF의 사각형 가림 인식 문제를 수정했습니다. 검증 기록은 실행 소스별로 구분합니다.
-
-| 검증 | 실행 소스 | 결과 |
-| --- | --- | --- |
-| 이전 전체 회귀 검사 | `568fc97` | 370개 통과 |
-| 실제 Calc ODS/XLSX 저장 파일 | `635a795` | 154개 검증 통과 |
-| 영향받은 PDF·OCR·과거 이력 회귀 | `f911f11` | 104개 통과 |
-| 사각형 회귀·TypeScript 검사 | `f3a66bc`; TypeScript 소스는 `8364e3d`에서도 동일 | 5개 통과·타입 검사 통과 |
-| 패키지 `release/Reviset-LibreOffice-3.app` | Clean `8364e3d9d67f2ed4ed5ffa3d58ce50e1313ab93e` | 실제 앱 실행 6회·MCP 5세션 통과; 캡처 20장 검사; 원본·과거 보고서 바이트 보존 |
-
-해당 이전 패키지는 엄격 서명 검사를 통과했고, 동일한 Swift 소스 바이트는 경고를 오류로 처리하는 컴파일도 통과했습니다. Calc, PPTX/PDF 혼합 이력, PDF 가림·취소선 사례의 신규 분석과 저장 보고서 재열기를 확인했습니다. 해당 패키지의 최종 소스에서 전체 검사를 다시 실행한 것은 아닙니다. 보편 OCR 정확도와 PowerPoint 엄격 충실도는 **OPEN**이며, OS 입력·VoiceOver·공증·공개 배포·다른 Mac 설치는 이번 검증 범위 밖입니다. ODP는 직접 지원하지 않으므로 Impress에서 PPTX나 PDF로 저장해 가져와야 합니다.
-
-| 문서 | 내용 |
-| --- | --- |
-| [공식 공개 문서 검사](docs/PUBLIC-CORPUS-2026-10-22.md) | 실문서 결과, 보안 격리, 확인된 한계와 소스 범위 |
-| [품질 현황](docs/QUALITY.md) | 검증 결과, 남은 정확도·배포 기준 |
-| [화면 배치](docs/WORKSPACE-LAYOUTS.md) | 네이티브 프리셋·패널 배치·사용자 저장과 보기 상태 유지 |
-| [Windows 앱](docs/WINDOWS.md) | 빌드·로컬 작업 흐름·플랫폼별 기능 한계 |
-| [네이티브 화면 배치 검증](docs/NATIVE-WORKSPACES-2026-10-23.md) | 실제 Mac·Windows 실행 소스와 리뷰 범위 |
-| [LibreOffice 호환성·수정](docs/LIBREOFFICE-2026-10-22.md) | 실제 Calc·Impress 저장, PDF 가림, 최종 앱·과거 보고서 검증 |
-| [이전 전체 수정 리뷰·검증](docs/REVIEW-2026-10-22.md) | 입력·ZIP 경계, 저장 복구, 네이티브 수정과 소스별 리뷰·패키지 증거 |
-| [이전 통합 문서 개선·검증](docs/WORKBOOK-RECOVERY-2026-10-22.md) | 조회 복구·셀 근거·UI 개선의 고정 소스와 리뷰 범위 |
-| [MCP 가이드](docs/MCP.md) | AI 연결, 조회 순서와 출력 예산 |
-| [스프레드시트 계약](docs/SPREADSHEETS.md) | 지원 형식, 수식·셀 의미, 처리 한도 |
-| [스키마](docs/schemas/README.md) | 고정 보고서와 조회 응답 |
-| [네이티브 아키텍처](docs/adr/003-native-macos.md) | 앱·공통 엔진 구조 |
-| [의존성](docs/dependencies.md) | 패키징·제3자 구성요소 |
-
-자세한 원시 실행 기록에는 로컬 검증 경로가 포함될 수 있습니다. `.omx/`, `release/`, `output/`, 생성 fixture와 원본 보관소는 GitHub 소스에 포함하지 않습니다. 설계·구현 이력은 [DESIGN.md](DESIGN.md), [PROGRESS.md](PROGRESS.md)에 남깁니다.
+개발 검사는 `npm run build`, `npm run fixtures`, `npm test`로 실행합니다. 네이티브 검사에는 각 플랫폼 도구가 필요합니다. [품질 상태](docs/QUALITY.md) · [스키마](docs/schemas/README.md) · [구조](docs/adr/003-native-macos.md).
 
 ## 라이선스
 
-프로젝트 자체 라이선스는 아직 확정하지 않았으며 `package.json`은 `UNLICENSED`입니다. 라이선스가 확정되기 전에는 오픈소스 라이선스가 부여된 것으로 간주하지 마세요. 제3자 구성요소의 라이선스·고지는 각각 별도로 적용되며 [의존성 기록](docs/dependencies.md)에 정리되어 있습니다.
-
-다국어 구현의 검증 범위와 소스 기준은 [영어 검증 기록](docs/LOCALIZATION-2026-10-23.md)에 정리했습니다.
+프로젝트 라이선스는 아직 선택하지 않았으며 `package.json`은 `UNLICENSED`입니다. 소스 공개가 라이선스 부여를 뜻하지 않습니다. 타사 구성 요소의 [라이선스와 고지](docs/dependencies.md)는 각각 유지됩니다.

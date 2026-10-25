@@ -1,3 +1,18 @@
+# 현재 검증 상태 · Reviset 네이티브 Git형 작업 공간 · 2026-10-25
+
+프로젝트 구현 기준은 `13bee235b063b66e0668ccc3c24f599e9bc1acc6`이다. 원문 우선 배치, 추출 문구의 `−/+` 비교, 조회 구간과 선택 이벤트·물리 원문의 분리, 단일 버전 읽기와 새 비교, 영어·한국어, 패널 배치·집중 모드를 macOS와 Windows의 네이티브 화면에 반영했다. [사용법](README.md) · [검증 범위와 한계](docs/NATIVE-GIT-DIFF-2026-10-24.md).
+
+- 최종 39경로 구현의 독립 코드 리뷰는 APPROVE/READY, 구조 리뷰는 COMMENT/WATCH/READY다. Windows 목록 응답의 추가 범위 검증과 기존 Mac 비정상 이어 읽기 캡션의 LOW 보완 의견은 비차단 후속 항목으로 남긴다.
+- 실제 Windows 실행 `40169227816`은 122개 WPF 검사(578.7034194초), portable 95통과·4skip·0실패, preferences 311개 assertion을 통과했다. 긴 다중행 이름의 EN/KO 단일·쌍 원문 사례 4개와 실제 저장 원문 사례 4개에서 68개 하위 조건을 확인했다. 모델·실제 WPF 제어 검사이며 OS 클릭/화면 읽기 프로그램 인증은 아니다.
+- 포함 MCP는 읽기 전용 도구 29개, 문서 원문 5쪽·통합 문서 셀 72개와 두 외부 범위 거절을 확인했다. 긴 문구의 UTF-16 구간, 없는 관측·빈 값·부분 구간, 저장 계산 결과와 재계산 부재를 구분한다.
+- 현재 Mac 앱은 실제 제작 소스 `158dd2146f1a1aaa4775a11aa40df324fb888430`의 검증된 동일 번들이다. 원래 9개 작업은 성공했지만 전체 드라이버는 native 창 위치 설정 변경 검사에서 exit1이었다. 해당 키의 복원과 별도 검증·독립 복구 리뷰를 결합했으며 원래 실패는 보존한다. Windows 전용 변경을 제외한 332/249 입력 비교와 115개 기능 입력을 확인했고, 새 Mac41 테스트 실행으로 부르지 않는다.
+- 실제 Claude의 Windows41 원본 5장 리뷰는 유효한 APPROVE다. 고정 출처와 전체 다음 구간 안내의 지적을 닫았으며, 쌍 원문의 같은 주소·스크롤 구간 식별 등 남은 비차단 사용성 의견은 범위를 명시했다. 이전 22장 REQUEST CHANGES와 source37 형식 오류가 있는 원문 verdict는 그대로 보존한다.
+- `release/Reviset.app`과 `release/Reviset-Windows-x64.zip`을 검증된 바이트로 반영했다. Mac 전체 파일·심볼릭 링크와 로컬 서명, Windows ZIP SHA/CRC를 확인했고 이전 배포본은 백업했다. 샘플 라이브러리를 사용하는 한국어 Mac 앱을 실행해 두었으며 정상 사용자 라이브러리·앱은 건드리지 않았다. 현재 잠금화면 때문에 전면 표시 확인은 별도다.
+- 영문 기준 README·한국어 README와 사용 문서 8개: 실제 Claude·Grok의 전문 검토와 수정 후 5개 문서 차이 재검토를 반영했다(Claude COMMENT, Grok APPROVE). 그 뒤 Windows W1 명칭 두 곳과 한국어 문법 한 곳의 작은 보완은 별도 docs-only 변경으로 기록하며 이 외부 모델 verdict의 범위에 포함하지 않는다.
+- 범용 PDF/OCR 정확도, PowerPoint 원본 충실도, 모든 Excel/Calc 기능, 다른 컴퓨터 설치, Mac 공증·Windows 서명은 미검증 한계로 남는다. 아래는 각 당시의 실행·판단 기록이며 현재 상태는 이 맨 위 기록을 따른다.
+
+---
+
 # 현재 검증 상태 · 보안·성능·구조·UI/UX 재리뷰 · 2026-10-21
 
 실행본 `release/Docver-Review.app`, ZIP `release/Docver-0.4.0-review1-arm64.zip`. clean runtime source `1872f61fb78867f31ca70a14732b7c0c7bfadd39`. 독립39경로 코드 COMMENT / 구조 WATCH, 현재 차단 결함0, 같은 Mac native integration와 private package READY. 제품 전체 판독·PowerPoint 충실도 OPEN은 유지한다. [상세 재리뷰](docs/REVIEW-2026-10-21.md).

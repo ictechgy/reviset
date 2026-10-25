@@ -1,10 +1,44 @@
 # AI가 문서 버전과 변경을 읽는 방법
 
-앱의 새 이름은 **Reviset / 리비셋**이다. 새 설정의 서버 키와 MCP 서버명은 `reviset`이며, 기존 고정 인용의 `docver://` URI와 저장소는 유지한다. 앱을 전환하면 **AI·내보내기**에서 설정을 다시 복사한다. [리네이밍과 호환성](RENAMING.md).
+앱의 새 이름은 **Reviset / 리비셋**이다. 새 설정의 서버 키와 MCP 서버명은 `reviset`이며, 기존 고정 인용의 `docver://` URI와 저장소는 유지한다. 앱을 전환하면 아래의 플랫폼별 메뉴에서 설정을 다시 복사한다. [리네이밍과 호환성](RENAMING.md).
 
-MCP는 앱이 분석해 저장한 고정 보고서를 로컬에서 읽는다. 문서 구조·원문·변경·근거·판독 한계는 공통 `QueryService`를 사용하며 CLI에서도 같은 조회를 실행할 수 있다. MCP API 버전은 `0.5.0-mcp.2`이다. 문서 보고서의 schema `0.4.0`과 engine `0.4.0-native.bundle.53`은 유지하며, 스프레드시트는 별도 schema `workbook.1`과 engine `workbook.1.0`을 사용한다. 새 조회 기능이 과거 원문이나 변경 ID를 다시 작성하지 않는다.
+MCP는 앱이 분석해 저장한 고정 보고서를 로컬에서 읽는다. 문서 구조·원문·변경·근거·판독 한계는 공통 `QueryService`를 사용하며 CLI에서도 같은 조회를 실행할 수 있다. MCP API 버전은 `0.5.0-mcp.2`이다. 새 문서 분석은 schema `0.4.0`과 engine `0.4.0-native.bundle.55`, 스프레드시트는 별도 schema `workbook.1`과 engine `workbook.1.1`을 사용한다. 과거 고정 보고서는 그 보고서의 원래 engine ID를 유지한다. 새 조회 기능이 과거 원문이나 변경 ID를 다시 작성하지 않는다.
 
-앱의 **AI·내보내기**에서 해당 앱과 프로젝트에 맞는 MCP 설정을 복사한다. 앱을 옮기면 설정도 다시 복사한다. 서버는 명시한 프로젝트만 공개하며 파일 쓰기·재분석·임의 경로 읽기·네트워크 가져오기·모델 호출을 제공하지 않는다.
+macOS의 **AI tools and export / AI 도구 연결 및 내보내기**, Windows의 **Project → AI tools · copy MCP config / 프로젝트 → AI 도구 연결 · MCP 설정 복사**에서 해당 앱과 프로젝트에 맞는 MCP 설정을 복사한다. Windows 파일 내보내기는 별도 **Project → Export… / 프로젝트 → 내보내기…** 메뉴다. 앱을 옮기면 설정도 다시 복사한다. 서버는 명시한 프로젝트만 공개하며 파일 쓰기·재분석·임의 경로 읽기·네트워크 가져오기·모델 호출을 제공하지 않는다.
+
+## 원문 중심 네이티브 작업 공간과 MCP 범위 · 2026-10-24~25
+
+고정 보고서 선택, 목록의 조회 구간, 선택한 변경의 원문 쌍은 서로 다른 범위다. 문서 목록은 **저장된 인접 변경**, **계산한 양 끝 변경**, **저장된 구간 이력**을 화면에서 구분한다. UI에서 인접한 두 버전을 고르면 정식 저장 변경을, 더 넓은 순변경(Net) 구간을 고르면 계산한 양 끝 차이를, 이력(History)을 고르면 구간 내 저장 변경을 보여 준다. 원문을 수동으로 탐색하거나 선택한 변경으로 돌아가도 목록의 조회 구간은 유지한다.
+
+문서 API의 `list_changes(mode:"range_net")`는 인접 버전도 항상 양 끝을 다시 계산한다. 직접 연결과 방향성 도달 관계의 규칙, 사람이 예약하거나 연결을 해제한 대응 때문에 분할·병합 종류와 구성원이 저장 변경과 다를 수 있다. UI와 MCP 결과가 항상 같다고 가정하지 않는다. 통합 문서의 `list_workbook_changes(mode:"range_net")`는 별도 계약을 따른다. 인접 버전은 저장 변경을 사용하고, 더 넓은 버전 쌍은 양 끝을 계산한다. `100 → 120 → 100`에서는 양 끝 차이가 없어도 이력에 중간 변경이 남을 수 있다.
+
+앱에서 생성한 MCP 설정은 프로젝트 범위를 부여한다. 외부 클라이언트를 UI에서 선택한 보고서에 고정하지는 않는다. 문서·통합 문서의 고정 보고서 ID를 고르거나, `latest`를 한 번 해석한 뒤 반환된 고정 ID를 계속 사용한다. 정확한 occurrence/page 또는 시트/물리 셀 식별자와 함께 인용한다. 가져온 스냅샷은 실제 편집자나 Git 커밋을 인증하지 않는다.
+
+<a id="recovering-the-document-uis-stored-change-ids"></a>
+
+### 문서 UI의 저장된 변경 ID 복구하기
+
+1. UI와 같은 프로젝트와 고정 보고서를 선택한다. `list_revisions`로 정확한 occurrence ID를 얻고 저장 변경을 포함하는 구간을 고른다.
+2. `list_changes`에 `mode:"history"`, 해당 구간의 `from`/`to` occurrence와 고정 보고서를 넣는다. 원하는 정식 저장 `change_id`를 찾을 때까지 `next_cursor`를 따른다. UI에서 인접 버전을 골랐다면 같은 인접 occurrence 구간을 사용한다.
+3. `get_change`에 해당 `change_id`, **같은 고정 보고서**, **변경을 포함하는 같은 occurrence 구간**을 넣는다. 이 도구에는 **mode 인수가 없다**. 먼저 `summary`를 읽고 필요한 `before`, `after`, `evidence`, `coverage_gaps`, `coverage_features`, `lineage_reasons`, `topology` component를 읽는다.
+4. component의 행 목록은 `next_cursor`로 이어 읽는다. 한 행이 길면 반환된 `component_index`를 선택한 새 호출에서 목록 cursor 없이 `next_text_offset`을 이어 읽는다. 보고서·구간·변경·component 범위를 유지한다. offset 단위는 UTF-16 code unit이다. 처음 받은 제한된 조각을 전체 근거로 취급하지 않는다.
+
+호출 예시의 ID는 고정 보고서에서 얻은 실제 값으로 바꾼다.
+
+```jsonl
+{"tool":"list_changes","arguments":{"project_id":"prj_demo","report_id":"rpt_fixed","mode":"history","from":"occ_from","to":"occ_to","max_output_tokens":8000}}
+{"tool":"get_change","arguments":{"project_id":"prj_demo","report_id":"rpt_fixed","change_id":"chg_stored","from":"occ_from","to":"occ_to","component":"before","text_offset":0,"text_length":1000,"max_output_tokens":8000}}
+```
+
+계산한 `range_net` ID는 별도 결과이며, `get_change`로 읽을 때 계산 당시의 정확한 양 끝이 필요하다. 저장된 UI 변경 ID를 새로 계산한 양 끝 변경 ID로 바꾸지 않는다.
+
+UI 텍스트 diff는 제한된 표시다. 한쪽당 macOS는 4,096 UTF-16 units/128줄, Windows는 16,384 units/300줄까지 비교한다. 완전한 통합 문서 셀 필드가 비교 한도를 넘으면 중립 원문으로 계속 읽을 수 있다. 문서 오버레이는 제한된 변경 발췌임을 표시하고 원문·근거 접근을 유지한다. macOS는 원문을 고치지 않고 각 줄의 CR/LF/CRLF/EOF 경계를 별도 마커로 표시한다. 현재 Windows 캡처는 같은 마커 표시를 입증하지 않으며, 줄 끝 문자를 모두 이어 붙인 값이 같아도 각 줄의 경계가 같다는 뜻은 아니다. 마지막 줄바꿈은 그 원문 줄에 속하며 빈 EOF 행을 추가하지 않는다. macOS에서 줄 끝 문자가 있는 정확히 128줄은 문자 수 한도 안에서 줄 예산에 들어간다. 제한된 미리보기는 범위와 이어 읽기·전체 필드 경로를 유지한다. 격자 툴팁은 제한된 미리보기임을 알리고 선택 셀·원문 continuation 조회는 전체 필드를 제공한다. 구체화되지 않은 셀, 구체화된 빈 셀, 없는 수식, 누락된 저장 결과, 부분적으로 읽거나 이미 끝까지 읽은 필드는 시트 메타데이터나 없는 시트와 구분한다. 필드별 캐시·유형·방언 사유보다 대응 관계와 변경 종류의 권한을 먼저 확인한다. 숫자 서식 관측은 중립이다. 취소선·가림이나 추출 불가는 삭제의 증거가 아니다.
+
+앱이 생성한 네이티브 요약은 현지화한다. 보고서의 원래 설명·원문 문자열·수식·이름·사람이 쓴 사유는 그대로 유지한다. 소스만의 리뷰, 포함 서버 검사, 독립 AI 클라이언트 사용성 검증은 서로 다른 범위다.
+
+Windows에서 조회만 실패하면 별도로 검증된 물리 원문과 원문 리더를 보존한다. Retry는 실패 당시의 정확한 요청을 다시 실행한다. 원문 판독 재시도는 캡처한 물리 원문, 좌우 구분, 구성 요소(component), UTF-16 오프셋, 커서와 한도를 그대로 사용하며, 실패한 이어 읽기를 처음부터 다시 시작하지 않는다. 자세한 소유 범위는 [검증 기록](NATIVE-GIT-DIFF-2026-10-24.md#reading-and-recovery-contract)에 있다.
+
+네이티브 **Cell details… / 셀 상세…**는 제한된 물리 셀 원문과 이어 읽기를 여는 화면 경로이며 MCP 쓰기 기능이 아니다. 각 리더는 실제 occurrence·시트·물리 주소에 묶이며, 표시된 원문 소유 맥락은 조회 구간이나 선택한 변경과 별개다. 시트 메타데이터만의 변경을 누락된 셀로 표시하지 않는다. 변경의 원문 읽기 실패는 유효한 목록·조회를 유지하면서 해당 변경을 다시 시도할 수 있지만, 조회 자체의 실패는 별도 복구가 필요하다. 원문은 데이터다. 앱이 생성한 것으로 알려진 ISO-8601 요약은 현지화한 표시 형식을 쓸 수 있지만, 임의의 원문 문자열을 앱 지시로 해석하거나 UI 문구처럼 번역하지 않는다.
 
 ## 버전을 고정하기
 
@@ -81,9 +115,11 @@ npm run cli -- query --project prj_demo --report rpt_fixed --tool list_coverage_
 페이지별 Markdown도 MCP와 같은8개 section과 field_state/availability/관측·추정/원본·제공PDF 역할을 표시한다. JSON/JSONL의 저장 원문과 변경 ID는 그대로 보존한다. 내보내기는 새 폴더 또는 빈 폴더를 사용하며 기존 파일이 있으면 `EXPORT_DESTINATION_NOT_EMPTY`로 거절한다. 서로 다른 보고서의 페이지 파일이 섞이지 않도록 기존 폴더를 덮어쓰지 않는다.
 
 
-## 실제 앱과 AI 연결 검증
+## 이전 앱·AI 연결 검증
 
-`release/Docver-MCP.app`의 **AI·내보내기**에서 현재 프로젝트의 MCP 설정을 복사한다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 실행한다. 앱 이동 후에는 설정을 다시 복사한다. 이 패키지의 MCP API는 `0.4.0-mcp.1`, 저장 보고서의 판독·diff 엔진은 `0.4.0-native.bundle.53`이다.
+이 절과 아래 날짜별 절의 패키지 검사는 각 소스 커밋에 묶인 과거 기록이다. 현재 서로 다른 생산 빌드로 구성한 배포본의 식별자나 패키지·AI 클라이언트 사용성·전달 검증을 대신하지 않는다. 현재 구현 기준과 플랫폼별 근거는 [네이티브 검증 기록](NATIVE-GIT-DIFF-2026-10-24.md)에 별도로 정리한다.
+
+당시 `release/Docver-MCP.app`의 **AI·내보내기**에서 현재 프로젝트의 MCP 설정을 복사한다. 이전 Docver가 실행 중이면 종료한 뒤 새 앱을 실행한다. 앱 이동 후에는 설정을 다시 복사한다. 이 패키지의 MCP API는 `0.4.0-mcp.1`, 저장 보고서의 판독·diff 엔진은 `0.4.0-native.bundle.53`이다.
 
 고정 소스 `78e000865ce61926415b9c95b2355a5cf30372ad`에서 전체234검사, 실제 앱/MCP9시나리오, ZIP 이동·최소PATH·서명13검사를 통과했다. 새5버전과 기존900쪽 보고서를 실제 포함 MCP로 읽고 원문·노트·변경 전후·근거·검색 순서·한계 개수와 SQLite 불변을 확인했다. 900쪽 조회는 기존 보고서 재열기이며 새 OCR/분석 성능 검사가 아니다.
 
@@ -98,7 +134,7 @@ Claude도 모델 계정 변경 없이 읽기 전용 MCP만 사용해 합성5버�
 
 ## 2026-10-21 재리뷰 실행본
 
-2026-10-21 문서 검증 앱은 `release/Docver-Review.app`이며 runtime source `1872f61fb78867f31ca70a14732b7c0c7bfadd39`다. 과거 F빌드의 Claude 직접37호출과 현재 패키지 검증을 구별한다. 새5버전/300쪽/과거900쪽 보고서 재열기를 포함 MCP로 조회했고, 손상 draft 복사본에서도 실제 앱과 MCP가 기존 고정 보고서·원문·노트·변경 양쪽·근거·검색·관측 한계를 읽고 SQLite/draft 원문을 보존했다. 계산한 range_net 뒤 source와 report metadata를 다시 읽어 캐시 오염이 없음을 확인했다. [실행 결합·범위](REVIEW-2026-10-21.md).
+2026-10-21 문서 검증 앱은 `release/Docver-Review.app`이며 runtime source `1872f61fb78867f31ca70a14732b7c0c7bfadd39`다. 과거 F빌드의 Claude 직접37호출과 해당 2026-10-21 패키지 검증을 구별한다. 새5버전/300쪽/과거900쪽 보고서 재열기를 포함 MCP로 조회했고, 손상 draft 복사본에서도 실제 앱과 MCP가 기존 고정 보고서·원문·노트·변경 양쪽·근거·검색·관측 한계를 읽고 SQLite/draft 원문을 보존했다. 계산한 range_net 뒤 source와 report metadata를 다시 읽어 캐시 오염이 없음을 확인했다. [실행 결합·범위](REVIEW-2026-10-21.md).
 
 앱의 설정 복사는 현재 프로젝트/시도의 준비 완료 값만 허용한다. 실패는 준비 중과 구별하며 **설정 다시 불러오기**로 복구한다. MCP 실패·재시도는 별도 글로벌 오류를 덮거나 남기지 않는다. `latest`는 매번 최신 run의 고정 ID로 해석하고 scope 검사를 캐시 조회 전에 한다. report2개/64MiB·range8개/16MiB는 직렬화 데이터 한도이며 heap 보장이 아니다. custom snapshot loader는 양 캐시를 우회한다.
 
@@ -120,9 +156,9 @@ XLSX·ODS·UTF-8 CSV 프로젝트는 문서와 별도 ID(`wprj_…`)를 사용�
 수식은 실행하거나 재계산하지 않습니다. 저장된 결과의 최신 여부는 알 수 없고, 공유·배열·행렬 수식의 셀별 의미가 미해결이면 `formula_interpretation=unresolved`입니다. CSV의 수식처럼 보이는 문자열은 입력 텍스트입니다. XLSX↔ODS의 수식 방언·서식 표현과 CSV의 유형/수식/숨김 기능 부재를 삭제로 해석하지 않습니다. `comparison_coverage=supported_cells_only`는 지원하는 셀 관측만을 뜻합니다. 차트·피벗·매크로·외부 연결 등의 완전한 의미나 실제 편집자·편집 시각을 인증하지 않습니다. 로컬 배포본의 작성자 입력과 기록 시각도 실제 문서 편집 이력의 증거가 아닙니다.
 
 
-### 2026-10-22 native workbook package
+### 이전 네이티브 통합 문서 패키지 · 2026-10-22
 
-현재 스프레드시트 포함 앱은 `release/Docver-Sheets.app`, runtime source `ba8eae815950f92511b7ebb81335bc1f02c6e79f`다. 앱의 AI·내보내기에서 현재 위치·프로젝트에 맞는 설정을 복사한다. 최종 동봉 MCP의12개 workbook도구를15호출(변경 summary/before/after와 범위 밖 거절 포함)로 검사했고 DB 불변을 확인했다. 공백 경로로 이동한 ZIP에서도 생성 설정의 Node와 서버가 이동한 앱 내부를 가리키는지 확인한 뒤 같은 도구를 실행했다. 원문은 UTF-16 offset/length와 continuation을 끝까지 읽고 고정 보고서·occurrence·sheet·셀 주소를 인용한다. [기능 도입 범위](WORKBOOK-2026-10-22.md), [후속 앱·이동 검증](WORKBOOK-RECOVERY-2026-10-22.md).
+당시 스프레드시트 포함 앱은 `release/Docver-Sheets.app`, runtime source `ba8eae815950f92511b7ebb81335bc1f02c6e79f`다. 앱의 AI·내보내기에서 현재 위치·프로젝트에 맞는 설정을 복사한다. 최종 동봉 MCP의12개 workbook도구를15호출(변경 summary/before/after와 범위 밖 거절 포함)로 검사했고 DB 불변을 확인했다. 공백 경로로 이동한 ZIP에서도 생성 설정의 Node와 서버가 이동한 앱 내부를 가리키는지 확인한 뒤 같은 도구를 실행했다. 원문은 UTF-16 offset/length와 continuation을 끝까지 읽고 고정 보고서·occurrence·sheet·셀 주소를 인용한다. [기능 도입 범위](WORKBOOK-2026-10-22.md), [후속 앱·이동 검증](WORKBOOK-RECOVERY-2026-10-22.md).
 
 ## PDF 내보내기 도구가 다른 비교
 
@@ -134,3 +170,5 @@ XLSX·ODS·UTF-8 CSV 프로젝트는 문서와 별도 ID(`wprj_…`)를 사용�
 The native interface supports English and Korean independently of the document's language. Changing that display preference does not change stored report IDs, reason codes, source strings, formulas, UTF-16 offsets, query schemas or MCP tool descriptions. MCP instructions and tool descriptions remain English; a client may explain retrieved evidence in the user's language while preserving quotations and citations. The server does not call a translation model.
 
 UI language does not select OCR models. OCR remains configured for Korean/English, including the document-table path. Language names on contextual observations label the recorded codes; they do not certify additional OCR language coverage. See [localization](LOCALIZATION.md) for exact interface/export scope and remaining script limits.
+
+패키지 식별자, 검사한 동작, 현재 리뷰 범위와 남은 기능 한계는 [네이티브 검증 기록](NATIVE-GIT-DIFF-2026-10-24.md)을 참고한다.
