@@ -324,7 +324,7 @@ internal sealed class MainWindow : Window
     {
         firstDetail.Content = Copy[bottom ? "firstTextCompact" : "firstText"]; nextDetail.Content = Copy[bottom ? "nextTextCompact" : "nextText"];
         firstDetail.ToolTip = Copy["firstText"]; nextDetail.ToolTip = Copy["nextText"];
-        firstDetail.Padding = nextDetail.Padding = new Thickness(bottom ? 6 : 10, 6, bottom ? 6 : 10, 6);
+        firstDetail.Padding = nextDetail.Padding = new Thickness(bottom ? 4 : 10, 6, bottom ? 4 : 10, 6);
         if (inspectorArrangementBottom == bottom && InspectorPane.Child is not null) return;
         inspectorArrangementBottom = bottom;
         foreach (var element in new FrameworkElement[] { inspectorHeading, detailPaging, technicalDetails, detailSourceContext, detail }) if (VisualTreeHelper.GetParent(element) is Panel parent) parent.Children.Remove(element);
