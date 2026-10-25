@@ -279,6 +279,7 @@ private struct WorkspaceReadingGuide:View {
                         }.padding(24).frame(maxWidth:.infinity,alignment:.leading)
                     }
                 }.frame(width:620,height:400).readableInterface()
+                    .background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light)
                     .background(WorkspaceLayoutMarker(name:"Reviset.document.readingGuide.popover"))
             }
     }
