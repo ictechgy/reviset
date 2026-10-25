@@ -98,6 +98,7 @@ internal sealed class MainWindow : Window
     {
         if (!EvidencePresented || !IsWorkbook || inspectorMode != "raw" || !pane.AuthorizesCell(pane.FocusedRow, pane.FocusedColumn)) return false;
         var side = ReferenceEquals(pane, Before) ? "before" : "after";
+        if (pairedSource is { } source && PairedSourceCurrent) return source.ReadPayload(side, detailPayload.Get(side), out var observed) && source.Side(side).HasCell && source.Side(side).CellMatches(observed);
         bool Matches(JsonElement cell) => cell.Get("address").Text() == pane.FocusedAddress && cell.Get("row").Number() == pane.FocusedRow && cell.Get("column").Number() == pane.FocusedColumn;
         if (detailPayload.Get("before").ValueKind == JsonValueKind.Object)
         {
@@ -113,6 +114,14 @@ internal sealed class MainWindow : Window
     private readonly CheckBox detailStyle = new() { Margin = new Thickness(8, 2, 8, 2) };
     private Button retryComparison = new();
     private Func<int, CancellationToken, Task<JsonElement>>? detailLoader;
+    private WorkbookPairSource? pairedSource;
+    private bool PairedSourceCurrent => pairedSource is { } source && source.Matches(projectId, reportId, DisplayedWorkbookScope, Before.FocusedRow, Before.FocusedColumn, After.FocusedRow, After.FocusedColumn);
+    private JsonElement PairCell(JsonElement payload, string side)
+    {
+        if (pairedSource is { } source) return PairedSourceCurrent && source.ReadPayload(side, payload.Get(side), out var cell) ? cell : default;
+        return payload.Get(side).Get("items").Items().FirstOrDefault().Get(side);
+    }
+    private static object SourceViewportForSmoke(ComparePane pane) => new { x = pane.GridScroll?.HorizontalOffset, y = pane.GridScroll?.VerticalOffset, maximum_x = pane.GridScroll?.ScrollableWidth, maximum_y = pane.GridScroll?.ScrollableHeight, viewport_width = pane.GridScroll?.ViewportWidth, viewport_height = pane.GridScroll?.ViewportHeight, host_width = pane.Host.ActualWidth, host_height = pane.Host.ActualHeight, native_host_identity = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(pane.Host), native_rows_identity = pane.Cells.ItemsSource is { } rows ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(rows) : 0 };
     private int detailOffset;
     private int? detailNext;
     private string detailCursor = "";
@@ -124,7 +133,7 @@ internal sealed class MainWindow : Window
     private bool changesReady;
     private sealed record ChangeQueryScope(bool Workbook, string Project, string Report, string From, string To, bool Net);
     private sealed record InitialFocusIntent(ChangeQueryScope Scope, long Generation);
-    private bool HasIndependentSourceDetail => IsWorkbook && inspectorMode == "raw" && detailPayload.ValueKind == JsonValueKind.Object && detailPayload.Get("before").ValueKind != JsonValueKind.Object && detailLoader is not null;
+    private bool HasIndependentSourceDetail => IsWorkbook && inspectorMode == "raw" && detailPayload.ValueKind == JsonValueKind.Object && detailLoader is not null && (detailPayload.Get("before").ValueKind != JsonValueKind.Object || PairedSourceCurrent && pairedSource!.ReadPayload("before", detailPayload.Get("before"), out _) && pairedSource.ReadPayload("after", detailPayload.Get("after"), out _));
     private ChangeQueryScope? loadedChangeScope;
     private bool sourceOnlyFailure;
     private sealed record EventRetry(ChangeQueryScope Scope, ChangeChoice Row, bool Initial = false);
@@ -134,6 +143,7 @@ internal sealed class MainWindow : Window
     private ChangeQueryScope CurrentChangeScope => new(IsWorkbook, projectId, reportId, intervalFrom, intervalTo, NetMode);
     private int? workbookPageLimitForSmoke;
     private long changeQueryReadsForSmoke;
+    private Func<JsonElement, CancellationToken, Task>? workbookChangesReplyForSmoke;
     internal string ComparisonState { get; private set; } = "empty";
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 5, 12, 5), MaxHeight = 70 };
     private readonly TextBlock context = new() { FontSize = 12, Foreground = Brushes.DimGray, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(12, 2, 12, 5) };
@@ -643,14 +653,14 @@ internal sealed class MainWindow : Window
         }
         // Invalidating a failed read never changes retained selectors. Retry the
         // exact event/page/sheet/window, independently of the change-list interval.
-        return sourceOnlyFailure && loadedChangeScope == CurrentChangeScope ? ReloadSourceOnly() : ReloadComparisonCore(true);
+        return ComparisonState == "failed" && HasIndependentSourceDetail ? ReloadQueryKeepingSources() : sourceOnlyFailure && loadedChangeScope == CurrentChangeScope ? ReloadSourceOnly() : ReloadComparisonCore(true);
     }
     private void InvalidateAuthority(bool clearChanges, bool preserveSourceDetail = false)
     {
         eventRetry = null; sourceOnlyFailure = false; changesReady = false; ComparisonState = "loading"; changeList.IsEnabled = false; more.IsEnabled = false; retryComparison.Visibility = Visibility.Collapsed; if (!preserveSourceDetail) { ClearDetail(); detail.Text = Copy["loading"]; } RenderSourceDiff();
         if (clearChanges) { loadedChangeScope = null; binding = true; changeList.SelectedItem = null; changes.Clear(); binding = false; nextChanges = ""; }
     }
-    private void FailComparison(bool retireQuery = true, bool preserveSources = false)
+    private void FailComparison(bool retireQuery = true, bool preserveSources = false, bool preserveSourceDetail = false)
     {
         sourceOnlyFailure = !retireQuery; if (retireQuery) { loadedChangeScope = null; eventRetry = null; }
         changesReady = false; ComparisonState = "failed"; changeList.IsEnabled = ChangeNavigationReady; more.IsEnabled = ChangeNavigationReady && nextChanges.Length > 0;
@@ -662,7 +672,7 @@ internal sealed class MainWindow : Window
             foreach (var pane in new[] { Before, After }) if (pane.ReadState is not ("ready" or "absent" or "failed")) pane.Invalidate("failed");
         }
         else if (!preserveSources || Before.ReadState is not ("ready" or "absent") || After.ReadState is not ("ready" or "absent")) { Before.Invalidate("failed"); After.Invalidate("failed"); }
-        ClearDetail(); detail.Text = Copy["failed"]; retryComparison.Visibility = Visibility.Visible; RenderSourceDiff();
+        if (!preserveSourceDetail || !HasIndependentSourceDetail) { ClearDetail(); detail.Text = Copy["failed"]; } retryComparison.Visibility = Visibility.Visible; RenderSourceDiff();
     }
     private long BeginScope() { reads.Cancel(); reads.Dispose(); reads = new(); cellReads.Cancel(); cellReads.Dispose(); cellReads = new(); return ++generation; }
     internal bool IsCurrent(long ticket) => !closed && ticket == generation;
@@ -815,7 +825,7 @@ internal sealed class MainWindow : Window
         {
             if (pane.ReadState != "ready" || pane.FocusedAddress.Length == 0 || !pane.AuthorizesCell(pane.FocusedRow, pane.FocusedColumn)) continue;
             var side = ReferenceEquals(pane, Before) ? "before" : "after"; JsonElement cell = default;
-            var paired = AtSelectedChange && inspectorMode == "raw" && SourceDiffPolicy.WorkbookComponent(detailPayload.Get(side), selectedChange, side, projectId, reportId, out cell) && cell.Get("address").Text() == pane.FocusedAddress;
+            var paired = inspectorMode == "raw" && (PairedSourceCurrent && pairedSource!.ReadPayload(side, detailPayload.Get(side), out cell) || AtSelectedChange && SourceDiffPolicy.WorkbookComponent(detailPayload.Get(side), selectedChange, side, projectId, reportId, out cell)) && cell.Get("address").Text() == pane.FocusedAddress;
             if (!paired && !pane.TryGetFocusedMaterializedCell(out cell)) cell = default;
             var keys = SourceDiffPolicy.WorkbookWarningKeys(cell);
             if (keys.Count > 0) warnings.Add(pane.PresentedSideName + " " + pane.FocusedAddress + ": " + string.Join(", ", keys.Select(key => Copy[key])));
@@ -839,6 +849,7 @@ internal sealed class MainWindow : Window
     }
     private void RenderSourceDiff()
     {
+        if (pairedSource is not null && !PairedSourceCurrent) { ClearDetail(); detail.Text = Copy["selectCell"]; }
         // A single occurrence is source reading, regardless of the previous
         // presentation. Keep renderer, native picker and pager in one state.
         if (singleSource) textView = false;
@@ -875,7 +886,7 @@ internal sealed class MainWindow : Window
         sourceNotice.Text = string.Join(" · ", notice); sourceNotice.ToolTip = string.Join("\n", workbookWarnings.Concat(selectedNotices.Select(SelectedNoticeText))); AutomationProperties.SetHelpText(sourceNotice, sourceNotice.ToolTip.ToString()); sourceNotice.Visibility = notice.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         rawTextPaging.Visibility = textView ? Visibility.Visible : Visibility.Collapsed; firstTextStage.Visibility = nextTextStage.Visibility = IsWorkbook && detailLoader is not null ? Visibility.Visible : Visibility.Collapsed; firstTextStage.IsEnabled = !busy && firstDetail.IsEnabled; nextTextStage.IsEnabled = !busy && nextDetail.IsEnabled;
         if (!textView) return;
-        var identity = JsonSerializer.Serialize(new { projectId, reportId, intervalFrom, intervalTo, net = AtSelectedChange ? (bool?)NetMode : null, IsWorkbook, eventId = AtSelectedChange ? selectedChange.Get("change_id").Text() : "", a = new { Before.RevisionId, Before.PageId, Before.SheetId, Before.FocusedAddress }, b = new { After.RevisionId, After.PageId, After.SheetId, After.FocusedAddress }, detailOffset });
+        var identity = JsonSerializer.Serialize(new { projectId, reportId, intervalFrom, intervalTo, net = pairedSource is not null && PairedSourceCurrent ? null : AtSelectedChange ? (bool?)NetMode : null, IsWorkbook, eventId = pairedSource is not null && PairedSourceCurrent ? "" : AtSelectedChange ? selectedChange.Get("change_id").Text() : "", a = new { Before.RevisionId, Before.PageId, Before.SheetId, Before.FocusedAddress }, b = new { After.RevisionId, After.PageId, After.SheetId, After.FocusedAddress }, detailOffset });
         var keepScroll = identity == unifiedIdentity; var scrollX = keepScroll && unifiedRestorePending ? unifiedRetainedX : unified.HorizontalOffset; var scrollY = keepScroll && unifiedRestorePending ? unifiedRetainedY : unified.VerticalOffset; unifiedIdentity = identity; var rendering = ++unifiedRender; unifiedRestorePending = keepScroll; unifiedRetainedX = scrollX; unifiedRetainedY = scrollY;
         var flow = new FlowDocument { PagePadding = new Thickness(14), FontFamily = unified.FontFamily, FontSize = 13 }; unified.Document = flow;
         if (keepScroll) Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () => { if (textView && rendering == unifiedRender && identity == unifiedIdentity) { unified.UpdateLayout(); unified.ScrollToHorizontalOffset(scrollX); unified.ScrollToVerticalOffset(scrollY); unifiedRestorePending = false; } });
@@ -921,7 +932,7 @@ internal sealed class MainWindow : Window
                 return;
             }
             Add(Copy["textSegmentOnly"], Brushes.DimGray);
-            var a = detailPayload.Get("before").Get("items").Items().FirstOrDefault().Get("before"); var b = detailPayload.Get("after").Get("items").Items().FirstOrDefault().Get("after");
+            var a = PairCell(detailPayload, "before"); var b = PairCell(detailPayload, "after");
             Add(Copy["before"] + " " + a.Get("address").Text() + " → " + Copy["after"] + " " + b.Get("address").Text(), Brushes.DimGray);
             if (sourceDiagnostics.IsChecked == true) foreach (var side in new[] { (Label: Copy["before"], Cell: a), (Label: Copy["after"], Cell: b) }) Add(side.Label + " · " + Copy["cacheState"] + ": " + Copy.CachedResult(side.Cell.Get("cached_result").Text()) + " · " + Copy["cacheFreshness"] + ": " + Copy.CacheFreshness(side.Cell.Get("cache_freshness").Text()) + " · " + Copy["formulaInterpretation"] + ": " + Copy.FormulaInterpretation(side.Cell.Get("formula_interpretation").Text()), Brushes.DimGray);
             var displayed = new WorkbookSourceScope(Before.RevisionId, After.RevisionId, Before.SheetId, After.SheetId, Before.FocusedAddress, After.FocusedAddress);
@@ -1086,12 +1097,16 @@ internal sealed class MainWindow : Window
     private async Task ChangeComparisonMode(bool net)
     {
         if (busy || singleSource || net == NetMode) return;
-        var retainSourceDetail = HasIndependentSourceDetail;
         if (IsWorkbook) workbookNet = net; else { documentNet = net; documentRangeUnavailable = false; } ClearSelectedChange();
         UpdateInterval(); if (reportId.Length == 0) return;
+        await ReloadQueryKeepingSources();
+    }
+    private async Task ReloadQueryKeepingSources()
+    {
+        var retainSourceDetail = HasIndependentSourceDetail;
         var ticket = BeginScope(); InvalidateAuthority(true, preserveSourceDetail: retainSourceDetail);
         try { if (Before.ReadState is "loading" or "failed" or "empty") await Before.Load(ticket, reads.Token); if (!IsCurrent(ticket)) return; if (After.ReadState is "loading" or "failed" or "empty") await After.Load(ticket, reads.Token); if (!IsCurrent(ticket)) return; await LoadChanges(false, ticket, reads.Token); RenderSourceDiff(); }
-        catch (Exception error) { if (IsCurrent(ticket) && !reads.IsCancellationRequested) FailComparison(preserveSources: error is BridgeException { Code: "ENGINE_VERSION_UNAVAILABLE" } && documentRangeUnavailable); throw; }
+        catch (Exception error) { if (IsCurrent(ticket) && !reads.IsCancellationRequested) FailComparison(preserveSources: retainSourceDetail || error is BridgeException { Code: "ENGINE_VERSION_UNAVAILABLE" } && documentRangeUnavailable, preserveSourceDetail: retainSourceDetail); throw; }
     }
     private async Task OpenStoredHistory()
     {
@@ -1135,7 +1150,7 @@ internal sealed class MainWindow : Window
         {
             var args = new Dictionary<string, object?> { ["from_revision_occurrence_id"] = intervalFrom, ["to_revision_occurrence_id"] = intervalTo, ["mode"] = NetMode ? "range_net" : "history", ["limit"] = workbookPageLimitForSmoke ?? 100, ["text_length"] = 256 };
             if (append && nextChanges.Length > 0) args["cursor"] = nextChanges;
-            changeQueryReadsForSmoke++; var result = await Query("list_workbook_changes", args, token); values = result.Get("items").Items(); next = result.Get("next_cursor").Text();
+            changeQueryReadsForSmoke++; var result = await Query("list_workbook_changes", args, token); if (workbookChangesReplyForSmoke is not null) await workbookChangesReplyForSmoke(result, token); values = result.Get("items").Items(); next = result.Get("next_cursor").Text();
         }
         else
         {
@@ -1187,8 +1202,27 @@ internal sealed class MainWindow : Window
             eventBefore = Before.CaptureSelection(); eventAfter = After.CaptureSelection();
             await Before.Load(ticket, token); await After.Load(ticket, token); if (!IsCurrent(ticket) || token.IsCancellationRequested || loadedChangeScope != scope || CurrentChangeScope != scope) return;
             var project = projectId; var report = reportId;
+            if (WorkbookPairSource.TryCreate(project, report, change, before, after, out var physicalOwner))
+            {
+                pairedSource = physicalOwner; var source = physicalOwner!;
+                detailStyle.IsEnabled = false; detailLoader = async (offset, cancel) =>
+                {
+                    async Task<JsonElement> Read(string side, JsonElement absent)
+                    {
+                        var cell = source.Side(side); if (!cell.HasCell) return absent;
+                        var request = new Dictionary<string, object?> { ["revision_occurrence_id"] = cell.Occurrence, ["sheet_id"] = cell.Sheet, ["row"] = cell.Row, ["column"] = cell.Column, ["text_offset"] = offset, ["text_length"] = 4096, ["limit"] = 1 };
+                        var value = await QueryFixed("get_workbook_cell", request, source.Project, source.Report, cancel);
+                        if (!source.ReadCellResponse(side, value, out _)) throw new BridgeException("EVIDENCE_SCOPE", "A source continuation does not match its fixed physical cell."); return value;
+                    }
+                    var a = await Read("before", before); var b = await Read("after", after); return JsonSerializer.SerializeToElement(new { before = a, after = b });
+                };
+                await LoadDetail(0, JsonSerializer.SerializeToElement(new { before, after }));
+            }
+            else
+            {
             detailStyle.IsEnabled = false; detailLoader = async (offset, cancel) => { var request = new Dictionary<string, object?>(args) { ["text_offset"] = offset, ["component"] = "before" }; var a = await QueryFixed("get_workbook_change", request, project, report, cancel); request["component"] = "after"; var b = await QueryFixed("get_workbook_change", request, project, report, cancel); if (!SourceDiffPolicy.WorkbookComponent(a, change, "before", project, report, out _) || !SourceDiffPolicy.WorkbookComponent(b, change, "after", project, report, out _)) throw new BridgeException("EVIDENCE_SCOPE", "Workbook source continuation no longer matches the selected fixed change."); return JsonSerializer.SerializeToElement(new { before = a, after = b }); };
             await LoadDetail(0);
+            }
         }
         else
         {
@@ -1631,13 +1665,13 @@ internal sealed class MainWindow : Window
         ChangeVisibility(inspector: true); await SelectCell(pane, pane.FocusedRow, pane.FocusedColumn);
     }
     private Task<JsonElement> QueryFixed(string name, Dictionary<string, object?> args, string project, string report, CancellationToken token) { args["project_id"] = project; args["report_id"] = report; args["max_output_tokens"] = 8000; return Bridge.Call("workbookQuery", new { name, args }, token); }
-    private void ClearDetail() { ++detailGeneration; cellReads.Cancel(); detailLoader = null; detailPayload = default; documentDetail = default; inspectorMode = "prompt"; detailNext = null; detailOffset = 0; detailCursor = ""; detailItemNext = ""; detailStyle.IsChecked = false; detailStyle.IsEnabled = false; detailRange.Text = ""; detailMetadata.Text = ""; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; }
+    private void ClearDetail() { pairedSource = null; ++detailGeneration; cellReads.Cancel(); detailLoader = null; detailPayload = default; documentDetail = default; inspectorMode = "prompt"; detailNext = null; detailOffset = 0; detailCursor = ""; detailItemNext = ""; detailStyle.IsChecked = false; detailStyle.IsEnabled = false; detailRange.Text = ""; detailMetadata.Text = ""; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; }
     private Task FirstDetail() { detailCursor = ""; return LoadDetail(0); }
     private Task NextDetail() { if (detailNext is { } offset) return LoadDetail(offset); if (detailItemNext.Length > 0) { detailCursor = detailItemNext; return LoadDetail(0); } return Task.CompletedTask; }
-    private async Task LoadDetail(int offset)
+    private async Task LoadDetail(int offset, JsonElement? initialPayload = null)
     {
-        if (detailLoader is not { } loader) return; var sequence = ++detailGeneration; var ticket = generation; cellReads.Cancel(); cellReads.Dispose(); cellReads = new(); var token = cellReads.Token; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; detailPayload = default; documentDetail = default; inspectorMode = "loading"; detailMetadata.Text = ""; detailRange.Text = ""; detail.Text = Copy["loading"]; RenderSourceDiff();
-        try { var value = await loader(offset, token); if (!IsCurrent(ticket) || sequence != detailGeneration || token.IsCancellationRequested) return; detailOffset = offset; detailNext = RawSourcePaging.Next(value, offset); detailItemNext = value.Get("next_cursor").Text(); detailPayload = value; inspectorMode = "raw"; RerenderInspector(); detailMetadata.Text = value.Pretty(); firstDetail.IsEnabled = !busy && (offset > 0 || detailCursor.Length > 0); nextDetail.IsEnabled = !busy && (detailNext is not null || detailItemNext.Length > 0); RenderSourceDiff(); EvidenceReadSettled(); }
+        if (detailLoader is not { } loader) return; var sourceOwner = pairedSource; if (sourceOwner is not null && !PairedSourceCurrent) { ClearDetail(); RenderSourceDiff(); return; } var sequence = ++detailGeneration; var ticket = generation; cellReads.Cancel(); cellReads.Dispose(); cellReads = new(); var token = cellReads.Token; firstDetail.IsEnabled = false; nextDetail.IsEnabled = false; detailPayload = default; documentDetail = default; inspectorMode = "loading"; detailMetadata.Text = ""; detailRange.Text = ""; detail.Text = Copy["loading"]; RenderSourceDiff();
+        try { var value = initialPayload ?? await loader(offset, token); if (!IsCurrent(ticket) || sequence != detailGeneration || token.IsCancellationRequested || sourceOwner is not null && (!ReferenceEquals(sourceOwner, pairedSource) || !PairedSourceCurrent)) return; if (sourceOwner is not null && (!sourceOwner.ReadPayload("before", value.Get("before"), out _) || !sourceOwner.ReadPayload("after", value.Get("after"), out _))) throw new BridgeException("EVIDENCE_SCOPE", "The raw source segment is outside its fixed physical pair."); detailOffset = offset; detailNext = sourceOwner is null ? RawSourcePaging.Next(value, offset) : sourceOwner.NextOffset(value, offset); detailItemNext = value.Get("next_cursor").Text(); detailPayload = value; inspectorMode = "raw"; RerenderInspector(); detailMetadata.Text = value.Pretty(); firstDetail.IsEnabled = !busy && (offset > 0 || detailCursor.Length > 0); nextDetail.IsEnabled = !busy && (detailNext is not null || detailItemNext.Length > 0); RenderSourceDiff(); EvidenceReadSettled(); }
         catch { if (IsCurrent(ticket) && sequence == detailGeneration && !token.IsCancellationRequested) { inspectorMode = "failed"; detail.Text = Copy["failed"]; firstDetail.IsEnabled = true; RenderSourceDiff(); } throw; }
     }
     private void RerenderInspector()
@@ -1660,7 +1694,7 @@ internal sealed class MainWindow : Window
             if (source.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return Copy["missing"];
             return source.Get("address").Text() + "\n\n" + Copy["cached"] + ":\n" + source.Get("value").Text() + "\n\n" + Copy["formula"] + ":\n" + source.Get("formula").Text() + "\n\n" + Copy["number_format"] + ":\n" + source.Get("number_format").Text() + "\n\n" + Copy["cacheFreshness"] + ": " + Copy.CacheFreshness(source.Get("cache_freshness").Text()) + "\n" + Copy["cacheState"] + ": " + Copy.CachedResult(source.Get("cached_result").Text());
         }
-        if (value.Get("before").ValueKind == JsonValueKind.Object) return Copy["before"] + "\n" + Cell(value.Get("before").Get("items").Items().FirstOrDefault().Get("before")) + "\n\n" + Copy["after"] + "\n" + Cell(value.Get("after").Get("items").Items().FirstOrDefault().Get("after"));
+        if (value.Get("before").ValueKind == JsonValueKind.Object) return Copy["before"] + "\n" + Cell(PairCell(value, "before")) + "\n\n" + Copy["after"] + "\n" + Cell(PairCell(value, "after"));
         if (value.Get("component").Text() == "style") return string.Join("\n\n", value.Get("items").Items().Select(item => item.Get("key").Text() + "\n" + item.Get("value").Text()));
         return Cell(value.Get("items").Items().FirstOrDefault());
     }
@@ -1679,7 +1713,7 @@ internal sealed class MainWindow : Window
                 lines.Add(side + (side.Length > 0 ? " · " : "") + Copy[field == "value" ? "cached" : field] + ": [" + start + ", " + end + ") / " + total + " · " + Copy.Code(range.State) + " · " + Copy[range.Valid ? "validSourceRange" : "invalidSourceRange"] + (!range.Valid ? " · " + Copy["invalidSourceSegment"] : ""));
             }
         }
-        if (value.Get("before").ValueKind == JsonValueKind.Object) { Cell(value.Get("before").Get("items").Items().FirstOrDefault().Get("before"), Copy["before"]); Cell(value.Get("after").Get("items").Items().FirstOrDefault().Get("after"), Copy["after"]); }
+        if (value.Get("before").ValueKind == JsonValueKind.Object) { Cell(PairCell(value, "before"), Copy["before"]); Cell(PairCell(value, "after"), Copy["after"]); }
         else if (value.Get("component").Text() == "style") foreach (var item in value.Get("items").Items()) { var observation = SourceTextObservation.ReadSegment(item.Get("value"), item.Get("text_continuations").Get("value")); var range = observation.Range!; lines.Add(item.Get("key").Text() + ": [" + (range.Offset?.ToString(CultureInfo.InvariantCulture) ?? "?") + ", " + (range.Offset is { } offset ? ((long)offset + range.Length).ToString(CultureInfo.InvariantCulture) : "?") + ") / " + (range.Total?.ToString(CultureInfo.InvariantCulture) ?? "?") + " · " + Copy[range.Valid ? "validSourceRange" : "invalidSourceRange"] + (!range.Valid ? " · " + Copy["invalidSourceSegment"] : "")); }
         else Cell(value.Get("items").Items().FirstOrDefault(), "");
         return string.Join("\n", lines);
@@ -2510,21 +2544,121 @@ internal sealed class MainWindow : Window
         }
         finally { Before.CloseCellDetailsForSmoke(); Before.ShowFormulasForSmoke(false); Before.RestoreSelection(originalA); After.RestoreSelection(originalB); await ReloadComparisonCore(true); await Before.GoForSmoke("D4"); Width = width; Height = height; SetLanguage(language); SetLayout(layout); sourceView.SelectedIndex = originalText ? 1 : 0; await Settle(); }
     }
-    internal async Task<object> CheckSource28RawModeContinuationForSmoke()
+    internal async Task<object> CheckPairedRawModeContinuationForSmoke(Func<string, object, Task> observe, Func<string, Task> capture)
+    {
+        if (!IsWorkbook) throw new InvalidOperationException("Paired raw mode qualification requires a workbook.");
+        var originalA = Before.CaptureSelection(); var originalB = After.CaptureSelection(); var from = intervalFrom; var to = intervalTo; var net = NetMode; var language = Copy.Language; var layout = Layout; var previousText = textView; var report = reportId; var reportBytes = currentReport.GetRawText(); var observations = new List<object>();
+        async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        string Text() => new TextRange(unified.Document.ContentStart, unified.Document.ContentEnd).Text;
+        bool Colored() => unified.Document.Blocks.OfType<Paragraph>().Any(item => ReferenceEquals(item.Foreground, Brushes.DarkRed) || ReferenceEquals(item.Foreground, Brushes.DarkGreen));
+        try
+        {
+            await SelectSourcePairForSmoke(0, 1); if (NetMode) await ChangeComparisonMode(false);
+            SetLayout(WorkspaceLayout.Preset("sourceFirst") with { Inspector = true });
+            foreach (var locale in new[] { "en", "ko" })
+            {
+                SetLanguage(locale); if (NetMode) await ChangeComparisonMode(false);
+                var linked = changes.FirstOrDefault(row => row.Value.Get("kind").Text() == "formula" && row.Value.Get("after_address").Text() == "D4") ?? throw new InvalidOperationException("The canonical real moved D3-to-D4 long formula event is absent.");
+                await SelectChange(linked.Value); sourceView.SelectedIndex = 1; await Settle();
+                var initialA = PairCell(detailPayload, "before"); var initialB = PairCell(detailPayload, "after"); var firstNext = detailNext;
+                if (pairedSource is null || !PairedSourceCurrent || !AtSelectedChange || detailPayload.Get("before").Get("revision_occurrence_id").ValueKind == JsonValueKind.String || pairedSource.Before.Address == pairedSource.After.Address || firstNext is not > 0) throw new InvalidOperationException("The paired fixture did not begin with real event-derived moved physical cells and a nonzero continuation.");
+                await NextDetail(); await Settle();
+                var owner = pairedSource; var a = Before.CaptureSelection(); var b = After.CaptureSelection(); var payload = detailPayload.GetRawText(); var technical = detailMetadata.Text; var body = detail.Text; var ranges = detailRange.Text; var offset = detailOffset; var next = detailNext; var loader = detailLoader; var reads = changeQueryReadsForSmoke;
+                if (offset != firstNext || owner is null || !owner.ReadCellResponse("after", detailPayload.Get("after"), out _) || !Text().Contains(Copy["partialSourceSegment"], StringComparison.Ordinal) && !Text().Contains(Copy["alreadyReadSegment"], StringComparison.Ordinal)) throw new InvalidOperationException("The real event reader did not continue through fixed physical cells with typed partial/already-read source ranges.");
+                var hostA = Before.Host; var hostB = After.Host; var rowsA = Before.Cells.ItemsSource; var rowsB = After.Cells.ItemsSource;
+                Before.GridScroll?.ScrollToHorizontalOffset(40); Before.GridScroll?.ScrollToVerticalOffset(3); After.GridScroll?.ScrollToHorizontalOffset(30); After.GridScroll?.ScrollToVerticalOffset(2); detail.ScrollToVerticalOffset(24); unified.ScrollToVerticalOffset(24); await Settle();
+                var viewportA = Before.CaptureGridViewport(); var viewportB = After.CaptureGridViewport(); var rawY = detail.VerticalOffset; var textY = unified.VerticalOffset; var firstEnabled = firstDetail.IsEnabled; var nextEnabled = nextDetail.IsEnabled;
+                object Reading() => new { owner = pairedSource, physical_before = Before.CaptureSelection(), physical_after = After.CaptureSelection(), payload = detailPayload, body = detail.Text, source_ranges = detailRange.Text, offset = detailOffset, next = detailNext, first_enabled = firstDetail.IsEnabled, next_enabled = nextDetail.IsEnabled, raw_reader = new { visible = detail.IsVisible, y = detail.VerticalOffset, extent = detail.ExtentHeight, viewport = detail.ViewportHeight, width = detail.ActualWidth, height = detail.ActualHeight }, text_reader = new { visible = unified.IsVisible, y = unified.VerticalOffset, maximum = Math.Max(0, unified.ExtentHeight - unified.ViewportHeight) }, current_query = CurrentChangeScope, loaded_query = loadedChangeScope, query_rows = changes.Select(row => new { id = row.Id, raw = row.Value }).ToArray(), query_cursor = nextChanges, before_viewport = SourceViewportForSmoke(Before), after_viewport = SourceViewportForSmoke(After), loader_identity = detailLoader is { } currentLoader ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(currentLoader) : 0, first_action = firstDetail.Content, next_action = nextDetail.Content, selected_event_present = selectedChange.ValueKind == JsonValueKind.Object, selected_native_row = (changeList.SelectedItem as ChangeChoice)?.Id };
+                Dictionary<string, bool> Retained(bool queryReady) => new()
+                {
+                    ["fixed_report_bytes"] = reportId == report && currentReport.GetRawText() == reportBytes,
+                    ["physical_before"] = Before.CaptureSelection() == a, ["physical_after"] = After.CaptureSelection() == b, ["same_physical_owner"] = ReferenceEquals(owner, pairedSource) && PairedSourceCurrent,
+                    ["before_native_host"] = ReferenceEquals(hostA, Before.Host), ["after_native_host"] = ReferenceEquals(hostB, After.Host), ["before_native_rows"] = ReferenceEquals(rowsA, Before.Cells.ItemsSource), ["after_native_rows"] = ReferenceEquals(rowsB, After.Cells.ItemsSource),
+                    ["exact_retained_payload"] = detailPayload.GetRawText() == payload, ["exact_retained_technical"] = detailMetadata.Text == technical, ["exact_retained_body"] = detail.Text == body, ["exact_retained_ranges"] = detailRange.Text == ranges, ["same_fixed_source_loader"] = ReferenceEquals(loader, detailLoader),
+                    ["source_offsets_and_actions"] = detailOffset == offset && detailNext == next && firstDetail.IsEnabled == firstEnabled && nextDetail.IsEnabled == nextEnabled,
+                    ["localized_source_actions"] = (firstDetail.Content as string == Copy["firstText"] || firstDetail.Content as string == Copy["firstTextCompact"]) && (nextDetail.Content as string == Copy["nextText"] || nextDetail.Content as string == Copy["nextTextCompact"]) && firstTextStage.Content as string == Copy["firstText"] && nextTextStage.Content as string == Copy["nextText"],
+                    ["raw_reader_viewport"] = detail.IsVisible && Math.Abs(detail.VerticalOffset - Math.Min(rawY, Math.Max(0, detail.ExtentHeight - detail.ViewportHeight))) <= 1,
+                    ["text_reader_viewport"] = unified.IsVisible && Math.Abs(unified.VerticalOffset - Math.Min(textY, Math.Max(0, unified.ExtentHeight - unified.ViewportHeight))) <= 1,
+                    ["before_grid_viewport"] = Before.GridScroll is { } scrollA && Math.Abs(scrollA.HorizontalOffset - Math.Min(viewportA.X, scrollA.ScrollableWidth)) <= 1 && Math.Abs(scrollA.VerticalOffset - Math.Min(viewportA.Y, scrollA.ScrollableHeight)) <= 1,
+                    ["after_grid_viewport"] = After.GridScroll is { } scrollB && Math.Abs(scrollB.HorizontalOffset - Math.Min(viewportB.X, scrollB.ScrollableWidth)) <= 1 && Math.Abs(scrollB.VerticalOffset - Math.Min(viewportB.Y, scrollB.ScrollableHeight)) <= 1,
+                    ["retired_event_and_membership"] = selectedChange.ValueKind == JsonValueKind.Undefined && selectedBefore is null && selectedAfter is null && changeList.SelectedItem is null && !AtSelectedChange,
+                    ["neutral_source_text"] = !Colored() && !Text().Contains(Copy["selectDiffChange"], StringComparison.Ordinal) && Text().Contains(Copy["textSegmentOnly"], StringComparison.Ordinal),
+                    ["query_has_own_state"] = queryReady ? loadedChangeScope == CurrentChangeScope && changesReady && ComparisonState == "ready" : loadedChangeScope is null && !changesReady && ComparisonState == "failed" && retryComparison.IsVisible
+                };
+                var step = 0;
+                foreach (var mode in new[] { true, false })
+                {
+                    await ChangeComparisonMode(mode); await Settle(); step++; var fields = Retained(true); fields["one_actual_mode_query"] = changeQueryReadsForSmoke == reads + step;
+                    var observed = new { language = locale, mode = mode ? "range_net" : "history", reading = Reading(), checks = fields }; await observe("source31-paired-mode-" + locale + "-" + step, observed);
+                    foreach (var field in fields) if (!field.Value) throw new InvalidOperationException("Paired raw mode retention failed: " + field.Key);
+                    if (step == 1) { var file = "source31-paired-raw-mode-retained-" + locale; await capture(file); observations.Add(new { native_capture = file + ".png", language = locale, mode = "range_net", retained_nonzero_offset = detailOffset, next_offset = detailNext, physical_before = a, physical_after = b, current_query = CurrentChangeScope, old_event_authority_retired = true }); }
+                    observations.Add(observed);
+                }
+                var actualReplies = 0; workbookChangesReplyForSmoke = (reply, cancel) => { actualReplies++; if (reply.Get("project_id").Text() != projectId || reply.Get("report_id").Text() != reportId) throw new InvalidOperationException("Mode fault did not follow its actual fixed query response."); throw new IOException("SYNTHETIC native mode query installation failure after real fixed response"); };
+                try { try { await ChangeComparisonMode(true); throw new InvalidOperationException("The controlled actual mode reply did not fail."); } catch (IOException) { } } finally { workbookChangesReplyForSmoke = null; }
+                await Settle(); var failedFields = Retained(false); failedFields["actual_reply_fault_once"] = actualReplies == 1; await observe("source31-paired-mode-query-failed-" + locale, new { reading = Reading(), checks = failedFields }); foreach (var field in failedFields) if (!field.Value) throw new InvalidOperationException("Paired reader query-failure retention failed: " + field.Key);
+                await RetryComparison(); await Settle(); var retryFields = Retained(true); retryFields["failed_mode_retry_only_one_query"] = changeQueryReadsForSmoke == reads + 4; await observe("source31-paired-mode-query-retry-" + locale, new { reading = Reading(), checks = retryFields }); foreach (var field in retryFields) if (!field.Value) throw new InvalidOperationException("Paired reader query-retry retention failed: " + field.Key);
+                await FirstDetail(); var physicalFirstA = PairCell(detailPayload, "before"); var physicalFirstB = PairCell(detailPayload, "after");
+                foreach (var field in new[] { "value", "formula", "number_format" }) if (physicalFirstA.Get(field).GetRawText() != initialA.Get(field).GetRawText() || physicalFirstB.Get(field).GetRawText() != initialB.Get(field).GetRawText()) throw new InvalidOperationException("Independent physical First changed an exact initial source field.");
+                if (detailOffset != 0 || detailNext != firstNext || !nextDetail.IsEnabled || firstDetail.IsEnabled || selectedChange.ValueKind != JsonValueKind.Undefined) throw new InvalidOperationException("Physical First restored event authority or lost its exact Next source route.");
+                await NextDetail(); if (detailOffset != offset || detailPayload.GetRawText() != payload || detailRange.Text != ranges || Colored() || changeQueryReadsForSmoke != reads + 4) throw new InvalidOperationException("Physical Next after both modes/query retry changed exact retained source fragments or reacquired a query/event.");
+            }
+            if (NetMode) await ChangeComparisonMode(false);
+            bool Unavailable(ChangeChoice row) => !SourceDiffPolicy.SheetScoped(row.Value.Get("kind").Text()) && (row.Value.Get("before_address").ValueKind == JsonValueKind.Null ^ row.Value.Get("after_address").ValueKind == JsonValueKind.Null);
+            while (!changes.Any(Unavailable) && nextChanges.Length > 0) await LoadMoreChanges();
+            var unavailable = changes.FirstOrDefault(Unavailable) ?? throw new InvalidOperationException("The real inserted-row cell fixture has no unavailable physical side.");
+            await SelectChange(unavailable.Value); var absentOwner = pairedSource ?? throw new InvalidOperationException("A real one-sided physical cell did not receive typed paired source ownership."); var absentPayload = detailPayload.GetRawText(); var absentA = Before.CaptureSelection(); var absentB = After.CaptureSelection();
+            foreach (var mode in new[] { true, false }) { await ChangeComparisonMode(mode); await Settle(); if (!ReferenceEquals(absentOwner, pairedSource) || !PairedSourceCurrent || detailPayload.GetRawText() != absentPayload || Before.CaptureSelection() != absentA || After.CaptureSelection() != absentB || selectedChange.ValueKind != JsonValueKind.Undefined || Colored() || !detailRange.Text.Contains(Copy["cellNotMaterialized"], StringComparison.Ordinal)) throw new InvalidOperationException("Mode changes replaced a typed unavailable source side with an invented physical observation."); }
+            observations.Add(new { actual_unavailable_side = absentOwner, exact_pair_payload = detailPayload, no_invented_coordinate = !absentOwner.Before.HasCell || !absentOwner.After.HasCell, both_modes_retain_physical_absence = true });
+            return new { cases = observations, provenance = "Canonical actual workbook events and real fixed get_workbook_cell continuation. The query-install fault is explicitly synthetic after an actual fixed query response. Native captures are unmodified original WPF captures; OS input and visual approval are not claimed." };
+        }
+        finally
+        {
+            workbookChangesReplyForSmoke = null; workbookNet = net; Before.RestoreSelection(originalA); After.RestoreSelection(originalB); intervalFrom = from; intervalTo = to; UpdateInterval(); await ReloadComparisonCore(true); await SelectCell(Before, Before.FocusedRow, Before.FocusedColumn); SetLanguage(language); SetLayout(layout); sourceView.SelectedIndex = previousText ? 1 : 0; await Settle();
+            if (reportId != report || currentReport.GetRawText() != reportBytes) throw new InvalidOperationException("Paired-reader QA changed its fixed report.");
+        }
+    }
+    internal async Task<object> CheckSource28RawModeContinuationForSmoke(Func<string, object, Task> observe)
     {
         if (!IsWorkbook || Before.FocusedAddress != "D4" || !HasIndependentSourceDetail) throw new InvalidOperationException("Mode-continuation qualification requires the actual independent D4 reader.");
-        await FirstDetail(); var a = Before.CaptureSelection(); var b = After.CaptureSelection(); var raw = detailPayload.GetRawText(); var metadata = detailMetadata.Text; var body = detail.Text; var loader = detailLoader; var expectedNext = detailNext; var originalNet = NetMode; var from = intervalFrom; var to = intervalTo; var report = reportId; var reportBytes = currentReport.GetRawText(); var reads = changeQueryReadsForSmoke;
-        if (expectedNext is not > 0 || detailOffset != 0 || !nextDetail.IsEnabled) throw new InvalidOperationException("The actual long D4 formula did not expose its real first-to-next source continuation.");
-        var gridA = Before.Cells.ItemsSource; var gridB = After.Cells.ItemsSource; var viewportA = Before.CaptureGridViewport(); var viewportB = After.CaptureGridViewport(); detail.ScrollToVerticalOffset(24); var rawY = detail.VerticalOffset;
-        foreach (var net in new[] { !originalNet, originalNet })
+        var layout = Layout; var observations = new List<object>();
+        async Task Settle() { UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); }
+        try
         {
-            await ChangeComparisonMode(net); UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            if (reportId != report || currentReport.GetRawText() != reportBytes || intervalFrom != from || intervalTo != to || Before.CaptureSelection() != a || After.CaptureSelection() != b || !ReferenceEquals(gridA, Before.Cells.ItemsSource) || !ReferenceEquals(gridB, After.Cells.ItemsSource) || detailPayload.GetRawText() != raw || detailMetadata.Text != metadata || detail.Text != body || !ReferenceEquals(detailLoader, loader) || detailOffset != 0 || detailNext != expectedNext || !nextDetail.IsEnabled || Math.Abs(detail.VerticalOffset - Math.Min(rawY, detail.ExtentHeight - detail.ViewportHeight)) > 1 || selectedChange.ValueKind != JsonValueKind.Undefined) throw new InvalidOperationException("A real mode query changed the independent long raw formula, continuation, reader viewport or physical sources.");
-            foreach (var item in new[] { (Pane: Before, Saved: viewportA), (Pane: After, Saved: viewportB) }) { var scroll = item.Pane.GridScroll!; if (Math.Abs(scroll.HorizontalOffset - Math.Min(item.Saved.X, scroll.ScrollableWidth)) > 1 || Math.Abs(scroll.VerticalOffset - Math.Min(item.Saved.Y, scroll.ScrollableHeight)) > 1) throw new InvalidOperationException("A mode query moved a retained manual native grid viewport."); }
+            // Qualify an actually mounted reader, then settle native scroll
+            // commands before measuring the height/viewport stage baseline.
+            SetLayout(Layout with { Inspector = true }); await FirstDetail(); await Settle();
+            var a = Before.CaptureSelection(); var b = After.CaptureSelection(); var raw = detailPayload.GetRawText(); var metadata = detailMetadata.Text; var body = detail.Text; var loader = detailLoader; var expectedNext = detailNext; var originalNet = NetMode; var from = intervalFrom; var to = intervalTo; var report = reportId; var reportBytes = currentReport.GetRawText(); var reads = changeQueryReadsForSmoke;
+            if (expectedNext is not > 0 || detailOffset != 0 || !nextDetail.IsEnabled || !detail.IsVisible) throw new InvalidOperationException("The actual visible long D4 reader did not expose its first-to-next source continuation.");
+            var gridA = Before.Cells.ItemsSource; var gridB = After.Cells.ItemsSource; var hostA = Before.Host; var hostB = After.Host; var viewportA = Before.CaptureGridViewport(); var viewportB = After.CaptureGridViewport();
+            detail.ScrollToVerticalOffset(24); await Settle(); var rawY = detail.VerticalOffset; var rawX = detail.HorizontalOffset; var firstEnabled = firstDetail.IsEnabled; var nextEnabled = nextDetail.IsEnabled;
+            object Reader() => new { visible = detail.IsVisible, x = detail.HorizontalOffset, y = detail.VerticalOffset, extent_width = detail.ExtentWidth, extent_height = detail.ExtentHeight, viewport_width = detail.ViewportWidth, viewport_height = detail.ViewportHeight, payload = detailPayload, body = detail.Text, technical = detailMetadata.Text, source_ranges = detailRange.Text, offset = detailOffset, next = detailNext, first_enabled = firstDetail.IsEnabled, next_enabled = nextDetail.IsEnabled, physical_before = Before.CaptureSelection(), physical_after = After.CaptureSelection(), query = CurrentChangeScope, loaded_query = loadedChangeScope, query_rows = changes.Select(row => new { id = row.Id, raw = row.Value }).ToArray(), query_cursor = nextChanges, before_viewport = SourceViewportForSmoke(Before), after_viewport = SourceViewportForSmoke(After), loader_identity = detailLoader is { } currentLoader ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(currentLoader) : 0 };
+            var baseline = Reader(); await observe("source31-independent-mode-baseline", new { requested_reader_y = 24, settled_actual_reader_y = rawY, reader = baseline });
+            if (detail.ActualWidth <= 0 || detail.ActualHeight <= 0 || Math.Abs(rawY - Math.Min(24, Math.Max(0, detail.ExtentHeight - detail.ViewportHeight))) > 1) throw new InvalidOperationException("The visible independent raw reader did not settle its requested legal native scroll baseline.");
+            var step = 0;
+            foreach (var net in new[] { !originalNet, originalNet })
+            {
+                await ChangeComparisonMode(net); await Settle(); step++;
+                var fields = new Dictionary<string, bool>
+                {
+                    ["fixed_report_id"] = reportId == report, ["fixed_report_bytes"] = currentReport.GetRawText() == reportBytes, ["query_interval"] = intervalFrom == from && intervalTo == to,
+                    ["query_mode_scope"] = NetMode == net && loadedChangeScope == CurrentChangeScope && changesReady && ComparisonState == "ready" && changeQueryReadsForSmoke == reads + step,
+                    ["before_physical_selection"] = Before.CaptureSelection() == a, ["after_physical_selection"] = After.CaptureSelection() == b,
+                    ["before_native_rows"] = ReferenceEquals(gridA, Before.Cells.ItemsSource), ["after_native_rows"] = ReferenceEquals(gridB, After.Cells.ItemsSource), ["before_native_host"] = ReferenceEquals(hostA, Before.Host), ["after_native_host"] = ReferenceEquals(hostB, After.Host),
+                    ["exact_raw_payload"] = detailPayload.GetRawText() == raw, ["exact_technical_metadata"] = detailMetadata.Text == metadata, ["exact_reader_body"] = detail.Text == body, ["same_source_loader"] = ReferenceEquals(detailLoader, loader),
+                    ["source_offset"] = detailOffset == 0, ["source_next_offset"] = detailNext == expectedNext, ["first_action_state"] = firstDetail.IsEnabled == firstEnabled, ["next_action_state"] = nextDetail.IsEnabled == nextEnabled,
+                    ["reader_vertical_viewport"] = Math.Abs(detail.VerticalOffset - Math.Min(rawY, Math.Max(0, detail.ExtentHeight - detail.ViewportHeight))) <= 1, ["reader_horizontal_viewport"] = Math.Abs(detail.HorizontalOffset - Math.Min(rawX, Math.Max(0, detail.ExtentWidth - detail.ViewportWidth))) <= 1,
+                    ["old_event_authority_retired"] = selectedChange.ValueKind == JsonValueKind.Undefined && selectedBefore is null && selectedAfter is null && changeList.SelectedItem is null
+                };
+                foreach (var item in new[] { (Name: "before", Pane: Before, Saved: viewportA), (Name: "after", Pane: After, Saved: viewportB) }) { var scroll = item.Pane.GridScroll!; fields[item.Name + "_grid_x"] = Math.Abs(scroll.HorizontalOffset - Math.Min(item.Saved.X, scroll.ScrollableWidth)) <= 1; fields[item.Name + "_grid_y"] = Math.Abs(scroll.VerticalOffset - Math.Min(item.Saved.Y, scroll.ScrollableHeight)) <= 1; }
+                var result = new { mode = net ? "range_net" : "history", baseline, current = Reader(), checks = fields }; await observe("source31-independent-mode-" + step, result);
+                foreach (var field in fields) if (!field.Value) throw new InvalidOperationException("Independent raw mode retention failed: " + field.Key); observations.Add(result);
+            }
+            await NextDetail(); var fragment = detailPayload.Get("items").Items().Single().Get("text_continuations").Get("formula");
+            if (detailOffset != expectedNext || fragment.Get("offset").Number() != expectedNext || Before.CaptureSelection() != a || After.CaptureSelection() != b || reportId != report || changeQueryReadsForSmoke != reads + 2) throw new InvalidOperationException("The retained raw Next action after mode changes lost its actual UTF16 continuation or issued another changes query.");
+            await FirstDetail(); return new { physical_before = a, physical_after = b, first_payload = JsonSerializer.Deserialize<JsonElement>(raw), continuation_offset_after_mode = expectedNext, next_fragment_range = fragment, query_reads_for_two_modes_only = changeQueryReadsForSmoke - reads, exact_first_raw_restored = detailPayload.GetRawText() == raw, source_hosts_rows_and_viewports_retained = true, per_mode_observations = observations, scope = "Real independent D4 formula source and actual mode/First/Next handlers; mounted reader and settled native manual scroll; no OS input claim" };
         }
-        await NextDetail(); var fragment = detailPayload.Get("items").Items().Single().Get("text_continuations").Get("formula");
-        if (detailOffset != expectedNext || fragment.Get("offset").Number() != expectedNext || Before.CaptureSelection() != a || After.CaptureSelection() != b || reportId != report || changeQueryReadsForSmoke != reads + 2) throw new InvalidOperationException("The retained raw Next action after mode changes lost its actual UTF16 continuation or issued another changes query.");
-        await FirstDetail(); return new { physical_before = a, physical_after = b, first_payload = JsonSerializer.Deserialize<JsonElement>(raw), continuation_offset_after_mode = expectedNext, next_fragment_range = fragment, query_reads_for_two_modes_only = changeQueryReadsForSmoke - reads, exact_first_raw_restored = detailPayload.GetRawText() == raw, source_hosts_rows_and_viewports_retained = true, scope = "Real D4 formula source and actual mode/First/Next production handlers; no OS input claim" };
+        finally { SetLayout(layout); await Settle(); }
     }
     internal async Task<object> CheckSource27PresentationForSmoke(Func<string, Task> capture, Func<string, object, Task> observe)
     {
