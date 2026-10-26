@@ -34,7 +34,9 @@ struct BridgeError: LocalizedError, Sendable {
 }
 @MainActor func bridgeErrorMessage(_ error: Error) -> UIMessage {
     guard let error=error as? BridgeError else { return .raw(error.localizedDescription) }
-    if let message=error.uiMessage { return message }
+    // These app-generated details share the same guidance/code wrapper as a
+    // backend failure, but keep their typed detail until presentation.
+    if let message=error.uiMessage,error.code != "DOCUMENT_CHANGE_SCOPE",error.code != "HELPER_OUTPUT_LIMIT" { return message }
     let guidance:UIMessage
     switch error.code {
     case "FILE_LIMIT": guidance=UIMessage("doc.error.fileLimit")
@@ -58,7 +60,7 @@ struct BridgeError: LocalizedError, Sendable {
     case "UNKNOWN_QUERY": guidance=UIMessage("doc.error.queryUnavailable")
     default: return UIMessage("doc.error.backendDetail", .verbatim(error.code), .verbatim(error.message))
     }
-    return UIMessage("doc.error.knownBackendDetail",.message(guidance),.verbatim(error.code),.verbatim(error.message))
+    return UIMessage("doc.error.knownBackendDetail",.message(guidance),.verbatim(error.code),.message(error.uiMessage ?? .raw(error.message)))
 }
 // Read-only range/page queries can be superseded by another selection. Each request
 // owns its process so cancelling one query never terminates another query or analysis.
@@ -191,7 +193,7 @@ final class Bridge: @unchecked Sendable {
                     }
                     process.waitUntilExit(); stderrDone.wait()
                     if cancellation?.finish() == true {throw CancellationError()}
-                    if outputExceeded {throw BridgeError(code:"HELPER_OUTPUT_LIMIT",message:"The helper exceeded the native response limit. Read the selected content using bounded MCP tools or export.")}
+                    if outputExceeded {throw BridgeError(code:"HELPER_OUTPUT_LIMIT",message:UIMessage("doc.error.helperOutputLimit"))}
                     if analysis { self.lock.lock(); if self.analysisProcess === process { self.analysisProcess = nil }; self.lock.unlock() }
                     if process.terminationReason == .uncaughtSignal {
                         let requested=self.lock.withLock {self.cancelled}

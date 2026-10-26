@@ -302,7 +302,7 @@ enum ImportIntent {
         do {
             let response=try await task.value
             guard generation==rangeGeneration,pendingRange?.generation==generation else{return}
-            guard response["project_id"].string==project,response["report_id"].string==reportID,!response["query_id"].string.isEmpty else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Document list does not match its fixed report")}
+            guard response["project_id"].string==project,response["report_id"].string==reportID,!response["query_id"].string.isEmpty else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:UIMessage("doc.error.documentListScope"))}
             changes=response["items"].array;nextChangesCursor=response["next_cursor"].string;changesTotalCount=response["total_count"].int;loadedChangesKey=key;loadedChangesQueryID=response["query_id"].string
             if !changes.contains(where:{$0["change_id"].string==selectedChangeID}) {
                 selectedChangeID=changes.first(where:{$0["change_id"].string==preferredChange})?["change_id"].string ?? changes.first(where:{$0["kind"].string=="text_modified"})?["change_id"].string ?? changes.first?["change_id"].string ?? ""
@@ -336,9 +336,9 @@ enum ImportIntent {
         do {
             let response=try await bridge.call("changes",args,owner:owner)
             guard generation==rangeGeneration,key==changeQueryKey,loadedChangesKey==key,nextChangesCursor==cursor else{return}
-            guard response["query_id"].string==queryID,response["project_id"].string==projectID,response["report_id"].string==report["report_id"].string else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Document continuation does not match the fixed query")}
+            guard response["query_id"].string==queryID,response["project_id"].string==projectID,response["report_id"].string==report["report_id"].string else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:UIMessage("doc.error.documentContinuationScope"))}
             let rows=response["items"].array,ids=Set(changes.map{$0["change_id"].string})
-            guard !rows.contains(where:{ids.contains($0["change_id"].string)}) else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Document continuation repeated an installed event")}
+            guard !rows.contains(where:{ids.contains($0["change_id"].string)}) else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:UIMessage("doc.error.documentContinuationRepeated"))}
             changes.append(contentsOf:rows);nextChangesCursor=response["next_cursor"].string;changesTotalCount=response["total_count"].int;loadingMoreChanges=false
         }catch {guard generation==rangeGeneration,key==changeQueryKey else{return};loadingMoreChanges=false;changesPaginationFailureMessage=bridgeErrorMessage(error)}
     }
@@ -356,18 +356,18 @@ enum ImportIntent {
                 try Task.checkCancellation();args["detail_offset"]=offset
                 let part=try await bridge.call("changeDetail",args)
                 let chunk=part["json_chunk"].string,total=part["json_length"].int,currentDigest=part["content_sha256"].string
-                guard part["project_id"].string==project,part["report_id"].string==reportID,part["query_id"].string==queryID,part["change_id"].string==id,part["detail_offset"].int==offset,total>=0,total<=128*1024*1024,!chunk.isEmpty,chunk.utf16.count<=128*1024,!currentDigest.isEmpty,(length<0 || length==total),(digest.isEmpty || digest==currentDigest) else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Selected document detail does not match its immutable request")}
+                guard part["project_id"].string==project,part["report_id"].string==reportID,part["query_id"].string==queryID,part["change_id"].string==id,part["detail_offset"].int==offset,total>=0,total<=128*1024*1024,!chunk.isEmpty,chunk.utf16.count<=128*1024,!currentDigest.isEmpty,(length<0 || length==total),(digest.isEmpty || digest==currentDigest) else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:UIMessage("doc.error.documentDetailScope"))}
                 length=total;digest=currentDigest
                 let encoded=Data(chunk.utf8);bytes.append(encoded);hasher.update(data:encoded);let end=offset+chunk.utf16.count
-                if part["next_detail_offset"].isNull {guard end==total else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Incomplete selected document detail")};break}
-                guard part["next_detail_offset"].int==end,end>offset,end<total else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Invalid selected document detail continuation")};offset=end
+                if part["next_detail_offset"].isNull {guard end==total else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:UIMessage("doc.error.documentDetailIncomplete"))};break}
+                guard part["next_detail_offset"].int==end,end>offset,end<total else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:UIMessage("doc.error.documentDetailContinuation"))};offset=end
             }
             try Task.checkCancellation()
             let actual=hasher.finalize().map{String(format:"%02x",$0)}.joined()
-            guard actual==digest else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Selected document detail hash mismatch")}
+            guard actual==digest else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:UIMessage("doc.error.documentDetailHash"))}
             let value=JSON(try JSONSerialization.jsonObject(with:bytes))
             try Task.checkCancellation()
-            guard value["change_id"].string==id,value["report_id"].string==reportID,value["from_occurrence"].string==expectedFrom,value["to_occurrence"].string==expectedTo else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Selected document detail identity mismatch")};return value
+            guard value["change_id"].string==id,value["report_id"].string==reportID,value["from_occurrence"].string==expectedFrom,value["to_occurrence"].string==expectedTo else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:UIMessage("doc.error.documentDetailIdentity"))};return value
         };pendingDetail=task
         do {let value=try await task.value;guard generation==detailGeneration,intent==navigationIntentGeneration,key==changeQueryKey,selectedChangeID==id else{return};selectedChangeDetail=value;selectedDetailKey=key;loadingChangeDetail=false;pendingDetail=nil;selectEvidence()}
         catch {guard generation==detailGeneration,intent==navigationIntentGeneration,key==changeQueryKey,selectedChangeID==id else{return};loadingChangeDetail=false;pendingDetail=nil;selectedChangeDetail=JSON();evidenceWarningMessage=bridgeErrorMessage(error);throw error}

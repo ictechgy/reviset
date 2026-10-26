@@ -52,3 +52,12 @@ test('native detail continuation never publishes an offset inside a boundary sur
   assert.ok(second.json_chunk.startsWith('😀'));assert.equal(second.next_detail_offset,null);
   assert.deepEqual(JSON.parse(first.json_chunk+second.json_chunk),change);
 });
+
+
+test('native document continuations reject nonobject JSON with typed scope guidance',()=>{
+  const query=service(fixture(1));
+  for(const value of [null,false,0,1,'text',[],{}, {query_id:'foreign',offset:0}]){
+    const cursor=Buffer.from(JSON.stringify(value)).toString('base64url');
+    assert.throws(()=>nativeChangePage(query,{...scope,cursor}),{code:'DOCUMENT_CURSOR_SCOPE'},JSON.stringify(value));
+  }
+});

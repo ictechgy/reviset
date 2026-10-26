@@ -39,7 +39,7 @@ jobs:
           $fixtures = Join-Path $PWD 'tests/fixtures/generated/windows'
           New-Item -ItemType Directory -Force $output | Out-Null
           $app = Join-Path $PWD 'release/Reviset-Windows-x64/Reviset.exe'
-          $probe = Start-Process -FilePath $app -ArgumentList @('--smoke', ('"' + $output + '"'), '--fixtures', ('"' + $fixtures + '"')) -PassThru
+          $probe = Start-Process -FilePath $app -ArgumentList @('--smoke', ('"' + $output + '"'), '--fixtures', ('"' + $fixtures + '"')) -RedirectStandardError (Join-Path $output 'smoke-stderr.log') -PassThru
           $watch = [System.Diagnostics.Stopwatch]::StartNew()
           $lastProgressSeconds = 0.0
           $lastSequence = -1
@@ -48,7 +48,20 @@ jobs:
             $progressPath = Join-Path $output 'progress.json'
             if (Test-Path $progressPath) {
               try {
-                $observed = Get-Content $progressPath -Raw | ConvertFrom-Json
+                # Share deletion so the app can atomically replace this small
+                # immutable snapshot while the watchdog holds its read handle.
+                $stream = $null
+                $reader = $null
+                try {
+                  $sharing = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+                  $stream = [IO.FileStream]::new($progressPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, $sharing)
+                  if ($stream.Length -gt 131072) { throw 'Native smoke progress record exceeds 128 KiB' }
+                  $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
+                  $observed = $reader.ReadToEnd() | ConvertFrom-Json
+                } finally {
+                  if ($null -ne $reader) { $reader.Dispose() }
+                  elseif ($null -ne $stream) { $stream.Dispose() }
+                }
                 if ($observed.sequence -gt $lastSequence) {
                   $progress = $observed
                   $lastSequence = $observed.sequence

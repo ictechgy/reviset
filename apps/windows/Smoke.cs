@@ -28,6 +28,7 @@ internal static class Smoke
         private string? failure;
         private double stageStarted;
         private long sequence;
+        private int telemetryWarnings;
         internal void Stage(string name, [CallerLineNumber] int sourceLine = 0) { stage = name; stageStarted = clock.Elapsed.TotalSeconds; Publish("stage", sourceLine); }
         internal void Add(string check, [CallerLineNumber] int sourceLine = 0) { Checks.Add(check); lastCheck = check; Publish("check", sourceLine); }
         internal void Failed(Exception error, [CallerLineNumber] int sourceLine = 0) { status = "failed"; var text = error.ToString(); failure = text.Length > 16384 ? text[..16384] : text; Publish("exception", sourceLine); }
@@ -38,9 +39,31 @@ internal static class Smoke
             // Always keep one atomically replaced latest record, even after the
             // capped journal is full. These records contain QA labels only.
             var path = Path.Combine(output, "progress.json"); var temporary = path + ".tmp";
-            File.WriteAllText(temporary, json + "\n"); File.Move(temporary, path, true);
+            WriteTelemetry("latest", () => { File.WriteAllText(temporary, json + "\n"); File.Move(temporary, path, true); });
             var journal = Path.Combine(output, "progress-events.jsonl");
-            if (sequence <= 1024 && (!File.Exists(journal) || new FileInfo(journal).Length + System.Text.Encoding.UTF8.GetByteCount(json) + 1 <= 512 * 1024)) File.AppendAllText(journal, json + "\n");
+            WriteTelemetry("journal", () => { if (sequence <= 1024 && (!File.Exists(journal) || new FileInfo(journal).Length + System.Text.Encoding.UTF8.GetByteCount(json) + 1 <= 512 * 1024)) File.AppendAllText(journal, json + "\n"); });
+        }
+        private void WriteTelemetry(string channel, Action write)
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                try { write(); return; }
+                catch (IOException error) when ((error.HResult & 0xffff) is 32 or 33)
+                {
+                    // An external reader or scanner may briefly hold a handle.
+                    // Retry only sharing/lock violations; this diagnostic must
+                    // not replace a real native assertion or its result file.
+                    if (attempt < 2) { Thread.Sleep(10 * (attempt + 1)); continue; }
+                    if (++telemetryWarnings <= 8) Console.Error.WriteLine($"SMOKE_TELEMETRY_DROPPED channel={channel} sequence={sequence} win32={error.HResult & 0xffff} attempts=3");
+                    else if (telemetryWarnings == 9) Console.Error.WriteLine("SMOKE_TELEMETRY_DROPPED further sharing warnings suppressed");
+                    return;
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    Console.Error.WriteLine($"SMOKE_TELEMETRY_IO_FAILURE channel={channel} sequence={sequence} hresult=0x{error.HResult:X8}");
+                    throw;
+                }
+            }
         }
     }
     internal static async Task<bool> Run(MainWindow window, BridgeClient bridge, string output, string? fixtures)

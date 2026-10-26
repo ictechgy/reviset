@@ -30,7 +30,7 @@ export function nativeChangePage(query:QueryService,raw:unknown){
   const parsed=nativeChangePageSchema.parse(raw),{cursor,limit,...rest}=parsed,args=scope(rest),query_id=hash(['native-document-changes-v1',args]);
   const all=rows(query,args);let offset=0;
   if(cursor){let value:any;try{value=JSON.parse(Buffer.from(cursor,'base64url').toString('utf8'));}catch{throw new DocverError('DOCUMENT_CURSOR_SCOPE','Invalid document continuation');}
-    if(value.query_id!==query_id||!Number.isSafeInteger(value.offset)||value.offset<0||value.offset>all.length)throw new DocverError('DOCUMENT_CURSOR_SCOPE','Continuation does not match the fixed document selection');offset=value.offset;}
+    if(value===null||typeof value!=='object'||Array.isArray(value)||value.query_id!==query_id||!Number.isSafeInteger(value.offset)||value.offset<0||value.offset>all.length)throw new DocverError('DOCUMENT_CURSOR_SCOPE','Continuation does not match the fixed document selection');offset=value.offset;}
   const items:ReturnType<typeof summary>[]=[];let end=offset,bytes=4096;
   while(end<all.length&&items.length<limit){const item=summary(all[end]),size=Buffer.byteLength(JSON.stringify(item));if(bytes+size>NATIVE_CHANGE_PAGE_BYTES){if(!items.length)throw new DocverError('DOCUMENT_CHANGE_LIMIT','A document summary exceeds the native response limit; use bounded MCP tools or export');break;}items.push(item);bytes+=size;end++;}
   const next_cursor=end<all.length?Buffer.from(JSON.stringify({query_id,offset:end})).toString('base64url'):null;
