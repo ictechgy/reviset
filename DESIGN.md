@@ -262,6 +262,7 @@ Actual48fivecaptureClaude review confirms largerdocumentcanvas/pageedges/compact
 
 ## Bounded native reading and recovery — 2026-10-26
 
+- Native report outlines retain revision gap counts without copying per-shape gap evidence. Bundle mapping preserves complete distinct warning captions, including reused-PDF cautions, while full evidence stays in the fixed report and MCP/export.
 - Document navigation uses fixed-report pages of at most 100 preview rows and 1 MiB. Both native clients retain a continuation bound to query endpoints, mode, kind and full-text filter. The Mac changes panel shows loaded/total counts, continuation/retry and selected-detail loading state. Search reads complete original before/after text, including text outside previews.
 - A selected event is read independently in bounded JSON chunks, with length/hash/scope verification before installing full evidence. A stale request must not move either source. The single selected-event cap is 128 Mi UTF-16 units; larger detail has an explicit bounded MCP/export recovery message. One-shot helpers reload immutable reports per page/chunk; this limits transport size, not all processing memory or I/O.
 - Mac cell details offer Show full style. Property cursors and UTF-16 value segments are independent, fixed to project/report/occurrence/sheet/physical cell; source replacement cancels old reads. Missing and empty style observations remain distinct.

@@ -29,7 +29,7 @@ jobs:
       - name: Prepare patched PDF.js runtime
         run: node --import tsx -e "import {preparePdfjs} from './scripts/prepare-pdfjs.ts'; await preparePdfjs();"
       - name: Portable engine and Windows boundary tests
-        run: node --import tsx --test --test-concurrency=1 tests/integration/windows-runtime.test.ts tests/integration/native-page-preview.test.ts tests/integration/document-input-boundaries.test.ts tests/integration/workbook-core.test.ts tests/integration/workbook-ingest.test.ts tests/integration/localized-export.test.ts
+        run: node --import tsx --test --test-concurrency=1 tests/integration/windows-runtime.test.ts tests/integration/native-page-preview.test.ts tests/integration/native-document-projection.test.ts tests/integration/document-input-boundaries.test.ts tests/integration/workbook-core.test.ts tests/integration/workbook-ingest.test.ts tests/integration/localized-export.test.ts
       - run: node --import tsx scripts/generate-windows-fixtures.ts
       - run: npm run windows:build
       - name: Actual packaged WPF app and backend smoke

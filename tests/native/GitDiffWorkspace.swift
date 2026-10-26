@@ -656,12 +656,38 @@ private struct SoleWorkbookImportProbeHarness:View {
         preferences.selection = .en
         let exact="é / e\u{301}\r\n"+String(repeating:"raw reason\n",count:80),readerHost=NSHostingView(rootView:NativeVerbatimReasonReader(text:exact).environment(\.locale,Locale(identifier:"en_US")))
         let readerWindow=NSWindow(contentRect:NSRect(x:0,y:0,width:700,height:200),styleMask:[.titled],backing:.buffered,defer:false);readerWindow.isReleasedWhenClosed=false;readerWindow.contentView=readerHost;readerWindow.orderFront(nil)
-        preferences.selection = .en;try await Task.sleep(nanoseconds:100_000_000)
+        defer{readerWindow.close()}
+        var readerReadiness:[[String:Any]]=[]
+        func awaitReader(_ stage:String,ready:()->Bool)async throws {
+            // NSHostingView materializes its representable during a scheduled
+            // update. An elapsed 100 ms does not establish that this owned view
+            // has mounted, especially when other native windows are rendering.
+            let started=DispatchTime.now().uptimeNanoseconds,initiallyReady=ready()
+            var attempts=0
+            repeat {
+                attempts += 1
+                readerHost.layoutSubtreeIfNeeded();readerHost.displayIfNeeded()
+                if ready() {
+                    readerReadiness.append(["stage":stage,"initially_ready":initiallyReady,"layout_attempts":attempts,"elapsed_ms":Double(DispatchTime.now().uptimeNanoseconds-started)/1_000_000,"owned_window":readerHost.window === readerWindow])
+                    return
+                }
+                try await Task.sleep(nanoseconds:10_000_000)
+            } while DispatchTime.now().uptimeNanoseconds-started<3_000_000_000
+            let tree=views(readerHost).prefix(64).map{view in ["type":String(describing:type(of:view)),"identifier":view.identifier?.rawValue ?? "","frame":NSStringFromRect(view.frame),"bounds":NSStringFromRect(view.bounds),"hidden":view.isHiddenOrHasHiddenAncestor,"owned_window":view.window === readerWindow] as [String:Any]}
+            let diagnostic:[String:Any]=["stage":stage,"layout_attempts":attempts,"window_visible":readerWindow.isVisible,"host_owns_window":readerHost.window === readerWindow,"tree":tree]
+            FileHandle.standardError.write(try JSONSerialization.data(withJSONObject:diagnostic,options:[.sortedKeys]));FileHandle.standardError.write(Data("\n".utf8))
+            throw NSError(domain:"ReviewReasonReaderReadinessTimeout-"+stage,code:1)
+        }
+        preferences.selection = .en
+        try await awaitReader("initial-mount") {
+            views(readerHost).compactMap{$0 as? NSTextView}.contains{reader in reader.window === readerWindow && reader.enclosingScrollView?.documentView === reader && reader.accessibilityIdentifier()=="Reviset.document.rawContextReasons" && reader.string.utf16.elementsEqual(exact.utf16) && reader.accessibilityLabel()==L("git.rawReasons")}
+        }
         guard let reader=views(readerHost).compactMap({$0 as? NSTextView}).first,let scroll=reader.enclosingScrollView else{throw NSError(domain:"ReviewReasonReaderMissing",code:1)}
         try require(reader.accessibilityLabel()==L("git.rawReasons"),"InitialReasonReaderLabelNotEnglish")
         reader.setSelectedRange(NSRange(location:7,length:11));scroll.contentView.scroll(to:NSPoint(x:0,y:80));scroll.reflectScrolledClipView(scroll.contentView)
         let selected=reader.selectedRange(),origin=scroll.contentView.bounds.origin
-        preferences.selection = .ko;readerHost.rootView=NativeVerbatimReasonReader(text:exact).environment(\.locale,Locale(identifier:"ko_KR"));try await Task.sleep(nanoseconds:100_000_000)
+        preferences.selection = .ko;readerHost.rootView=NativeVerbatimReasonReader(text:exact).environment(\.locale,Locale(identifier:"ko_KR"))
+        try await awaitReader("locale-update") {reader.accessibilityLabel()==L("git.rawReasons") && reader.string.utf16.elementsEqual(exact.utf16) && views(readerHost).contains{$0===reader}}
         try require(reader.accessibilityLabel()==L("git.rawReasons") && reader.string.utf16.elementsEqual(exact.utf16) && reader.selectedRange()==selected && scroll.contentView.bounds.origin==origin && views(readerHost).contains{$0===reader},"ReasonAccessibilityLocaleRefreshChangedRawSelectionOrViewport");readerWindow.close()
         guard let originalRoot=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] else{throw NSError(domain:"IsolatedGuidanceLibraryMissing",code:1)}
         setenv("DOCVER_TEST_USER_DATA",originalRoot+"/sole-document-guidance",1);let model=AppModel();setenv("DOCVER_TEST_USER_DATA",originalRoot,1)
@@ -704,7 +730,7 @@ private struct SoleWorkbookImportProbeHarness:View {
         try require(documentGapScope(gap)=="revision-physical · page-scoped" && documentGapScope(JSON(["page_id":"page-only"]))=="page-only" && selectedCoverageCaption(gap).contains("table boundaries"),"CoverageFeatureOrRevisionIdentityLost")
         let change=JSON(["before":"Revenue 120\nsource", "after":"Revenue 100\nsource"]),raw=try JSON(["before":"Revenue 120\nsource", "after":"Revenue 100\nsource"]).data()
         try require(documentChangeExcerpt(change).contains("Revenue 120") && documentChangeExcerpt(change).contains(" → Revenue 100") && (try change.data())==raw,"NavigationExcerptOmittedBeforeOrChangedCanonicalSource")
-        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["scope":"actual native sole-document CTA, reason-reader accessibility label/selection/scroll; typed report/caption/provenance projections; synthetic fixed data, no submitted import or OS gestures","sole_document":observations,"reason_reader_locale_identity_selection_scroll_retained":true,"coverage_revision_feature_and_metadata_timestamp_verified":true,"before_after_navigation_excerpt_without_source_mutation":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("review13-proof.json"))}
+        if let root=ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"] {try JSONSerialization.data(withJSONObject:["scope":"actual native sole-document CTA, reason-reader accessibility label/selection/scroll; typed report/caption/provenance projections; synthetic fixed data, no submitted import or OS gestures","sole_document":observations,"reason_reader_readiness":readerReadiness,"reason_reader_locale_identity_selection_scroll_retained":true,"coverage_revision_feature_and_metadata_timestamp_verified":true,"before_after_navigation_excerpt_without_source_mutation":true],options:[.sortedKeys]).write(to:URL(fileURLWithPath:root).appendingPathComponent("review13-proof.json"))}
     }
 
     @MainActor static func checkOneSidedSheetReads()async throws {
