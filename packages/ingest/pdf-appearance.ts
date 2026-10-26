@@ -20,7 +20,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     // Coverage gaps alone are not an annotation veto for OCR, comparison or
     // stored-report diff consumers. Reserve at most one full-page carrier when
     // limits prevent inspecting source annotations, even if evidence is spent.
-    if(!annotationCarriersPrepared&&annotations.length){annotationEvidence=annotationBudgetCarrier(assetId,page.pageNumber,sourceElementCount);addGap(...annotationEvidence.gaps);}
+    if(!annotationCarriersPrepared&&annotations.length){annotationEvidence=annotationBudgetCarrier(assetId,page.pageNumber,sourceElementCount,reason);addGap(...annotationEvidence.gaps);}
     for(let i=0;i<sourceElementCount;i++){const e=elements[i],geometry=hasUnverifiedPdfGeometry(e);e.visibility='unverified';e.visibility_spans=[];e.visibility_evidence=geometry?[{method:PDF_GEOMETRY_UNVERIFIED,bbox:e.bbox,assessment:'inferred',coverage:0}]:[];delete e.table;}
     elements.splice(sourceElementCount);elements.push(...annotationEvidence.elements);
     addGap({feature:'pdf_visibility',reason});return {regions:[],gaps};
@@ -132,6 +132,31 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
   for(const [order,run] of textRuns)addRegion({bbox:run.bbox,order,kind:'text',opaque:false,axisAligned:false,...(run.complete&&!unknownRuns.has(order)&&run.ink?{ink:run.ink}:{})});
   const [px,py]=nativePixelMargins(viewport),paddedInk=(b:Box)=>box(b[0]-px,b[1]-py,b[2]+2*px,b[3]+2*py);
   const regionInk=new Map(regions.filter(r=>r.ink).map(r=>[r,paddedInk(r.ink!)]));
+  // A fixed grid only narrows the existing exact overlap tests. Index BOTH
+  // metric footprints and padded qualified ink, including overhangs. Retain
+  // original region order because successive paints can change an assessment.
+  // Broad regions occupy one shared list, never 4,096 copies per region.
+  const cells=64,regionBuckets=new Map<number,number[]>(),broadRegions:number[]=[];
+  const cellRange=(b:Box)=>[Math.max(0,Math.min(cells-1,Math.floor(b[0]*cells))),Math.max(0,Math.min(cells-1,Math.floor(b[1]*cells))),Math.max(0,Math.min(cells-1,Math.floor((b[0]+b[2])*cells))),Math.max(0,Math.min(cells-1,Math.floor((b[1]+b[3])*cells)))];
+  for(let index=0;index<regions.length;index++){
+    const r=regions[index],ink=regionInk.get(r),range=cellRange(ink?envelope(r.bbox,ink):r.bbox),[x0,y0,x1,y1]=range,count=(x1-x0+1)*(y1-y0+1);
+    spend('work',1+(count>32?1:count));
+    if(count>32){broadRegions.push(index);continue;}
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const key=y*cells+x,bucket=regionBuckets.get(key);if(bucket)bucket.push(index);else regionBuckets.set(key,[index]);}
+  }
+  const nearbyRegions=(bounds:Box):Region[]=>{
+    const [x0,y0,x1,y1]=cellRange(bounds);spend('work',(x1-x0+1)*(y1-y0+1));
+    let entries=broadRegions.length;
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)entries+=regionBuckets.get(y*cells+x)?.length??0;
+    // Reserve duplicate traversal, de-duplication, sorting and result storage
+    // BEFORE allocating candidates; dense overlap still exhausts page work.
+    spend('work',entries*(3+Math.ceil(Math.log2(entries+1))));
+    const selected=new Set(broadRegions);
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)for(const index of regionBuckets.get(y*cells+x)??[])selected.add(index);
+    return [...selected].sort((a,b)=>a-b).map(index=>regions[index]);
+  };
+  const strikeLines=regions.filter(r=>r.kind==='line'&&r.opaque&&r.axisAligned);
+  const annotationWork=annotations.reduce((n:number,a:any)=>n+1+(a.quadPoints?.length??0),0);
   const verticalBuckets=new Map<number,Region[]>(),connectedCache=new Map<Region,boolean>();
   for(const v of regions.filter(v=>v.kind==='line'&&v.bbox[2]<0.002&&v.bbox[3]>0.02)){const key=Math.floor(v.bbox[0]*100);const bucket=verticalBuckets.get(key);if(bucket)bucket.push(v);else verticalBuckets.set(key,[v]);}
   function connectedLine(r:Region):boolean{if(connectedCache.has(r))return connectedCache.get(r)!;const lineY=r.bbox[1]+r.bbox[3]/2;let connected=false;
@@ -145,38 +170,45 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
   // Correlate operator-derived glyphs with textContent only after geometry has been computed.
   let cursor=0;
   const stream:{char:string;glyph:(typeof glyphs)[number]}[]=[];for(const glyph of glyphs)for(let i=0;i<glyph.text.length;i++){spend('work');const char=glyph.text[i];if(!/\s/u.test(char))stream.push({char,glyph});}const source=stream.map(v=>v.char).join('');
+  const findText=(target:string,start=0)=>{
+    // Each native search is bounded by the admitted 500K page characters.
+    // Charge the prefix actually traversed, rather than the entire remaining
+    // page for every short consecutive run. Charge before slicing matches.
+    const found=source.indexOf(target,start);
+    spend('work',4*(found<0?Math.max(0,source.length-start):found-start+target.length));
+    return found;
+  };
   for(const e of elements){
     const geometryUnverified=hasUnverifiedPdfGeometry(e);
     e.visibility='unverified';e.visibility_evidence=geometryUnverified?[{method:PDF_GEOMETRY_UNVERIFIED,bbox:e.bbox,assessment:'inferred',coverage:0}]:[];e.visibility_spans=[];
-    spend('work',e.text.length+4*Math.max(0,source.length-cursor));
+    spend('work',e.text.length);
     const evidenceKeys=new Map(e.visibility_evidence.map((v,i)=>[v.method+JSON.stringify(v.bbox),i]));
     const addEvidence=(method:string,bbox:Box,assessment:'observed'|'inferred',coverage:number)=>{const key=method+JSON.stringify(bbox),index=evidenceKeys.get(key);if(index!==undefined){const previous=e.visibility_evidence![index];previous.assessment=assessment;previous.coverage=coverage;return;}spend('evidence');evidenceKeys.set(key,e.visibility_evidence!.length);e.visibility_evidence!.push({method,bbox,assessment,coverage});};
-    const target=compact(e.text),index=source.indexOf(target,cursor);
+    const target=compact(e.text),index=target?findText(target,cursor):-1;
+    spend('work',4*target.length);
     const correlated=target&&index>=0?stream.slice(index,index+target.length):[];
     // Uniform explicit modes 3/7 do not paint text. A unique complete textual
     // match proves this independently of metrics, color or clipping geometry.
     const nonpainting=target&&correlated.length===target.length&&correlated.every(v=>v.glyph.nonpainting_mode);
-    if(nonpainting)spend('work',2*source.length);
-    if(nonpainting&&source.indexOf(target)===index&&source.indexOf(target,index+1)<0){
+    if(nonpainting&&findText(target)===index&&findText(target,index+1)<0){
       cursor=index+target.length;e.visibility='hidden_render_mode';addEvidence('explicit_nonpainting_text_mode',box(0,0,0,0),'observed',0);
       if(geometryUnverified)addGap({feature:'pdf_visibility',reason:PDF_GEOMETRY_UNVERIFIED});continue;
     }
     if(geometryUnverified){if(target&&index>=0)cursor=index+target.length;addGap({feature:'pdf_visibility',reason:PDF_GEOMETRY_UNVERIFIED});continue;}
     if(!target||index<0){addEvidence('glyph_text_correlation_unresolved',e.bbox,'inferred',0);addGap({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
-    const selected=[...new Set(stream.slice(index,index+target.length).map(v=>v.glyph))];cursor=index+target.length;
+    const selected=[...new Set(correlated.map(v=>v.glyph))];cursor=index+target.length;
     if(!selected.every(g=>g.reliable)||selected.some(g=>overlap(g.bbox,e.bbox)<=0)){addEvidence('glyph_geometry_or_paint_state_unresolved',e.bbox,'inferred',0);addGap({feature:'pdf_visibility',reason:'visibility_requires_review:unverified'});continue;}
-    // Reserve the complete correlation/overlap upper bound before building any
-    // per-glyph evidence. This closes the glyph × paint-region amplification.
-    const annotationWork=annotations.reduce((n:number,a:any)=>n+1+(a.quadPoints?.length??0),0);
-    spend('work',selected.length*(2*regions.length+annotationWork+1)+regions.length);
+    // Annotation/line loops remain explicitly bounded. Spatial candidates
+    // reserve their complete traversal/sort bound before per-glyph evidence.
+    spend('work',selected.length*(annotationWork+1)+strikeLines.length);
     for(const g of selected){
       let state=g.hidden?'hidden_render_mode':'visible',assessment:'observed'|'inferred'=g.hidden?'observed':'inferred';
       if(g.clip_ink)addEvidence('loaded_glyph_outline_inside_rect_clip',g.clip_ink,'inferred',1);
       const footprint=g.clip_ink??g.bbox;
-      let background='#ffffff';for(const r of regions)if(r.kind==='fill'&&r.opaque&&r.axisAligned&&r.order<g.order&&area(footprint)>0&&overlap(footprint,r.bbox)/area(footprint)>=0.95)background=r.color??'#ffffff';
+      const targetInk=g.reliable&&g.paint_ink?paddedInk(g.paint_ink):undefined,candidates=nearbyRegions(targetInk?envelope(footprint,targetInk):footprint);
+      let background='#ffffff';for(const r of candidates)if(r.kind==='fill'&&r.opaque&&r.axisAligned&&r.order<g.order&&area(footprint)>0&&overlap(footprint,r.bbox)/area(footprint)>=0.95)background=r.color??'#ffffff';
       if(g.color!=='unknown'&&background!=='unknown'&&g.color===background){state='uncertain';addEvidence('text_color_matches_background',g.bbox,'inferred',1);}
-      const targetInk=g.reliable&&g.paint_ink?paddedInk(g.paint_ink):undefined;
-      for(const r of regions){
+      for(const r of candidates){
         if(r.order<=g.order)continue;
         const coverage=coverageOf(footprint,r.bbox);
         // A decimal point can occupy less than 5% of its font-metric box.
@@ -225,7 +257,8 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     else if(states.some(s=>s.includes('occluded')))e.visibility='partially_occluded';
     else if(states.some(s=>s.includes('struck')))e.visibility='partially_struck_through';
     const order=selected[0]?.order??Infinity;
-    for(const r of regions.filter(r=>r.kind==='line'&&r.opaque&&r.order>order&&r.axisAligned)){
+    for(const r of strikeLines){
+      if(r.order<=order)continue;
       if(strikeCandidate(r,e)&&e.visibility==='visible'){e.visibility='struck_inferred';addEvidence('flattened_non_grid_strike_candidate',r.bbox,'inferred',Math.min(1,r.bbox[2]/e.bbox[2]));}
     }
     if(!['visible','struck_through','hidden_render_mode'].includes(e.visibility))addGap({feature:'pdf_visibility',reason:'visibility_requires_review:'+e.visibility});

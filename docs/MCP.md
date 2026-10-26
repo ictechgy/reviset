@@ -2,7 +2,7 @@
 
 앱의 새 이름은 **Reviset / 리비셋**이다. 새 설정의 서버 키와 MCP 서버명은 `reviset`이며, 기존 고정 인용의 `docver://` URI와 저장소는 유지한다. 앱을 전환하면 아래의 플랫폼별 메뉴에서 설정을 다시 복사한다. [리네이밍과 호환성](RENAMING.md).
 
-MCP는 앱이 분석해 저장한 고정 보고서를 로컬에서 읽는다. 문서 구조·원문·변경·근거·판독 한계는 공통 `QueryService`를 사용하며 CLI에서도 같은 조회를 실행할 수 있다. MCP API 버전은 `0.5.0-mcp.2`이다. 새 문서 분석은 schema `0.4.0`과 engine `0.4.0-native.bundle.56`, 스프레드시트는 별도 schema `workbook.1`과 engine `workbook.1.1`을 사용한다. 과거 고정 보고서는 그 보고서의 원래 engine ID를 유지한다. 새 조회 기능이 과거 원문이나 변경 ID를 다시 작성하지 않는다.
+MCP는 앱이 분석해 저장한 고정 보고서를 로컬에서 읽는다. 문서 구조·원문·변경·근거·판독 한계는 공통 `QueryService`를 사용하며 CLI에서도 같은 조회를 실행할 수 있다. MCP API 버전은 `0.5.0-mcp.2`이다. 새 문서 분석은 schema `0.4.0`과 engine `0.4.0-native.bundle.57`, 스프레드시트는 별도 schema `workbook.1`과 engine `workbook.1.1`을 사용한다. 과거 고정 보고서는 그 보고서의 원래 engine ID를 유지한다. 새 조회 기능이 과거 원문이나 변경 ID를 다시 작성하지 않는다.
 
 macOS의 **AI tools and export / AI 도구 연결 및 내보내기**, Windows의 **Project → AI tools · copy MCP config / 프로젝트 → AI 도구 연결 · MCP 설정 복사**에서 해당 앱과 프로젝트에 맞는 MCP 설정을 복사한다. Windows 파일 내보내기는 별도 **Project → Export… / 프로젝트 → 내보내기…** 메뉴다. 앱을 옮기면 설정도 다시 복사한다. 서버는 명시한 프로젝트만 공개하며 파일 쓰기·재분석·임의 경로 읽기·네트워크 가져오기·모델 호출을 제공하지 않는다.
 

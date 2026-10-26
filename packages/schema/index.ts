@@ -5,7 +5,7 @@ export {normalize,comparisonRegions} from './page-similarity.js';
 
 export const SCHEMA_VERSION = '0.4.0';
 const StoredSchemaVersion=z.enum(['0.1.0','0.2.0','0.3.0','0.4.0']);
-export const ENGINE_VERSION = '0.4.0-native.bundle.56';
+export const ENGINE_VERSION = '0.4.0-native.bundle.57';
 export const MAX_INPUT_BYTES=512*1024*1024;
 export const MAX_PPTX_EXPANDED_BYTES=512*1024*1024;
 export const MAX_PPTX_PART_BYTES=64*1024*1024;
@@ -157,13 +157,13 @@ export const Report = z.object({ schema_version: StoredSchemaVersion, engine_ver
       if(!basic)return false;
       if(appearance.association==='inferred')return !directives.has(page.page_id)&&revision.bundle_mapping.some(m=>m.source_page_id===page.page_id&&m.rendered_page_id===reference!.page_id&&m.association!=='human_confirmed'&&!m.decision_id)&&!page.hidden&&['qualified-full-bundle-v1','bundle-reference-v2'].includes(revision.reference_appearance_policy??'');
       const active=directives.get(page.page_id),decision=active?.decision;
-      return revision.bundle_mapping.some(m=>m.source_page_id===page.page_id&&m.rendered_page_id===reference!.page_id&&m.association==='human_confirmed'&&m.decision_id===appearance.decision_id)&&r.schema_version==='0.4.0'&&['0.4.0-native.bundle.53','0.4.0-native.bundle.54','0.4.0-native.bundle.55',ENGINE_VERSION].includes(r.engine_version)&&revision.reference_appearance_policy==='bundle-reference-v2'&&active?.action==='link'&&active.rendered_page_id===reference!.page_id&&decision?.decision_id===appearance.decision_id&&decision.reason===appearance.reason&&decision.source_asset_id===page.asset_id&&decision.rendered_asset_id===appearance.asset_id&&decision.revision_occurrence_id===revision.revision_occurrence_id;
+      return revision.bundle_mapping.some(m=>m.source_page_id===page.page_id&&m.rendered_page_id===reference!.page_id&&m.association==='human_confirmed'&&m.decision_id===appearance.decision_id)&&r.schema_version==='0.4.0'&&['0.4.0-native.bundle.53','0.4.0-native.bundle.54','0.4.0-native.bundle.55','0.4.0-native.bundle.56',ENGINE_VERSION].includes(r.engine_version)&&revision.reference_appearance_policy==='bundle-reference-v2'&&active?.action==='link'&&active.rendered_page_id===reference!.page_id&&decision?.decision_id===appearance.decision_id&&decision.reason===appearance.reason&&decision.source_asset_id===page.asset_id&&decision.rendered_asset_id===appearance.asset_id&&decision.revision_occurrence_id===revision.revision_occurrence_id;
     });
   });},'Reference appearance must preserve a qualified PDF observation in the same revision').refine(r=>{
     const sources=new Map<string,string>();
     for(const revision of r.revisions)for(const page of revision.pages){const appearance=page.appearance;if(!appearance||appearance.association==='human_confirmed')continue;const source=sources.get(appearance.asset_id);if(source&&source!==page.asset_id)return false;sources.set(appearance.asset_id,page.asset_id);}
     return true;
-  },'A reference PDF cannot qualify against different PPTX source assets').refine(r=>!(r.bundle_decisions?.length)||r.schema_version==='0.4.0'&&['0.4.0-native.bundle.53','0.4.0-native.bundle.54','0.4.0-native.bundle.55',ENGINE_VERSION].includes(r.engine_version)&&validBundleDecisionLog(r.revisions,r.bundle_decisions),'Bundle decision history must preserve source scope, identity, order and displaced human provenance').refine(r=>{
+  },'A reference PDF cannot qualify against different PPTX source assets').refine(r=>!(r.bundle_decisions?.length)||r.schema_version==='0.4.0'&&['0.4.0-native.bundle.53','0.4.0-native.bundle.54','0.4.0-native.bundle.55','0.4.0-native.bundle.56',ENGINE_VERSION].includes(r.engine_version)&&validBundleDecisionLog(r.revisions,r.bundle_decisions),'Bundle decision history must preserve source scope, identity, order and displaced human provenance').refine(r=>{
     const state=bundleDirectiveState(r.bundle_decisions??[]),replayed=replayBundleMappings(r.revisions,r.bundle_decisions??[]),affected=new Set((r.bundle_decisions??[]).map(d=>d.revision_occurrence_id));
     if(!replayed)return false;
     const sourceRevision=new Map(r.revisions.flatMap(revision=>revision.pages.map(page=>[page.page_id,revision.revision_occurrence_id] as const))),expectedByRevision=new Map<string,z.infer<typeof BundlePriorPair>[]>();
@@ -178,7 +178,7 @@ export const Report = z.object({ schema_version: StoredSchemaVersion, engine_ver
       const active=state.get(pair.source_page_id);
       const source=revision.pages.find(p=>p.page_id===pair.source_page_id),target=revision.pages.find(p=>p.page_id===pair.rendered_page_id),display=source?.appearance;
       const displayValid=display?.association==='human_confirmed'&&display.decision_id===pair.decision_id||!display&&target?.source_transform.length!==6&&source?.coverage_gaps.some(g=>g.reason==='manual_reference_transform_unavailable');
-      return !!displayValid&&r.schema_version==='0.4.0'&&['0.4.0-native.bundle.53','0.4.0-native.bundle.54','0.4.0-native.bundle.55',ENGINE_VERSION].includes(r.engine_version)&&active?.action==='link'&&active.rendered_page_id===pair.rendered_page_id&&active.decision.decision_id===pair.decision_id&&active.decision.revision_occurrence_id===revision.revision_occurrence_id;
+      return !!displayValid&&r.schema_version==='0.4.0'&&['0.4.0-native.bundle.53','0.4.0-native.bundle.54','0.4.0-native.bundle.55','0.4.0-native.bundle.56',ENGINE_VERSION].includes(r.engine_version)&&active?.action==='link'&&active.rendered_page_id===pair.rendered_page_id&&active.decision.decision_id===pair.decision_id&&active.decision.revision_occurrence_id===revision.revision_occurrence_id;
       });
     });
   },'Human bundle mappings require their active same-revision decision');

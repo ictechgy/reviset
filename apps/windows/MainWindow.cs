@@ -148,6 +148,8 @@ internal sealed class MainWindow : Window
     private string inspectorMode = "prompt";
     private bool changesReady;
     private sealed record ChangeQueryScope(bool Workbook, string Project, string Report, string From, string To, bool Net);
+    private sealed record DocumentDetailTransportForSmoke(ChangeQueryScope Scope, string QueryId, string Mode, string ChangeId, Func<int, CancellationToken, Task<JsonElement>> Read);
+    private DocumentDetailTransportForSmoke? documentDetailTransportForSmoke;
     private sealed record InitialFocusIntent(ChangeQueryScope Scope, long Generation);
     private bool HasIndependentSourceDetail => IsWorkbook && inspectorMode == "raw" && detailPayload.ValueKind == JsonValueKind.Object && detailLoader is not null && (singleCellSource is { } single ? SingleSourceCurrent && detailCellRead is { } read && single.ReadResponse(read, detailPayload, out _) : PairedSourceCurrent && pairedSource!.ReadPayload("before", detailPayload.Get("before"), out _) && pairedSource.ReadPayload("after", detailPayload.Get("after"), out _));
     private ChangeQueryScope? loadedChangeScope;
@@ -1285,23 +1287,32 @@ internal sealed class MainWindow : Window
         var revisions = currentReport.Get("revisions").Items(); var from = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == scope.From); var to = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == scope.To);
         return ReadDocumentChangeDetail(scope, row, documentChangesQueryId, SourceDiff.DocumentQueryMode(from, to, scope.Net), token);
     }
-    private async Task<JsonElement> ReadDocumentChangeDetail(ChangeQueryScope scope, JsonElement row, string queryId, string mode, CancellationToken token)
+    private Task<JsonElement> ReadDocumentChangeDetail(ChangeQueryScope scope, JsonElement row, string queryId, string mode, CancellationToken token)
     {
-        var id = row.Get("change_id").Text(); var offset = 0; var length = -1; var digest = ""; var serialized = new StringBuilder();
+        // Capture the immutable request on the dispatcher. Chunk assembly,
+        // hashing and JSON parsing belong entirely to this cancellable worker.
+        var bridge = Bridge; var id = row.Get("change_id").Text(); var expectedFrom = row.Get("from_occurrence").Text(); var expectedTo = row.Get("to_occurrence").Text();
+        var control = documentDetailTransportForSmoke;
+        var controlledRead = control is not null && control.Scope == scope && control.QueryId == queryId && control.Mode == mode && control.ChangeId == id ? control.Read : null;
+        return Task.Run(async () => {
+        var offset = 0; var length = -1; var digest = ""; using var serialized = new MemoryStream(); using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         while (true) {
             token.ThrowIfCancellationRequested();
-            var part = await Bridge.Call("changeDetail", new { project_id = scope.Project, report_id = scope.Report, from = scope.From, to = scope.To, mode, query_id = queryId, change_id = id, detail_offset = offset }, token);
+            var part = controlledRead is null
+                ? await bridge.Call("changeDetail", new { project_id = scope.Project, report_id = scope.Report, from = scope.From, to = scope.To, mode, query_id = queryId, change_id = id, detail_offset = offset }, token).ConfigureAwait(false)
+                : await controlledRead(offset, token).ConfigureAwait(false);
             var text = part.Get("json_chunk").Text(); var total = part.Get("json_length").Number(); var checksum = part.Get("content_sha256").Text();
             if (part.Get("project_id").Text() != scope.Project || part.Get("report_id").Text() != scope.Report || part.Get("query_id").Text() != queryId || part.Get("change_id").Text() != id || part.Get("detail_offset").Number() != offset || total < 0 || total > 128 * 1024 * 1024 || total % 1 != 0 || text.Length == 0 || text.Length > 128 * 1024 || checksum.Length != 64 || length >= 0 && total != length || digest.Length > 0 && checksum != digest) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document detail does not match its immutable request.");
-            length = (int)total; digest = checksum; serialized.Append(text); var end = offset + text.Length;
+            length = (int)total; digest = checksum; var encoded = Encoding.UTF8.GetBytes(text); serialized.Write(encoded); hasher.AppendData(encoded); var end = offset + text.Length;
             if (part.Get("next_detail_offset").ValueKind == JsonValueKind.Null) { if (end != length) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document detail is incomplete."); break; }
             if (part.Get("next_detail_offset").Number() != end || end <= offset || end >= length) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Invalid document detail continuation."); offset = end;
         }
-        token.ThrowIfCancellationRequested(); var bytes = Encoding.UTF8.GetBytes(serialized.ToString());
-        if (!Convert.ToHexString(SHA256.HashData(bytes)).Equals(digest, StringComparison.OrdinalIgnoreCase)) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document detail hash mismatch.");
-        using var parsed = JsonDocument.Parse(bytes); var value = parsed.RootElement.Clone();
-        if (value.Get("report_id").Text() != scope.Report || value.Get("change_id").Text() != id || value.Get("from_occurrence").Text() != row.Get("from_occurrence").Text() || value.Get("to_occurrence").Text() != row.Get("to_occurrence").Text()) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document event identity mismatch.");
+        token.ThrowIfCancellationRequested();
+        if (!Convert.ToHexString(hasher.GetHashAndReset()).Equals(digest, StringComparison.OrdinalIgnoreCase)) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document detail hash mismatch.");
+        using var parsed = JsonDocument.Parse(serialized.GetBuffer().AsMemory(0, checked((int)serialized.Length))); var value = parsed.RootElement.Clone(); token.ThrowIfCancellationRequested();
+        if (value.Get("report_id").Text() != scope.Report || value.Get("change_id").Text() != id || value.Get("from_occurrence").Text() != expectedFrom || value.Get("to_occurrence").Text() != expectedTo) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document event identity mismatch.");
         return value;
+        }, token);
     }
     private bool EligibleInitialPhysicalChange(JsonElement change)
     {
@@ -2304,7 +2315,17 @@ internal sealed class MainWindow : Window
         var to = revisions.Skip(fromIndex + 1).Take(toIndex - fromIndex).FirstOrDefault(value => value.Get("pages").Items().Count >= 2);
         var manualPage = from.Get("pages").Items().Skip(1).FirstOrDefault(); var targetPage = to.Get("pages").Items().FirstOrDefault(); var manualAfterPage = to.Get("pages").Items().Skip(1).FirstOrDefault(); if (manualPage.ValueKind != JsonValueKind.Object || manualAfterPage.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("The retained query needs two real PDF occurrences with distinct second pages.");
         var fields = rows.First().Value.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value); fields["change_id"] = "SYNTHETIC_pending_sparse_caption"; fields["kind"] = "coverage_gap"; fields["project_id"] = project; fields["report_id"] = report; fields["from_occurrence"] = intervalFrom; fields["to_occurrence"] = to.Get("revision_occurrence_id").Text(); fields["before"] = null; fields["after"] = null; fields["description"] = "SYNTHETIC native pending-caption QA row; not a stored engine event"; fields["evidence"] = new[] { new { revision_occurrence_id = to.Get("revision_occurrence_id").Text(), page_id = targetPage.Get("page_id").Text(), page = targetPage.Get("page").Number(), asset_id = targetPage.Get("asset_id").Text() } };
+        foreach (var key in new[] { "summary_preview", "detail_required", "before_length", "after_length", "evidence_count", "coverage_gap_count" }) fields.Remove(key);
+        var fullEvent = JsonSerializer.SerializeToElement(fields); var serializedEvent = fullEvent.GetRawText(); var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(serializedEvent))).ToLowerInvariant();
+        fields["summary_preview"] = true; fields["detail_required"] = true;
         var value = JsonSerializer.SerializeToElement(fields); var qa = new ChangeChoice(value.Get("change_id").Text(), ChangeCaption(value), value, Copy["rawChangeDescription"]); Task selecting = Task.CompletedTask; Task manualAfter = Task.CompletedTask; TaskCompletionSource? entered = null; TaskCompletionSource? release = null; var manualEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var manualRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var originalTransport = documentDetailTransportForSmoke; var queryId = documentChangesQueryId; var detailReads = 0; var detailContinuations = 0; var corruptDigest = 0;
+        Task<JsonElement> SyntheticDetail(int offset, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested(); Interlocked.Increment(ref detailReads); if (offset > 0) Interlocked.Increment(ref detailContinuations);
+            var end = Math.Min(serializedEvent.Length, offset + 128); if (end < serializedEvent.Length && char.IsHighSurrogate(serializedEvent[end - 1]) && char.IsLowSurrogate(serializedEvent[end])) end--;
+            return Task.FromResult(JsonSerializer.SerializeToElement(new { project_id = project, report_id = report, query_id = queryId, change_id = qa.Id, detail_offset = offset, json_length = serializedEvent.Length, content_sha256 = Volatile.Read(ref corruptDigest) == 0 ? checksum : new string('0', 64), json_chunk = serializedEvent[offset..end], next_detail_offset = end < serializedEvent.Length ? (int?)end : null }));
+        }
         void Frozen()
         {
             if (projectId != project || reportId != report || CurrentChangeScope != scope || loadedChangeScope != scope || nextChanges != cursor || changeQueryReadsForSmoke != queryReads || currentReport.GetRawText() != reportBytes || changes.Count != rows.Length + 1 || !rows.SequenceEqual(changes.Where(row => !ReferenceEquals(row, qa))) || !rowBytes.SequenceEqual(changes.Where(row => !ReferenceEquals(row, qa)).Select(row => row.Value.GetRawText()))) throw new InvalidOperationException("Pending-caption QA changed the canonical query, row objects/cursor or report bytes.");
@@ -2325,6 +2346,14 @@ internal sealed class MainWindow : Window
         }
         try
         {
+            // Only this explicitly synthetic row owns the controlled transport.
+            // It still passes through the production chunk/scope/hash decoder;
+            // physical page previews continue to use the real bundled engine.
+            documentDetailTransportForSmoke = new(scope, queryId, SourceDiff.DocumentQueryMode(fromIndex, toIndex, scope.Net), qa.Id, SyntheticDetail);
+            var digestRejected = false; Volatile.Write(ref corruptDigest, 1);
+            try { await ReadDocumentChangeDetail(scope, qa.Value, reads.Token); } catch (BridgeException error) when (error.Code == "DOCUMENT_CHANGE_SCOPE") { digestRejected = true; } finally { Volatile.Write(ref corruptDigest, 0); }
+            var decoded = await ReadDocumentChangeDetail(scope, qa.Value, reads.Token);
+            if (!digestRejected || decoded.GetRawText() != serializedEvent || Volatile.Read(ref detailContinuations) == 0) throw new InvalidOperationException("The synthetic sparse detail did not exercise full chunk verification and reject its deliberately invalid checksum.");
             binding = true; changes.Add(qa); binding = false; sourceView.SelectedIndex = 0;
             Start(false); await entered!.Task.WaitAsync(TimeSpan.FromSeconds(10));
             foreach (var locale in new[] { "en", "ko" }) { SetLanguage(locale); Pending(); }
@@ -2347,10 +2376,11 @@ internal sealed class MainWindow : Window
             foreach (var locale in new[] { "en", "ko" }) { SetLanguage(locale); NeutralUnownedBefore(); if (selectedChange.ValueKind != JsonValueKind.Undefined) throw new InvalidOperationException("Source-generation expiry installed a stale selected event."); }
             release!.TrySetResult(); try { await selecting; } catch (OperationCanceledException) { } await ReloadSourceOnly();
             foreach (var locale in new[] { "en", "ko" }) { SetLanguage(locale); NeutralUnownedBefore(); if (ComparisonState != "ready" || After.PageId != targetPage.Get("page_id").Text() || After.ReadState != "ready") throw new InvalidOperationException("Source-only recovery after generation expiry changed its exact target page or neutral untouched before reading."); }
-            return new { scope = "Explicit synthetic scoped UI row injected only during isolated native QA; actual SelectChange and real after-page preview reads/controlled holds; not a stored canonical engine event", pending_en_ko_before_missing_is_neutral_without_selected_authority = true, actual_after_response_completion_fault_has_failed_fallback_and_exact_retry = true, manual_page2_survives_source_generation_cancellation = true, manual_after_page2_pending_and_settled_untouched_before_is_neutral_en_ko = true, expired_generation_intent_is_neutral_before_and_after_source_only_recovery_en_ko = true, query_read_delta = changeQueryReadsForSmoke - queryReads, report_and_canonical_rows_unchanged = true };
+            return new { scope = "Explicit synthetic scoped UI row and owned detail chunks only during isolated native QA; production full-detail decoder, actual SelectChange and real after-page preview reads/controlled holds; not a stored canonical engine event", synthetic_detail = new { query_id = queryId, change_id = qa.Id, utf16_length = serializedEvent.Length, reads = Volatile.Read(ref detailReads), continuations = Volatile.Read(ref detailContinuations), exact_full_event_verified = true, invalid_checksum_rejected = digestRejected }, pending_en_ko_before_missing_is_neutral_without_selected_authority = true, actual_after_response_completion_fault_has_failed_fallback_and_exact_retry = true, manual_page2_survives_source_generation_cancellation = true, manual_after_page2_pending_and_settled_untouched_before_is_neutral_en_ko = true, expired_generation_intent_is_neutral_before_and_after_source_only_recovery_en_ko = true, query_read_delta = changeQueryReadsForSmoke - queryReads, report_and_canonical_rows_unchanged = true };
         }
         finally
         {
+            documentDetailTransportForSmoke = originalTransport;
             After.PageBeforeInstallForSmoke = null; release?.TrySetResult(); manualRelease.TrySetResult(); BeginScope(); try { await Task.WhenAll(selecting, manualAfter); } catch (Exception error) when (error is IOException or OperationCanceledException) { }
             ClearSelectedChange(); binding = true; changes.Remove(qa); changeList.SelectedItem = selectedRow; binding = false; Before.RestoreSelection(paneA); After.RestoreSelection(paneB); await ReloadSourceOnly(); selectedChange = originalChange; selectedBefore = anchorA; selectedAfter = anchorB; documentDetail = originalDetail; inspectorMode = originalInspector; detailMetadata.Text = originalMetadata; RerenderInspector(); SetLanguage(language); sourceView.SelectedIndex = oldText ? 1 : 0; RenderSourceDiff();
             if (!rows.SequenceEqual(changes) || !ReferenceEquals(changeList.SelectedItem, selectedRow) || nextChanges != cursor || changeQueryReadsForSmoke != queryReads || currentReport.GetRawText() != reportBytes || Before.CaptureSelection() != paneA || After.CaptureSelection() != paneB) throw new InvalidOperationException("Pending-caption QA did not restore exact original native sources and canonical loaded query.");

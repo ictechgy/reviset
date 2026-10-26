@@ -23,8 +23,8 @@ function fixture():ReportData{
 }
 const service=(r:ReportData)=>new QueryService({} as Store,new Set([r.project_id]),()=>r);
 
-test('stored engine55 reports retain exact range event IDs and detail under engine56',()=>{
-  const archived=Report.parse({...fixture(),engine_version:'0.4.0-native.bundle.55'});
+for(const storedEngine of ['0.4.0-native.bundle.55','0.4.0-native.bundle.56'])test('stored '+storedEngine+' reports retain exact range event IDs and detail under engine57',()=>{
+  const archived=Report.parse({...fixture(),engine_version:storedEngine});
   const original=canonical(archived),args={project_id:archived.project_id,report_id:archived.report_id,from:'occ_a',to:'occ_c',mode:'range_net' as const};
   const old=service(archived).changeSet(args),current=service({...archived,engine_version:ENGINE_VERSION}).changeSet(args);
   assert.ok(old.length>0);

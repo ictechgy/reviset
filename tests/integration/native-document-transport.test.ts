@@ -37,3 +37,18 @@ test('selected native detail recovers every UTF16 unit and all evidence; full-te
   // A stored intermediate event belongs to history a->c, but never to b->c.
   const newer=nativeChangePage(query,{...scope,from:'occ_b'});assert.equal(newer.total_count,0);assert.throws(()=>nativeChangeDetail(query,{...scope,from:'occ_b',query_id:newer.query_id,change_id:change.change_id}),{code:'DOCUMENT_CHANGE_SCOPE'});
 });
+
+test('native detail continuation never publishes an offset inside a boundary surrogate pair',()=>{
+  const report=fixture(1),change=report.changes[0];
+  change.before='';change.after=null;change.evidence=[];change.coverage_gaps=[];change.lineage.reasons=[];
+  const empty=JSON.stringify(change),marker='"before":"',start=empty.indexOf(marker)+marker.length;
+  assert.ok(start>=marker.length);
+  change.before='a'.repeat(NATIVE_CHANGE_DETAIL_CHARS-start-1)+'😀 tail';
+  const query=service(report),page=nativeChangePage(query,scope),args={...scope,query_id:page.query_id,change_id:change.change_id};
+  const first=nativeChangeDetail(query,args);
+  assert.equal(first.next_detail_offset,NATIVE_CHANGE_DETAIL_CHARS-1);
+  assert.throws(()=>nativeChangeDetail(query,{...args,detail_offset:NATIVE_CHANGE_DETAIL_CHARS}),{code:'DOCUMENT_CHANGE_SCOPE'});
+  const second=nativeChangeDetail(query,{...args,detail_offset:first.next_detail_offset!});
+  assert.ok(second.json_chunk.startsWith('😀'));assert.equal(second.next_detail_offset,null);
+  assert.deepEqual(JSON.parse(first.json_chunk+second.json_chunk),change);
+});

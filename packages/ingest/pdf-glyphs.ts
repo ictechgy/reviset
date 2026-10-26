@@ -3,12 +3,15 @@ import { OPS, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, type Box } from '../schema/index.js';
 import {pdfFontMetrics} from './pdf-text-geometry.js';
 export interface PaintedGlyph {text:string;bbox:Box;order:number;hidden:boolean;nonpainting_mode:boolean;reliable:boolean;run:number;color:string;clip_ink?:Box;paint_ink?:Box;geometry_unverified?:boolean}
-export const PDF_APPEARANCE_BUDGET_POLICY='bounded-page-document-appearance-v1';
+export const PDF_APPEARANCE_BUDGET_POLICY='bounded-page-document-appearance-v2';
 // These budgets cover our analysis after PDF.js decoding. Visibility is withheld
 // when any budget is exhausted; the original text observations remain intact.
 export const PDF_APPEARANCE_LIMITS=Object.freeze({
   page:Object.freeze({work:8_000_000,glyphs:100_000,characters:500_000,regions:50_000,evidence:25_000}),
-  document:Object.freeze({work:128_000_000,glyphs:2_000_000,characters:10_000_000,regions:1_000_000,evidence:500_000}),
+  // The calibrated 1,000-page case has 200 runs × 15 glyphs per page,
+  // retaining 3M glyph spans. Keep explicit 4M output/glyph bounds and the
+  // original 128M work bound; spatial admission avoids quadratic scanning.
+  document:Object.freeze({work:128_000_000,glyphs:4_000_000,characters:10_000_000,regions:1_000_000,evidence:4_000_000}),
 });
 type AppearanceResource=keyof typeof PDF_APPEARANCE_LIMITS.page;
 export class PdfAppearanceBudgetExceeded extends Error {}
