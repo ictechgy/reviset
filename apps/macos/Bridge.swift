@@ -47,11 +47,11 @@ struct BridgeError: LocalizedError, Sendable {
     case "ASSET_CORRUPT", "DRAFT_UNREADABLE", "WORKBOOK_DRAFT_UNREADABLE", "WORKBOOK_INDEX_CORRUPT", "WORKBOOK_REPORT_CORRUPT", "WORKBOOK_RUN_CORRUPT": guidance=UIMessage("doc.error.savedDataUnreadable")
     case "PROJECT_NOT_FOUND", "WORKBOOK_PROJECT_NOT_FOUND", "WORKBOOK_REPORT_NOT_FOUND", "MAPPING_NOT_FOUND", "PAGE_NOT_FOUND": guidance=UIMessage("doc.error.savedDataMissing")
     case "STALE_REPORT", "STALE_RUN": guidance=UIMessage("doc.error.stateChanged")
-    case "INVALID_BUNDLE", "INVALID_ORDER", "UNSUPPORTED_FORMAT", "WORKBOOK_FORMAT", "WORKBOOK_RANGE_OVERLAP": guidance=UIMessage("doc.error.inputStructure")
+    case "INVALID_BUNDLE", "INVALID_ORDER", "UNSUPPORTED_FORMAT", "WORKBOOK_FORMAT", "WORKBOOK_RANGE_OVERLAP", "INVALID_PPTX_SLIDE_REFERENCE", "INVALID_PPTX_RELATIONSHIP": guidance=UIMessage("doc.error.inputStructure")
     case "INVALID_RUN", "STAGED_ID", "PROJECT_SCOPE", "WORKBOOK_CHANGE_SCOPE", "WORKBOOK_CURSOR_SCOPE", "WORKBOOK_RANGE_REQUIRED", "WORKBOOK_RANGE_SCOPE", "WORKBOOK_REVISION_SCOPE", "WORKBOOK_RUN_SCOPE", "WORKBOOK_SHEET_SCOPE": guidance=UIMessage("doc.error.selectionScope")
     case "PENDING_BUNDLE_DECISIONS", "PENDING_MAPPING_DECISIONS", "REORDER_CONFIRMATION_REQUIRED": guidance=UIMessage("doc.error.reviewRequired")
     case "READ_ONLY": guidance=UIMessage("doc.error.readOnlyOperation")
-    case "WORKBOOK_DIFF_LIMIT", "WORKBOOK_EXPORT_LIMIT", "WORKBOOK_INPUT_LIMIT", "WORKBOOK_REPORT_LIMIT", "WORKBOOK_RANGE_LIMIT": guidance=UIMessage("doc.error.operationLimit")
+    case "WORKBOOK_DIFF_LIMIT", "WORKBOOK_EXPORT_LIMIT", "WORKBOOK_INPUT_LIMIT", "WORKBOOK_REPORT_LIMIT", "WORKBOOK_RANGE_LIMIT", "PDF_TEXT_LIMIT", "PPTX_PARSE_LIMIT", "PPTX_TEXT_LIMIT", "PPTX_NOTES_LIMIT", "PPTX_ELEMENT_LIMIT", "PAGE_LIMIT": guidance=UIMessage("doc.error.operationLimit")
     case "OUTPUT_BUDGET_TOO_SMALL": guidance=UIMessage("doc.error.outputBudget")
     case "WORKBOOK_IDENTITY", "WORKBOOK_STYLE_SCOPE", "SNAPSHOT_CONFLICT", "WORKBOOK_ENGINE_SEMANTICS": guidance=UIMessage("doc.error.reportIntegrity")
     case "UNKNOWN_QUERY": guidance=UIMessage("doc.error.queryUnavailable")
@@ -130,7 +130,7 @@ final class Bridge: @unchecked Sendable {
             guard !analysisReserved else{throw BridgeError(code:"ANALYSIS_BUSY",message:UIMessage("doc.tail.engine.busyInAnotherWindow"))}
             analysisReserved=true;currentAnalysisOwner=analysisOwner;cancelled=false
         }}
-        let cancellation=["changes","page","sidecarCreate","workbookQuery","workbookGrid","workbookProjects","workbookReports","workbookView","workbookReleases","workbookMcpConfig"].contains(action) && !analysis ? (owner ?? BridgeRequestCancellation()):nil
+        let cancellation=["changes","changeDetail","view","reports","page","sidecarCreate","workbookQuery","workbookGrid","workbookProjects","workbookReports","workbookView","workbookReleases","workbookMcpConfig"].contains(action) && !analysis ? (owner ?? BridgeRequestCancellation()):nil
         let sidecarID=action=="sidecarCreate" ? UUID():nil
         if let sidecarID,let cancellation {lock.withLock{sidecarRequests[sidecarID]=cancellation}}
         return try await withTaskCancellationHandler(operation: {
@@ -181,9 +181,16 @@ final class Bridge: @unchecked Sendable {
                     if let cancellation { try cancellation.run(process) } else { try process.run() }
                     if analysis { self.lock.lock(); self.analysisProcess = process; let stopped = self.cancelled; self.lock.unlock(); if stopped { process.terminate() } }
                     try input.fileHandleForWriting.write(contentsOf: request); try input.fileHandleForWriting.close()
-                    let data = output.fileHandleForReading.readDataToEndOfFile()
+                    var data=Data();var outputExceeded=false
+                    while true {
+                        let chunk=output.fileHandleForReading.availableData
+                        if chunk.isEmpty {break}
+                        if data.count+chunk.count>64*1024*1024 {outputExceeded=true;if process.isRunning{_ = Darwin.kill(process.processIdentifier,SIGKILL)};try? output.fileHandleForReading.close();break}
+                        data.append(chunk)
+                    }
                     process.waitUntilExit(); stderrDone.wait()
                     if cancellation?.finish() == true {throw CancellationError()}
+                    if outputExceeded {throw BridgeError(code:"HELPER_OUTPUT_LIMIT",message:"The helper exceeded the native response limit. Read the selected content using bounded MCP tools or export.")}
                     if analysis { self.lock.lock(); if self.analysisProcess === process { self.analysisProcess = nil }; self.lock.unlock() }
                     if process.terminationReason == .uncaughtSignal {
                         let requested=self.lock.withLock {self.cancelled}

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { DesktopService,type DesktopDraft } from '../../packages/desktop/service.js';
 import {pagePreview} from '../../packages/desktop/preview.js';
+import {nativeChangePage,nativeChangeDetail} from '../../packages/desktop/document-changes.js';
 import { DocverError, Decision, RelationSelection, BundleSelection,bundleDirectiveState, byteHash, hash,comparisonText,textChunk,unresolvedComparisonText, SCHEMA_VERSION, ENGINE_VERSION } from '../../packages/schema/index.js';
 import { querySchemas } from '../../packages/query/index.js';
 import {SidecarScope,createOnlyOfficeSidecar,closeOnlyOfficeSidecar,recoverOnlyOfficeSidecars,onlyOfficeSidecarConfigured} from '../../packages/render/onlyoffice-sidecar.js';
@@ -93,7 +94,8 @@ try{
       value={project_id:d.project_id,report_id:d.report_id,draft_hash:readableDraftHash(d.project_id),current_snapshot:!!project&&!project.dirty&&project.last_report_id===d.report_id,revision:{...revision,pages:revision.pages.map(p=>({page_id:p.page_id,asset_id:p.asset_id,page:p.page,width:p.width,height:p.height,text:textChunk(comparisonText(p),0,180),comparison_text_hash:hash((revision.assets.find(a=>a.asset_id===p.asset_id)?.format==='pptx'?p.text:comparisonText(p)).normalize('NFC').replace(/\s/gu,'')),comparison_unresolved:!!unresolvedComparisonText(p),native_raster_available:!!p.raster,reference_transform_available:p.source_transform.length===6,hidden:p.hidden,appearance:p.appearance?{association:p.appearance.association}:undefined,coverage_gaps:p.coverage_gaps}))},mapping:revision.bundle_mapping.map(m=>({...m,association:m.association??'inferred',reason:m.decision_id?decisions.get(m.decision_id)?.reason??'':''})),manual_states:[...bundleDirectiveState(report.bundle_decisions??[]).values()].filter(v=>ids.has(v.source_page_id)).map(v=>({source_page_id:v.source_page_id,action:v.action,displaced:v.displaced,decision_id:v.decision.decision_id})),decision_count:(report.bundle_decisions??[]).filter(v=>v.revision_occurrence_id===revision.revision_occurrence_id).length};break;
     }
     case 'reports':value=service.reports(z.object({project_id:key}).parse(args).project_id);break;
-    case 'changes':{const d=querySchemas.list_changes.parse(args);value=service.queryService(d.project_id).changeSet(d);break;}
+    case 'changes':value=nativeChangePage(service.queryService(z.object({project_id:key}).parse(args).project_id),args);break;
+    case 'changeDetail':value=nativeChangeDetail(service.queryService(z.object({project_id:key}).parse(args).project_id),args);break;
     case 'view':{
       const d=scope.parse(args),r=service.snapshot(d.project_id,d.report_id);
       const revisions=r.revisions.map(({pages,...v})=>({...v,pages:pages.map(p=>({page_id:p.page_id,asset_id:p.asset_id,page:p.page,width:p.width,height:p.height,text:textChunk(comparisonText(p),0,180),capabilities:p.capabilities,hidden:p.hidden,ocr:p.ocr,appearance:p.appearance?{kind:p.appearance.kind,source_page_id:p.appearance.source_page_id,asset_id:p.appearance.asset_id,association:p.appearance.association}:undefined,coverage_gaps:p.coverage_gaps.slice(0,3)}))}));

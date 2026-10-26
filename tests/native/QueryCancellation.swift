@@ -21,8 +21,13 @@ import Foundation
     let racing=Task{try await bridge.call("changes",["tag":"race-\(index)","delay":5000])}
     try await Task.sleep(nanoseconds:UInt64(index%4+1)*250_000);racing.cancel();try await cancelled(racing)
   }
-  let ordinary=Task{try await bridge.call("reports",["tag":"ordinary","delay":100])};ordinary.cancel();let unaffected=try await ordinary.value
+  let ordinary=Task{try await bridge.call("projects",["tag":"ordinary","delay":100])};ordinary.cancel();let unaffected=try await ordinary.value
   guard unaffected["tag"].string=="ordinary"else{throw NSError(domain:"NonRangeCallCancelled",code:1)}
+  for action in ["reports","view","changeDetail"] {
+    let owned=Task{try await bridge.call(action,["tag":"owned-"+action,"delay":5000])},peer=Task{try await bridge.call("projects",["tag":"peer-"+action,"delay":100])}
+    try await started("owned-"+action);owned.cancel();try await cancelled(owned)
+    guard try await peer.value["tag"].string=="peer-"+action else{throw NSError(domain:"SelectionReadCancelledPeer",code:1)}
+  }
   let logs=(try? fm.contentsOfDirectory(atPath:library.appendingPathComponent("logs").path)) ?? []
   guard logs.isEmpty else{throw NSError(domain:"CancellationProducedCrashDiagnostic",code:1)}
   let shutdownA=Task{try await bridge.call("sidecarCreate",["tag":"shutdown-a","delay":5000])},shutdownB=Task{try await bridge.call("sidecarCreate",["tag":"shutdown-b","delay":5000])},other=Task{try await bridge.call("changes",["tag":"shutdown-keep","delay":750])}
@@ -55,7 +60,7 @@ import Foundation
   do{_ = try await bridge.call("analyze",["tag":"forbidden-between-stage-commit"],analysis:true);throw NSError(domain:"StagedReservationLost",code:1)}catch let error as BridgeError{guard error.code=="ANALYSIS_BUSY"else{throw error}}
   bridge.releaseAnalysis(owner:heldOwner)
   guard try await bridge.call("analyze",["tag":"after-commit-release","delay":20],analysis:true)["tag"].string=="after-commit-release"else{throw NSError(domain:"CompletedReservationNotReleased",code:1)}
-  print("PASS 14: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; pagecancelendsownhelperandpreservespeer; nonrangeunchanged;24midlaunchcancellationraces; nofalsecrashlog; shutdownterminatesonlyownedsidecars; CPUcancelboundedandpeerpreserved; oldescalationpreservesreplacement; sharedanalysisadmission-and-owner; workbookowncancel; workbookgrid-owncancel; heldreservation-between-stage-and-commit")
+  print("PASS 14: cancelledbeforelaunch nochild; currentrange childterminated; siblingrange survives; pagecancelendsownhelperandpreservespeer; nonrangeunchanged;reports-view-detail-owncancel;24midlaunchcancellationraces; nofalsecrashlog; shutdownterminatesonlyownedsidecars; CPUcancelboundedandpeerpreserved; oldescalationpreservesreplacement; sharedanalysisadmission-and-owner; workbookowncancel; workbookgrid-owncancel; heldreservation-between-stage-and-commit")
   try JSONSerialization.data(withJSONObject:records(),options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("observed.json"))
  }
 }

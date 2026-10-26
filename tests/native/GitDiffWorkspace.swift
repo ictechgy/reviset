@@ -185,7 +185,8 @@ private struct SoleWorkbookImportProbeHarness:View {
         model.from=0;model.to=2;model.selectedChangeID="change_1";model.selectEvidence();try require(model.leftPageID=="page_1","LeavingSourcePairRevivedOldManualPage")
         model.returnToChange();try require(!model.manuallyBrowsing && model.leftPageID=="page_1","ReturnToSelectedChangeLostEvidence")
         model.stepChange(-1);try require(model.selectedChangeID=="change_0" && model.sourceFrom==0 && model.sourceTo==1 && model.from==0 && model.to==2,"PreviousChangeResetInterval")
-        model.search="120";model.stepChange(1);try require(model.selectedChangeID=="change_1","FilteredNextChangeFailed")
+        // Full-observation search is exercised through the scoped production model in DocumentChanges.swift.
+        model.stepChange(1);try require(model.selectedChangeID=="change_1","NextChangeFailed")
         try require(try JSON(model.changes.map(\.raw)).data()==rows && model.report.data()==report,"NavigationChangedFixedReportOrRows")
         model.changes.append(JSON(["change_id":"foreign","from_occurrence":"unknown","to_occurrence":"occ_2"]))
         model.chooseChange("foreign");try require(model.selected.isNull && model.leftPageID.isEmpty && model.rightPageID.isEmpty && !model.evidenceWarning.isEmpty && model.from==0 && model.to==2,"UnknownHistoryEvidenceKeptStaleSource")

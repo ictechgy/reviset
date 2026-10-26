@@ -1443,7 +1443,7 @@ private struct WorkbookInspector: View {
                 }
                 else if model.showingSheetMetadata {Text(L("workbook.cell.metadataEvent")).readableFont(.caption).foregroundStyle(.secondary)}
                 else if model.selectedRow == 0, model.selectedChangeID.isEmpty { Text(L("workbook.cell.selectPrompt")).foregroundStyle(.secondary) }
-                else { cellSection((model.readingSingleVersion ? L("doc.common.source")+" · ":L("workbook.pane.beforePrefix")) + model.versionLabel(model.beforeID),cell:model.beforeCell); if !model.readingSingleVersion {Divider(); cellSection(L("workbook.pane.afterPrefix") + model.versionLabel(model.afterID),cell:model.afterCell)} }
+                else { cellSection((model.readingSingleVersion ? L("doc.common.source")+" · ":L("workbook.pane.beforePrefix")) + model.versionLabel(model.beforeID),cell:model.beforeCell,before:true); if !model.readingSingleVersion {Divider(); cellSection(L("workbook.pane.afterPrefix") + model.versionLabel(model.afterID),cell:model.afterCell,before:false)} }
                 if !model.selectedChange.isNull {
                     Divider(); Text(L("workbook.cell.changeMethod")).readableFont(.headline)
                     Text(verbatim:WorkbookLabels.kind(model.selectedChange["kind"].string)).readableFont(.callout)
@@ -1478,8 +1478,9 @@ private struct WorkbookInspector: View {
             }.padding(14).frame(maxWidth:.infinity,alignment:.leading)
         }.background(Color(nsColor:.controlBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.workbook.cellDetails"))
     }
-    private func cellSection(_ title: String,cell: JSON) -> some View {
-        WorkbookCellDetail(title:title,cell:cell,textOffset:model.cellTextOffset,nextTextOffset:model.cellTextNext,canPage:model.ready && !model.loadingCell,onTextPage:{ offset in Task { await model.loadSelectedCells(offset:offset) } })
+    private func cellSection(_ title: String,cell: JSON,before:Bool) -> some View {
+        let source=WorkbookStyleSource(project:model.projectID,report:model.reportID,occurrence:before ? model.beforeID:model.afterID,sheet:before ? model.beforeSheetID:model.afterSheetID,cell:cell)
+        return WorkbookCellDetail(title:title,cell:cell,textOffset:model.cellTextOffset,nextTextOffset:model.cellTextNext,canPage:model.ready && !model.loadingCell,onTextPage:{ offset in Task { await model.loadSelectedCells(offset:offset) } },bridge:model.bridge,styleSource:source)
     }
 }
 private struct WorkbookCellDetail: View {
@@ -1490,6 +1491,9 @@ private struct WorkbookCellDetail: View {
     let nextTextOffset: Int?
     let canPage: Bool
     let onTextPage: (Int) -> Void
+    let bridge: Bridge
+    let styleSource: WorkbookStyleSource?
+    @State private var showingFullStyle=false
     var body: some View {
         VStack(alignment:.leading,spacing:7) {
             Text(verbatim:title).readableFont(.headline).lineLimit(2)
@@ -1512,6 +1516,11 @@ private struct WorkbookCellDetail: View {
                 if cell["hidden_row"].bool || cell["hidden_column"].bool { Label((cell["hidden_row"].bool ? L("workbook.cell.hiddenRowPrefix") : "") + (cell["hidden_column"].bool ? L("workbook.cell.hiddenColumn") : ""),systemImage:"eye.slash").readableFont(.caption).foregroundStyle(.orange) }
                 if !cell["style"].dictionary.isEmpty { detail(L("workbook.cell.style"),cell["style"].dictionary.keys.sorted().map { $0 + ": " + cell["style"][$0].string }.joined(separator:"\n")) }
                 if cell["style_truncated"].bool { Text(L("workbook.cell.styleTruncated")).readableFont(.caption).foregroundStyle(.orange) }
+                if let styleSource {
+                    Button(L(showingFullStyle ? "workbook.style.hide":"workbook.style.show")) { showingFullStyle.toggle() }
+                        .disabled(!canPage).accessibilityIdentifier("Reviset.workbook.fullStyleAction")
+                    if showingFullStyle { WorkbookFullStyleView(bridge:bridge,source:styleSource).id(styleSource) }
+                }
                 detail(L("workbook.cell.sourceRef"),cell["source_ref"].string)
             }
         }
@@ -1547,6 +1556,114 @@ private struct WorkbookCellDetail: View {
         return nil
     }
     private func detail(_ label: String, _ value: String) -> some View { VStack(alignment:.leading,spacing:3) { Text(verbatim:label).readableFont(.caption, weight: .medium).foregroundStyle(.secondary); Text(verbatim:value).readableFont(.caption, design: .monospaced).textSelection(.enabled).fixedSize(horizontal:false,vertical:true) } }
+}
+
+// Style previews deliberately contain only four short properties. The expanded
+// reader owns an immutable physical cell, independently of the selected event,
+// and keeps the property cursor separate from the value's UTF-16 continuation.
+struct WorkbookStyleSource:Hashable {
+    let project:String,report:String,occurrence:String,sheet:String,address:String
+    let row:Int,column:Int
+    init?(project:String,report:String,occurrence:String,sheet:String,cell:JSON) {
+        let address=cell["address"].string
+        guard !project.isEmpty,!report.isEmpty,!occurrence.isEmpty,!sheet.isEmpty,
+              !cell.isNull,let (row,column)=WorkbookGrid.parseAddress(address),
+              cell["row"].number==Double(row),cell["column"].number==Double(column) else{return nil}
+        self.project=project;self.report=report;self.occurrence=occurrence;self.sheet=sheet;self.address=address;self.row=row;self.column=column
+    }
+}
+@MainActor final class WorkbookFullStyleModel:ObservableObject {
+    struct Read {
+        var cursor="",offset=0,page=1,previous:[String]=[],key:String?=nil
+    }
+    let bridge:Bridge,source:WorkbookStyleSource
+    @Published private(set) var item=JSON()
+    @Published private(set) var total=0
+    @Published private(set) var nextCursor=""
+    @Published private(set) var loading=false
+    @Published private(set) var missing=false
+    @Published private var failureContent=UIMessage.raw("")
+    var failure:String {failureContent.text}
+    private(set) var read=Read()
+    private var generation=0
+    private var owner:BridgeRequestCancellation?
+    var nextOffset:Int? {item["text_continuations"]["value"]["next_offset"].isNull ? nil:item["text_continuations"]["value"]["next_offset"].int}
+    init(bridge:Bridge,source:WorkbookStyleSource) {self.bridge=bridge;self.source=source}
+    func cancel() {generation += 1;owner?.cancel();owner=nil;loading=false;item=JSON();nextCursor=""}
+    func load(_ request:Read=Read()) async {
+        generation += 1;let token=generation
+        owner?.cancel();let cancellation=BridgeRequestCancellation();owner=cancellation
+        read=request;item=JSON();total=0;nextCursor="";missing=false;failureContent = .raw("");loading=true
+        var args:[String:Any]=["project_id":source.project,"report_id":source.report,"revision_occurrence_id":source.occurrence,"sheet_id":source.sheet,"row":source.row,"column":source.column,"component":"style","text_offset":request.offset,"text_length":4096,"limit":1,"max_output_tokens":8000]
+        if !request.cursor.isEmpty {args["cursor"]=request.cursor}
+        do {
+            let result=try await bridge.call("workbookQuery",["name":"get_workbook_cell","args":args],owner:cancellation)
+            guard generation==token,!Task.isCancelled else{return}
+            try validate(result,request:request)
+            item=result["items"].array.first ?? JSON();total=result["total"].int;nextCursor=result["next_cursor"].string;missing=result["availability"].string=="not_materialized";loading=false;owner=nil
+        } catch {
+            guard generation==token,!Task.isCancelled else{return}
+            loading=false;owner=nil;failureContent=bridgeErrorMessage(error)
+        }
+    }
+    func retry() async {await load(read)}
+    func nextProperty() async {
+        guard !loading,!nextCursor.isEmpty else{return}
+        await load(Read(cursor:nextCursor,page:read.page+1,previous:Array((read.previous+[read.cursor]).suffix(128))))
+    }
+    func previousProperty() async {
+        guard !loading,let previous=read.previous.last else{return}
+        await load(Read(cursor:previous,page:max(1,read.page-1),previous:Array(read.previous.dropLast())))
+    }
+    func textPage(_ offset:Int) async {
+        guard !loading,!item.isNull,offset==0 || offset==nextOffset else{return}
+        var request=read;request.offset=offset;request.key=item["key"].string;await load(request)
+    }
+    private func validate(_ result:JSON,request:Read)throws {
+        func integer(_ value:JSON)->Bool {guard let number=value.raw as? NSNumber else{return false};return CFGetTypeID(number) != CFBooleanGetTypeID() && value.number>=0 && value.number==Double(value.int)}
+        func reject()throws {throw BridgeError(code:"WORKBOOK_CELL_SCOPE",message:UIMessage("workbook.error.styleScope"))}
+        let items=result["items"].array,cursor=result["next_cursor"]
+        guard result["schema_version"].string=="workbook.1",result["project_id"].string==source.project,result["report_id"].string==source.report,result["revision_occurrence_id"].string==source.occurrence,result["sheet_id"].string==source.sheet,result["component"].string=="style",result["items"].raw is [Any],integer(result["total"]),items.count<=1,result["total"].int>=items.count,cursor.isNull || (cursor.raw is String && !cursor.string.isEmpty && cursor.string.utf8.count<=2048 && cursor.string != request.cursor) else {return try reject()}
+        if result["availability"].string=="not_materialized" {guard items.isEmpty,result["total"].int==0,cursor.isNull else{return try reject()};return}
+        guard result["availability"].string=="available" else{return try reject()}
+        if items.isEmpty {guard result["total"].int==0,cursor.isNull else{return try reject()};return}
+        let item=items[0],continuation=item["text_continuations"]["value"],next=continuation["next_offset"]
+        guard item["key"].raw is String,item["value"].raw is String,request.key==nil || request.key==item["key"].string,integer(continuation["offset"]),continuation["offset"].int==request.offset,integer(continuation["total_length"]),continuation["total_length"].int>=request.offset+item["value"].string.utf16.count,item["value"].string.utf16.count<=4096,["empty","complete","truncated"].contains(continuation["state"].string),next.isNull || (integer(next) && next.int>request.offset && next.int==request.offset+item["value"].string.utf16.count && next.int<=2_000_000 && next.int<continuation["total_length"].int),result["total"].int<=1 || request.cursor.isEmpty == false || !cursor.isNull else{return try reject()}
+    }
+}
+struct WorkbookFullStyleView:View {
+    @State private var language=LanguagePreferences.shared
+    @StateObject var reader:WorkbookFullStyleModel
+    init(bridge:Bridge,source:WorkbookStyleSource) {_reader=StateObject(wrappedValue:WorkbookFullStyleModel(bridge:bridge,source:source))}
+    init(reader:WorkbookFullStyleModel) {_reader=StateObject(wrappedValue:reader)}
+    var body:some View {
+        VStack(alignment:.leading,spacing:7) {
+            Text(L("workbook.style.title")).readableFont(.headline)
+            Text(L("workbook.style.source",.verbatim(reader.source.address))).readableFont(.caption2).foregroundStyle(.secondary)
+            if reader.loading {ProgressView(L("workbook.style.loading"))}
+            else if !reader.failure.isEmpty {
+                Text(verbatim:reader.failure).readableFont(.caption).foregroundStyle(.red)
+                Button(L("workbook.style.retry")){Task{await reader.retry()}}
+            } else if reader.missing {Text(L("workbook.cell.noObservation")).readableFont(.caption).foregroundStyle(.secondary)}
+            else if reader.item.isNull {Text(L("workbook.style.empty")).readableFont(.caption).foregroundStyle(.secondary)}
+            else {
+                Text(L("workbook.style.property",.integer(reader.read.page),.integer(reader.total))).readableFont(.caption).foregroundStyle(.secondary)
+                Text(verbatim:reader.item["key"].string).readableFont(.caption,weight:.medium).textSelection(.enabled)
+                Text(verbatim:reader.item["value"].string).readableFont(.caption,design:.monospaced).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
+                let continuation=reader.item["text_continuations"]["value"]
+                if continuation["state"].string=="truncated" {
+                    Text(L("workbook.style.textRange",.integer(continuation["offset"].int),.integer(continuation["offset"].int+reader.item["value"].string.utf16.count),.integer(continuation["total_length"].int))).readableFont(.caption2).foregroundStyle(.secondary)
+                    HStack {if reader.read.offset>0 {Button(L("workbook.style.textStart")){Task{await reader.textPage(0)}}};if let offset=reader.nextOffset {Button(L("workbook.style.textNext")){Task{await reader.textPage(offset)}}}}
+                }
+                HStack {
+                    if reader.read.page>1 {Button(L("workbook.style.first")){Task{await reader.load()}}}
+                    if !reader.read.previous.isEmpty {Button(L("workbook.style.previous")){Task{await reader.previousProperty()}}}
+                    if !reader.nextCursor.isEmpty {Button(L("workbook.style.next")){Task{await reader.nextProperty()}}}
+                }
+            }
+        }.padding(10).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor)).background(WorkspaceLayoutMarker(name:"Reviset.workbook.fullStyleReader"))
+            .task {await reader.retry()}.onDisappear {reader.cancel()}
+    }
 }
 private struct WorkbookSheetMetadata: View {
     @State private var language = LanguagePreferences.shared

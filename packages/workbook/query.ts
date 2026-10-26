@@ -40,7 +40,7 @@ function chunk(value: string | null, offset: number, length: number): { value: s
 export function boundedWorkbookCell(cell: WorkbookCellData | null, offset: number, length: number) {
   if (!cell) return null;
   const value = chunk(cell.value, offset, length), formula = chunk(cell.formula, offset, length), format = chunk(cell.number_format, offset, length);
-  const style = Object.fromEntries(Object.entries(cell.style).slice(0, 4).map(([k, v]) => [k, v.slice(0, 64)]));
+  const style = Object.fromEntries(Object.entries(cell.style).slice(0, 4).map(([k, v]) => [k, chunk(v, 0, 64).value]));
   const styleTruncated = Object.entries(cell.style).length > 4 || Object.values(cell.style).some(v => v.length > 64);
   return { ...cell, value: value.value, formula: formula.value, number_format: format.value, style, source_ref: cell.source_ref, text_continuations: { value: value.continuation, formula: formula.continuation, number_format: format.continuation }, ...(styleTruncated ? {style_truncated:true,full_style_query:'get_workbook_cell component=style'}:{}) };
 }

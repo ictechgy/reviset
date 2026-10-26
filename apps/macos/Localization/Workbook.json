@@ -1582,5 +1582,65 @@
   "workbook.sheet.workbookMetadata": {
     "en": "Workbook metadata",
     "ko": "통합문서 메타데이터"
+  },
+  "workbook.error.styleScope": {
+    "en": "The style response does not match this fixed source cell. Retry to read the same cell.",
+    "ko": "스타일 응답이 선택한 원본 셀과 일치하지 않습니다. 다시 시도하면 같은 셀을 읽습니다."
+  },
+  "workbook.style.show": {
+    "en": "Show full style",
+    "ko": "전체 스타일 보기"
+  },
+  "workbook.style.hide": {
+    "en": "Hide full style",
+    "ko": "전체 스타일 닫기"
+  },
+  "workbook.style.title": {
+    "en": "Full stored basic style",
+    "ko": "저장된 전체 기본 스타일"
+  },
+  "workbook.style.source": {
+    "en": "Physical source cell {0}",
+    "ko": "원본 물리 셀 {0}"
+  },
+  "workbook.style.loading": {
+    "en": "Reading source style…",
+    "ko": "원본 스타일 읽는 중…"
+  },
+  "workbook.style.retry": {
+    "en": "Retry style read",
+    "ko": "스타일 다시 읽기"
+  },
+  "workbook.style.empty": {
+    "en": "No stored basic-style properties in this cell.",
+    "ko": "이 셀에는 저장된 기본 스타일 속성이 없습니다."
+  },
+  "workbook.style.property": {
+    "en": "Property {0} of {1}",
+    "ko": "속성 {0} / {1}"
+  },
+  "workbook.style.textRange": {
+    "en": "UTF-16 source units {0}–{1} of {2}",
+    "ko": "UTF-16 원문 단위 {0}–{1} / {2}"
+  },
+  "workbook.style.textStart": {
+    "en": "Value from start",
+    "ko": "속성값 처음부터"
+  },
+  "workbook.style.textNext": {
+    "en": "Continue value",
+    "ko": "속성값 이어 읽기"
+  },
+  "workbook.style.first": {
+    "en": "First property",
+    "ko": "첫 속성"
+  },
+  "workbook.style.previous": {
+    "en": "Previous property",
+    "ko": "이전 속성"
+  },
+  "workbook.style.next": {
+    "en": "Next property",
+    "ko": "다음 속성"
   }
 }

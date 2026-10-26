@@ -22,6 +22,18 @@ function fixture():ReportData{
     changes:[{schema_version:SCHEMA_VERSION,report_id:'report_reading',change_id:'change_reading',entity_id:'family',from_revision:a.revision_id,to_revision:b.revision_id,from_occurrence:a.revision_occurrence_id,to_occurrence:b.revision_occurrence_id,kind:'text_modified',before:mixed,after:mixed+'after',text_assessment:'inferred',appearance_assessment:'observed',region_pairing_assessment:'inferred',lineage:{status:'human_confirmed',score:1,reasons:[mixed,'second reason']},evidence,coverage_gaps:[{feature:'ocr',reason:mixed}],evidence_uri:'docver://projects/project_reading/reports/report_reading/changes/change_reading'}],coverage_gaps:[]};
 }
 const service=(r:ReportData)=>new QueryService({} as Store,new Set([r.project_id]),()=>r);
+
+test('stored engine55 reports retain exact range event IDs and detail under engine56',()=>{
+  const archived=Report.parse({...fixture(),engine_version:'0.4.0-native.bundle.55'});
+  const original=canonical(archived),args={project_id:archived.project_id,report_id:archived.report_id,from:'occ_a',to:'occ_c',mode:'range_net' as const};
+  const old=service(archived).changeSet(args),current=service({...archived,engine_version:ENGINE_VERSION}).changeSet(args);
+  assert.ok(old.length>0);
+  assert.deepEqual(old,current,'parser admission changes must not alter net computation over stored observations');
+  const q=service(archived),event=old[0];
+  const detail=q.query('get_change',{project_id:archived.project_id,report_id:archived.report_id,from:'occ_a',to:'occ_c',change_id:event.change_id,component:'before',max_output_tokens:8000});
+  assert.ok(detail.items.length>0);
+  assert.equal(canonical(archived),original,'reading never migrates stored55 bytes');
+});
 const scope=(r:ReportData)=>({project_id:r.project_id,report_id:r.report_id,max_output_tokens:4000});
 const wire=(r:QueryResult)=>({structuredContent:r,content:[{type:'text',text:JSON.stringify(r)}]});
 const measure=(r:QueryResult)=>Buffer.byteLength(JSON.stringify(wire(r)));

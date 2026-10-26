@@ -51,6 +51,13 @@ enum ImportIntent {
     @Published var reports: [JSON] = []
     @Published var changes: [JSON] = []
     @Published var selectedChangeID: String? = nil
+    @Published var nextChangesCursor = ""
+    @Published var changesTotalCount = 0
+    @Published var loadingMoreChanges = false
+    @Published var loadingChangeDetail = false
+    @Published var changesPaginationFailureMessage = UIMessage.raw("")
+    var changesPaginationFailure:String {changesPaginationFailureMessage.text}
+    @Published private var selectedChangeDetail = JSON()
     @Published var from = 0
     @Published var to = 1
     @Published var leftPageID = ""
@@ -99,8 +106,8 @@ enum ImportIntent {
     @Published var lineageSheet = false
     @Published var toolsSheet = false
     @Published var zoom = 0.0
-    @Published var search = ""
-    @Published var kind = "all"
+    @Published var search = "" {didSet {if oldValue != search {scheduleChangeFilter()}}}
+    @Published var kind = "all" {didSet {if oldValue != kind {scheduleChangeFilter()}}}
     @Published var mcp = ""
     @Published var mcpFailureMessage = UIMessage.raw("")
     var mcpFailure:String {get{mcpFailureMessage.text} set{mcpFailureMessage = .raw(newValue)}}
@@ -120,9 +127,17 @@ enum ImportIntent {
     private var started = false
     private var rangeGeneration = 0
     private var selectionGeneration = 0
+    private var selectionOwner:BridgeRequestCancellation?
     private var mcpGeneration = 0
     private var mcpProjectID = ""
-    private var pendingRange: (key: String, generation: Int, task: Task<[JSON], Error>)?
+    private var pendingRange: (key: String, generation: Int, task: Task<JSON, Error>)?
+    private var pendingFilter:Task<Void,Never>?
+    private var detailGeneration = 0
+    private var pendingDetail:Task<JSON,Error>?
+    private var moreChangesOwner:BridgeRequestCancellation?
+    private var loadedChangesKey = ""
+    private var loadedChangesQueryID = ""
+    private var selectedDetailKey = ""
     private var rejectedEventScope:(project:String,report:String,from:Int,to:Int)?
     private var pageNavigation: (report:String, from:Int, to:Int, left:String, right:String)?
     init() {
@@ -152,8 +167,27 @@ enum ImportIntent {
 
     var eventInsideQuery:Bool {sourceFrom != from || sourceTo != to}
     var manuallyBrowsing:Bool {guard let n=pageNavigation else{return false};return n.report==report["report_id"].string && n.from==sourceFrom && n.to==sourceTo}
-    var selected: JSON { changes.first { $0["change_id"].string == selectedChangeID } ?? JSON() }
-    var filteredChanges: [JSON] { changes.filter { (kind == "all" || $0["kind"].string == kind) && (search.isEmpty || ($0["before"].string + " " + $0["after"].string).localizedCaseInsensitiveContains(search)) } }
+    var selected: JSON {
+        if selectedChangeDetail["change_id"].string==selectedChangeID,selectedDetailKey==changeQueryKey {return selectedChangeDetail}
+        let row=changes.first { $0["change_id"].string == selectedChangeID } ?? JSON()
+        return row["detail_required"].bool ? JSON():row
+    }
+    // Filters run against complete server observations, including text beyond a
+    // list preview. Locally filtering those previews would claim false absence.
+    var filteredChanges: [JSON] {changes}
+    private var changeQueryKey:String {[projectID,report["report_id"].string,revision(from)["revision_occurrence_id"].string,revision(to)["revision_occurrence_id"].string,tab=="history" ? "history":to==from+1 ? "adjacent":"range_net",kind,search].joined(separator:"|")}
+    private var changeQueryArguments:[String:Any] {
+        var args:[String:Any]=["project_id":projectID,"report_id":report["report_id"].string,"from":revision(from)["revision_occurrence_id"].string,"to":revision(to)["revision_occurrence_id"].string,"mode":tab=="history" ? "history":to==from+1 ? "adjacent":"range_net"]
+        if kind != "all" {args["kind"]=kind};if !search.isEmpty {args["text"]=search};return args
+    }
+    private func invalidateChangeDetail(){detailGeneration += 1;pendingDetail?.cancel();pendingDetail=nil;loadingChangeDetail=false;selectedChangeDetail=JSON();selectedDetailKey=""}
+    private func resetChangePaging(){moreChangesOwner?.cancel();moreChangesOwner=nil;nextChangesCursor="";changesTotalCount=0;loadingMoreChanges=false;changesPaginationFailureMessage = .raw("");loadedChangesKey="";loadedChangesQueryID="";invalidateChangeDetail()}
+    private func scheduleChangeFilter(){
+        guard !report.isNull,!busy else{return}
+        pendingFilter?.cancel();rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;resetChangePaging();changes=[];selectedChangeID=nil;loadingChanges=true
+        let key=changeQueryKey
+        pendingFilter=Task {do {try await Task.sleep(nanoseconds:250_000_000);try Task.checkCancellation();guard key==changeQueryKey,!busy else{return};pendingFilter=nil;try await updateChanges()}catch is CancellationError {}catch {fail(error)}}
+    }
     var currentMCPConfig:String? {libraryAvailable && !initializing && !loading && mcpProjectID==projectID && !mcp.isEmpty ? mcp:nil}
     var canOpenStoredHistory:Bool {
         guard let recovery=storedHistoryRecovery else{return false}
@@ -209,15 +243,16 @@ enum ImportIntent {
     }
     func selectProject(_ id: String, snapshot: String? = nil) async {
         guard libraryAvailable && !busy else { return }
-        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loadingChanges=false;let generation=selectionGeneration;pageNavigation=nil
+        pendingFilter?.cancel();pendingFilter=nil;selectionOwner?.cancel();let owner=BridgeRequestCancellation();selectionOwner=owner
+        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;resetChangePaging();loadingChanges=false;let generation=selectionGeneration;pageNavigation=nil
         loading = true; error = ""; evidenceWarning = ""; changesFailure=""; projectID = id; report = JSON(); changes = []; selectedChangeID = nil
         do {
-            try await refresh();let loadedReports = try await bridge.call("reports", ["project_id": id]).array
+            try await refresh();guard generation==selectionGeneration else{return};let loadedReports = try await bridge.call("reports", ["project_id": id],owner:owner).array
             guard generation==selectionGeneration else{return};reports=loadedReports
             let reportID = snapshot ?? project["last_report_id"].string
             if reportID.isEmpty { report = JSON(); changes = [] }
             else {
-                let loadedReport = try await bridge.call("view", ["project_id": id, "report_id": reportID]);guard generation==selectionGeneration else{return};report=loadedReport; from = max(0,revisions.count-2); to = max(0,revisions.count-1)
+                let loadedReport = try await bridge.call("view", ["project_id": id, "report_id": reportID],owner:owner);guard generation==selectionGeneration else{return};report=loadedReport; from = max(0,revisions.count-2); to = max(0,revisions.count-1)
                 leftPageID = primaryPages(revision(from)).first?["page_id"].string ?? ""
                 rightPageID = primaryPages(revision(to)).first?["page_id"].string ?? ""
                 try await updateChanges()
@@ -229,31 +264,32 @@ enum ImportIntent {
         guard !report.isNull else { return }
         if revisions.count < 2 || from == to {
             enforceSingleSourcePresentation()
-            rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loadingChanges=false;changesFailure=""
+            rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;resetChangePaging();loadingChanges=false;changesFailure=""
             changes = []; selectedChangeID = "";selectEvidence(); return
         }
         let history = tab == "history", start = from, end = to
-        let project=projectID,reportID=report["report_id"].string,before=revision(start)["revision_occurrence_id"].string,after=revision(end)["revision_occurrence_id"].string
-        let mode=history ? "history" : end == start+1 ? "adjacent" : "range_net"
-        let key=[project,reportID,before,after,mode].joined(separator:"|")
+        let project=projectID,reportID=report["report_id"].string
+        let key=changeQueryKey,arguments=changeQueryArguments
         let preferredChange=selectedChangeID
-        let generation:Int,task:Task<[JSON],Error>
+        let generation:Int,task:Task<JSON,Error>
         if let pending=pendingRange,pending.key==key {
             generation=pending.generation;task=pending.task
         } else {
             pendingRange?.task.cancel()
-            rangeGeneration += 1;generation=rangeGeneration;rejectedEventScope=nil;evidenceWarning="";loadingChanges=true;changesFailure="";changes=[];selectedChangeID=nil
-            task=Task { try await self.bridge.call("changes",["project_id":project,"report_id":reportID,"from":before,"to":after,"mode":mode]).array }
+            rangeGeneration += 1;generation=rangeGeneration;resetChangePaging();rejectedEventScope=nil;evidenceWarning="";loadingChanges=true;changesFailure="";changes=[];selectedChangeID=nil
+            task=Task { try await self.bridge.call("changes",arguments) }
             pendingRange=(key,generation,task)
         }
         do {
             let response=try await task.value
             guard generation==rangeGeneration else{return}
-            changes=response
+            guard response["project_id"].string==project,response["report_id"].string==reportID,!response["query_id"].string.isEmpty else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Document list does not match its fixed report")}
+            changes=response["items"].array;nextChangesCursor=response["next_cursor"].string;changesTotalCount=response["total_count"].int;loadedChangesKey=key;loadedChangesQueryID=response["query_id"].string
             if !changes.contains(where:{$0["change_id"].string==selectedChangeID}) {
                 selectedChangeID=changes.first(where:{$0["change_id"].string==preferredChange})?["change_id"].string ?? changes.first(where:{$0["kind"].string=="text_modified"})?["change_id"].string ?? changes.first?["change_id"].string ?? ""
             }
             selectEvidence();loadingChanges=false
+            if let id=selectedChangeID,!id.isEmpty {do{try await loadSelectedChange(id)}catch{if !(error is CancellationError){evidenceWarningMessage=bridgeErrorMessage(error)}}}
             if pendingRange?.generation==generation {pendingRange=nil}
         } catch {
             guard generation==rangeGeneration else{return}
@@ -263,6 +299,46 @@ enum ImportIntent {
             if pendingRange?.generation==generation {pendingRange=nil}
             throw error
         }
+    }
+
+
+    func loadMoreChanges() async {
+        guard !loadingChanges,!loadingMoreChanges,!nextChangesCursor.isEmpty,loadedChangesKey==changeQueryKey,!busy else{return}
+        let key=changeQueryKey,generation=rangeGeneration,cursor=nextChangesCursor,queryID=loadedChangesQueryID
+        let owner=BridgeRequestCancellation();moreChangesOwner=owner
+        var args=changeQueryArguments;args["cursor"]=cursor;loadingMoreChanges=true;changesPaginationFailureMessage = .raw("")
+        do {
+            let response=try await bridge.call("changes",args,owner:owner)
+            guard generation==rangeGeneration,key==changeQueryKey,loadedChangesKey==key,nextChangesCursor==cursor else{return}
+            guard response["query_id"].string==queryID,response["project_id"].string==projectID,response["report_id"].string==report["report_id"].string else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Document continuation does not match the fixed query")}
+            let rows=response["items"].array,ids=Set(changes.map{$0["change_id"].string})
+            guard !rows.contains(where:{ids.contains($0["change_id"].string)}) else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Document continuation repeated an installed event")}
+            changes.append(contentsOf:rows);nextChangesCursor=response["next_cursor"].string;changesTotalCount=response["total_count"].int;loadingMoreChanges=false
+        }catch {guard generation==rangeGeneration,key==changeQueryKey else{return};loadingMoreChanges=false;changesPaginationFailureMessage=bridgeErrorMessage(error)}
+    }
+    private func loadSelectedChange(_ id:String) async throws {
+        guard let row=changes.first(where:{$0["change_id"].string==id}),row["detail_required"].bool else{selectEvidence();return}
+        let key=changeQueryKey,queryID=loadedChangesQueryID,project=projectID,reportID=report["report_id"].string
+        invalidateChangeDetail();let generation=detailGeneration;loadingChangeDetail=true
+        var args=changeQueryArguments;args["query_id"]=queryID;args["change_id"]=id
+        let task=Task { () throws -> JSON in
+            var offset=0,serialized="",digest="",length = -1
+            while true {
+                try Task.checkCancellation();args["detail_offset"]=offset
+                let part=try await self.bridge.call("changeDetail",args)
+                let chunk=part["json_chunk"].string,total=part["json_length"].int,currentDigest=part["content_sha256"].string
+                guard part["project_id"].string==project,part["report_id"].string==reportID,part["query_id"].string==queryID,part["change_id"].string==id,part["detail_offset"].int==offset,total>=0,total<=128*1024*1024,!chunk.isEmpty,chunk.utf16.count<=128*1024,!currentDigest.isEmpty,(length<0 || length==total),(digest.isEmpty || digest==currentDigest) else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Selected document detail does not match its immutable request")}
+                length=total;digest=currentDigest;serialized += chunk;let end=offset+chunk.utf16.count
+                if part["next_detail_offset"].isNull {guard end==total else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Incomplete selected document detail")};break}
+                guard part["next_detail_offset"].int==end,end>offset,end<total else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Invalid selected document detail continuation")};offset=end
+            }
+            let data=Data(serialized.utf8),actual=SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined()
+            guard actual==digest else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Selected document detail hash mismatch")}
+            let value=JSON(try JSONSerialization.jsonObject(with:data))
+            guard value["change_id"].string==id,value["report_id"].string==reportID,value["from_occurrence"].string==row["from_occurrence"].string,value["to_occurrence"].string==row["to_occurrence"].string else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Selected document detail identity mismatch")};return value
+        };pendingDetail=task
+        do {let value=try await task.value;guard generation==detailGeneration,key==changeQueryKey,selectedChangeID==id else{return};selectedChangeDetail=value;selectedDetailKey=key;loadingChangeDetail=false;pendingDetail=nil;selectEvidence()}
+        catch {guard generation==detailGeneration,key==changeQueryKey,selectedChangeID==id else{return};loadingChangeDetail=false;pendingDetail=nil;selectedChangeDetail=JSON();evidenceWarningMessage=bridgeErrorMessage(error);throw error}
     }
 
     func selectEvidence() {
@@ -315,19 +391,20 @@ enum ImportIntent {
     }
     func chooseChange(_ id:String){
         guard !loadingChanges, changes.contains(where:{$0["change_id"].string==id}) else{return}
+        invalidateChangeDetail()
         if tab=="history",let change=changes.first(where:{$0["change_id"].string==id}) {
             guard let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["from_occurrence"].string}),let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["to_occurrence"].string}),a<b,a>=from,b<=to else {
                 selectedChangeID=nil;pageNavigation=nil;leftPageID="";rightPageID="";rejectedEventScope=(projectID,report["report_id"].string,from,to);evidenceWarningMessage=UIMessage("doc.evidence.selectionUnavailable");return
             }
         }
-        rejectedEventScope=nil;evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence()
+        rejectedEventScope=nil;evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence();if changes.first(where:{$0["change_id"].string==id})?["detail_required"].bool==true {Task{do{try await loadSelectedChange(id)}catch{if !(error is CancellationError){evidenceWarningMessage=bridgeErrorMessage(error)}}}}
     }
     func stepChange(_ offset:Int) {
         let rows=filteredChanges
         guard !loadingChanges,!rows.isEmpty else{return}
         let index=rows.firstIndex(where:{$0["change_id"].string==selectedChangeID}) ?? (offset>0 ? -1:rows.count)
         let next=index+offset
-        guard rows.indices.contains(next) else{return}
+        guard rows.indices.contains(next) else{if next==rows.count,!nextChangesCursor.isEmpty {Task{let key=changeQueryKey;await loadMoreChanges();if key==changeQueryKey,filteredChanges.indices.contains(next){chooseChange(filteredChanges[next]["change_id"].string)}}};return}
         chooseChange(rows[next]["change_id"].string)
     }
     func returnToChange() {pageNavigation=nil;selectEvidence()}
@@ -349,7 +426,7 @@ enum ImportIntent {
     }
     func changeRange() { Task { do { try await updateChanges() } catch { fail(error) } } }
     func run(_ id: String) async {
-        guard libraryAvailable && !initializing && !busy && !projects.contains(where:{$0["project_id"].string==id && $0["unreadable"].bool}) else { return };selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailure="";evidenceWarning="";let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); statusMessage = UIMessage("doc.analysis.preparing")
+        guard libraryAvailable && !initializing && !busy && !projects.contains(where:{$0["project_id"].string==id && $0["unreadable"].bool}) else { return };selectionOwner?.cancel();selectionOwner=nil;pendingFilter?.cancel();pendingFilter=nil;selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;resetChangePaging();loading=false;loadingChanges=false;changesFailure="";evidenceWarning="";let token=UUID();analysisToken=token; busy = true; committing = false; cancelRequested = false; error = ""; progress = JSON(); statusMessage = UIMessage("doc.analysis.preparing")
         let generation=selectionGeneration,retainedProject=projectID,retainedReport=report["report_id"].string
         var runID="",commitAttempted=false
         defer{bridge.releaseAnalysis(owner:token)}
@@ -435,7 +512,8 @@ enum ImportIntent {
     func create(title: String, rows: [ImportRow], intent:ImportIntent = .ordinary) async throws -> JSON {
         try intent.validateVersionEntries(rows.count)
         let interrupted=pendingRange != nil || loadingChanges
-        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;loading=false;loadingChanges=false;changesFailureMessage=(!report.isNull && interrupted) ? UIMessage("doc.changes.interrupted"):.raw("")
+        selectionOwner?.cancel();selectionOwner=nil;pendingFilter?.cancel();pendingFilter=nil
+        selectionGeneration += 1;rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;resetChangePaging();loading=false;loadingChanges=false;changesFailureMessage=(!report.isNull && interrupted) ? UIMessage("doc.changes.interrupted"):.raw("")
         do{return try await bridge.call("create", ["title": title, "revisions": rows.map(\.createPayload)])}
         catch{if !report.isNull {try? await updateChanges()};throw error}
     }

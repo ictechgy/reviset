@@ -3,6 +3,8 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Text.Json;
+using System.Text;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Automation;
@@ -212,6 +214,7 @@ internal sealed class MainWindow : Window
     private JsonElement currentProject;
     private JsonElement currentReport;
     private string nextChanges = "";
+    private string documentChangesQueryId = "";
     private string intervalFrom = "";
     private string intervalTo = "";
     private readonly ObservableCollection<ChangeChoice> changes = [];
@@ -1196,7 +1199,7 @@ internal sealed class MainWindow : Window
                 if (Before.ReadState is "loading" or "failed" or "empty") await Before.Load(ticket, reads.Token); if (!IsCurrent(ticket)) return;
                 if (After.ReadState is "loading" or "failed" or "empty") await After.Load(ticket, reads.Token); if (!IsCurrent(ticket)) return;
             }
-            querying = true; await LoadChanges(intent.Append, ticket, reads.Token, retryQuery: retry); RenderSourceDiff(); EvidenceReadSettled();
+            querying = true; await LoadChanges(intent.Append, ticket, reads.Token, retryQuery: retry); if (!IsCurrent(ticket) || reads.IsCancellationRequested || CurrentChangeScope != intent.Scope) return; RenderSourceDiff(); EvidenceReadSettled();
         }
         catch { if (IsCurrent(ticket) && !reads.IsCancellationRequested) { if (querying) FailQuery(intent); else FailComparison(); } throw; }
     }
@@ -1247,8 +1250,17 @@ internal sealed class MainWindow : Window
         else
         {
             var mode = SourceDiff.DocumentQueryMode(from, to, NetMode);
-            Task<JsonElement> Read(string selectedMode) { changeQueryReadsForSmoke++; return documentReaderForSmoke is null ? Bridge.Call("changes", new { project_id = projectId, report_id = reportId, from = intervalFrom, to = intervalTo, mode = selectedMode }, token) : documentReaderForSmoke(selectedMode, token); }
-            try { values = (await Read(mode)).Items(); }
+            Task<JsonElement> Read(string selectedMode) { changeQueryReadsForSmoke++; var args = new Dictionary<string, object?> { ["project_id"] = scope.Project, ["report_id"] = scope.Report, ["from"] = scope.From, ["to"] = scope.To, ["mode"] = selectedMode }; if (append && nextChanges.Length > 0) args["cursor"] = nextChanges; return documentReaderForSmoke is null ? Bridge.Call("changes", args, token) : documentReaderForSmoke(selectedMode, token); }
+            try {
+                var result = await Read(mode);
+                if (documentReaderForSmoke is not null && result.ValueKind == JsonValueKind.Array) values = result.Items();
+                else {
+                    var queryId = result.Get("query_id").Text();
+                    if (result.Get("project_id").Text() != scope.Project || result.Get("report_id").Text() != scope.Report || queryId.Length != 64 || append && queryId != documentChangesQueryId) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Document list does not match its fixed comparison scope.");
+                    values = result.Get("items").Items(); next = result.Get("next_cursor").Text();
+                    if (IsCurrent(ticket) && !token.IsCancellationRequested && CurrentChangeScope == scope) documentChangesQueryId = queryId;
+                }
+            }
             catch (BridgeException error) when (mode == "range_net" && error.Code == "ENGINE_VERSION_UNAVAILABLE")
             {
                 token.ThrowIfCancellationRequested(); if (!IsCurrent(ticket)) return;
@@ -1257,6 +1269,7 @@ internal sealed class MainWindow : Window
         }
         if (beforeInstallForSmoke is not null) await beforeInstallForSmoke(token);
         if (!IsCurrent(ticket) || token.IsCancellationRequested || CurrentChangeScope != scope) return; binding = true; if (!append) changes.Clear();
+        if (values.Select(value => value.Get("change_id").Text()).Distinct().Count() != values.Count || append && values.Any(value => changes.Any(row => row.Id == value.Get("change_id").Text()))) { binding = false; throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "A continuation repeated an installed event."); }
         foreach (var value in values) changes.Add(new(value.Get("change_id").Text(), ChangeCaption(value), value, Copy["rawChangeDescription"]));
         if (!append && selectedChange.ValueKind == JsonValueKind.Object && !changes.Any(item => item.Id == selectedChange.Get("change_id").Text())) ClearSelectedChange();
         binding = false; loadedChangeScope = scope; nextChanges = next; var keepEventFailure = retainedEventFailure is not null && ReferenceEquals(eventRetry, retainedEventFailure); changesReady = !keepEventFailure; ComparisonState = keepEventFailure ? "failed" : "ready"; changeList.IsEnabled = ChangeNavigationReady; more.IsEnabled = ChangeNavigationReady && next.Length > 0; if (!HasIndependentSourceDetail) { if (changes.Count == 0) detail.Text = Copy["noChanges"] + "\n\n" + Copy["coverage"] + "\n" + currentReport.Get("coverage_gaps").Pretty(); else if (!append) detail.Text = Copy["selectCell"]; }
@@ -1266,6 +1279,25 @@ internal sealed class MainWindow : Window
     {
         if (!ChangeNavigationReady || !more.IsEnabled) return; more.IsEnabled = false; var ticket = generation; var intent = new QueryRetry(CurrentChangeScope, true, nextChanges);
         try { await LoadChanges(true, ticket, reads.Token, beforeInstallForSmoke: beforeInstallForSmoke); } catch { if (IsCurrent(ticket) && !reads.IsCancellationRequested) FailQuery(intent); throw; }
+    }
+    private async Task<JsonElement> ReadDocumentChangeDetail(ChangeQueryScope scope, JsonElement row, CancellationToken token)
+    {
+        var id = row.Get("change_id").Text(); var queryId = documentChangesQueryId; var offset = 0; var length = -1; var digest = ""; var serialized = new StringBuilder();
+        var revisions = currentReport.Get("revisions").Items(); var from = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == scope.From); var to = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == scope.To);
+        while (true) {
+            token.ThrowIfCancellationRequested();
+            var part = await Bridge.Call("changeDetail", new { project_id = scope.Project, report_id = scope.Report, from = scope.From, to = scope.To, mode = SourceDiff.DocumentQueryMode(from, to, scope.Net), query_id = queryId, change_id = id, detail_offset = offset }, token);
+            var text = part.Get("json_chunk").Text(); var total = part.Get("json_length").Number(); var checksum = part.Get("content_sha256").Text();
+            if (part.Get("project_id").Text() != scope.Project || part.Get("report_id").Text() != scope.Report || part.Get("query_id").Text() != queryId || part.Get("change_id").Text() != id || part.Get("detail_offset").Number() != offset || total < 0 || total > 128 * 1024 * 1024 || total % 1 != 0 || text.Length == 0 || text.Length > 128 * 1024 || checksum.Length != 64 || length >= 0 && total != length || digest.Length > 0 && checksum != digest) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document detail does not match its immutable request.");
+            length = (int)total; digest = checksum; serialized.Append(text); var end = offset + text.Length;
+            if (part.Get("next_detail_offset").ValueKind == JsonValueKind.Null) { if (end != length) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document detail is incomplete."); break; }
+            if (part.Get("next_detail_offset").Number() != end || end <= offset || end >= length) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Invalid document detail continuation."); offset = end;
+        }
+        token.ThrowIfCancellationRequested(); var bytes = Encoding.UTF8.GetBytes(serialized.ToString());
+        if (!Convert.ToHexString(SHA256.HashData(bytes)).Equals(digest, StringComparison.OrdinalIgnoreCase)) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document detail hash mismatch.");
+        using var parsed = JsonDocument.Parse(bytes); var value = parsed.RootElement.Clone();
+        if (value.Get("report_id").Text() != scope.Report || value.Get("change_id").Text() != id || value.Get("from_occurrence").Text() != row.Get("from_occurrence").Text() || value.Get("to_occurrence").Text() != row.Get("to_occurrence").Text()) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document event identity mismatch.");
+        return value;
     }
     private bool EligibleInitialPhysicalChange(JsonElement change)
     {
@@ -1318,6 +1350,10 @@ internal sealed class MainWindow : Window
         }
         else
         {
+            if (change.Get("detail_required").Flag()) {
+                change = await ReadDocumentChangeDetail(scope, change, token);
+                if (!IsCurrent(ticket) || token.IsCancellationRequested || loadedChangeScope != scope || CurrentChangeScope != scope) return;
+            }
             Before.SetEvidenceRevision(change.Get("from_occurrence").Text()); After.SetEvidenceRevision(change.Get("to_occurrence").Text());
             var intended = DocumentEventPages(change); Before.SetEventPage(intended.Before, change.Get("kind").Text()); After.SetEventPage(intended.After, change.Get("kind").Text());
             eventBefore = Before.CaptureSelection(); eventAfter = After.CaptureSelection();
@@ -2181,6 +2217,7 @@ internal sealed class MainWindow : Window
             await SelectSourcePairForSmoke(0, revisions.Count - 1); comparisonMode.SelectedIndex = 0; await modeRequest; SetLayout(WorkspaceLayout.Preset("sourceFirst"));
             var change = changes.FirstOrDefault(item => item.Value.Get("kind").Text() == "text_modified" && item.Value.Get("from_occurrence").Text() == beforeRevision.Get("revision_occurrence_id").Text() && item.Value.Get("to_occurrence").Text() == afterRevision.Get("revision_occurrence_id").Text() && item.Value.Get("evidence").Items().Any(evidence => evidence.Get("page_id").Text() == canonicalBeforePage) && item.Value.Get("evidence").Items().Any(evidence => evidence.Get("page_id").Text() == canonicalAfterPage)) ?? throw new InvalidOperationException("The actual first-page text event is absent from the canonical stored query.");
             var scope = CurrentChangeScope; var rows = changes.ToArray(); var rowBytes = rows.Select(item => item.Value.GetRawText()).ToArray(); var cursor = nextChanges; var queryReads = changeQueryReadsForSmoke; var hostA = Before.Host; var hostB = After.Host;
+            var canonicalEvent = await ReadDocumentChangeDetail(scope, change.Value, reads.Token);
             foreach (var timing in new[] { (Name: "before-await", After: false, Language: "en"), (Name: "after-await", After: true, Language: "ko") })
             {
                 SetLanguage(timing.Language); sourceView.SelectedIndex = 0;
@@ -2201,7 +2238,7 @@ internal sealed class MainWindow : Window
                         if (projectId != project || reportId != report || currentReport.GetRawText() != reportBytes || generation != ticket || loadedChangeScope != scope || CurrentChangeScope != scope || !rows.SequenceEqual(changes) || !rowBytes.SequenceEqual(changes.Select(item => item.Value.GetRawText())) || nextChanges != cursor || !ReferenceEquals(changeList.SelectedItem, change) || changeQueryReadsForSmoke != queryReads || !ReferenceEquals(hostA, Before.Host) || !ReferenceEquals(hostB, After.Host)) throw new InvalidOperationException("The real event page race replaced its scoped query/list/cursor, selected identity, report or native hosts.");
                     }
                     QueryUnchanged();
-                    if (Before.PageId != manualPage || After.PageId != canonicalAfterPage || selectedBefore?.Page != canonicalBeforePage || selectedAfter?.Page != canonicalAfterPage || selectedChange.GetRawText() != change.Value.GetRawText() || AtSelectedChange || ComparisonState != "ready" || Before.ReadState != "ready" || After.ReadState != "ready" || !sourceNotice.Text.Contains(Copy["outsideChange"], StringComparison.Ordinal) || !returnChange.IsVisible || !returnChange.IsEnabled || Before.Zoom != userZoom || !Before.VerifiedPreviewText.Contains("Second page evidence", StringComparison.Ordinal)) throw new InvalidOperationException("Manual page2 was recaptured as the selected event's immutable page1 anchor in " + timing.Name);
+                    if (Before.PageId != manualPage || After.PageId != canonicalAfterPage || selectedBefore?.Page != canonicalBeforePage || selectedAfter?.Page != canonicalAfterPage || selectedChange.GetRawText() != canonicalEvent.GetRawText() || AtSelectedChange || ComparisonState != "ready" || Before.ReadState != "ready" || After.ReadState != "ready" || !sourceNotice.Text.Contains(Copy["outsideChange"], StringComparison.Ordinal) || !returnChange.IsVisible || !returnChange.IsEnabled || Before.Zoom != userZoom || !Before.VerifiedPreviewText.Contains("Second page evidence", StringComparison.Ordinal)) throw new InvalidOperationException("Manual page2 was recaptured as the selected event's immutable page1 anchor in " + timing.Name);
                     await capture("event-anchor-" + timing.Name + "-manual-source"); sourceView.SelectedIndex = 1; await Settle();
                     var text = new TextRange(unified.Document.ContentStart, unified.Document.ContentEnd).Text;
                     if (Colored() || !text.Contains(Copy["pageText"], StringComparison.Ordinal) || text.Contains(Copy["selectedSnippet"], StringComparison.Ordinal)) throw new InvalidOperationException("A manually displayed page received the first-page event's colored excerpts in " + timing.Name);
@@ -2210,13 +2247,13 @@ internal sealed class MainWindow : Window
                     var intendedA = selectedBefore; var intendedB = selectedAfter; selectedBefore = Before.CaptureSelection(); selectedAfter = After.CaptureSelection(); RenderSourceDiff();
                     if (AtSelectedChange || DocumentEventMatchesSources(selectedChange) || Colored() || !sourceNotice.Text.Contains(Copy["outsideChange"], StringComparison.Ordinal)) throw new InvalidOperationException("Canonical event/evidence page binding trusted a recaptured manual UI anchor.");
                     selectedBefore = intendedA; selectedAfter = intendedB; RenderSourceDiff(); await capture("event-anchor-" + timing.Name + "-manual-neutral-text");
-                    var metric = new { timing = timing.Name, language = timing.Language, query_scope = scope, selected_event_id = change.Id, canonical_event = change.Value, intended_before_page = selectedBefore?.Page, intended_after_page = selectedAfter?.Page, manual_before_page = Before.PageId, manual_zoom = Before.Zoom, outside_notice = sourceNotice.Text, colored_event_text_on_manual_page = Colored(), query_read_delta = changeQueryReadsForSmoke - queryReads, loaded_ids = changes.Select(item => item.Id).ToArray(), continuation_cursor = nextChanges, independent_recaptured_anchor_control = "synthetic UI anchor override against the same real canonical event; no engine data mutation" };
+                    var metric = new { timing = timing.Name, language = timing.Language, query_scope = scope, selected_event_id = change.Id, canonical_event = canonicalEvent, intended_before_page = selectedBefore?.Page, intended_after_page = selectedAfter?.Page, manual_before_page = Before.PageId, manual_zoom = Before.Zoom, outside_notice = sourceNotice.Text, colored_event_text_on_manual_page = Colored(), query_read_delta = changeQueryReadsForSmoke - queryReads, loaded_ids = changes.Select(item => item.Id).ToArray(), continuation_cursor = nextChanges, independent_recaptured_anchor_control = "synthetic UI anchor override against the same real canonical event; no engine data mutation" };
                     await observe("event-anchor-" + timing.Name, metric); observations.Add(metric);
                     await ReturnToChange(); await Settle();
                     // Return starts a new owned read, but keeps the query and
                     // exact canonical event while retaining the manual zoom.
                     ticket = generation; QueryUnchanged();
-                    if (!AtSelectedChange || !DocumentEventMatchesSources(selectedChange) || Before.PageId != canonicalBeforePage || After.PageId != canonicalAfterPage || selectedChange.GetRawText() != change.Value.GetRawText() || !Colored() || sourceNotice.Text.Contains(Copy["outsideChange"], StringComparison.Ordinal) || Before.Zoom != userZoom) throw new InvalidOperationException("Return did not restore the exact real event pages and eligible excerpts without replacing its query or zoom.");
+                    if (!AtSelectedChange || !DocumentEventMatchesSources(selectedChange) || Before.PageId != canonicalBeforePage || After.PageId != canonicalAfterPage || selectedChange.GetRawText() != canonicalEvent.GetRawText() || !Colored() || sourceNotice.Text.Contains(Copy["outsideChange"], StringComparison.Ordinal) || Before.Zoom != userZoom) throw new InvalidOperationException("Return did not restore the exact real event pages and eligible excerpts without replacing its query or zoom.");
                     await capture("event-anchor-" + timing.Name + "-return-canonical-text");
                 }
                 finally { Before.PageBeforeInstallForSmoke = null; After.PageBeforeInstallForSmoke = null; release.TrySetResult(); manualRelease.TrySetResult(); try { await Task.WhenAll(selecting, manual); } catch (OperationCanceledException) { } }
@@ -2712,7 +2749,7 @@ internal sealed class MainWindow : Window
         if (IsWorkbook) throw new InvalidOperationException("Document query routing requires the document workspace.");
         var report = reportId; var reportBytes = currentReport.GetRawText(); var originalA = Before.CaptureSelection(); var originalB = After.CaptureSelection(); var originalFrom = intervalFrom; var originalTo = intervalTo; var originalNet = NetMode; var originalText = textView; var layout = Layout; var language = Copy.Language;
         var versions = currentReport.Get("revisions").Items(); var first = versions[0].Get("revision_occurrence_id").Text(); var second = versions[1].Get("revision_occurrence_id").Text();
-        async Task<JsonElement> Read(string mode, string from, string to, CancellationToken token = default) => await Bridge.Call("changes", new { project_id = projectId, report_id = reportId, from, to, mode }, token);
+        async Task<JsonElement> Read(string mode, string from, string to, CancellationToken token = default) => (await Bridge.Call("changes", new { project_id = projectId, report_id = reportId, from, to, mode }, token)).Get("items");
         static string Semantics(JsonElement value)
         {
             // Stored provenance is intentionally retained. A range recompute
@@ -2728,8 +2765,8 @@ internal sealed class MainWindow : Window
             if (history.Items().Count == 0 || !history.Items().Select(Semantics).Order().SequenceEqual(recomputed.Items().Select(Semantics).Order())) throw new InvalidOperationException("The representative adjacent pair's source observations/assessments differ beyond the explicitly retained identity and lineage-reason provenance.");
             await SelectSourcePairForSmoke(0, 1); comparisonMode.SelectedIndex = 1; await modeRequest;
             if (queryProvenance.Text != Copy["canonicalAdjacent"] || !NetMode || (comparisonMode.SelectedItem as Choice)?.Id != "range_net" || !changes.Select(item => item.Value.GetRawText()).SequenceEqual(history.Items().Select(item => item.GetRawText())) || intervalFrom != first || intervalTo != second) throw new InvalidOperationException("Adjacent Net did not use its exact stored canonical events while retaining the user's one-pair Net question.");
-            var selected = changes[0]; await SelectChange(selected.Value);
-            if (selectedChange.GetRawText() != selected.Value.GetRawText() || Before.RevisionId != first || After.RevisionId != second || intervalFrom != first || intervalTo != second || !NetMode) throw new InvalidOperationException("A canonical adjacent event lost its exact source/provenance or Net query during native selection.");
+            var selected = changes[0]; var canonicalSelected = await ReadDocumentChangeDetail(CurrentChangeScope, selected.Value, reads.Token); await SelectChange(selected.Value);
+            if (selectedChange.GetRawText() != canonicalSelected.GetRawText() || Before.RevisionId != first || After.RevisionId != second || intervalFrom != first || intervalTo != second || !NetMode) throw new InvalidOperationException("A canonical adjacent event lost its exact source/provenance or Net query during native selection.");
             await capture("adjacent-net-stored-canonical-event");
             await SelectSourcePairForSmoke(0, versions.Count - 1); if (!NetMode) { comparisonMode.SelectedIndex = 1; await modeRequest; }
             var from = intervalFrom; var to = intervalTo; var a = Before.CaptureSelection(); var b = After.CaptureSelection(); var calls = new List<string>();

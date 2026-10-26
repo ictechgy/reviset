@@ -432,7 +432,7 @@ struct SelectedChangeContext:View {
         return heading+" · "+status+(reason.isEmpty ? "":" · "+reason)
     }
     var body:some View {
-        VStack(alignment:.leading,spacing:4){
+        VStack(alignment:.leading,spacing:3){
             HStack(spacing:10){
                 if !model.selected.isNull {
                     Text(changeDisplayName(model.selected)).readableFont(.caption,weight:.medium).lineLimit(1)
@@ -521,6 +521,13 @@ struct ChangeListView: View {
             else {VStack(spacing:10){Text(model.emptyChangesMessage).readableFont(.callout).foregroundStyle(.secondary);if model.canOpenStoredHistory {Button(L("git.openStoredHistory")){Task{await model.openStoredHistory()}}}}.frame(maxWidth:.infinity,maxHeight:.infinity).padding(12)}
         }
         else {ScrollViewReader {reader in ScrollView { LazyVStack(spacing:1) { ForEach(model.filteredChanges) { c in Button {model.chooseChange(c["change_id"].string)} label: {ChangeRow(change:c,compact:compact).padding(.horizontal,10).padding(.vertical,4).contentShape(Rectangle())}.buttonStyle(.plain).disabled(model.loadingChanges || !model.changesFailure.isEmpty).background(model.selectedChangeID==c["change_id"].string ? Color.blue.opacity(0.12) : Color.clear).id(c["change_id"].string) } }.padding(6) }.onChange(of:model.selectedChangeID){if let id=model.selectedChangeID{reader.scrollTo(id,anchor:.center)}}}}
+        if model.loadingChangeDetail {ProgressView(L("doc.changes.loadingDetail")).readableFont(.caption).padding(.horizontal,12)}
+        if !model.changesPaginationFailure.isEmpty {Text(model.changesPaginationFailure).readableFont(.caption).foregroundStyle(.orange).textSelection(.enabled).padding(.horizontal,12)}
+        if !model.nextChangesCursor.isEmpty {
+            Button {Task{await model.loadMoreChanges()}} label: {
+                HStack {if model.loadingMoreChanges {ProgressView().controlSize(.small)};Text(L("doc.changes.loadMore"))}
+            }.disabled(model.loadingChanges || model.loadingMoreChanges).padding(.bottom,6)
+        }
     }}
     private var filters:some View {
         let arrangement=compact ? AnyLayout(VStackLayout(alignment:.leading,spacing:6)):AnyLayout(HStackLayout(spacing:8))
@@ -529,7 +536,7 @@ struct ChangeListView: View {
             TextField(L("doc.changes.search"),text:$model.search).textFieldStyle(.roundedBorder).frame(maxWidth:250)
         }
     }
-    private var changeCount:some View {HStack{Button{model.stepChange(-1)}label:{Image(systemName:"chevron.up")}.help(L("git.previousChange")).accessibilityLabel(L("git.previousChange"));Button{model.stepChange(1)}label:{Image(systemName:"chevron.down")}.help(L("git.nextChange")).accessibilityLabel(L("git.nextChange"));if model.loadingChanges{ProgressView().controlSize(.small)};Text(LC("doc.changes.count",model.filteredChanges.count)).readableFont(.caption).foregroundStyle(.secondary)}}
+    private var changeCount:some View {HStack{Button{model.stepChange(-1)}label:{Image(systemName:"chevron.up")}.help(L("git.previousChange")).accessibilityLabel(L("git.previousChange"));Button{model.stepChange(1)}label:{Image(systemName:"chevron.down")}.help(L("git.nextChange")).accessibilityLabel(L("git.nextChange"));if model.loadingChanges{ProgressView().controlSize(.small)};Text(L("doc.changes.loadedCount",.integer(model.changes.count),.integer(model.changesTotalCount))).readableFont(.caption).foregroundStyle(.secondary)}}
 }
 
 struct ChangeRow: View {

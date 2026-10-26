@@ -1,3 +1,4 @@
+import {PdfAppearanceDocumentBudget} from './pdf-glyphs.js';
 import { inspectAppearance } from './pdf-appearance.js';
 import {pdfFontMetrics,PDF_GEOMETRY_UNVERIFIED} from './pdf-text-geometry.js';
 import { getDocument, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -7,6 +8,8 @@ import { box, Page, DocverError, id, normalize, type PageData, type ElementData 
 import { captureNativePages,ocrEnvironment,supplementPdfOcr,type OcrOptions } from './ocr.js';
 const require=createRequire(import.meta.url);
 const pdfRoot=dirname(require.resolve('pdfjs-dist/package.json'));
+export const PDF_TEXT_BUDGET_POLICY='bounded-page-document-source-text-v1';
+export const PDF_TEXT_LIMITS=Object.freeze({pageItems:100_000,documentItems:500_000,pageCharacters:2_000_000,documentCharacters:20_000_000});
 export const PDF_TEXT_GEOMETRY_POLICY='viewport-scaled-run-advance-v2';
 // PDF.js requires a literal trailing '/' even on Windows; Node's factories
 // read these as filesystem paths (not file:// strings). Append it after join,
@@ -21,12 +24,14 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
   try {
     const document=await task.promise;
     if(document.numPages>1000) throw new DocverError('PAGE_LIMIT','PDF exceeds 1000 pages');
-    const pages:PageData[]=[],ocrPages:number[]=[];
+    const pages:PageData[]=[],ocrPages:number[]=[],appearanceBudget=new PdfAppearanceDocumentBudget();let sourceItems=0,sourceCharacters=0;
     for(let n=1;n<=document.numPages;n++) {
       options.signal?.throwIfAborted();
       const page=await document.getPage(n), viewport=page.getViewport({scale:1});
       if(![viewport.width,viewport.height].every(v=>Number.isFinite(v)&&v>0)||viewport.transform.length!==6||!viewport.transform.every(Number.isFinite))throw new DocverError('INVALID_PDF','PDF page geometry is unavailable');
       const content=await page.getTextContent({disableNormalization:true});
+      if(content.items.length>PDF_TEXT_LIMITS.pageItems||(sourceItems+=content.items.length)>PDF_TEXT_LIMITS.documentItems)throw new DocverError('PDF_TEXT_LIMIT','PDF source text exceeds the item budget');
+      let pageCharacters=0;for(const item of content.items)if('str' in item){pageCharacters+=item.str.length;sourceCharacters+=item.str.length;if(pageCharacters>PDF_TEXT_LIMITS.pageCharacters||sourceCharacters>PDF_TEXT_LIMITS.documentCharacters)throw new DocverError('PDF_TEXT_LIMIT','PDF source text exceeds the character budget');}
       const elements:ElementData[]=[];
       for(const item of content.items) {
         if(!('str' in item)||!item.str.trim()) continue;
@@ -47,7 +52,7 @@ export async function extractPdf(bytes:Uint8Array,assetId:string,options:OcrOpti
           bbox,...(!metrics.known||!finite?{visibility_evidence:[{method:PDF_GEOMETRY_UNVERIFIED,bbox,assessment:'inferred' as const,coverage:0}]}:{}),
           reading_order:elements.length,availability:'available',method:'pdf_text',source_ref:`page:${n}/text:${elements.length}`,provenance:'observed'});
       }
-      const appearance=await inspectAppearance(page,viewport,elements,content.styles,assetId);
+      const appearance=await inspectAppearance(page,viewport,elements,content.styles,assetId,appearanceBudget);
       const sourceText=elements.filter(e=>e.method==='pdf_text'),hasText=sourceText.length>0;
       pages.push({page_id:id('pg',[assetId,n-1]),asset_id:assetId,page:n,width:viewport.width,height:viewport.height,
         coordinate_system:'pdf_user_space_bottom_left',source_transform:viewport.transform,hidden:null,

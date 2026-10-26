@@ -1,5 +1,6 @@
 import {appendFileSync,readFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {createHash} from 'node:crypto';
 
 const root=process.argv[process.argv.indexOf('--root')+1];
 let input='';
@@ -15,7 +16,20 @@ process.stdin.on('end',()=>{
     while(n>0){n--;label=String.fromCharCode(65+n%26)+label;n=Math.floor(n/26);}
     return {address:label+row,row,column,value:`${control.value??'fresh'}:${scope.revision_occurrence_id}:${scope.sheet_id}:${label+row}`,formula:null,number_format:'General'};
   }
-  if((action==='create'||action==='workbookCreate')&&control.mode==='import-gate') value={project_id:'fixture-created-'+action};
+  if(action==='changes'||action==='changeDetail') {
+    const scope={project_id:args.project_id,report_id:args.report_id,from:args.from,to:args.to,mode:args.mode,...(args.kind?{kind:args.kind}:{}),...(args.text?{text:args.text}:{})};
+    const query_id=createHash('sha256').update(JSON.stringify(scope)).digest('hex');
+    const rows=(control.document_changes??[]).filter(change=>(!args.kind||change.kind===args.kind)&&(!args.text||((change.before??'')+' '+(change.after??'')).toLowerCase().includes(args.text.toLowerCase()))&&(args.from!=='occ_b'||change.from_occurrence==='occ_b'));
+    if(action==='changes') {
+      const offset=args.cursor?Number(args.cursor):0,items=rows.slice(offset,offset+100).map(change=>({...change,before:change.before===null?null:change.before.slice(0,180),after:change.after===null?null:change.after.slice(0,180),evidence:change.evidence.slice(0,8),summary_preview:true,detail_required:true}));
+      value={...scope,query_id,items,next_cursor:offset+100<rows.length?String(offset+100):null,total_count:rows.length};
+    } else {
+      const change=rows.find(change=>change.change_id===args.change_id);if(!change)throw new Error('Unknown document fixture event');
+      const serialized=JSON.stringify(change),offset=args.detail_offset??0;let end=Math.min(offset+128*1024,serialized.length);if(end<serialized.length&&/[\uDC00-\uDFFF]/.test(serialized[end]))end--;
+      value={...scope,query_id,change_id:args.change_id,detail_offset:offset,json_length:serialized.length,json_chunk:serialized.slice(offset,end),content_sha256:createHash('sha256').update(serialized).digest('hex'),next_detail_offset:end<serialized.length?end:null};
+      if(control.mode==='document-wrong-detail')value.report_id='foreign';
+    }
+  } else if((action==='create'||action==='workbookCreate')&&control.mode==='import-gate') value={project_id:'fixture-created-'+action};
   else if(action==='workbookAnalyze'&&control.mode==='import-gate') error={code:'CONTROLLED_IMPORT_ANALYSIS_STOP',message:'controlled fixture stops after accepted import submission'};
   else if(action==='workbookReports'&&control.mode==='import-gate') value=[];
   else if(action==='workbookProjects'||action==='workbookReleases') value=[];
@@ -65,6 +79,6 @@ process.stdin.on('end',()=>{
   } else throw new Error('Unexpected fixture action '+action);
   appendFileSync(join(root,'read-events.jsonl'),JSON.stringify({action,name:args.name,query,mode:control.mode})+'\n');
   if(control.list_delay!==undefined&&(!Number.isInteger(control.list_delay)||control.list_delay<0||control.list_delay>3000))throw new Error('Invalid bounded list delay');
-  const delay=action==='workbookQuery'&&args.name==='list_workbook_changes'?(control.list_delay??control.delay??0):(control.delay??0);
+  const delay=action==='changeDetail'?(control.detail_delay??0):action==='workbookQuery'&&args.name==='list_workbook_changes'?(control.list_delay??control.delay??0):(control.delay??0);
   setTimeout(()=>console.log(JSON.stringify({ok:!error,protocol_version:'0.1.0',schema_version:'0.4.0',value,error})),delay);
 });

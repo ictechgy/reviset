@@ -14,7 +14,7 @@ process.stdin.on('end',()=>{
   if(action==='projects')value=[{project_id:'project',last_report_id:'retained',revisions:[]}];
   else if(action==='reports')value=[{report_id:'retained'},{report_id:'saved_'+mode}];
   else if(action==='view')value={project_id:project,report_id:args.report_id,revisions,matches:[],quality_counts:{}};
-  else if(action==='changes')value=[];
+  else if(action==='changes')value={project_id:args.project_id,report_id:args.report_id,query_id:'a'.repeat(64),items:[],next_cursor:null,total_count:0};
   else if(action==='create')value={project_id:'created-input'};
   else if(action==='recover'){
     if(!args.run_id)error={code:'CLEANUP_FAILURE',message:'controlled startup staging cleanup failure'};

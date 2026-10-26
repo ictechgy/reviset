@@ -92,6 +92,11 @@ final class OriginalPDFHostView:PDFView {
     override var acceptsFirstResponder:Bool {sourceKeyboardEnabled && super.acceptsFirstResponder}
     override var canBecomeKeyView:Bool {sourceKeyboardEnabled && super.canBecomeKeyView}
     override func becomeFirstResponder()->Bool {sourceKeyboardEnabled && super.becomeFirstResponder()}
+    // Imported annotations are evidence, never commands. PDFKit's default URL
+    // action can dispatch file/custom-scheme URLs through NSWorkspace; named
+    // actions can also print or reset forms. Model-owned controls navigate via
+    // go(to:) and keep working without forwarding document actions to PDFKit.
+    override func perform(_ action:PDFAction) {}
 
     var representedPageID=""
     var representedEvidencePageID=""
@@ -200,7 +205,7 @@ struct OriginalPDFView: NSViewRepresentable {
     let evidence: JSON
     let page: JSON
     func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject,PDFViewDelegate {
         var path = ""; var pageNumber = -1; var zoom = -1.0
         var marks: [(PDFPage, PDFAnnotation)] = []
         var selectedPage: PDFPage?
@@ -213,8 +218,11 @@ struct OriginalPDFView: NSViewRepresentable {
         private var restoringViewport = false
         func observe(_ view: PDFView) {
             observedView = view
+            view.delegate=self
             NotificationCenter.default.addObserver(self, selector: #selector(pageChanged(_:)), name: .PDFViewPageChanged, object: view)
         }
+        func pdfViewWillClick(onLink sender:PDFView,with url:URL) {}
+        func pdfViewOpenPDF(_ sender:PDFView,forRemoteGoToAction action:PDFActionRemoteGoTo) {}
         func resetViewport() {
             viewportGeneration &+= 1
             pendingCaptureGeneration = nil
@@ -277,6 +285,7 @@ struct OriginalPDFView: NSViewRepresentable {
     }
     func makeNSView(context: Context) -> OriginalPDFPaneView {
         let pane=OriginalPDFPaneView(),view=pane.pdfView;view.displayMode = .singlePage; view.displayDirection = .vertical
+        view.acceptsDraggedFiles=false
         view.displaysPageBreaks = true; view.pageShadowsEnabled = true; view.backgroundColor = NSColor.underPageBackgroundColor
         view.minScaleFactor = 0.1; view.maxScaleFactor = 8
         context.coordinator.observe(view); return pane
@@ -399,6 +408,29 @@ private struct PageColumnSelectionIdentity:Equatable {
     let source:PageColumnReadIdentity
     let number:Int?
 }
+private struct PageColumnRequestIdentity:Equatable {
+    let source:PageColumnReadIdentity
+    let retry:Int
+}
+private struct PageColumnRetryButton:NSViewRepresentable {
+    let occurrence:String
+    let retry:()->Void
+    final class Coordinator:NSObject {
+        var retry:()->Void
+        init(_ retry:@escaping ()->Void){self.retry=retry}
+        @objc func performRetry(_ sender:NSButton){retry()}
+    }
+    func makeCoordinator()->Coordinator {Coordinator(retry)}
+    func makeNSView(context:Context)->NSButton {
+        let button=NSButton(title:"",target:context.coordinator,action:#selector(Coordinator.performRetry(_:)))
+        button.bezelStyle = .rounded;return button
+    }
+    func updateNSView(_ button:NSButton,context:Context) {
+        context.coordinator.retry=retry;button.title=L("doc.page.retry");button.setAccessibilityLabel(button.title)
+        button.identifier=NSUserInterfaceItemIdentifier("Reviset.document.retryPage."+occurrence)
+        button.font = .systemFont(ofSize:ReadabilityPreferences.shared.pointSize(.callout))
+    }
+}
 struct PageColumn: View {
     @EnvironmentObject var model: AppModel
     let revision: JSON; let side: String
@@ -410,10 +442,12 @@ struct PageColumn: View {
     @State private var loadedSource:PageColumnReadIdentity?
     @State private var pageInput = ""
     @State private var rawOpen = false
+    @State private var retryGeneration=0
     var pages: [JSON] { model.primaryPages(revision) }
     var payloadReady:Bool {!payload.isNull && !pageID.isEmpty && !loadingPage && failure.isEmpty && loadedSource==readIdentity && payload["page"]["page_id"].string==pageID}
     var current: JSON { pages.first { $0["page_id"].string == pageID } ?? JSON() }
     private var readIdentity:PageColumnReadIdentity {PageColumnReadIdentity(report:model.report["report_id"].string,occurrence:revision["revision_occurrence_id"].string,page:pageID)}
+    private var requestIdentity:PageColumnRequestIdentity {PageColumnRequestIdentity(source:readIdentity,retry:retryGeneration)}
     private var currentPageNumber:Int? {guard !current.isNull,current["page"].int>0 else{return nil};return current["page"].int}
     private var selectionIdentity:PageColumnSelectionIdentity {PageColumnSelectionIdentity(source:readIdentity,number:currentPageNumber)}
     private var currentPageInput:String {currentPageNumber.map(String.init) ?? ""}
@@ -441,7 +475,12 @@ struct PageColumn: View {
             }
             GeometryReader { geometry in
                 if current.isNull { ContentUnavailableView(L("doc.tail.evidence.noCorrespondingSourceText"), systemImage:"doc", description:Text(L("doc.tail.evidence.distinguishObservedAbsenceFromDeletion"))) }
-                else if !failure.isEmpty { ContentUnavailableView(L("doc.tail.page.openFailed"),systemImage:"exclamationmark.triangle",description:Text(failure)) }
+                else if !failure.isEmpty {
+                    VStack(spacing:12) {
+                        ContentUnavailableView(L("doc.tail.page.openFailed"),systemImage:"exclamationmark.triangle",description:Text(failure))
+                        PageColumnRetryButton(occurrence:revision["revision_occurrence_id"].string,retry:{retryGeneration += 1}).fixedSize().padding(.bottom,20)
+                    }
+                }
                 else if payload.isNull { ProgressView(L("doc.tail.sourcePage.loading")).frame(maxWidth:.infinity,maxHeight:.infinity) }
                 else if payload["source"]["kind"].string == "pdf" {
                     OriginalPDFView(keyboardEnabled:model.effectiveDiffMode=="source",path:payload["source"]["path"].string,pageNumber:payload["display_page_number"].isNull ? payload["page"]["page"].int : payload["display_page_number"].int,zoom:model.zoom,evidence:payloadReady && payload["source"]["origin"].string == "original" ? evidence : JSON(),page:payload["display_page"].isNull ? payload["page"] : payload["display_page"])
@@ -474,13 +513,13 @@ struct PageColumn: View {
                     Text(L("doc.tail.speakerNotes")).readableFont(.headline); Text(notesDisplayText(payload["page"]))
                 }.frame(maxWidth:.infinity,alignment:.leading) }.frame(maxHeight:220)}else{Text(loadingPage ? L("doc.tail.verifyingSelectedPageExtract"):L("doc.tail.currentPageExtractReadFailed")).foregroundStyle(.secondary)}
             }.readableFont(.caption).disabled(!payloadReady)
-        }.padding(12).onChange(of:selectionIdentity,initial:true){pageInput=currentPageInput}.task(id:readIdentity) {
-            let source=readIdentity
+        }.padding(12).onChange(of:selectionIdentity,initial:true){pageInput=currentPageInput}.task(id:requestIdentity) {
+            let request=requestIdentity,source=request.source
             if loadedSource?.report != source.report {payload=JSON()}
             failure="";loadingPage=true
             defer{if !Task.isCancelled{loadingPage=false}}
             guard !source.page.isEmpty else{payload=JSON();return}
-            do {let result=try await model.page(source.page);if !Task.isCancelled,readIdentity==source{payload=result;loadedSource=source}}catch{if !Task.isCancelled,readIdentity==source{payload=JSON();failureMessage=bridgeErrorMessage(error)}}
+            do {let result=try await model.page(source.page);if !Task.isCancelled,requestIdentity==request{payload=result;loadedSource=source}}catch{if !Task.isCancelled,requestIdentity==request{payload=JSON();failureMessage=bridgeErrorMessage(error)}}
         }
     }
     func go(_ number: Int) { if number>0,let p=pages.first(where:{$0["page"].int==number}){model.navigatePage(p["page_id"].string,in:revision["revision_occurrence_id"].string);pageInput=String(number)}else{pageInput=currentPageInput} }

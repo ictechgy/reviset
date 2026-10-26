@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { Store } from '../../packages/storage/index.js';
 import { byteHash, canonical } from '../../packages/schema/index.js';
 import { WorkbookService,validateIdentity,MAX_WORKBOOK_REPORT_BYTES } from '../../packages/workbook/service.js';
-import { WorkbookQueryService,boundedWorkbookNetCacheBytes } from '../../packages/workbook/query.js';
+import { WorkbookQueryService,boundedWorkbookNetCacheBytes,boundedWorkbookCell } from '../../packages/workbook/query.js';
 import { diffWorkbooks, type WorkbookRevisionData } from '../../packages/workbook/diff.js';
 import { extractWorkbook } from '../../packages/workbook/ingest.js';
 import { cellAddress,workbookID, type WorkbookCellData, type WorkbookSheetData } from '../../packages/workbook/types.js';
@@ -22,6 +22,20 @@ function sheet(id: string, cells: WorkbookCellData[], extra: Partial<WorkbookShe
 }
 function revision(id: string, cells: WorkbookCellData[], extra: Partial<WorkbookRevisionData> = {}): WorkbookRevisionData { return { format: 'xlsx', revision_occurrence_id: id, label: id, index: id === 'before' ? 0 : 1, asset_id: 'sha256:' + 'a'.repeat(64), sheets: [sheet('sheet_' + id,cells)], coverage_gaps: [], calculation: 'stored_values_only_no_recalculation', date_system: '1900', calc_flags: {}, ...extra }; }
 const wire = (result: Record<string,any>) => ({ structuredContent: result, content: [{type:'text',text:JSON.stringify(result)}] });
+
+test('bounded style previews preserve non-BMP characters at the native JSON boundary', () => {
+  for (const prefix of [62,63,64]) {
+    const raw='a'.repeat(prefix)+'😀 suffix';
+    const projected=boundedWorkbookCell(cell(1,1,'same value',{style:{font:raw}}),0,1024)!;
+    const preview=projected.style.font;
+    assert.ok(typeof preview==='string');
+    assert.doesNotMatch(preview,/[\uD800-\uDFFF]/u);
+    assert.ok(raw.startsWith(preview));
+    assert.ok(preview.length<=64);
+    assert.equal(projected.style_truncated,true);
+    assert.equal(JSON.parse(JSON.stringify(projected)).style.font,preview);
+  }
+});
 const wireBytes = (result: Record<string,any>) => Buffer.byteLength(JSON.stringify(wire(result)));
 async function fixture(inputs: string[] = ['id,amount\na,100\n','id,amount\na,120\n','id,amount\na,100\n']) {
   const root = await mkdtemp(join(tmpdir(),'docver-workbook-core-')); await mkdir(join(root,'inputs'));

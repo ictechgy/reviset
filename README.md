@@ -29,6 +29,8 @@ For workbooks, the change query, selected event and physical source have separat
 
 macOS original sources v2 → v3; compact Changes beside large PDFKit pages.
 
+Document changes load in bounded pages; use **Load more changes** to continue. Search covers complete before/after text, including text outside row previews. Selecting a change loads its complete detail. On macOS, **Show full style** in cell details reads every supported style property, and **Retry this page** repeats a failed source read. PDF preview links and document actions are disabled.
+
 ![English macOS extracted text view](docs/images/macos-git-text-en.png)
 
 macOS extracted text: query v1 → v3, selected intermediate event v1 → v2, with source terminators.

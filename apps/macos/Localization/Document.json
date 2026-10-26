@@ -1,4 +1,20 @@
 {
+  "doc.page.retry": {
+    "en": "Retry this page",
+    "ko": "이 페이지 다시 열기"
+  },
+  "doc.changes.loadedCount": {
+    "en": "{0} of {1} changes loaded",
+    "ko": "변경 {1}건 중 {0}건 표시"
+  },
+  "doc.changes.loadMore": {
+    "en": "Load more changes",
+    "ko": "변경 더 불러오기"
+  },
+  "doc.changes.loadingDetail": {
+    "en": "Loading selected change…",
+    "ko": "선택한 변경 상세 읽는 중…"
+  },
   "doc.appearance.visible": {
     "en": "Visible",
     "ko": "보임"

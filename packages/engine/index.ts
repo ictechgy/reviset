@@ -4,8 +4,9 @@ import { stat,readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { MAX_INPUT_BYTES,Manifest, Report, SCHEMA_VERSION, SCHEMA_HASH, ENGINE_VERSION, id, byteHash, DocverError, validBundleDecisionLog, type InputManifest, type RevisionData, type ReportData } from '../schema/index.js';
 import { ingest, type Extracted } from '../ingest/index.js';
-import {PPTX_TEXT_POLICY} from '../ingest/pptx.js';
-import {PDF_TEXT_GEOMETRY_POLICY} from '../ingest/pdf.js';
+import {PPTX_TEXT_POLICY,PPTX_EXTRACTION_BUDGET_POLICY} from '../ingest/pptx.js';
+import {PDF_TEXT_GEOMETRY_POLICY,PDF_TEXT_BUDGET_POLICY} from '../ingest/pdf.js';
+import {PDF_APPEARANCE_BUDGET_POLICY} from '../ingest/pdf-glyphs.js';
 import {PDF_RECTANGLE_PATH_POLICY} from '../ingest/pdf-geometry.js';
 import {PDF_SOURCE_LAYOUT_POLICY} from '../diff/pdf-source-layout.js';
 import { matchPagesCooperative, similarity,MATCHING_WORK_POLICY,MAX_ASSIGNMENT_COSTS,MAX_MATCHING_MATRIX_CELLS } from '../matching/index.js';
@@ -39,6 +40,7 @@ export async function analyze(input:InputManifest,baseDir:string,store:Store,sig
   if(expectedInputSha256&&(expectedInputSha256.length!==manifest.revisions.length||expectedInputSha256.some((row,index)=>row.length!==manifest.revisions[index].files.length||row.some(digest=>!/^[a-f0-9]{64}$/.test(digest)))))throw new DocverError('INPUT_IDENTITY','Expected input identities must match every document occurrence');
   const environment:Record<string,string>={node:process.version,platform:process.platform,arch:process.arch,engine:ENGINE_VERSION,
     pdfjs:dependencyVersion('pdfjs-dist'),pdfjs_worker_sha256:await pdfWorkerEnvironment(),pdf_text_geometry_policy:PDF_TEXT_GEOMETRY_POLICY,pdf_rectangle_path_policy:PDF_RECTANGLE_PATH_POLICY,pdf_source_layout_policy:PDF_SOURCE_LAYOUT_POLICY,matching_work_policy:MATCHING_WORK_POLICY,xml:dependencyVersion('fast-xml-parser'),fflate:dependencyVersion('fflate'),pptx_text_policy:PPTX_TEXT_POLICY,
+    pdf_text_budget_policy:PDF_TEXT_BUDGET_POLICY,pdf_appearance_budget_policy:PDF_APPEARANCE_BUDGET_POLICY,pptx_extraction_budget_policy:PPTX_EXTRACTION_BUDGET_POLICY,
     renderer:options.pptxPreview===false?'disabled':manifest.revisions.some(r=>r.files.some(f=>/\.pptx$/i.test(f)))?await officeEnvironment()??'unavailable':'not_used',ocr:options.ocr==='off'?'disabled':await ocrEnvironment(),settings:`ocr:${options.ocr??'auto'};max-input-512MiB;max-pdf-pages-1000`};
   const run=store.beginRun(manifest.project_id,manifest.title);
   try {
