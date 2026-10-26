@@ -5,17 +5,26 @@ import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {zipSync,unzipSync,strToU8} from 'fflate';
-import {makePptx,makePdf} from '../../scripts/generate-fixtures.js';
+import {makePptx} from '../../scripts/generate-fixtures.js';
+import PDFDocument from 'pdfkit';
 import {DesktopService} from '../../packages/desktop/service.js';
 import {analyze} from '../../packages/engine/index.js';
 import {canonical,hash} from '../../packages/schema/index.js';
 import {Store} from '../../packages/storage/index.js';
 import {nativeWarningReasons} from '../../packages/desktop/warning-summary.js';
 
+// This reference contains only ASCII. PDFKit's standard font avoids a host
+// Korean-font dependency in the Windows portability gate.
+async function referencePdf():Promise<Buffer>{
+  const document=new PDFDocument({size:[720,405],margin:40}),chunks:Buffer[]=[];
+  const done=new Promise<Buffer>((ok,fail)=>{document.on('data',(chunk:Buffer)=>chunks.push(chunk));document.on('end',()=>ok(Buffer.concat(chunks)));document.on('error',fail);});
+  document.font('Helvetica').fontSize(24).text('Reference only',40,40).fontSize(14).text('Independent supplied PDF',40,90);document.end();return done;
+}
+
 test('real native outlines omit repeated revision evidence and bundle warnings preserve every distinct reason and late reused-PDF caution',async t=>{
   const root=await mkdtemp(join(tmpdir(),'reviset-native-projection-')),library=join(root,'library'),service=new DesktopService(library);
   try{
-    const reference=join(root,'reference.pdf');await writeFile(reference,await makePdf([{key:'ref',title:'Reference only',body:'Independent supplied PDF'}]));
+    const reference=join(root,'reference.pdf');await writeFile(reference,await referencePdf());
     const inputs=[];
     for(let version=0;version<2;version++){
       const parts=unzipSync(await makePptx([{key:'source',title:'Source',body:'Synthetic source'}]));
