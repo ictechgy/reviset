@@ -64,8 +64,8 @@ const archivedBundle50Kernel=(version:string)=>version==='0.3.0-native.bundle.50
 const archivedBundle51Kernel=(version:string)=>version==='0.3.0-native.bundle.51';
 const archivedBundle53Kernel=(version:string)=>version==='0.4.0-native.bundle.53';
 const archivedBundle54Kernel=(version:string)=>version==='0.4.0-native.bundle.54';
-//56 changed extraction budgets only; stored observations share the frozen55 comparison kernel.
-const archivedBundle55Kernel=(version:string)=>['0.4.0-native.bundle.55','0.4.0-native.bundle.56'].includes(version);
+//56/57 changed extraction budgets only; stored observations share the frozen55 comparison kernel.
+const archivedBundle55Kernel=(version:string)=>['0.4.0-native.bundle.55','0.4.0-native.bundle.56','0.4.0-native.bundle.57'].includes(version);
 const currentLineageKernel=(version:string)=>version===ENGINE_VERSION||archivedBundle55Kernel(version)||archivedBundle54Kernel(version)||archivedBundle53Kernel(version)||archivedLineageKernel(version)||archivedBundle50Kernel(version)||archivedBundle51Kernel(version);
 const resource=(r:ReportData,kind:string,key?:string)=>`docver://projects/${r.project_id}/reports/${r.report_id}/${kind}${key?'/'+key:''}`;
 export const reportMetadata=(r:ReportData)=>({schema_version:r.schema_version,report_id:r.report_id,project_id:r.project_id,engine_version:r.engine_version,schema_hash:r.schema_hash,timeline_revision_id:r.timeline_revision_id,mapping_revision_id:r.mapping_revision_id,

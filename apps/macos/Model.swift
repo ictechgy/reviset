@@ -144,7 +144,7 @@ enum ImportIntent {
     private var pageNavigation: (report:String, from:Int, to:Int, left:String, right:String)?
     // A list preview has no verified event payload. Keep the physical pair
     // already on screen until the replacement event has passed every check.
-    private var preservedSourcePair:(key:String,sourceFrom:Int,sourceTo:Int)?
+    private var preservedSourcePair:(scope:String,sourceFrom:Int,sourceTo:Int)?
     init() {
         let resources = Bundle.main.resourceURL!
         let base = ProcessInfo.processInfo.environment["DOCVER_TEST_USER_DATA"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Docver")
@@ -163,7 +163,7 @@ enum ImportIntent {
         if tab == "history", !selected.isNull,
            let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==selected["from_occurrence"].string}),
            let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==selected["to_occurrence"].string}), a<b, a>=from, b<=to {return (a,b)}
-        if let pair=preservedSourcePair,pair.key==changeQueryKey {return (pair.sourceFrom,pair.sourceTo)}
+        if let pair=preservedSourcePair,pair.scope==changeSourceScopeKey {return (pair.sourceFrom,pair.sourceTo)}
         return (from,to)
     }
     var readingSingleVersion:Bool {sourceFrom==sourceTo || revisions.count<2}
@@ -182,16 +182,17 @@ enum ImportIntent {
     // Filters run against complete server observations, including text beyond a
     // list preview. Locally filtering those previews would claim false absence.
     var filteredChanges: [JSON] {changes}
-    private var changeQueryKey:String {[projectID,report["report_id"].string,revision(from)["revision_occurrence_id"].string,revision(to)["revision_occurrence_id"].string,tab=="history" ? "history":to==from+1 ? "adjacent":"range_net",kind,search].joined(separator:"|")}
+    private var changeSourceScopeKey:String {[projectID,report["report_id"].string,revision(from)["revision_occurrence_id"].string,revision(to)["revision_occurrence_id"].string,tab=="history" ? "history":to==from+1 ? "adjacent":"range_net"].joined(separator:"|")}
+    private var changeQueryKey:String {[changeSourceScopeKey,kind,search].joined(separator:"|")}
     private var changeQueryArguments:[String:Any] {
         var args:[String:Any]=["project_id":projectID,"report_id":report["report_id"].string,"from":revision(from)["revision_occurrence_id"].string,"to":revision(to)["revision_occurrence_id"].string,"mode":tab=="history" ? "history":to==from+1 ? "adjacent":"range_net"]
         if kind != "all" {args["kind"]=kind};if !search.isEmpty {args["text"]=search};return args
     }
     private func invalidateChangeDetail(){detailGeneration += 1;pendingDetail?.cancel();pendingDetail=nil;loadingChangeDetail=false;selectedChangeDetail=JSON();selectedDetailKey=""}
-    private func resetChangePaging(){navigationIntentGeneration += 1;moreChangesOwner?.cancel();moreChangesOwner=nil;nextChangesCursor="";changesTotalCount=0;loadingMoreChanges=false;changesPaginationFailureMessage = .raw("");loadedChangesKey="";loadedChangesQueryID="";preservedSourcePair=nil;invalidateChangeDetail()}
+    private func resetChangePaging(preservingSources:Bool=false){navigationIntentGeneration += 1;moreChangesOwner?.cancel();moreChangesOwner=nil;nextChangesCursor="";changesTotalCount=0;loadingMoreChanges=false;changesPaginationFailureMessage = .raw("");loadedChangesKey="";loadedChangesQueryID="";if !preservingSources || preservedSourcePair?.scope != changeSourceScopeKey {preservedSourcePair=nil};invalidateChangeDetail()}
     private func scheduleChangeFilter(){
         guard !report.isNull,!busy else{return}
-        pendingFilter?.cancel();rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;resetChangePaging();changes=[];selectedChangeID=nil;loadingChanges=true
+        pendingFilter?.cancel();rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;resetChangePaging(preservingSources:true);changes=[];selectedChangeID=nil;loadingChanges=true
         let key=changeQueryKey
         pendingFilter=Task {do {try await Task.sleep(nanoseconds:250_000_000);try Task.checkCancellation();guard key==changeQueryKey,!busy else{return};pendingFilter=nil;try await updateChanges()}catch is CancellationError {}catch {fail(error)}}
     }
@@ -279,14 +280,21 @@ enum ImportIntent {
         let key=changeQueryKey,arguments=changeQueryArguments
         // Reports and query IDs are immutable. Re-rendering the same question
         // must not reinstall page one over appended rows or a newer selection.
-        if loadedChangesKey==key,!loadingChanges,changesFailure.isEmpty {return}
+        if loadedChangesKey==key,!loadingChanges,changesFailure.isEmpty {
+            if !changes.contains(where:{$0["change_id"].string==selectedChangeID}),pageNavigation==nil,rejectedEventScope==nil {
+                selectedChangeID=changes.first(where:{$0["kind"].string=="text_modified"})?["change_id"].string ?? changes.first?["change_id"].string ?? ""
+                selectEvidence()
+                if let id=selectedChangeID,!id.isEmpty {startSelectedChangeDetail(id,intent:navigationIntentGeneration)}
+            } else {selectEvidence()}
+            return
+        }
         let preferredChange=selectedChangeID
         let generation:Int,task:Task<JSON,Error>
         if let pending=pendingRange,pending.key==key {
             generation=pending.generation;task=pending.task
         } else {
             pendingRange?.task.cancel()
-            rangeGeneration += 1;generation=rangeGeneration;resetChangePaging();rejectedEventScope=nil;evidenceWarning="";loadingChanges=true;changesFailure="";changes=[];selectedChangeID=nil
+            rangeGeneration += 1;generation=rangeGeneration;resetChangePaging(preservingSources:true);rejectedEventScope=nil;evidenceWarning="";loadingChanges=true;changesFailure="";changes=[];selectedChangeID=nil
             task=Task { try await self.bridge.call("changes",arguments) }
             pendingRange=(key,generation,task)
         }
@@ -366,7 +374,10 @@ enum ImportIntent {
     }
 
     func selectEvidence() {
-        if selected.isNull,let pair=preservedSourcePair,pair.key==changeQueryKey,changes.first(where:{$0["change_id"].string==selectedChangeID})?["detail_required"].bool==true {return}
+        // Filtering retires the row and its full-detail authority, not the
+        // physical sources the user was reading. Keep those even for an empty
+        // or failed filtered query until verified replacement evidence exists.
+        if selected.isNull,let pair=preservedSourcePair,pair.scope==changeSourceScopeKey {return}
         let a=sourceFrom,b=sourceTo
         if let n=pageNavigation,n.report != report["report_id"].string || n.from != a || n.to != b {pageNavigation=nil}
         if let n=pageNavigation,n.report==report["report_id"].string,n.from==a,n.to==b {
@@ -383,6 +394,7 @@ enum ImportIntent {
             return
         }
         evidenceWarning=""
+        preservedSourcePair=(changeSourceScopeKey,a,b)
         let evidence = selected["evidence"].array
         leftPageID = evidenceSelection(evidence, in:revision(a), current:leftPageID)
         rightPageID = evidenceSelection(evidence, in:revision(b), current:rightPageID)
@@ -426,7 +438,7 @@ enum ImportIntent {
                 selectedChangeID=nil;pageNavigation=nil;preservedSourcePair=nil;leftPageID="";rightPageID="";rejectedEventScope=(projectID,report["report_id"].string,from,to);evidenceWarningMessage=UIMessage("doc.evidence.selectionUnavailable");return
             }
         }
-        preservedSourcePair=(changeQueryKey,previousPair.0,previousPair.1)
+        preservedSourcePair=(changeSourceScopeKey,previousPair.0,previousPair.1)
         rejectedEventScope=nil;evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence();startSelectedChangeDetail(id,intent:intent)
     }
     func stepChange(_ offset:Int) {
@@ -451,11 +463,13 @@ enum ImportIntent {
     }
     func selectVersion(_ index:Int) {
         guard revisions.indices.contains(index),!busy,!loading else{return}
-        from=max(0,index-1);to=index;selectedChangeID=nil;pageNavigation=nil;preservedSourcePair=nil;evidenceWarning="";enforceSingleSourcePresentation();changeRange()
+        navigationIntentGeneration += 1;invalidateChangeDetail()
+        from=max(0,index-1);to=index;selectedChangeID=nil;pageNavigation=nil;preservedSourcePair=nil;rejectedEventScope=nil;evidenceWarning="";enforceSingleSourcePresentation();changeRange()
     }
     func openHistoryPage(_ index:Int,_ pageID:String){
         guard revisions.indices.contains(index),primaryPages(revision(index)).contains(where:{$0["page_id"].string==pageID}) else{return}
-        evidenceWarning="";selectedChangeID=nil;preservedSourcePair=nil
+        navigationIntentGeneration += 1;invalidateChangeDetail()
+        evidenceWarning="";selectedChangeID=nil;preservedSourcePair=nil;rejectedEventScope=nil
         from=max(0,index-1);to=min(revisions.count-1,index)
         let edges=report["matches"].array
         let parents=edges.filter { $0["to_page_id"].string == pageID }.map { $0["from_page_id"].string }

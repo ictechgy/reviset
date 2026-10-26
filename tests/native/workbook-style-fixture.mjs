@@ -28,6 +28,14 @@ process.stdin.on('end',()=>{
   if(control.mode==='nonarray')value.items=null;
   if(control.mode==='fractional-total')value.total=10.5;
   if(control.mode==='same-cursor')value.next_cursor=q.cursor;
+  if(control.mode==='complete-short'){item.value='A';item.text_continuations.value={offset:0,next_offset:null,total_length:100,state:'complete'};}
+  if(control.mode==='complete-next')item.text_continuations.value.next_offset=end;
+  if(control.mode==='empty-nonempty')item.text_continuations.value.state='empty';
+  if(control.mode==='truncated-missing-next'){item.value='A';item.text_continuations.value={offset:0,next_offset:null,total_length:100,state:'truncated'};}
+  if(control.mode==='truncated-full-initial')item.text_continuations.value.state='truncated';
+  if(control.mode==='missing-next')delete item.text_continuations.value.next_offset;
+  if(control.mode==='empty-value'){item.value='';item.text_continuations.value={offset:0,next_offset:null,total_length:0,state:'empty'};}
+
   appendFileSync(join(root,'style-events.jsonl'),JSON.stringify({q,mode:control.mode})+'\n');
   setTimeout(()=>console.log(JSON.stringify({ok:!error,protocol_version:'0.1.0',schema_version:'0.4.0',value,error})),control.delay??0);
 });

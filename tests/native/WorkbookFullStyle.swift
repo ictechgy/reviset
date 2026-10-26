@@ -83,10 +83,12 @@ import SwiftUI
         try require(!before.failure.isEmpty && before.item.isNull,"ContinuationAcceptedForeignProperty")
         try control();await before.retry();await before.previousProperty()
         try require(before.read.page==9 && before.item["value"].string=="Calibri" && before.read.offset==0,"PreviousPropertyKeptTextOffset")
-        for mode in ["wrong-project","wrong-report","wrong-revision","wrong-sheet","wrong-component","bad-offset","bad-next","nonarray","fractional-total","same-cursor"] {
+        for mode in ["wrong-project","wrong-report","wrong-revision","wrong-sheet","wrong-component","bad-offset","bad-next","nonarray","fractional-total","same-cursor","complete-short","complete-next","empty-nonempty","truncated-missing-next","truncated-full-initial","missing-next"] {
             try control(mode);await before.retry()
             try require(!before.failure.isEmpty && before.item.isNull && !before.loading,"UntrustedStyleDisplayed-"+mode)
         }
+        try control("empty-value");await before.retry()
+        try require(before.failure.isEmpty && !before.item.isNull && before.item["value"].string.isEmpty && before.nextOffset==nil,"ValidEmptyPropertyRejected")
         for mode in ["missing","empty"] {
             try control(mode);await before.load()
             try require(before.failure.isEmpty && before.item.isNull && before.missing==(mode=="missing"),"MissingAndEmptyStyleConfused-"+mode)

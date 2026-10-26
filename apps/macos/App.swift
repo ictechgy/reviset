@@ -830,10 +830,15 @@ private struct SmokeStructureView: View {
         guard references>0,model.revisions.count>=2 else{throw BridgeError(code:"REFERENCE_MISSING",message:"제공 PDF 대응이 없습니다.")}
         model.tab="compare";model.from=0;model.to=1;try await model.updateChanges();try await settleSelectedChange(model)
         guard let visual=model.changes.first(where:{$0["kind"].string=="visual_region_changed" || $0["coverage_gaps"].array.contains(where:{$0["reason"].string=="reference_pdf_changed_without_pptx_source_change"})}) else{throw BridgeError(code:"REFERENCE_VISUAL",message:"제공 PDF의 화면 차이 근거가 없습니다.")}
-        model.selectedChangeID=visual["change_id"].string;model.selectEvidence()
-        guard model.primaryPages(model.revision(0)).contains(where:{$0["page_id"].string==model.leftPageID}),model.primaryPages(model.revision(1)).contains(where:{$0["page_id"].string==model.rightPageID}),visual["appearance_assessment"].string=="inferred",visual["evidence"].array.allSatisfy({$0["method"].string=="provided_pdf_native_raster"}) else{throw BridgeError(code:"REFERENCE_NAVIGATION",message:"PDF 화면 근거에서 원본 슬라이드로 이동하지 못했습니다.")}
+        model.chooseChange(visual["change_id"].string);try await settleSelectedChange(model)
+        let full=model.selected,first=model.revision(0),second=model.revision(1)
+        guard !full.isNull,full["change_id"].string==visual["change_id"].string,model.sourceFrom==0,model.sourceTo==1,
+              let beforeEvidence=full["evidence"].array.first(where:{$0["revision_occurrence_id"].string==first["revision_occurrence_id"].string}),
+              let afterEvidence=full["evidence"].array.first(where:{$0["revision_occurrence_id"].string==second["revision_occurrence_id"].string}),
+              model.leftPageID==model.displayPageID(beforeEvidence["page_id"].string,in:first),model.rightPageID==model.displayPageID(afterEvidence["page_id"].string,in:second),
+              model.primaryPages(first).contains(where:{$0["page_id"].string==model.leftPageID}),model.primaryPages(second).contains(where:{$0["page_id"].string==model.rightPageID}),full["appearance_assessment"].string=="inferred",full["evidence"].array.allSatisfy({$0["method"].string=="provided_pdf_native_raster"}) else{throw BridgeError(code:"REFERENCE_NAVIGATION",message:"PDF 화면 근거에서 원본 슬라이드로 이동하지 못했습니다.")}
         model.leftPageID="";model.rightPageID=""
-        for evidence in visual["evidence"].array {model.navigateEvidence(evidence)}
+        for evidence in full["evidence"].array {model.navigateEvidence(evidence)}
         model.selectEvidence()
         guard model.primaryPages(model.revision(0)).contains(where:{$0["page_id"].string==model.leftPageID}),model.primaryPages(model.revision(1)).contains(where:{$0["page_id"].string==model.rightPageID}) else{throw BridgeError(code:"REFERENCE_BUTTON_NAVIGATION",message:"근거 버튼에서 원본 슬라이드로 이동하지 못했습니다.")}
         for id in [model.leftPageID,model.rightPageID]{let payload=try await model.page(id);guard payload["source"]["origin"].string=="reference_pdf" else{throw BridgeError(code:"REFERENCE_BUTTON_SOURCE",message:"근거 버튼 이동 후 PDF 화면을 열지 못했습니다.")}}

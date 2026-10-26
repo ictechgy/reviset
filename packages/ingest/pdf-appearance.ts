@@ -9,6 +9,49 @@ const area=(b:Box)=>b[2]*b[3];
 const overlap=(a:Box,b:Box)=>Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
 const coverageOf=(target:Box,region:Box)=>area(target)>0?Math.min(1,overlap(target,region)/area(target)):0;
 const compact=(s:string)=>normalize(s).replace(/\s/gu,'');
+// Exact substring occurrence counts for the nonpainting correlation proof.
+// A suffix automaton has at most 2*S states and 3*S transitions for S UTF-16
+// code units. Build once per page, lazily; overlap counts saturate at two.
+// All states, transition copies and count arrays reserve work before allocation.
+function uniqueTextOccurrences(source:string,spend:ReturnType<PdfAppearanceDocumentBudget['page']>):(target:string)=>boolean {
+  interface State {length:number;link:number;next:Map<string,number>;occurrences:number}
+  spend('work');const states:State[]=[{length:0,link:-1,next:new Map(),occurrences:0}];let last=0;
+  for(let i=0;i<source.length;i++){
+    spend('work');const char=source[i],current=states.length;
+    states.push({length:states[last].length+1,link:0,next:new Map(),occurrences:1});
+    let previous=last;
+    while(previous>=0&&!states[previous].next.has(char)){
+      spend('work');states[previous].next.set(char,current);previous=states[previous].link;
+    }
+    if(previous>=0){
+      spend('work');const next=states[previous].next.get(char)!;
+      if(states[previous].length+1===states[next].length)states[current].link=next;
+      else{
+        spend('work',1+states[next].next.size);const clone=states.length;
+        states.push({length:states[previous].length+1,link:states[next].link,next:new Map(states[next].next),occurrences:0});
+        while(previous>=0&&states[previous].next.get(char)===next){
+          spend('work');states[previous].next.set(char,clone);previous=states[previous].link;
+        }
+        states[next].link=states[current].link=clone;
+      }
+    }
+    last=current;
+  }
+  // Counting order avoids a comparison sort. Descending maximum lengths give
+  // every suffix link its complete end-position count before it propagates.
+  spend('work',source.length+1+3*states.length);
+  const counts=new Uint32Array(source.length+1),order=new Uint32Array(states.length);
+  for(const state of states)counts[state.length]++;
+  for(let i=1;i<counts.length;i++)counts[i]+=counts[i-1];
+  for(let i=0;i<states.length;i++)order[--counts[states[i].length]]=i;
+  for(let i=order.length-1;i>0;i--){const state=states[order[i]],parent=states[state.link];parent.occurrences=Math.min(2,parent.occurrences+state.occurrences);}
+  return target=>{
+    if(!target)return false;
+    spend('work',target.length);let state=0;
+    for(let i=0;i<target.length;i++){const next=states[state].next.get(target[i]);if(next===undefined)return false;state=next;}
+    return states[state].occurrences===1;
+  };
+}
 export async function inspectAppearance(page:any,viewport:any,elements:ElementData[],fontStyles:Record<string,any>,assetId:string,documentBudget=new PdfAppearanceDocumentBudget()):Promise<{regions:Region[];gaps:{feature:string;reason:string}[]}> {
   const operators=await page.getOperatorList({annotationMode:AnnotationMode.DISABLE}),annotations=await page.getAnnotations({intent:'display'}),regions:Region[]=[],gaps:{feature:string;reason:string}[]=[];
   const sourceElementCount=elements.length,spend=documentBudget.page(),gapReasons=new Set<string>();
@@ -17,6 +60,10 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
   const addGap=(...values:{feature:string;reason:string}[])=>{for(const value of values)if(!gapReasons.has(value.reason)){gapReasons.add(value.reason);gaps.push(value);}};
   const addRegion=(...values:Region[])=>{spend('regions',values.length);regions.push(...values);};
   const withhold=(reason:string)=>{
+    // Partial element assessments are discarded below. Their state-specific
+    // review reasons must not survive as an apparent occlusion/strike finding.
+    // Keep independent geometry and annotation gaps, including their vetoes.
+    for(let i=gaps.length-1;i>=0;i--)if(gaps[i].feature==='pdf_visibility'&&gaps[i].reason.startsWith('visibility_requires_review:')){gapReasons.delete(gaps[i].reason);gaps.splice(i,1);}
     // Coverage gaps alone are not an annotation veto for OCR, comparison or
     // stored-report diff consumers. Reserve at most one full-page carrier when
     // limits prevent inspecting source annotations, even if evidence is spent.
@@ -178,6 +225,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     spend('work',4*(found<0?Math.max(0,source.length-start):found-start+target.length));
     return found;
   };
+  let uniqueText:ReturnType<typeof uniqueTextOccurrences>|undefined;
   for(const e of elements){
     const geometryUnverified=hasUnverifiedPdfGeometry(e);
     e.visibility='unverified';e.visibility_evidence=geometryUnverified?[{method:PDF_GEOMETRY_UNVERIFIED,bbox:e.bbox,assessment:'inferred',coverage:0}]:[];e.visibility_spans=[];
@@ -190,7 +238,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
     // Uniform explicit modes 3/7 do not paint text. A unique complete textual
     // match proves this independently of metrics, color or clipping geometry.
     const nonpainting=target&&correlated.length===target.length&&correlated.every(v=>v.glyph.nonpainting_mode);
-    if(nonpainting&&findText(target)===index&&findText(target,index+1)<0){
+    if(nonpainting&&(uniqueText??=uniqueTextOccurrences(source,spend))(target)){
       cursor=index+target.length;e.visibility='hidden_render_mode';addEvidence('explicit_nonpainting_text_mode',box(0,0,0,0),'observed',0);
       if(geometryUnverified)addGap({feature:'pdf_visibility',reason:PDF_GEOMETRY_UNVERIFIED});continue;
     }

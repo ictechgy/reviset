@@ -3,7 +3,7 @@ import { OPS, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, type Box } from '../schema/index.js';
 import {pdfFontMetrics} from './pdf-text-geometry.js';
 export interface PaintedGlyph {text:string;bbox:Box;order:number;hidden:boolean;nonpainting_mode:boolean;reliable:boolean;run:number;color:string;clip_ink?:Box;paint_ink?:Box;geometry_unverified?:boolean}
-export const PDF_APPEARANCE_BUDGET_POLICY='bounded-page-document-appearance-v2';
+export const PDF_APPEARANCE_BUDGET_POLICY='bounded-page-document-appearance-v3';
 // These budgets cover our analysis after PDF.js decoding. Visibility is withheld
 // when any budget is exhausted; the original text observations remain intact.
 export const PDF_APPEARANCE_LIMITS=Object.freeze({

@@ -23,7 +23,7 @@ function fixture():ReportData{
 }
 const service=(r:ReportData)=>new QueryService({} as Store,new Set([r.project_id]),()=>r);
 
-for(const storedEngine of ['0.4.0-native.bundle.55','0.4.0-native.bundle.56'])test('stored '+storedEngine+' reports retain exact range event IDs and detail under engine57',()=>{
+for(const storedEngine of ['0.4.0-native.bundle.55','0.4.0-native.bundle.56','0.4.0-native.bundle.57'])test('stored '+storedEngine+' reports retain exact range event IDs and detail under engine58',()=>{
   const archived=Report.parse({...fixture(),engine_version:storedEngine});
   const original=canonical(archived),args={project_id:archived.project_id,report_id:archived.report_id,from:'occ_a',to:'occ_c',mode:'range_net' as const};
   const old=service(archived).changeSet(args),current=service({...archived,engine_version:ENGINE_VERSION}).changeSet(args);
@@ -32,7 +32,7 @@ for(const storedEngine of ['0.4.0-native.bundle.55','0.4.0-native.bundle.56'])te
   const q=service(archived),event=old[0];
   const detail=q.query('get_change',{project_id:archived.project_id,report_id:archived.report_id,from:'occ_a',to:'occ_c',change_id:event.change_id,component:'before',max_output_tokens:8000});
   assert.ok(detail.items.length>0);
-  assert.equal(canonical(archived),original,'reading never migrates stored55 bytes');
+  assert.equal(canonical(archived),original,'reading never migrates stored report bytes');
 });
 const scope=(r:ReportData)=>({project_id:r.project_id,report_id:r.report_id,max_output_tokens:4000});
 const wire=(r:QueryResult)=>({structuredContent:r,content:[{type:'text',text:JSON.stringify(r)}]});

@@ -40,7 +40,35 @@ jobs:
           New-Item -ItemType Directory -Force $output | Out-Null
           $app = Join-Path $PWD 'release/Reviset-Windows-x64/Reviset.exe'
           $probe = Start-Process -FilePath $app -ArgumentList @('--smoke', ('"' + $output + '"'), '--fixtures', ('"' + $fixtures + '"')) -PassThru
-          if (-not $probe.WaitForExit(600000)) { $probe.Kill($true); throw 'Native WPF smoke exceeded ten minutes' }
+          $watch = [System.Diagnostics.Stopwatch]::StartNew()
+          $lastProgressSeconds = 0.0
+          $lastSequence = -1
+          $progress = $null
+          while (-not $probe.WaitForExit(5000)) {
+            $progressPath = Join-Path $output 'progress.json'
+            if (Test-Path $progressPath) {
+              try {
+                $observed = Get-Content $progressPath -Raw | ConvertFrom-Json
+                if ($observed.sequence -gt $lastSequence) {
+                  $progress = $observed
+                  $lastSequence = $observed.sequence
+                  $lastProgressSeconds = $watch.Elapsed.TotalSeconds
+                  Write-Host ("Native smoke {0:n1}s: {1}; checks={2}; {3}" -f $watch.Elapsed.TotalSeconds, $observed.stage, $observed.completed_checks, $observed.last_completed_check)
+                }
+              } catch { Write-Host 'Native smoke progress update temporarily unreadable; retaining last valid record' }
+            }
+            $reason = $null
+            if ($watch.Elapsed.TotalSeconds -ge 900) { $reason = 'Native WPF smoke exceeded fifteen minutes overall' }
+            elseif ($watch.Elapsed.TotalSeconds - $lastProgressSeconds -ge 180) { $reason = 'Native WPF smoke made no check or stage progress for three minutes' }
+            if ($reason) {
+              # Persist the exact last stage before killing the owned process tree.
+              [ordered]@{ reason = $reason; elapsed_seconds = $watch.Elapsed.TotalSeconds; seconds_since_progress = $watch.Elapsed.TotalSeconds - $lastProgressSeconds; process_id = $probe.Id; last_progress = $progress } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $output 'watchdog.json') -Encoding utf8
+              Write-Host (Get-Content (Join-Path $output 'watchdog.json') -Raw)
+              $probe.Kill($true)
+              $probe.WaitForExit(10000) | Out-Null
+              throw $reason
+            }
+          }
           if ($probe.ExitCode -ne 0) { throw "Native WPF smoke failed: $($probe.ExitCode)" }
           $result = Get-Content (Join-Path $output 'result.json') -Raw | ConvertFrom-Json
           if (-not $result.passed) { throw 'Native WPF smoke did not report pass' }

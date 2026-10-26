@@ -1629,6 +1629,11 @@ struct WorkbookStyleSource:Hashable {
         if items.isEmpty {guard result["total"].int==0,cursor.isNull else{return try reject()};return}
         let item=items[0],continuation=item["text_continuations"]["value"],next=continuation["next_offset"]
         guard item["key"].raw is String,item["value"].raw is String,request.key==nil || request.key==item["key"].string,integer(continuation["offset"]),continuation["offset"].int==request.offset,integer(continuation["total_length"]),continuation["total_length"].int>=request.offset+item["value"].string.utf16.count,item["value"].string.utf16.count<=4096,["empty","complete","truncated"].contains(continuation["state"].string),next.isNull || (integer(next) && next.int>request.offset && next.int==request.offset+item["value"].string.utf16.count && next.int<=2_000_000 && next.int<continuation["total_length"].int),result["total"].int<=1 || request.cursor.isEmpty == false || !cursor.isNull else{return try reject()}
+        // Use the same exact segment contract as other raw workbook fields.
+        // A terminal later segment remains truncated with next=null; it must
+        // end at total, while complete always means the entire value at zero.
+        let observed=workbookRawField(item,field:"value")
+        guard ![WorkbookRawFieldState.invalid,.unavailable,.missing].contains(observed.state) else{return try reject()}
     }
 }
 struct WorkbookFullStyleView:View {
