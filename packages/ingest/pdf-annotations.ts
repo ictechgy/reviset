@@ -7,15 +7,25 @@ export const PDF_ANNOTATION_LIMIT=2048;
 export const PDF_ANNOTATION_POINT_LIMIT=32768;
 export const PDF_ANNOTATION_QUAD_LIMIT=8192;
 
+function carrier(assetId:string,page:number,startOrder:number,index:number|string,subtype:string,bbox:Box):ElementData{
+  return {observation_id:id('obs',[assetId,page,'annotation',index,subtype]),kind:'shape',text:'',normalized_text:'',bbox,reading_order:startOrder,availability:'available',method:PDF_ANNOTATION_CARRIER,source_ref:`page:${page}/annotation:${index}/${encodeURIComponent(subtype)}`,provenance:'observed',comparison_role:'excluded',comparison_reason:'page_annotation_intent_not_comparison_text',visibility:'unverified',visibility_evidence:[{method:PDF_ANNOTATION_REGION,bbox,assessment:'inferred',coverage:0}]};
+}
+// A single reserved safety observation survives even when normal appearance
+// evidence cannot be admitted. It does not inspect the unbounded source array.
+export function annotationBudgetCarrier(assetId:string,page:number,startOrder:number,reason='source_annotation_budget_exceeded'){
+  return {elements:[carrier(assetId,page,startOrder,'budget','BudgetExceeded',box(0,0,1,1))],gaps:[{feature:'pdf_annotations',reason}],budgetExceeded:true};
+}
+
 // A page-scoped metadata carrier has no text and never participates in pairing.
 // Its region is only a withholding signal, not proof of rendered strike/delete.
 export function annotationCarriers(annotations:any[],viewport:any,assetId:string,page:number,startOrder:number){
   const elements:ElementData[]=[],gaps:{feature:string;reason:string}[]=[];
   const add=(index:number|string,subtype:string,bbox:Box,reason:string)=>{
-    elements.push({observation_id:id('obs',[assetId,page,'annotation',index,subtype]),kind:'shape',text:'',normalized_text:'',bbox,reading_order:startOrder+elements.length,availability:'available',method:PDF_ANNOTATION_CARRIER,source_ref:`page:${page}/annotation:${index}/${encodeURIComponent(subtype)}`,provenance:'observed',comparison_role:'excluded',comparison_reason:'page_annotation_intent_not_comparison_text',visibility:'unverified',visibility_evidence:[{method:PDF_ANNOTATION_REGION,bbox,assessment:'inferred',coverage:0}]});gaps.push({feature:'pdf_annotations',reason});
+    elements.push(carrier(assetId,page,startOrder+elements.length,index,subtype,bbox));gaps.push({feature:'pdf_annotations',reason});
   };
+  if(annotations.length>PDF_ANNOTATION_LIMIT)return annotationBudgetCarrier(assetId,page,startOrder);
   const pointBudget=annotations.some(a=>(a.quadPoints?.length??0)>PDF_ANNOTATION_QUAD_LIMIT)||annotations.reduce((n,a)=>n+(a.quadPoints?.length??0),0)>PDF_ANNOTATION_POINT_LIMIT;
-  if(annotations.length>PDF_ANNOTATION_LIMIT||pointBudget){add('budget','BudgetExceeded',box(0,0,1,1),pointBudget?'source_annotation_point_budget_exceeded':'source_annotation_budget_exceeded');return {elements,gaps,budgetExceeded:true};}
+  if(pointBudget)return annotationBudgetCarrier(assetId,page,startOrder,'source_annotation_point_budget_exceeded');
   for(const [index,a]of annotations.entries()){
     if(a.annotationFlags&34)continue;
     if((a.annotationType===AnnotationType.LINK||a.annotationType===AnnotationType.POPUP)&&!a.hasAppearance)continue;

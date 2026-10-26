@@ -29,7 +29,10 @@ process.stdin.on('end',()=>{
       value={...scope,query_id,change_id:args.change_id,detail_offset:offset,json_length:serialized.length,json_chunk:serialized.slice(offset,end),content_sha256:createHash('sha256').update(serialized).digest('hex'),next_detail_offset:end<serialized.length?end:null};
       if(control.mode==='document-wrong-detail')value.report_id='foreign';
     }
-  } else if((action==='create'||action==='workbookCreate')&&control.mode==='import-gate') value={project_id:'fixture-created-'+action};
+  } else if(action==='projects'&&control.document_report) value=['project','other_project'].map(project_id=>({project_id,title:project_id,last_report_id:control.document_report.report_id}));
+  else if(action==='reports'&&control.document_report) value=[{report_id:control.document_report.report_id}];
+  else if(action==='view'&&control.document_report) value={...control.document_report,project_id:args.project_id};
+  else if((action==='create'||action==='workbookCreate')&&control.mode==='import-gate') value={project_id:'fixture-created-'+action};
   else if(action==='workbookAnalyze'&&control.mode==='import-gate') error={code:'CONTROLLED_IMPORT_ANALYSIS_STOP',message:'controlled fixture stops after accepted import submission'};
   else if(action==='workbookReports'&&control.mode==='import-gate') value=[];
   else if(action==='workbookProjects'||action==='workbookReleases') value=[];

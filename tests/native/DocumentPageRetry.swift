@@ -40,16 +40,21 @@ private struct RetryHarness:View {
         }
         try await settle {views(window.contentView!).contains{($0 as? NSButton)?.identifier?.rawValue=="Reviset.document.retryPage.before"} && views(window.contentView!).compactMap{$0 as? OriginalPDFHostView}.contains{$0.representedPageID=="right"}}
         let peer=views(window.contentView!).compactMap{$0 as? OriginalPDFHostView}.first{$0.representedPageID=="right"}!
+        // Establish a completed, user-owned zoom before testing peer retention;
+        // merely mounting a PDF can precede its deferred initial fit.
+        guard let peerPane=peer.superview as? OriginalPDFPaneView,peerPane.zoomInButton.isEnabled else{throw NSError(domain:"PeerZoomNotReady",code:1)}
+        peerPane.zoomInButton.performClick(nil)
         let peerDocument=peer.document,peerPage=peer.currentPage,peerScale=peer.scaleFactor
         let button=views(window.contentView!).compactMap{$0 as? NSButton}.first{$0.identifier?.rawValue=="Reviset.document.retryPage.before"}!
         guard button.isEnabled,!button.visibleRect.isEmpty else{throw NSError(domain:"RetryNotVisible",code:1)}
         button.performClick(nil)
         try await settle {views(window.contentView!).compactMap{$0 as? OriginalPDFHostView}.contains{$0.representedPageID=="left"}}
         let events=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("attempts.json"))) as! [[String:Any]]
+        let facts:[String:Any]=["left_reads":events.filter{$0["page_id"] as? String=="left"}.count,"right_reads":events.filter{$0["page_id"] as? String=="right"}.count,"same_document":peer.document === peerDocument,"same_page":peer.currentPage === peerPage,"before_scale":peerScale,"after_scale":peer.scaleFactor,"left":model.leftPageID,"right":model.rightPageID,"from":model.from,"to":model.to,"report_unchanged":try model.report.data()==original]
         guard events.filter({$0["page_id"] as? String=="left"}).count==2,events.filter({$0["page_id"] as? String=="right"}).count==1,
               events.allSatisfy({$0["report_id"] as? String=="fixed-report" && $0["project_id"] as? String=="project"}),
               peer.document === peerDocument,peer.currentPage === peerPage,peer.scaleFactor==peerScale,
-              model.leftPageID=="left",model.rightPageID=="right",model.from==0,model.to==1,try model.report.data()==original else{throw NSError(domain:"RetryChangedSource",code:1)}
+              model.leftPageID=="left",model.rightPageID=="right",model.from==0,model.to==1,try model.report.data()==original else{throw NSError(domain:"RetryChangedSource",code:1,userInfo:[NSLocalizedDescriptionKey:String(decoding:try JSONSerialization.data(withJSONObject:facts,options:.sortedKeys),as:UTF8.self)])}
         window.close()
     }
 }

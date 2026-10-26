@@ -439,9 +439,9 @@ struct SelectedChangeContext:View {
                     if model.eventInsideQuery {Text(L("git.selectedEvent")+" · "+changeVersionSummary(model.selected,revisions:model.revisions)).readableFont(.caption,weight:.semibold);Text(L("git.eventInsideQuery")).readableFont(.caption2).foregroundStyle(.secondary)}
                     if !model.selected["coverage_gaps"].array.isEmpty {Menu {ForEach(Array(model.selected["coverage_gaps"].array.enumerated()),id:\.offset){_,gap in Text(verbatim:String(selectedCoverageCaption(gap).prefix(240)))}}label:{Label(L("doc.coverage.heading"),systemImage:"exclamationmark.circle")}.readableFont(.caption2)}
                     Spacer(minLength:4)
-                    if model.manuallyBrowsing {Button(L("git.returnToChange")){model.returnToChange()}.readableFont(.caption)}
                     ReadableActionButton(L("git.contextDetails"),identifier:"Reviset.document.contextDetails"){detailsPresented=true}
                 }else {Text(model.readingSingleVersion ? L("git.reading"):model.unselectedChangeMessage).readableFont(.caption).foregroundStyle(.secondary);Spacer()}
+                if model.canReturnToChange {Button(L("git.returnToChange")){model.returnToChange()}.readableFont(.caption)}
             }.lineLimit(1).frame(minHeight:28)
             ForEach(documentSelectedContext(model.selected),id:\.category.rawValue){item in
                 NativeContextSummaryLine(text:label(item),symbol:item.status=="observed" || item.status=="human_confirmed" ? "checkmark.circle":"exclamationmark.circle",warning:item.status=="needs_review" || item.status=="inferred")

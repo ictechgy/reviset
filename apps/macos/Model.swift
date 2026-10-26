@@ -132,6 +132,8 @@ enum ImportIntent {
     private var mcpProjectID = ""
     private var pendingRange: (key: String, generation: Int, task: Task<JSON, Error>)?
     private var pendingFilter:Task<Void,Never>?
+    // A manual source choice supersedes queued as well as in-flight event reads.
+    private var navigationIntentGeneration = 0
     private var detailGeneration = 0
     private var pendingDetail:Task<JSON,Error>?
     private var moreChangesOwner:BridgeRequestCancellation?
@@ -167,6 +169,7 @@ enum ImportIntent {
 
     var eventInsideQuery:Bool {sourceFrom != from || sourceTo != to}
     var manuallyBrowsing:Bool {guard let n=pageNavigation else{return false};return n.report==report["report_id"].string && n.from==sourceFrom && n.to==sourceTo}
+    var canReturnToChange:Bool {manuallyBrowsing && !busy && !loadingChanges && changes.contains(where:{$0["change_id"].string==selectedChangeID})}
     var selected: JSON {
         if selectedChangeDetail["change_id"].string==selectedChangeID,selectedDetailKey==changeQueryKey {return selectedChangeDetail}
         let row=changes.first { $0["change_id"].string == selectedChangeID } ?? JSON()
@@ -181,7 +184,7 @@ enum ImportIntent {
         if kind != "all" {args["kind"]=kind};if !search.isEmpty {args["text"]=search};return args
     }
     private func invalidateChangeDetail(){detailGeneration += 1;pendingDetail?.cancel();pendingDetail=nil;loadingChangeDetail=false;selectedChangeDetail=JSON();selectedDetailKey=""}
-    private func resetChangePaging(){moreChangesOwner?.cancel();moreChangesOwner=nil;nextChangesCursor="";changesTotalCount=0;loadingMoreChanges=false;changesPaginationFailureMessage = .raw("");loadedChangesKey="";loadedChangesQueryID="";invalidateChangeDetail()}
+    private func resetChangePaging(){navigationIntentGeneration += 1;moreChangesOwner?.cancel();moreChangesOwner=nil;nextChangesCursor="";changesTotalCount=0;loadingMoreChanges=false;changesPaginationFailureMessage = .raw("");loadedChangesKey="";loadedChangesQueryID="";invalidateChangeDetail()}
     private func scheduleChangeFilter(){
         guard !report.isNull,!busy else{return}
         pendingFilter?.cancel();rangeGeneration += 1;pendingRange?.task.cancel();pendingRange=nil;resetChangePaging();changes=[];selectedChangeID=nil;loadingChanges=true
@@ -280,6 +283,7 @@ enum ImportIntent {
             task=Task { try await self.bridge.call("changes",arguments) }
             pendingRange=(key,generation,task)
         }
+        let navigationIntent=navigationIntentGeneration
         do {
             let response=try await task.value
             guard generation==rangeGeneration else{return}
@@ -289,7 +293,7 @@ enum ImportIntent {
                 selectedChangeID=changes.first(where:{$0["change_id"].string==preferredChange})?["change_id"].string ?? changes.first(where:{$0["kind"].string=="text_modified"})?["change_id"].string ?? changes.first?["change_id"].string ?? ""
             }
             selectEvidence();loadingChanges=false
-            if let id=selectedChangeID,!id.isEmpty {do{try await loadSelectedChange(id)}catch{if !(error is CancellationError){evidenceWarningMessage=bridgeErrorMessage(error)}}}
+            if let id=selectedChangeID,!id.isEmpty,navigationIntent==navigationIntentGeneration {do{try await loadSelectedChange(id,intent:navigationIntent)}catch{if !(error is CancellationError){evidenceWarningMessage=bridgeErrorMessage(error)}}}
             if pendingRange?.generation==generation {pendingRange=nil}
         } catch {
             guard generation==rangeGeneration else{return}
@@ -316,7 +320,8 @@ enum ImportIntent {
             changes.append(contentsOf:rows);nextChangesCursor=response["next_cursor"].string;changesTotalCount=response["total_count"].int;loadingMoreChanges=false
         }catch {guard generation==rangeGeneration,key==changeQueryKey else{return};loadingMoreChanges=false;changesPaginationFailureMessage=bridgeErrorMessage(error)}
     }
-    private func loadSelectedChange(_ id:String) async throws {
+    private func loadSelectedChange(_ id:String,intent:Int) async throws {
+        guard intent==navigationIntentGeneration,selectedChangeID==id else{return}
         guard let row=changes.first(where:{$0["change_id"].string==id}),row["detail_required"].bool else{selectEvidence();return}
         let key=changeQueryKey,queryID=loadedChangesQueryID,project=projectID,reportID=report["report_id"].string
         invalidateChangeDetail();let generation=detailGeneration;loadingChangeDetail=true
@@ -337,8 +342,8 @@ enum ImportIntent {
             let value=JSON(try JSONSerialization.jsonObject(with:data))
             guard value["change_id"].string==id,value["report_id"].string==reportID,value["from_occurrence"].string==row["from_occurrence"].string,value["to_occurrence"].string==row["to_occurrence"].string else{throw BridgeError(code:"DOCUMENT_CHANGE_SCOPE",message:"Selected document detail identity mismatch")};return value
         };pendingDetail=task
-        do {let value=try await task.value;guard generation==detailGeneration,key==changeQueryKey,selectedChangeID==id else{return};selectedChangeDetail=value;selectedDetailKey=key;loadingChangeDetail=false;pendingDetail=nil;selectEvidence()}
-        catch {guard generation==detailGeneration,key==changeQueryKey,selectedChangeID==id else{return};loadingChangeDetail=false;pendingDetail=nil;selectedChangeDetail=JSON();evidenceWarningMessage=bridgeErrorMessage(error);throw error}
+        do {let value=try await task.value;guard generation==detailGeneration,intent==navigationIntentGeneration,key==changeQueryKey,selectedChangeID==id else{return};selectedChangeDetail=value;selectedDetailKey=key;loadingChangeDetail=false;pendingDetail=nil;selectEvidence()}
+        catch {guard generation==detailGeneration,intent==navigationIntentGeneration,key==changeQueryKey,selectedChangeID==id else{return};loadingChangeDetail=false;pendingDetail=nil;selectedChangeDetail=JSON();evidenceWarningMessage=bridgeErrorMessage(error);throw error}
     }
 
     func selectEvidence() {
@@ -385,19 +390,22 @@ enum ImportIntent {
         guard occurrence==before["revision_occurrence_id"].string || occurrence==after["revision_occurrence_id"].string else{return}
         let target=occurrence==before["revision_occurrence_id"].string ? before:after
         guard id.isEmpty || primaryPages(target).contains(where:{$0["page_id"].string==id}) else{evidenceWarningMessage = UIMessage("doc.evidence.selectionUnavailable");return}
+        navigationIntentGeneration += 1
+        if loadingChangeDetail || pendingDetail != nil {invalidateChangeDetail()}
         if occurrence==before["revision_occurrence_id"].string{leftPageID=id}
         if occurrence==after["revision_occurrence_id"].string{rightPageID=id}
         evidenceWarning="";pageNavigation=(report["report_id"].string,sourceFrom,sourceTo,leftPageID,rightPageID)
     }
     func chooseChange(_ id:String){
         guard !loadingChanges, changes.contains(where:{$0["change_id"].string==id}) else{return}
+        navigationIntentGeneration += 1;let intent=navigationIntentGeneration
         invalidateChangeDetail()
         if tab=="history",let change=changes.first(where:{$0["change_id"].string==id}) {
             guard let a=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["from_occurrence"].string}),let b=revisions.firstIndex(where:{$0["revision_occurrence_id"].string==change["to_occurrence"].string}),a<b,a>=from,b<=to else {
                 selectedChangeID=nil;pageNavigation=nil;leftPageID="";rightPageID="";rejectedEventScope=(projectID,report["report_id"].string,from,to);evidenceWarningMessage=UIMessage("doc.evidence.selectionUnavailable");return
             }
         }
-        rejectedEventScope=nil;evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence();if changes.first(where:{$0["change_id"].string==id})?["detail_required"].bool==true {Task{do{try await loadSelectedChange(id)}catch{if !(error is CancellationError){evidenceWarningMessage=bridgeErrorMessage(error)}}}}
+        rejectedEventScope=nil;evidenceWarning="";pageNavigation=nil;selectedChangeID=id;selectEvidence();if changes.first(where:{$0["change_id"].string==id})?["detail_required"].bool==true {loadingChangeDetail=true;Task{do{try await loadSelectedChange(id,intent:intent)}catch{if !(error is CancellationError){evidenceWarningMessage=bridgeErrorMessage(error)}}}}
     }
     func stepChange(_ offset:Int) {
         let rows=filteredChanges
@@ -407,7 +415,10 @@ enum ImportIntent {
         guard rows.indices.contains(next) else{if next==rows.count,!nextChangesCursor.isEmpty {Task{let key=changeQueryKey;await loadMoreChanges();if key==changeQueryKey,filteredChanges.indices.contains(next){chooseChange(filteredChanges[next]["change_id"].string)}}};return}
         chooseChange(rows[next]["change_id"].string)
     }
-    func returnToChange() {pageNavigation=nil;selectEvidence()}
+    func returnToChange() {
+        if selected.isNull,let id=selectedChangeID,changes.contains(where:{$0["change_id"].string==id && $0["detail_required"].bool}) {chooseChange(id);return}
+        navigationIntentGeneration += 1;pageNavigation=nil;selectEvidence()
+    }
     func selectVersion(_ index:Int) {
         guard revisions.indices.contains(index),!busy,!loading else{return}
         from=max(0,index-1);to=index;selectedChangeID=nil;pageNavigation=nil;evidenceWarning="";enforceSingleSourcePresentation();changeRange()
@@ -549,17 +560,13 @@ enum ImportIntent {
     func navigateEvidence(_ evidence: JSON) {
         guard !loadingChanges else{return}
         let occurrence=evidence["revision_occurrence_id"].string
-        if occurrence == revision(sourceFrom)["revision_occurrence_id"].string {
-            let id=displayPageID(evidence["page_id"].string,in:revision(sourceFrom))
-            guard primaryPages(revision(sourceFrom)).contains(where:{$0["page_id"].string==id}) else{evidenceWarningMessage = UIMessage("doc.evidence.pageUnavailable");return}
-            leftPageID=id
-        }
-        if occurrence == revision(sourceTo)["revision_occurrence_id"].string {
-            let id=displayPageID(evidence["page_id"].string,in:revision(sourceTo))
-            guard primaryPages(revision(sourceTo)).contains(where:{$0["page_id"].string==id}) else{evidenceWarningMessage = UIMessage("doc.evidence.pageUnavailable");return}
-            rightPageID=id
-        }
-        evidenceWarning="";pageNavigation=(report["report_id"].string,sourceFrom,sourceTo,leftPageID,rightPageID)
+        let target:JSON
+        if occurrence==revision(sourceFrom)["revision_occurrence_id"].string {target=revision(sourceFrom)}
+        else if occurrence==revision(sourceTo)["revision_occurrence_id"].string {target=revision(sourceTo)}
+        else{return}
+        let id=displayPageID(evidence["page_id"].string,in:target)
+        guard primaryPages(target).contains(where:{$0["page_id"].string==id}) else{evidenceWarningMessage = UIMessage("doc.evidence.pageUnavailable");return}
+        navigatePage(id,in:occurrence)
     }
     func applyRelation(project: String, report: String, draftHash: String, before: String, after: String, left: [String], right: [String], kind: String, reason: String) async throws {
         guard !busy && project == projectID && report == self.report["report_id"].string else { throw BridgeError(code: "STALE_REPORT", message: UIMessage("doc.error.staleMapping")) }

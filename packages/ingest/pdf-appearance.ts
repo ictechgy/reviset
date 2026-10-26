@@ -1,6 +1,6 @@
 import { transformedBounds,rectanglePath,intersectClip,insideClip,type Clip } from './pdf-geometry.js';
 import { paintedGlyphs,supportedGraphicsStateKey,nativePixelMargins,PdfAppearanceDocumentBudget,PdfAppearanceBudgetExceeded } from './pdf-glyphs.js';
-import {annotationCarriers,PDF_ANNOTATION_LIMIT} from './pdf-annotations.js';
+import {annotationCarriers,annotationBudgetCarrier,PDF_ANNOTATION_LIMIT} from './pdf-annotations.js';
 import {hasUnverifiedPdfGeometry,PDF_GEOMETRY_UNVERIFIED} from './pdf-text-geometry.js';
 import { OPS, AnnotationType, AnnotationMode, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { box, normalize, type Box, type ElementData } from '../schema/index.js';
@@ -13,9 +13,14 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
   const operators=await page.getOperatorList({annotationMode:AnnotationMode.DISABLE}),annotations=await page.getAnnotations({intent:'display'}),regions:Region[]=[],gaps:{feature:string;reason:string}[]=[];
   const sourceElementCount=elements.length,spend=documentBudget.page(),gapReasons=new Set<string>();
   let annotationEvidence:ReturnType<typeof annotationCarriers>={elements:[],gaps:[],budgetExceeded:false};
+  let annotationCarriersPrepared=false;
   const addGap=(...values:{feature:string;reason:string}[])=>{for(const value of values)if(!gapReasons.has(value.reason)){gapReasons.add(value.reason);gaps.push(value);}};
   const addRegion=(...values:Region[])=>{spend('regions',values.length);regions.push(...values);};
   const withhold=(reason:string)=>{
+    // Coverage gaps alone are not an annotation veto for OCR, comparison or
+    // stored-report diff consumers. Reserve at most one full-page carrier when
+    // limits prevent inspecting source annotations, even if evidence is spent.
+    if(!annotationCarriersPrepared&&annotations.length){annotationEvidence=annotationBudgetCarrier(assetId,page.pageNumber,sourceElementCount);addGap(...annotationEvidence.gaps);}
     for(let i=0;i<sourceElementCount;i++){const e=elements[i],geometry=hasUnverifiedPdfGeometry(e);e.visibility='unverified';e.visibility_spans=[];e.visibility_evidence=geometry?[{method:PDF_GEOMETRY_UNVERIFIED,bbox:e.bbox,assessment:'inferred',coverage:0}]:[];delete e.table;}
     elements.splice(sourceElementCount);elements.push(...annotationEvidence.elements);
     addGap({feature:'pdf_visibility',reason});return {regions:[],gaps};
@@ -25,7 +30,7 @@ export async function inspectAppearance(page:any,viewport:any,elements:ElementDa
   try{
   // Carrier evidence is also retained output and participates in the document budget.
   spend('evidence',annotations.length);
-  annotationEvidence=annotationCarriers(annotations,viewport,assetId,page.pageNumber,elements.length);addGap(...annotationEvidence.gaps);
+  annotationEvidence=annotationCarriers(annotations,viewport,assetId,page.pageNumber,elements.length);annotationCarriersPrepared=true;addGap(...annotationEvidence.gaps);
   if(annotationEvidence.budgetExceeded)return withhold('source_annotation_budget_exceeded');
   let state={matrix:[1,0,0,1,0,0],alpha:1,strokeAlpha:1,lineWidth:1,lineCap:0,lineJoin:0,miterLimit:10,blend:'Normal',mask:false,clip:null as Clip,pendingClip:false,textMode:0,textClipPending:false,color:'#000000',unsupportedState:false},stack:typeof state[]=[],marked:boolean[]=[];let sawComplexClipOrMask=false,optional=false;
   const glyphs=paintedGlyphs(page,viewport,operators,fontStyles,spend);

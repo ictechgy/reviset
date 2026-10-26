@@ -1280,13 +1280,17 @@ internal sealed class MainWindow : Window
         if (!ChangeNavigationReady || !more.IsEnabled) return; more.IsEnabled = false; var ticket = generation; var intent = new QueryRetry(CurrentChangeScope, true, nextChanges);
         try { await LoadChanges(true, ticket, reads.Token, beforeInstallForSmoke: beforeInstallForSmoke); } catch { if (IsCurrent(ticket) && !reads.IsCancellationRequested) FailQuery(intent); throw; }
     }
-    private async Task<JsonElement> ReadDocumentChangeDetail(ChangeQueryScope scope, JsonElement row, CancellationToken token)
+    private Task<JsonElement> ReadDocumentChangeDetail(ChangeQueryScope scope, JsonElement row, CancellationToken token)
     {
-        var id = row.Get("change_id").Text(); var queryId = documentChangesQueryId; var offset = 0; var length = -1; var digest = ""; var serialized = new StringBuilder();
         var revisions = currentReport.Get("revisions").Items(); var from = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == scope.From); var to = revisions.FindIndex(v => v.Get("revision_occurrence_id").Text() == scope.To);
+        return ReadDocumentChangeDetail(scope, row, documentChangesQueryId, SourceDiff.DocumentQueryMode(from, to, scope.Net), token);
+    }
+    private async Task<JsonElement> ReadDocumentChangeDetail(ChangeQueryScope scope, JsonElement row, string queryId, string mode, CancellationToken token)
+    {
+        var id = row.Get("change_id").Text(); var offset = 0; var length = -1; var digest = ""; var serialized = new StringBuilder();
         while (true) {
             token.ThrowIfCancellationRequested();
-            var part = await Bridge.Call("changeDetail", new { project_id = scope.Project, report_id = scope.Report, from = scope.From, to = scope.To, mode = SourceDiff.DocumentQueryMode(from, to, scope.Net), query_id = queryId, change_id = id, detail_offset = offset }, token);
+            var part = await Bridge.Call("changeDetail", new { project_id = scope.Project, report_id = scope.Report, from = scope.From, to = scope.To, mode, query_id = queryId, change_id = id, detail_offset = offset }, token);
             var text = part.Get("json_chunk").Text(); var total = part.Get("json_length").Number(); var checksum = part.Get("content_sha256").Text();
             if (part.Get("project_id").Text() != scope.Project || part.Get("report_id").Text() != scope.Report || part.Get("query_id").Text() != queryId || part.Get("change_id").Text() != id || part.Get("detail_offset").Number() != offset || total < 0 || total > 128 * 1024 * 1024 || total % 1 != 0 || text.Length == 0 || text.Length > 128 * 1024 || checksum.Length != 64 || length >= 0 && total != length || digest.Length > 0 && checksum != digest) throw new BridgeException("DOCUMENT_CHANGE_SCOPE", "Selected document detail does not match its immutable request.");
             length = (int)total; digest = checksum; serialized.Append(text); var end = offset + text.Length;
@@ -2749,22 +2753,39 @@ internal sealed class MainWindow : Window
         if (IsWorkbook) throw new InvalidOperationException("Document query routing requires the document workspace.");
         var report = reportId; var reportBytes = currentReport.GetRawText(); var originalA = Before.CaptureSelection(); var originalB = After.CaptureSelection(); var originalFrom = intervalFrom; var originalTo = intervalTo; var originalNet = NetMode; var originalText = textView; var layout = Layout; var language = Copy.Language;
         var versions = currentReport.Get("revisions").Items(); var first = versions[0].Get("revision_occurrence_id").Text(); var second = versions[1].Get("revision_occurrence_id").Text();
-        async Task<JsonElement> Read(string mode, string from, string to, CancellationToken token = default) => (await Bridge.Call("changes", new { project_id = projectId, report_id = reportId, from, to, mode }, token)).Get("items");
+        async Task<JsonElement> Read(string mode, string from, string to, CancellationToken token = default) => await Bridge.Call("changes", new { project_id = projectId, report_id = reportId, from, to, mode }, token);
+        async Task<JsonElement> FullEvents(JsonElement page, string mode, string from, string to)
+        {
+            var scope = new ChangeQueryScope(false, projectId, reportId, from, to, mode == "range_net"); var queryId = page.Get("query_id").Text(); var rows = page.Get("items").Items();
+            if (page.Get("project_id").Text() != scope.Project || page.Get("report_id").Text() != scope.Report || queryId.Length != 64 || !page.Get("summary_preview").Flag() || page.Get("next_cursor").ValueKind != JsonValueKind.Null || rows.Count != page.Get("total_count").Number() || rows.Select(row => row.Get("change_id").Text()).Distinct().Count() != rows.Count || rows.Any(row => !row.Get("summary_preview").Flag() || !row.Get("detail_required").Flag())) throw new InvalidOperationException("The representative query did not return a complete, scoped, bounded preview page.");
+            var full = new List<JsonElement>();
+            foreach (var row in rows) full.Add(await ReadDocumentChangeDetail(scope, row, queryId, mode, reads.Token));
+            return JsonSerializer.SerializeToElement(full);
+        }
         static string Semantics(JsonElement value)
         {
             // Stored provenance is intentionally retained. A range recompute
             // assigns net IDs/manifest URI and directed-range reason strings.
             var fields = value.EnumerateObject().Where(property => property.Name is not ("change_id" or "evidence_uri")).ToDictionary(property => property.Name, property => (object?)property.Value);
             if (value.Get("lineage").ValueKind == JsonValueKind.Object) fields["lineage"] = value.Get("lineage").EnumerateObject().Where(property => property.Name != "reasons").ToDictionary(property => property.Name, property => property.Value);
-            return JsonSerializer.Serialize(fields);
+            // Canonical storage and fresh computation may enumerate object
+            // members differently. Preserve every value and array position.
+            static object Canonical(JsonElement item) => item.ValueKind switch
+            {
+                JsonValueKind.Object => item.EnumerateObject().OrderBy(property => property.Name, StringComparer.Ordinal).ToDictionary(property => property.Name, property => Canonical(property.Value)),
+                JsonValueKind.Array => item.EnumerateArray().Select(Canonical).ToArray(),
+                _ => item
+            };
+            return JsonSerializer.Serialize(Canonical(JsonSerializer.SerializeToElement(fields)));
         }
         try
         {
             SetLayout(WorkspaceLayout.Preset("sourceFirst")); sourceView.SelectedIndex = 0;
-            var history = await Read("history", first, second); var recomputed = await Read("range_net", first, second);
+            var historyPage = await Read("history", first, second); var recomputedPage = await Read("range_net", first, second);
+            var history = await FullEvents(historyPage, "history", first, second); var recomputed = await FullEvents(recomputedPage, "range_net", first, second);
             if (history.Items().Count == 0 || !history.Items().Select(Semantics).Order().SequenceEqual(recomputed.Items().Select(Semantics).Order())) throw new InvalidOperationException("The representative adjacent pair's source observations/assessments differ beyond the explicitly retained identity and lineage-reason provenance.");
             await SelectSourcePairForSmoke(0, 1); comparisonMode.SelectedIndex = 1; await modeRequest;
-            if (queryProvenance.Text != Copy["canonicalAdjacent"] || !NetMode || (comparisonMode.SelectedItem as Choice)?.Id != "range_net" || !changes.Select(item => item.Value.GetRawText()).SequenceEqual(history.Items().Select(item => item.GetRawText())) || intervalFrom != first || intervalTo != second) throw new InvalidOperationException("Adjacent Net did not use its exact stored canonical events while retaining the user's one-pair Net question.");
+            if (queryProvenance.Text != Copy["canonicalAdjacent"] || !NetMode || (comparisonMode.SelectedItem as Choice)?.Id != "range_net" || documentChangesQueryId != historyPage.Get("query_id").Text() || documentChangesQueryId == recomputedPage.Get("query_id").Text() || !changes.Select(item => item.Value.GetRawText()).SequenceEqual(historyPage.Get("items").Items().Select(item => item.GetRawText())) || intervalFrom != first || intervalTo != second) throw new InvalidOperationException("Adjacent Net did not use its exact stored canonical events while retaining the user's one-pair Net question.");
             var selected = changes[0]; var canonicalSelected = await ReadDocumentChangeDetail(CurrentChangeScope, selected.Value, reads.Token); await SelectChange(selected.Value);
             if (selectedChange.GetRawText() != canonicalSelected.GetRawText() || Before.RevisionId != first || After.RevisionId != second || intervalFrom != first || intervalTo != second || !NetMode) throw new InvalidOperationException("A canonical adjacent event lost its exact source/provenance or Net query during native selection.");
             await capture("adjacent-net-stored-canonical-event");
@@ -2779,10 +2800,11 @@ internal sealed class MainWindow : Window
             if (Before.ReadState != "ready" || After.ReadState != "ready" || Before.PageImage.Source is null || !Before.DiffTextAvailable || !calls.SequenceEqual(new[] { "range_net" }) || !NetMode || ComparisonState != "failed" || changesReady || changes.Count != 0 || (comparisonMode.SelectedItem as Choice)?.Id != "range_net" || intervalFrom != from || intervalTo != to || Before.CaptureSelection() != a || After.CaptureSelection() != b || !storedHistoryButton.IsVisible || !storedHistoryButton.IsEnabled) throw new InvalidOperationException("Unavailable nonadjacent Net silently changed its question, fetched history, retained stale authority or hid its explicit recovery action.");
             foreach (var locale in new[] { "en", "ko" }) { SetLanguage(locale); if (!sourceNotice.Text.Contains(Copy["documentNetUnavailable"], StringComparison.Ordinal) || !storedHistoryButton.IsVisible) throw new InvalidOperationException("Unavailable Net recovery guidance is hidden outside the inspector in " + locale); await capture("synthetic-net-unavailable-explicit-history-" + locale); }
             storedHistoryButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await storedHistoryRequest;
-            if (queryProvenance.Text != Copy["storedInterval"] || NetMode || ComparisonState != "ready" || (comparisonMode.SelectedItem as Choice)?.Id != "history" || intervalFrom != from || intervalTo != to || Before.CaptureSelection() != a || After.CaptureSelection() != b || storedHistoryButton.IsVisible || !changes.Select(item => item.Value.GetRawText()).SequenceEqual((await Read("history", from, to)).Items().Select(item => item.GetRawText()))) throw new InvalidOperationException("Explicit Open stored history did not load the current fixed interval with its unchanged source selections.");
+            var recoveredHistory = await Read("history", from, to);
+            if (queryProvenance.Text != Copy["storedInterval"] || NetMode || ComparisonState != "ready" || (comparisonMode.SelectedItem as Choice)?.Id != "history" || intervalFrom != from || intervalTo != to || Before.CaptureSelection() != a || After.CaptureSelection() != b || storedHistoryButton.IsVisible || documentChangesQueryId != recoveredHistory.Get("query_id").Text() || !changes.Select(item => item.Value.GetRawText()).SequenceEqual(recoveredHistory.Get("items").Items().Select(item => item.GetRawText()))) throw new InvalidOperationException("Explicit Open stored history did not load the current fixed interval with its unchanged source selections.");
             await capture("explicit-stored-history-recovery");
             if (reportId != report || currentReport.GetRawText() != reportBytes) throw new InvalidOperationException("Query routing or availability recovery changed its immutable report.");
-            return new { report_id = report, adjacent = new { from = first, to = second, source_semantics_equal_excluding_explicit_identity_and_lineage_reason_provenance = true, stored_events = history, recomputed_events = recomputed, exact_stored_events_in_native_net = true }, synthetic_unavailable = new { requested_modes = calls, no_automatic_history_fetch_or_mode_flip = true, explicit_native_history_action = true, interval_from = from, interval_to = to } };
+            return new { report_id = report, adjacent = new { from = first, to = second, source_semantics_equal_excluding_explicit_identity_and_lineage_reason_provenance = true, stored_events = history, recomputed_events = recomputed, stored_preview_page = historyPage, recomputed_preview_page = recomputedPage, exact_stored_events_in_native_net = true }, synthetic_unavailable = new { requested_modes = calls, no_automatic_history_fetch_or_mode_flip = true, explicit_native_history_action = true, interval_from = from, interval_to = to } };
         }
         finally { documentRangeUnavailable = false; documentNet = originalNet; Before.RestoreSelection(originalA); After.RestoreSelection(originalB); intervalFrom = originalFrom; intervalTo = originalTo; UpdateInterval(); await ReloadComparisonCore(true); SetLanguage(language); SetLayout(layout); sourceView.SelectedIndex = originalText ? 1 : 0; }
     }
